@@ -56,7 +56,7 @@ tatami/
 | 4 | Comptes et synchronisation | L | À faire |
 | 5 | Durcissement et distribution | M | À faire |
 
-Phase en cours : **0**. Prochaine tâche : **0.8**.
+Phase en cours : **0**. Prochaine tâche : **0.9**.
 
 ---
 
@@ -73,7 +73,7 @@ Objectif : prouver que les trois risques majeurs sont maîtrisables avant de con
 - [x] **0.5** Rédiger `contract/` v0 (schéma JSON : `hello`, `listSources`, `search`, `details`, `chapters`, `pages`, `fetchImage`, `setCookies`, `health`, `shutdown`, erreurs typées) et l'ADR `0001-transport-sidecar.md` (NDJSON sur stdio vs HTTP local avec jeton, avec compromis).
 - [x] **0.6** Implémenter le mode serveur du moteur selon le contrat (stdout = protocole, stderr = logs). Test d'intégration `hello` → `listSources` → `search`.
 - [x] **0.7** Empaqueter un runtime réduit avec `jdeps` + `jlink` (script `scripts/build-engine.ps1`). Mesurer et noter : taille du runtime, temps de démarrage à froid, mémoire au repos et en usage (viser un tas limité, par ex. `-Xmx256m`, GC série, à valider par mesure).
-- [ ] **0.8** Scaffolder Tauri v2 + Next.js (export statique). Déclarer le sidecar (`externalBin`, plugin shell : vérifier la configuration et les permissions dans la doc Tauri v2). Superviseur minimal : démarrage, détection de crash, relance.
+- [x] **0.8** Scaffolder Tauri v2 + Next.js (export statique). Déclarer le sidecar (`externalBin`, plugin shell : vérifier la configuration et les permissions dans la doc Tauri v2). Superviseur minimal : démarrage, détection de crash, relance.
 - [ ] **0.9** Commandes Tauri `search` / `chapters` / `pages` + page d'interface minimale qui affiche une liste de résultats.
 - [ ] **0.10** Protocole d'URI personnalisé `tatami://page/...` : Rust demande `fetchImage` au moteur, met en cache sur disque, sert l'image à la webview (vérifier l'API Tauri v2 des protocoles asynchrones dans la doc). Afficher une page de chapitre dans l'interface.
 - [ ] **0.11** Source protégée (Cloudflare/captcha) : si le moteur renvoie `CHALLENGE_REQUIRED`, ouvrir une fenêtre webview, laisser l'utilisateur résoudre, récupérer cookies et user-agent (vérifier ce que l'API de Tauri v2 permet pour les cookies), les transmettre via `setCookies`, rejouer la requête. Documenter les limites observées (liaison à l'IP, expiration).
@@ -223,3 +223,9 @@ _Format d'une entrée :_
 - Fait : `scripts/build-engine.ps1` (installDist → jdeps → jlink strip/compress → launcher `-Xmx256m -XX:+UseSerialGC`). Modules : base, desktop, instrument, logging, net.http, scripting, dynalink, unsupported + `jdk.crypto.ec` ajouté à la main. Incidents : `java -version` sur stderr tuait le script sous `Stop` → `Continue` + `$LASTEXITCODE` ; 1re mesure RAM = wrapper cmd.exe → harness v2 sur le java.exe enfant ; TLS `handshake_failure` sur le runtime nu (témoin JDK complet OK) → SunEC manquant, fix vérifié.
 - Preuve (runtime jlink, harnais flux redirigés) : dist = **64.1 MB** (runtime 47.2 + lib 16.8) ; démarrage à froid **1576 ms** (lancement → hello) ; idle WS **71.9** / privée 231.7 MB ; search 2047 ms, pic WS **114.5** / privée 256.2 MB (≈ plafond Xmx, respecté) ; search OK 3 résultats, shutdown exit 0. Private ≈ réserve adresses (tas), WorkingSet = RAM réelle.
 - Points ouverts : `--compress=2` déprécié (warning, non bloquant) ; revue du plafond Xmx si sources lourdes en 0.11.
+
+### 2026-10-02 — Tâche 0.8
+- Plan : (1) docs Tauri v2 (Next export, sidecar, shell) ; (2) scaffold apps/desktop + superviseur ; (3) install/build/typecheck/check/clippy ; (4) preuve dev live crash→relance ; (5) journal + commit.
+- Fait : Next 16.0.10 + React 19 (export `out/`, `GET / 200`), tauri 2.12.1, `supervisor.rs` (spawn java serve, hello MAJEUR=0, watchdog backoff 1s→30s, kill à la sortie), `main.rs` (ExitRequested → shutdown, pas de java orphelin), capabilities vides (0 permission : Rust spawn direct, pas de plugin shell). Icônes placeholder générées (`tauri icon`, logo réel à valider).
+- Preuve : `cargo check`/`clippy -D warnings`/`fmt --check` verts ; `pnpm build` → `out/index.html` ; `pnpm typecheck` vert ; `tauri dev` live — `sidecar démarré (pid=16540)`, `hello OK (protocol=0.1)`, `taskkill 16540` → `sidecar sorti, relance` → pid 11844 → `hello OK`. Logs : `AppData\Local\Temp\opencode\tauridev2.txt`.
+- Points ouverts : `externalBin` NON déclaré (binaire JVM, pas natif → ira en `resources` en 0.9+, cf. commentaire `supervisor.rs`) ; versions `@tauri-apps/*` corrigées `^2.12.1` (registre) ; `allowBuilds: sharp` persisté ; bug chemin dev `../../` → `../../../` trouvé par l'exécution ; fenêtre non capturée (preuves = logs).

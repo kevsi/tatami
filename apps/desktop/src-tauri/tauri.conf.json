@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Tatami",
+  "version": "0.1.0",
+  "identifier": "app.tatami.desktop",
+  "build": {
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../out",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Tatami",
+        "width": 1280,
+        "height": 800
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Utility"
+  }
+}

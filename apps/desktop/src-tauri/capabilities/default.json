@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Capabilities for the main window. No plugin permissions: Rust supervises the sidecar directly (tokio), the frontend never spawns processes.",
+  "windows": ["main"],
+  "permissions": []
+}

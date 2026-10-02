@@ -56,7 +56,7 @@ tatami/
 | 4 | Comptes et synchronisation | L | À faire |
 | 5 | Durcissement et distribution | M | À faire |
 
-Phase en cours : **0**. Prochaine tâche : **0.7**.
+Phase en cours : **0**. Prochaine tâche : **0.8**.
 
 ---
 
@@ -72,7 +72,7 @@ Objectif : prouver que les trois risques majeurs sont maîtrisables avant de con
 - [x] **0.4** Créer `engine/` (Gradle Kotlin) avec la dépendance sur une version **épinglée** des parsers. CLI de test : lister les sources, rechercher dans une source. Vérifier avec une source ouverte (une API officielle comme MangaDex est un bon candidat).
 - [x] **0.5** Rédiger `contract/` v0 (schéma JSON : `hello`, `listSources`, `search`, `details`, `chapters`, `pages`, `fetchImage`, `setCookies`, `health`, `shutdown`, erreurs typées) et l'ADR `0001-transport-sidecar.md` (NDJSON sur stdio vs HTTP local avec jeton, avec compromis).
 - [x] **0.6** Implémenter le mode serveur du moteur selon le contrat (stdout = protocole, stderr = logs). Test d'intégration `hello` → `listSources` → `search`.
-- [ ] **0.7** Empaqueter un runtime réduit avec `jdeps` + `jlink` (script `scripts/build-engine.ps1`). Mesurer et noter : taille du runtime, temps de démarrage à froid, mémoire au repos et en usage (viser un tas limité, par ex. `-Xmx256m`, GC série, à valider par mesure).
+- [x] **0.7** Empaqueter un runtime réduit avec `jdeps` + `jlink` (script `scripts/build-engine.ps1`). Mesurer et noter : taille du runtime, temps de démarrage à froid, mémoire au repos et en usage (viser un tas limité, par ex. `-Xmx256m`, GC série, à valider par mesure).
 - [ ] **0.8** Scaffolder Tauri v2 + Next.js (export statique). Déclarer le sidecar (`externalBin`, plugin shell : vérifier la configuration et les permissions dans la doc Tauri v2). Superviseur minimal : démarrage, détection de crash, relance.
 - [ ] **0.9** Commandes Tauri `search` / `chapters` / `pages` + page d'interface minimale qui affiche une liste de résultats.
 - [ ] **0.10** Protocole d'URI personnalisé `tatami://page/...` : Rust demande `fetchImage` au moteur, met en cache sur disque, sert l'image à la webview (vérifier l'API Tauri v2 des protocoles asynchrones dans la doc). Afficher une page de chapitre dans l'interface.
@@ -217,3 +217,9 @@ _Format d'une entrée :_
 - Fait : `Server.kt` (dispatch + cache session + `withTimeout`), `CloudFlareInterceptor.kt` + `CloudFlareProtectionException.kt` (→ CHALLENGE_REQUIRED), `putCookies` + `userAgentOverride`, commande `serve`. CloudFlareHelper confirmé présent dans le fork.
 - Preuve : 4 runs pipés via `installDist`, EXIT 0 partout — hello ✓, listSources=1370 ✓, search=3 ✓, details ✓, chapters=40 ✓, pages=19 ✓, fetchImage=2393492 o image/jpeg ✓, setCookies ✓, health ×2 ✓, shutdown ✓ (exit 0). Soit 10/10 méthodes exercées. Sorties : `AppData\Local\Temp\opencode\out{1,2a,2b,2c,2d}.ndjson`.
 - Points ouverts : `fetchImage` sans désembrouillage (note dans le code, MangaDex direct) ; cache session = erreur PARSE_ERROR « call search first » si process neuf (comportement voulu, vu en run2a).
+
+### 2026-10-02 — Tâche 0.7
+- Plan : (1) inspecter installDist ; (2) jdeps → modules ; (3) script build-engine.ps1 ; (4) mesurer froid + RAM sur le runtime ; (5) journal + commit.
+- Fait : `scripts/build-engine.ps1` (installDist → jdeps → jlink strip/compress → launcher `-Xmx256m -XX:+UseSerialGC`). Modules : base, desktop, instrument, logging, net.http, scripting, dynalink, unsupported + `jdk.crypto.ec` ajouté à la main. Incidents : `java -version` sur stderr tuait le script sous `Stop` → `Continue` + `$LASTEXITCODE` ; 1re mesure RAM = wrapper cmd.exe → harness v2 sur le java.exe enfant ; TLS `handshake_failure` sur le runtime nu (témoin JDK complet OK) → SunEC manquant, fix vérifié.
+- Preuve (runtime jlink, harnais flux redirigés) : dist = **64.1 MB** (runtime 47.2 + lib 16.8) ; démarrage à froid **1576 ms** (lancement → hello) ; idle WS **71.9** / privée 231.7 MB ; search 2047 ms, pic WS **114.5** / privée 256.2 MB (≈ plafond Xmx, respecté) ; search OK 3 résultats, shutdown exit 0. Private ≈ réserve adresses (tas), WorkingSet = RAM réelle.
+- Points ouverts : `--compress=2` déprécié (warning, non bloquant) ; revue du plafond Xmx si sources lourdes en 0.11.

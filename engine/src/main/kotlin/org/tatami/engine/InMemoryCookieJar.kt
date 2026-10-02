@@ -22,6 +22,13 @@ class InMemoryCookieJar : CookieJar {
         }
     }
 
+    // Alimentation par setCookies (contrat v0) : cookies posés après résolution 0.11.
+    fun putCookies(host: String, cookies: List<Cookie>) {
+        cookies.forEach {
+            cache[CookieKey(host, it.name)] = it
+        }
+    }
+
     private data class CookieKey(
         val host: String,
         val name: String,

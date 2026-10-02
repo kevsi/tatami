@@ -5,16 +5,19 @@ import org.koitharu.kotatsu.parsers.model.MangaListFilter
 import org.koitharu.kotatsu.parsers.model.MangaParserSource
 
 // CLI de test (phase 0.4) : lister les sources, chercher dans une source.
+// Mode serveur (phase 0.6) : boucle NDJSON sur stdio, voir contract/.
 // Usage :
 //   gradle run --args="list-sources"
 //   gradle run --args="search MANGADEX naruto"
+//   gradle run --args="serve"
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
-        println("usage: list-sources | search <SOURCE> <query>")
+        println("usage: list-sources | search <SOURCE> <query> | serve")
         return
     }
     val context = EngineContext()
     when (args[0]) {
+        "serve" -> serve()
         "list-sources" -> {
             val entries = MangaParserSource.entries
             println("sources: ${entries.size}")
@@ -34,7 +37,7 @@ fun main(args: Array<String>) {
         }
         else -> {
             println("unknown command: ${args[0]}")
-            println("usage: list-sources | search <SOURCE> <query>")
+            println("usage: list-sources | search <SOURCE> <query> | serve")
         }
     }
 }

@@ -23,10 +23,14 @@ class EngineContext : MangaLoaderContext() {
 
     override val cookieJar: CookieJar = InMemoryCookieJar()
 
+    // Remplacé par setCookies (contrat v0) après résolution d'un challenge.
+    var userAgentOverride: String? = null
+
     private val scriptEngineManager = ScriptEngineManager()
 
     override val httpClient: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(cookieJar)
+        .addInterceptor(CloudFlareInterceptor())
         .addInterceptor { chain ->
             chain.proceed(
                 chain.request().newBuilder()
@@ -53,7 +57,7 @@ class EngineContext : MangaLoaderContext() {
 
     override fun getConfig(source: MangaSource): MangaSourceConfig = DefaultMangaSourceConfig()
 
-    override fun getDefaultUserAgent(): String = UserAgents.FIREFOX_DESKTOP
+    override fun getDefaultUserAgent(): String = userAgentOverride ?: UserAgents.FIREFOX_DESKTOP
 
     override fun redrawImageResponse(response: Response, redraw: (Bitmap) -> Bitmap): Response {
         val body = checkNotNull(response.body) { "Empty response body" }

@@ -56,7 +56,7 @@ tatami/
 | 4 | Comptes et synchronisation | L | À faire |
 | 5 | Durcissement et distribution | M | À faire |
 
-Phase en cours : **0**. Prochaine tâche : **0.6**.
+Phase en cours : **0**. Prochaine tâche : **0.7**.
 
 ---
 
@@ -71,7 +71,7 @@ Objectif : prouver que les trois risques majeurs sont maîtrisables avant de con
 - [x] **0.3** Lire le code de `kotatsu-parsers-redo` et de l'implémentation non-Android de `kotatsu-dl`. Écrire `docs/notes/loader-context.md` : méthodes de `MangaLoaderContext` à implémenter, celles qui posent problème sur desktop (exécution de JavaScript, recomposition d'images), coordonnées de dépendance **exactes** (À VÉRIFIER dans le README du dépôt, ne pas les deviner).
 - [x] **0.4** Créer `engine/` (Gradle Kotlin) avec la dépendance sur une version **épinglée** des parsers. CLI de test : lister les sources, rechercher dans une source. Vérifier avec une source ouverte (une API officielle comme MangaDex est un bon candidat).
 - [x] **0.5** Rédiger `contract/` v0 (schéma JSON : `hello`, `listSources`, `search`, `details`, `chapters`, `pages`, `fetchImage`, `setCookies`, `health`, `shutdown`, erreurs typées) et l'ADR `0001-transport-sidecar.md` (NDJSON sur stdio vs HTTP local avec jeton, avec compromis).
-- [ ] **0.6** Implémenter le mode serveur du moteur selon le contrat (stdout = protocole, stderr = logs). Test d'intégration `hello` → `listSources` → `search`.
+- [x] **0.6** Implémenter le mode serveur du moteur selon le contrat (stdout = protocole, stderr = logs). Test d'intégration `hello` → `listSources` → `search`.
 - [ ] **0.7** Empaqueter un runtime réduit avec `jdeps` + `jlink` (script `scripts/build-engine.ps1`). Mesurer et noter : taille du runtime, temps de démarrage à froid, mémoire au repos et en usage (viser un tas limité, par ex. `-Xmx256m`, GC série, à valider par mesure).
 - [ ] **0.8** Scaffolder Tauri v2 + Next.js (export statique). Déclarer le sidecar (`externalBin`, plugin shell : vérifier la configuration et les permissions dans la doc Tauri v2). Superviseur minimal : démarrage, détection de crash, relance.
 - [ ] **0.9** Commandes Tauri `search` / `chapters` / `pages` + page d'interface minimale qui affiche une liste de résultats.
@@ -211,3 +211,9 @@ _Format d'une entrée :_
 - Fait : `contract/protocol.json` (enveloppe + 8 defs), `contract/README.md` (table méthodes/params/result + points ouverts v1), `docs/decisions/0001-transport-sidecar.md` (statut acceptée). Incident : `node -e` inline cassé par l'expansion `$` du shell → script fichier (règle connue).
 - Preuve : script node → `methods=10` (hello..shutdown), `codes=7`, `defs=method,errorCode,request,response,manga,chapter,page,sourceInfo`.
 - Points ouverts : annulation par requête reportée (v0 = fermer stdin) ; `fetchImage` base64 à réévaluer si pages > ~10 Mo.
+
+### 2026-10-02 — Tâche 0.6
+- Plan : (1) lire modèles Manga/Chapter/Page + CloudFlareHelper ; (2) écrire Server.kt (10 méthodes, cache jetable, timeouts) ; (3) installDist + tests pipés ; (4) stop daemon, journal, commit.
+- Fait : `Server.kt` (dispatch + cache session + `withTimeout`), `CloudFlareInterceptor.kt` + `CloudFlareProtectionException.kt` (→ CHALLENGE_REQUIRED), `putCookies` + `userAgentOverride`, commande `serve`. CloudFlareHelper confirmé présent dans le fork.
+- Preuve : 4 runs pipés via `installDist`, EXIT 0 partout — hello ✓, listSources=1370 ✓, search=3 ✓, details ✓, chapters=40 ✓, pages=19 ✓, fetchImage=2393492 o image/jpeg ✓, setCookies ✓, health ×2 ✓, shutdown ✓ (exit 0). Soit 10/10 méthodes exercées. Sorties : `AppData\Local\Temp\opencode\out{1,2a,2b,2c,2d}.ndjson`.
+- Points ouverts : `fetchImage` sans désembrouillage (note dans le code, MangaDex direct) ; cache session = erreur PARSE_ERROR « call search first » si process neuf (comportement voulu, vu en run2a).

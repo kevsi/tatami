@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatami.app/contract/protocol.json",
+  "title": "Tatami engine protocol v0 (draft)",
+  "description": "NDJSON sur stdio (une valeur JSON par ligne). stdout = protocole uniquement, logs sur stderr. Version du protocole : \"0.1\" (compatible = même MAJEUR). Voir contract/README.md.",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" }
+  ],
+  "$defs": {
+    "method": {
+      "type": "string",
+      "enum": [
+        "hello",
+        "listSources",
+        "search",
+        "details",
+        "chapters",
+        "pages",
+        "fetchImage",
+        "setCookies",
+        "health",
+        "shutdown"
+      ]
+    },
+    "errorCode": {
+      "type": "string",
+      "enum": [
+        "SOURCE_UNAVAILABLE",
+        "CHALLENGE_REQUIRED",
+        "PARSE_ERROR",
+        "RATE_LIMITED",
+        "TIMEOUT",
+        "CANCELLED",
+        "INTERNAL"
+      ]
+    },
+    "request": {
+      "type": "object",
+      "required": ["id", "method", "params"],
+      "properties": {
+        "id": { "type": "string", "description": "Identifiant unique (Rust). Les réponses le recopient." },
+        "method": { "$ref": "#/$defs/method" },
+        "params": { "type": "object" },
+        "timeoutMs": { "type": "integer", "minimum": 1, "description": "Délai max côté Rust ; passé ce délai Rust ignore la réponse (le moteur finit quand même, sans état)." }
+      },
+      "additionalProperties": false
+    },
+    "response": {
+      "type": "object",
+      "required": ["id", "ok"],
+      "properties": {
+        "id": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "result": { "type": "object", "description": "Présent si ok = true. Forme par méthode : voir contract/README.md." },
+        "error": {
+          "type": "object",
+          "description": "Présent si ok = false.",
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "$ref": "#/$defs/errorCode" },
+            "message": { "type": "string" },
+            "url": { "type": "string", "description": "Présent pour CHALLENGE_REQUIRED : page à ouvrir dans la fenêtre de résolution." }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "manga": {
+      "type": "object",
+      "required": ["url", "title", "source"],
+      "properties": {
+        "url": { "type": "string", "description": "Clé stable du manga chez la source (relative ou absolue selon la source)." },
+        "title": { "type": "string" },
+        "source": { "type": "string", "description": "Nom d'entrée MangaParserSource, ex. MANGADEX." },
+        "coverUrl": { "type": "string" },
+        "authors": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "chapter": {
+      "type": "object",
+      "required": ["url"],
+      "properties": {
+        "url": { "type": "string", "description": "Clé stable du chapitre." },
+        "title": { "type": "string" },
+        "number": { "type": "number" },
+        "uploadDate": { "type": "integer", "description": "Epoch millis, si fourni par la source." }
+      },
+      "additionalProperties": true
+    },
+    "page": {
+      "type": "object",
+      "required": ["index", "url"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "url": { "type": "string", "description": "URL de la page (pas forcément l'image directe : passer par fetchImage)." },
+        "previewUrl": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "sourceInfo": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "description": "Nom d'entrée MangaParserSource, ex. MANGADEX." },
+        "title": { "type": "string" },
+        "locale": { "type": "string", "description": "ex. \"en\", si exposée par la source." }
+      },
+      "additionalProperties": true
+    }
+  }
+}

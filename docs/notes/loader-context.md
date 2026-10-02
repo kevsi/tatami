@@ -59,8 +59,8 @@ Fournies par la classe de base : `newParserInstance(source)`, `newLinkResolver(u
 
 ## À VÉRIFIER en 0.4 (pas avant d'écrire le `build.gradle.kts`)
 
-- [ ] JitPack résout et construit `com.github.Kotatsu-Redo:kotatsu-parsers-redo:b3c0000` (déclencher le build, noter l'heure).
-- [ ] `nashorn-core:15.6` fonctionne sur JDK 21 avec un parser qui évalue du JS.
-- [ ] Version d'OkHttp attendue par le fork (lire son `build.gradle`) — aligner `okhttp`/`okio`, ne pas supposer 4.12.0.
-- [ ] Lire `CloudFlareInterceptor.kt`, `InMemoryCookieJar.kt`, `BitmapImpl.kt` de kotatsu-dl (même package `...dl.parsers`) avant de les transposer.
+- [x] JitPack résout et construit `com.github.Kotatsu-Redo:kotatsu-parsers-redo:b3c0000` (build serveur OK le 2026-10-02, pom 2619 o, `list-sources` → 1370 sources).
+- [ ] `nashorn-core:15.6` fonctionne sur JDK 21 avec un parser qui évalue du JS (dépendance ajoutée, `evaluateJs` câblé, mais aucun parser à JS exercé — MangaDex ne fait pas de JS).
+- [x] Version d'OkHttp attendue par le fork (lire son `build.gradle`) — aligner `okhttp`/`okio`, ne pas supposer 4.12.0. → `gradle/libs.versions.toml` : okhttp **5.1.0**, okio 3.16.0, kotlin 2.2.10, coroutines 1.10.2. Moteur aligné.
+- [x] Lire `CloudFlareInterceptor.kt`, `InMemoryCookieJar.kt`, `BitmapImpl.kt` de kotatsu-dl (même package `...dl.parsers`) avant de les transposer. → lus et transposés (sans `loadFromStream`, sans `requireBody` déprécié sous OkHttp 5).
 - [ ] Quelles sources `MANGADEX` et candidates du spike appellent `interceptWebViewRequests` (si oui, 0.11 devient bloquant pour elles).

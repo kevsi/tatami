@@ -56,7 +56,7 @@ tatami/
 | 4 | Comptes et synchronisation | L | À faire |
 | 5 | Durcissement et distribution | M | À faire |
 
-Phase en cours : **0**. Prochaine tâche : **0.4**.
+Phase en cours : **0**. Prochaine tâche : **0.5**.
 
 ---
 
@@ -69,7 +69,7 @@ Objectif : prouver que les trois risques majeurs sont maîtrisables avant de con
 - [x] **0.1** Initialiser le dépôt : git, workspace pnpm, `LICENSE` (GPLv3), `README.md` avec crédits (Kotatsu, Kotatsu-Redo, kotatsu-parsers-redo) et avertissement (l'app est un navigateur, elle n'héberge aucun contenu).
 - [x] **0.2** Vérifier l'outillage (`java -version`, `gradle -v`, `rustc --version`, `node -v`, `pnpm -v`) et installer ce qui manque (voir `AGENTS.md` section 3). Consigner les versions dans le journal.
 - [x] **0.3** Lire le code de `kotatsu-parsers-redo` et de l'implémentation non-Android de `kotatsu-dl`. Écrire `docs/notes/loader-context.md` : méthodes de `MangaLoaderContext` à implémenter, celles qui posent problème sur desktop (exécution de JavaScript, recomposition d'images), coordonnées de dépendance **exactes** (À VÉRIFIER dans le README du dépôt, ne pas les deviner).
-- [ ] **0.4** Créer `engine/` (Gradle Kotlin) avec la dépendance sur une version **épinglée** des parsers. CLI de test : lister les sources, rechercher dans une source. Vérifier avec une source ouverte (une API officielle comme MangaDex est un bon candidat).
+- [x] **0.4** Créer `engine/` (Gradle Kotlin) avec la dépendance sur une version **épinglée** des parsers. CLI de test : lister les sources, rechercher dans une source. Vérifier avec une source ouverte (une API officielle comme MangaDex est un bon candidat).
 - [ ] **0.5** Rédiger `contract/` v0 (schéma JSON : `hello`, `listSources`, `search`, `details`, `chapters`, `pages`, `fetchImage`, `setCookies`, `health`, `shutdown`, erreurs typées) et l'ADR `0001-transport-sidecar.md` (NDJSON sur stdio vs HTTP local avec jeton, avec compromis).
 - [ ] **0.6** Implémenter le mode serveur du moteur selon le contrat (stdout = protocole, stderr = logs). Test d'intégration `hello` → `listSources` → `search`.
 - [ ] **0.7** Empaqueter un runtime réduit avec `jdeps` + `jlink` (script `scripts/build-engine.ps1`). Mesurer et noter : taille du runtime, temps de démarrage à froid, mémoire au repos et en usage (viser un tas limité, par ex. `-Xmx256m`, GC série, à valider par mesure).
@@ -199,3 +199,9 @@ _Format d'une entrée :_
 - Fait : note écrite (`docs/notes/loader-context.md`, 53 lignes) : coords exactes `com.github.Kotatsu-Redo:kotatsu-parsers-redo:<commit>` via JitPack (README du fork périmé, cite encore KotatsuApp), inventaire abstract/open du contexte, 5 points durs desktop avec réponses (nashorn-core:15.6, Bitmap sur BufferedImage, fenêtre 0.11 pour WebView/Cloudflare, cookies en Rust), 5 À VÉRIFIER pour 0.4.
 - Preuve : lectures via API GitHub — redo HEAD `b3c0000` (2026-09-17, 0 tags, 0 releases), dl `build.gradle.kts` (parsers `14cff0d651`, okhttp 4.12.0, nashorn 15.6), `MangaLoaderContext.kt` (5217 o), `Bitmap.kt` (3 membres) ; fichier relu sur disque (53 lignes, 7 marqueurs clés).
 - Points ouverts : JitPack doit encore construire le SHA redo (0.4) ; `evaluateJs` 3 args du fork vs 2 args chez dl — implémenter la 3 args.
+
+### 2026-10-02 — Tâche 0.4
+- Plan : (1) lire build amont (versions) + helpers dl ; (2) scaffold `engine/` + CLI ; (3) build, `list-sources`, `search MANGADEX` ; (4) stop daemon, journal, commit.
+- Fait : `engine/` créé (settings/build/gradle.properties + 5 sources : Main, EngineContext, BitmapImpl, InMemoryCookieJar, DefaultMangaSourceConfig). Parsers `b3c0000` via JitPack, okhttp 5.1.0/okio 3.16.0/kotlin 2.2.10/coroutines 1.10.2/nashorn 15.6. Daemon stoppé.
+- Preuve : `gradle run list-sources` → BUILD SUCCESSFUL, `sources: 1370`, MANGADEX listé ; `gradle run search MANGADEX naruto` → BUILD SUCCESSFUL, `results: 20` (ex. `Naruto: The Whorl within the Spiral`). 1er build JitPack : timeout Gradle → build serveur OK (pom 200, 2619 o). 2 incidents fixés : `google()` manquant (androidx.collection) + `requireBody()` déprécié sous OkHttp 5.
+- Points ouverts : `evaluateJs`/Nashorn non exercé (MangaDex sans JS) ; usage d'`interceptWebViewRequests` par les sources non inventorié ; pas de wrapper Gradle (système 9.8.0) ; sorties capturées dans `AppData\Local\Temp\opencode\listsources.txt` et `searchmdx.txt`.

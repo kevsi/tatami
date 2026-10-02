@@ -56,7 +56,7 @@ tatami/
 | 4 | Comptes et synchronisation | L | À faire |
 | 5 | Durcissement et distribution | M | À faire |
 
-Phase en cours : **0**. Prochaine tâche : **0.2**.
+Phase en cours : **0**. Prochaine tâche : **0.3**.
 
 ---
 
@@ -67,7 +67,7 @@ Phase en cours : **0**. Prochaine tâche : **0.2**.
 Objectif : prouver que les trois risques majeurs sont maîtrisables avant de construire le reste (sidecar JVM empaquetable, images servies correctement, sources protégées par Cloudflare).
 
 - [x] **0.1** Initialiser le dépôt : git, workspace pnpm, `LICENSE` (GPLv3), `README.md` avec crédits (Kotatsu, Kotatsu-Redo, kotatsu-parsers-redo) et avertissement (l'app est un navigateur, elle n'héberge aucun contenu).
-- [ ] **0.2** Vérifier l'outillage (`java -version`, `gradle -v`, `rustc --version`, `node -v`, `pnpm -v`) et installer ce qui manque (voir `AGENTS.md` section 3). Consigner les versions dans le journal.
+- [x] **0.2** Vérifier l'outillage (`java -version`, `gradle -v`, `rustc --version`, `node -v`, `pnpm -v`) et installer ce qui manque (voir `AGENTS.md` section 3). Consigner les versions dans le journal.
 - [ ] **0.3** Lire le code de `kotatsu-parsers-redo` et de l'implémentation non-Android de `kotatsu-dl`. Écrire `docs/notes/loader-context.md` : méthodes de `MangaLoaderContext` à implémenter, celles qui posent problème sur desktop (exécution de JavaScript, recomposition d'images), coordonnées de dépendance **exactes** (À VÉRIFIER dans le README du dépôt, ne pas les deviner).
 - [ ] **0.4** Créer `engine/` (Gradle Kotlin) avec la dépendance sur une version **épinglée** des parsers. CLI de test : lister les sources, rechercher dans une source. Vérifier avec une source ouverte (une API officielle comme MangaDex est un bon candidat).
 - [ ] **0.5** Rédiger `contract/` v0 (schéma JSON : `hello`, `listSources`, `search`, `details`, `chapters`, `pages`, `fetchImage`, `setCookies`, `health`, `shutdown`, erreurs typées) et l'ADR `0001-transport-sidecar.md` (NDJSON sur stdio vs HTTP local avec jeton, avec compromis).
@@ -187,3 +187,9 @@ _Format d'une entrée :_
 - Fait : dépôt init (root-commit `4c19a26`), 8 fichiers (`LICENSE`, `README.md`, `package.json` avec `packageManager pnpm@12.8.1`, `pnpm-workspace.yaml` sur `apps/*`, `pnpm-lock.yaml`, `.gitignore`, `AGENTS.md`, `PLAN.md`). Identité locale : kevsi roughi <kev@mail.com>.
 - Preuve : `git log --oneline` → `4c19a26 chore: initialise le depot` ; `git ls-files` → 8 fichiers ; `pnpm install` → `Already up to date / Done in 754ms` ; `LICENSE` = 35149 octets, tête `GNU GENERAL PUBLIC LICENSE / Version 3, 29 June 2007`.
 - Points ouverts : `packageManager` épinglé à la version constatée (12.8.1) ; structure `apps/desktop`, `engine/`, `contract/`, `scripts/`, `docs/` à créer dans les tâches suivantes (0.4–0.8).
+
+### 2026-10-02 — Tâche 0.2
+- Plan : (1) mesurer le présent (5 versions) ; (2) installer le manquant via scoop ; (3) prouver la chaîne Rust jusqu'au binaire ; (4) consigner + cocher.
+- Fait : manquaient Java, Gradle, Rust. Installés via scoop (`bucket add java` + `install temurin21-jdk gradle rustup`). Scoop vit en `~\scoop` mais ses shims ne sont pas sur le PATH du shell → préfixe manuel à chaque appel. MSVC déjà présent (BuildTools 18 + MSVC 14.51.36231 + WinSDK 10), `link.exe` trouvé, chaîne prouvée par un hello-world compilé et exécuté.
+- Preuve : `java -version` → Temurin 21.0.12.1 LTS ; `gradle -v` → 9.8.0 ; `rustc --version` → 1.99.0 ; `cargo --version` → 1.99.0 ; `node -v` → v26.10.0 ; `pnpm -v` → 12.8.1 ; `cargo build` hello-world → `Finished dev in 3.03s` + `Hello, world!`. Install : `scoop install` → `temurin21-jdk`, `gradle`, `rustup` = `installed successfully`, EXIT 0.
+- Points ouverts : shells futurs doivent charger `vcvars64.bat` avant `cargo build` (link.exe hors PATH) ; `JAVA_HOME`, `CARGO_HOME`, `RUSTUP_HOME` persistés en vars user par scoop ; `gradle-all` (252 MB) a fait timeouter une extraction à 10 min → relance OK depuis le cache.

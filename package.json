@@ -1,0 +1,12 @@
+{
+  "name": "tatami",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Desktop manga reader (Windows first) with feature parity with Kotatsu-Redo mobile app",
+  "license": "GPL-3.0-only",
+  "packageManager": "pnpm@12.8.1",
+  "scripts": {
+    "lint": "echo \"no workspaces yet (phase 0.1)\"",
+    "typecheck": "echo \"no workspaces yet (phase 0.1)\""
+  }
+}

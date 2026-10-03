@@ -24,12 +24,14 @@ class EngineContext : MangaLoaderContext() {
     override val cookieJar: CookieJar = InMemoryCookieJar()
 
     // Remplacé par setCookies (contrat v0) après résolution d'un challenge.
+    @Volatile
     var userAgentOverride: String? = null
 
     private val scriptEngineManager = ScriptEngineManager()
 
     override val httpClient: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(cookieJar)
+        .addInterceptor(RateLimitInterceptor())
         .addInterceptor(CloudFlareInterceptor())
         .addInterceptor { chain ->
             chain.proceed(

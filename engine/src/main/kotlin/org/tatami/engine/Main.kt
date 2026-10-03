@@ -1,5 +1,8 @@
 package org.tatami.engine
 
+import java.io.FileDescriptor
+import java.io.FileOutputStream
+import java.io.PrintStream
 import kotlinx.coroutines.runBlocking
 import org.koitharu.kotatsu.parsers.model.MangaListFilter
 import org.koitharu.kotatsu.parsers.model.MangaParserSource
@@ -11,6 +14,11 @@ import org.koitharu.kotatsu.parsers.model.MangaParserSource
 //   gradle run --args="search MANGADEX naruto"
 //   gradle run --args="serve"
 fun main(args: Array<String>) {
+    // Windows encode la console en cp1252/GBK : sans cela, stdout emet des octets
+    // invalides en UTF-8 et le superviseur Rust tue sa boucle de lecture
+    // (incident 2026-10-02 : "stream did not contain valid UTF-8").
+    System.setOut(PrintStream(FileOutputStream(FileDescriptor.out), true, Charsets.UTF_8))
+    System.setErr(PrintStream(FileOutputStream(FileDescriptor.err), true, Charsets.UTF_8))
     if (args.isEmpty()) {
         println("usage: list-sources | search <SOURCE> <query> | serve")
         return

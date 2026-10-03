@@ -1,14 +1,16 @@
 package org.tatami.engine
 
+import java.util.concurrent.ConcurrentHashMap
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 
 // Transposé de kotatsu-dl InMemoryCookieJar, sans le chargement depuis fichier
 // (la persistance vit côté Rust, cf. contrat setCookies).
+// ConcurrentHashMap : le moteur sert plusieurs requêtes en parallèle.
 class InMemoryCookieJar : CookieJar {
 
-    private val cache = HashMap<CookieKey, Cookie>()
+    private val cache = ConcurrentHashMap<CookieKey, Cookie>()
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val time = System.currentTimeMillis()

@@ -1,8 +1,9 @@
 //! Téléchargement de chapitres (phase 2) : pages -> fetchImage -> fichiers.
 //!
-//! Un chapitre = un dossier sous `AppData/Tatami/downloads/<source>/<manga>/<chapitre>/`
-//! avec `001.jpg`, `002.jpg`… Nommage assaini (anti path traversal).
-//! La progression est renvoyée par événement Tauri (`download://progress`).
+//! Un chapitre = un `.cbz` dans `AppData/Tatami/downloads/<source>/<webtoon>/`,
+//! avec un `meta.json` à côté (cf. library.rs) qui porte l'état d'avancement.
+//! Nommage assaini (anti path traversal). La progression est renvoyée par
+//! événement Tauri (`download://progress`).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -34,7 +35,7 @@ pub struct DownloadState {
     running: Mutex<bool>,
 }
 
-fn sanitize(name: &str) -> String {
+pub fn sanitize(name: &str) -> String {
     let cleaned: String = name
         .chars()
         .map(|c| match c {
@@ -104,6 +105,8 @@ pub async fn download_chapter(
     manga_title: String,
     chapter_url: String,
     chapter_title: String,
+    cover_url: Option<String>,
+    total_chapters: Option<usize>,
 ) -> Result<String, String> {
     {
         let mut running = state.running.lock().await;
@@ -120,6 +123,8 @@ pub async fn download_chapter(
         &manga_title,
         &chapter_url,
         &chapter_title,
+        cover_url.as_deref(),
+        total_chapters.unwrap_or(0),
     )
     .await;
     *state.running.lock().await = false;
@@ -135,6 +140,8 @@ async fn run_download(
     manga_title: &str,
     chapter_url: &str,
     chapter_title: &str,
+    cover_url: Option<&str>,
+    total_chapters: usize,
 ) -> Result<String, String> {
     let root = downloads_root();
     let dir = chapter_dir(&root, source, manga_title);
@@ -233,6 +240,21 @@ async fn run_download(
         .await
         .map_err(|e| format!("écriture {}: {e}", file.display()))?;
 
+    // État d'avancement du webtoon (library.rs) : c'est ce que lit la vue
+    // Téléchargements pour afficher « 12/40 chapitres ».
+    let _ = super::library::note_chapter(
+        &dir,
+        source,
+        manga_title,
+        manga_url,
+        cover_url,
+        total_chapters,
+        chapter_url,
+        chapter_title,
+        &file.file_name().unwrap_or_default().to_string_lossy(),
+    )
+    .await;
+
     let _ = app.emit(
         "download://progress",
         Progress {
@@ -245,29 +267,4 @@ async fn run_download(
         },
     );
     Ok(file.to_string_lossy().to_string())
-}
-
-/// Where chapters were written (used by the UI after a download).
-#[tauri::command]
-pub async fn list_downloads() -> Result<Vec<String>, String> {
-    let root = downloads_root();
-    let mut out = Vec::new();
-    let mut stack = vec![root.clone()];
-    while let Some(dir) = stack.pop() {
-        let mut entries = match tokio::fs::read_dir(&dir).await {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if ["jpg", "png", "webp", "gif"].contains(&ext) {
-                    out.push(path.to_string_lossy().to_string());
-                }
-            }
-        }
-    }
-    Ok(out)
 }

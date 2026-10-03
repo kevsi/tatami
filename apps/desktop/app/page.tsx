@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
@@ -8,6 +8,31 @@ type Source = { name: string; lang: string };
 type Manga = { url: string; title: string; source: string; coverUrl?: string | null };
 type Chapter = { url: string; title?: string | null; number?: number };
 type Tag = { key: string; title: string };
+type LibraryItem = {
+  title: string;
+  source: string;
+  url: string;
+  coverUrl?: string | null;
+  dir: string;
+  downloaded: number;
+  totalChapters: number;
+  complete: boolean;
+  sizeBytes: number;
+  updatedAt: number;
+  chapters: { url: string; title: string; file: string }[];
+};
+/** Un webtoon dans la file de téléchargement multi-sélection. */
+type QueueItem = {
+  key: string;
+  title: string;
+  source: string;
+  total: number;
+  done: number;
+  skipped: number;
+  failed: number;
+  state: 'attente' | 'téléchargement' | 'terminé' | 'erreur' | 'annulé';
+  current?: string;
+};
 type Progress = {
   source: string;
   chapter: string;
@@ -25,6 +50,7 @@ const CHAPTER_STEP = 200;
 const PAGE_KEY = 'tatami.pageSize';
 const SOURCES_KEY = 'tatami.enabledSources';
 const SAFE_KEY = 'tatami.contentRating';
+const TIMEOUT_KEY = 'tatami.listTimeout';
 const TAGS_SHOWN = 24;
 // Valeurs acceptées par les parsers (enum ContentRating). Une seule à la fois :
 // en envoyer plusieurs lève « Multiple Content ratings are not supported ».
@@ -34,15 +60,26 @@ const RATINGS = [
   { value: 'ALL', label: 'Toutes — aucun filtre' },
 ] as const;
 
-function loadPrefs(): { pageSize: number; enabled: string[] | null; rating: string } {
-  if (typeof window === 'undefined') return { pageSize: PAGE, enabled: null, rating: 'SUGGESTIVE' };
+const TIMEOUTS = [30, 60, 120] as const;
+
+function loadPrefs(): {
+  pageSize: number;
+  enabled: string[] | null;
+  rating: string;
+  listTimeout: number;
+} {
+  if (typeof window === 'undefined') {
+    return { pageSize: PAGE, enabled: null, rating: 'SUGGESTIVE', listTimeout: 60 };
+  }
   const raw = window.localStorage.getItem(PAGE_KEY);
   const rawSources = window.localStorage.getItem(SOURCES_KEY);
   const rawRating = window.localStorage.getItem(SAFE_KEY);
+  const rawTimeout = window.localStorage.getItem(TIMEOUT_KEY);
   return {
     pageSize: raw ? Number(raw) || PAGE : PAGE,
     enabled: rawSources ? (JSON.parse(rawSources) as string[]) : null,
     rating: rawRating || 'SUGGESTIVE',
+    listTimeout: rawTimeout ? Number(rawTimeout) || 60 : 60,
   };
 }
 
@@ -87,6 +124,23 @@ function AppBar({
   );
 }
 
+// MangaDex et quelques Madara renvoient un UUID comme titre de chapitre :
+// on retombe alors sur le numéro, sinon l'interface n'affiche qu'un identifiant.
+const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function chapterLabel(c: Chapter): string {
+  if (c.title && !UUID_LIKE.test(c.title)) return c.title;
+  if (c.number != null) return `Chapitre ${c.number}`;
+  return 'Sans titre';
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.round(bytes || 0)} o`;
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1) return `${Math.round(bytes / 1024)} Ko`;
+  return `${mb.toFixed(1).replace('.', ',')} Mo`;
+}
+
 /** Traduit une erreur brute du moteur en un message court, sans l'URL technique.
  *  Les codes viennent de contract/protocol.json ; le reste est heuristique sur
  *  les messages d'exception observés (sources mortes : 404, hôte inconnu, 403). */
@@ -119,7 +173,7 @@ export default function Home() {
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [tab, setTab] = useState<string>('catalog');
-  const [downloads, setDownloads] = useState<string[]>([]);
+  const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageSize, setPageSize] = useState(PAGE);
@@ -129,12 +183,21 @@ export default function Home() {
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [mangaQuery, setMangaQuery] = useState('');
   const [rating, setRating] = useState('SUGGESTIVE');
+  const [onePageOnly, setOnePageOnly] = useState(false);
+  const [listTimeout, setListTimeout] = useState(60);
+  // Sélection multiple de webtoons + file de téléchargement
+  const [selectMode, setSelectMode] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [queueRunning, setQueueRunning] = useState(false);
+  const cancelQueue = useRef(false);
 
   useEffect(() => {
     const prefs = loadPrefs();
     setPageSize(prefs.pageSize);
     setEnabled(prefs.enabled);
     setRating(prefs.rating);
+    setListTimeout(prefs.listTimeout);
     invoke<{ sources: Source[] }>('list_sources')
       .then((r) => setSources(r.sources ?? []))
       .catch((e) => setError(String(e)));
@@ -149,9 +212,9 @@ export default function Home() {
   }, []);
 
   const refreshDownloads = useCallback(() => {
-    invoke<string[]>('list_downloads')
-      .then(setDownloads)
-      .catch(() => setDownloads([]));
+    invoke<LibraryItem[]>('list_library', { root: '' })
+      .then((items) => setLibrary(items ?? []))
+      .catch(() => setLibrary([]));
   }, []);
 
   const goTab = useCallback(
@@ -181,6 +244,7 @@ export default function Home() {
     if (offset === 0) {
       setLatest([]);
       setLatestOffset(0);
+      setOnePageOnly(false);
     }
     try {
       const r = await invoke<{ list: Manga[] }>('latest', {
@@ -190,11 +254,16 @@ export default function Home() {
         query: useQuery,
         tags: useTags,
         contentRating: rating === 'ALL' ? '' : rating,
+        timeoutSecs: listTimeout,
       });
       const items = r.list ?? [];
       setLatest((prev) => (offset === 0 ? items : [...prev, ...items]));
       setLatestOffset(offset + items.length);
+      // Une source qui renvoie 0 au-delà de la première page ne pagine pas
+      // (mesuré sur EXHENTAI) : on masque le bouton au lieu de le laisser
+      // promising des résultats qui n'existent pas.
       setHasMore(items.length > 0);
+      if (offset > 0 && items.length === 0) setOnePageOnly(true);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -218,6 +287,7 @@ export default function Home() {
     setActiveTags([]);
     setTags([]);
     setMangaQuery('');
+    setOnePageOnly(false);
     void loadTags(s);
     await loadSource(s, 0, { tags: [], query: '' });
   }
@@ -273,26 +343,31 @@ export default function Home() {
     });
   }
 
+  async function fetchOneChapter(
+    source: string,
+    manga: Manga,
+    chapter: Chapter,
+    totalChapters: number,
+  ): Promise<string> {
+    const title = chapterLabel(chapter);
+    setProgress({ source, chapter: title, page: 0, total: 0, done: false, error: null });
+    return invoke<string>('download_chapter', {
+      source,
+      mangaUrl: manga.url,
+      mangaTitle: manga.title,
+      coverUrl: manga.coverUrl ?? null,
+      totalChapters,
+      chapterUrl: chapter.url,
+      chapterTitle: title,
+    });
+  }
+
   async function downloadChapter(c: Chapter) {
     if (!openManga || !selected) return;
     setDownloading(true);
     setError(null);
-    setProgress({
-      source: selected.name,
-      chapter: c.title ?? 'chapitre',
-      page: 0,
-      total: 0,
-      done: false,
-      error: null,
-    });
     try {
-      const file = await invoke<string>('download_chapter', {
-        source: selected.name,
-        mangaUrl: openManga.url,
-        mangaTitle: openManga.title,
-        chapterUrl: c.url,
-        chapterTitle: c.title ?? (c.number ? `Chapitre ${c.number}` : c.url),
-      });
+      const file = await fetchOneChapter(selected.name, openManga, c, chapters.length);
       setNotice(`Téléchargé : ${file}`);
       refreshDownloads();
     } catch (e) {
@@ -309,6 +384,122 @@ export default function Home() {
       // eslint-disable-next-line no-await-in-loop
       await downloadChapter(c);
     }
+  }
+
+  // ---------- Sélection multiple + file de téléchargement ----------
+
+  function mangaKey(m: Manga) {
+    return `${m.source}|${m.url}`;
+  }
+
+  function togglePick(m: Manga) {
+    if (queueRunning) return;
+    setPicked((prev) => {
+      const next = new Set(prev);
+      const key = mangaKey(m);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function leaveSelectMode() {
+    setSelectMode(false);
+    setPicked(new Set());
+  }
+
+  /** Télécharge tous les chapitres de chaque webtoon sélectionné, un par un,
+   *  en ignorant ce qui est déjà sur le disque. Annulable. */
+  async function startQueue() {
+    if (!selected || queueRunning) return;
+    const targets = latest.filter((m) => picked.has(mangaKey(m)));
+    if (targets.length === 0) return;
+
+    cancelQueue.current = false;
+    setQueueRunning(true);
+    setError(null);
+    setQueue(
+      targets.map((m) => ({
+        key: mangaKey(m),
+        title: m.title,
+        source: selected.name,
+        total: 0,
+        done: 0,
+        skipped: 0,
+        failed: 0,
+        state: 'attente' as const,
+      })),
+    );
+
+    for (const m of targets) {
+      const key = mangaKey(m);
+      const patch = (changes: Partial<QueueItem>) =>
+        setQueue((prev) => prev.map((q) => (q.key === key ? { ...q, ...changes } : q)));
+
+      if (cancelQueue.current) {
+        patch({ state: 'annulé' });
+        continue;
+      }
+      patch({ state: 'téléchargement' });
+
+      let list: Chapter[] = [];
+      try {
+        const r = await invoke<{ chapters: Chapter[] }>('chapters', {
+          source: m.source,
+          mangaUrl: m.url,
+        });
+        list = r.chapters ?? [];
+      } catch (e) {
+        patch({ state: 'erreur', current: String(e) });
+        continue;
+      }
+      patch({ total: list.length });
+
+      let existing: string[] = [];
+      try {
+        existing = await invoke<string[]>('existing_chapters', {
+          source: m.source,
+          title: m.title,
+        });
+      } catch {
+        existing = [];
+      }
+
+      let done = 0;
+      let skipped = 0;
+      let failed = 0;
+      for (const c of list) {
+        if (cancelQueue.current) {
+          patch({ done, skipped, failed, state: 'annulé' });
+          break;
+        }
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const file = await fetchOneChapter(m.source, m, c, list.length);
+          const name = file.split(/[\\/]/).pop() ?? '';
+          if (existing.includes(name)) skipped += 1;
+          else done += 1;
+        } catch {
+          failed += 1;
+        }
+        patch({ done, skipped, failed, current: chapterLabel(c) });
+      }
+      patch({
+        done,
+        skipped,
+        failed,
+        state: cancelQueue.current ? 'annulé' : failed > 0 ? 'erreur' : 'terminé',
+      });
+    }
+
+    setQueueRunning(false);
+    setProgress(null);
+    refreshDownloads();
+    setTab('downloads');
+  }
+
+  function cancelQueueNow() {
+    cancelQueue.current = true;
   }
 
   function backToSource() {
@@ -371,6 +562,33 @@ export default function Home() {
           <p className="muted">
             Une seule classification à la fois : les sources n’en acceptent pas
             plusieurs. Les sources qui n’exposent pas de classification ne sont pas filtrées.
+          </p>
+        </section>
+
+        <section className="panel">
+          <h2>Réseau</h2>
+          <label className="field">
+            Délai avant abandon
+            <select
+              value={listTimeout}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setListTimeout(v);
+                window.localStorage.setItem(TIMEOUT_KEY, String(v));
+              }}
+              aria-label="Délai avant abandon d'une source, en secondes"
+            >
+              {TIMEOUTS.map((t) => (
+                <option key={t} value={t}>
+                  {t} secondes
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="muted">
+            Certaines sources scannent tout leur catalogue avant de répondre
+            (EXHENTAI : 36 s). Au-delà du délai, la source est signalée hors
+            service plutôt que de faire attendre.
           </p>
         </section>
 
@@ -440,39 +658,94 @@ export default function Home() {
 
   // ---------- Vue : Téléchargements ----------
   if (tab === 'downloads') {
-    const byManga = new Map<string, string[]>();
-    for (const file of downloads) {
-      const parts = file.split('\\');
-      const manga = parts[parts.length - 2] ?? '?';
-      byManga.set(manga, [...(byManga.get(manga) ?? []), parts[parts.length - 1] ?? '']);
-    }
+    const running = queue.find((q) => q.state === 'téléchargement');
     return (
       <main>
         <AppBar tab={tab} onTab={goTab} />
-        <button className="crumb" onClick={() => setTab('catalog')}>
-          {'←'} Catalogues
-        </button>
         <header className="page-head">
           <h1>Téléchargements</h1>
-          <span className="sub">{downloads.length} fichier(s)</span>
+          <span className="sub">
+            {library.length} webtoon · {library.reduce((n, i) => n + i.downloaded, 0)} chapitres
+          </span>
         </header>
 
-        {downloads.length === 0 && (
-          <p className="muted">Aucun téléchargement pour l&apos;instant.</p>
+        {queue.length > 0 && (
+          <section className="panel queue">
+            <h2>File de téléchargement</h2>
+            {queueRunning ? (
+              <button className="btn" onClick={cancelQueueNow}>
+                Arrêter après le chapitre en cours
+              </button>
+            ) : (
+              <button className="btn btn-ghost" onClick={() => setQueue([])}>
+                Effacer la file
+              </button>
+            )}
+            <div className="queue-list">
+              {queue.map((q) => {
+                const pct = q.total > 0 ? Math.round(((q.done + q.skipped) / q.total) * 100) : 0;
+                return (
+                  <div className="queue-row" key={q.key}>
+                    <div className="queue-head">
+                      <span className="queue-title">{q.title}</span>
+                      <span className={`badge state-${q.state.replace('é', 'e')}`}>{q.state}</span>
+                    </div>
+                    <div className="progress">
+                      <div className="progress-bar" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="queue-detail">
+                      {q.total > 0
+                        ? `${q.done + q.skipped}/${q.total} chapitres${q.skipped > 0 ? ` (${q.skipped} déjà là)` : ''}${q.failed > 0 ? ` · ${q.failed} en échec` : ''}`
+                        : 'préparation…'}
+                      {q.current ? ` · ${q.current}` : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {running && progress && progress.total > 0 && (
+              <p className="muted">
+                {running.title} — {progress.chapter} : page {progress.page}/{progress.total}
+              </p>
+            )}
+          </section>
         )}
 
-        {[...byManga.entries()].map(([manga, files]) => (
-          <section className="panel" key={manga}>
-            <h2>{manga}</h2>
-            <div className="dl-files">
-              {files.map((f) => (
-                <span className="file" key={f}>
-                  {f}
-                </span>
-              ))}
-            </div>
-          </section>
-        ))}
+        {library.length === 0 ? (
+          <p className="muted">Aucun webtoon téléchargé pour l&apos;instant.</p>
+        ) : (
+          <div className="dl-grid">
+            {library.map((item) => {
+              const pct =
+                item.totalChapters > 0
+                  ? Math.round((item.downloaded / item.totalChapters) * 100)
+                  : 100;
+              return (
+                <article className="dl-card" key={item.dir}>
+                  {item.coverUrl ? (
+                    <img className="thumb" src={item.coverUrl} alt="" loading="lazy" />
+                  ) : (
+                    <span className="thumb" />
+                  )}
+                  <div className="dl-body">
+                    <h3 className="dl-title">{item.title}</h3>
+                    <span className="muted dl-meta">
+                      {item.source} · {item.downloaded}/
+                      {item.totalChapters > 0 ? item.totalChapters : '?'} chapitres ·{' '}
+                      {formatBytes(item.sizeBytes)}
+                    </span>
+                    <div className="progress">
+                      <div className="progress-bar" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className={`badge ${item.complete ? 'state-termine' : 'state-attente'}`}>
+                      {item.complete ? 'Terminé' : 'Partiel'}
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </main>
     );
   }
@@ -538,17 +811,15 @@ export default function Home() {
                   type="checkbox"
                   checked={checked.has(c.url)}
                   onChange={() => toggleChapter(c.url)}
-                  aria-label={`Sélectionner ${c.title ?? `chapitre ${c.number ?? ''}`}`}
+                  aria-label={`Sélectionner ${chapterLabel(c)}`}
                 />
-                <span className="chapter-label">
-                  {c.title ?? (c.number ? `Chapitre ${c.number}` : 'Sans titre')}
-                </span>
+                <span className="chapter-label">{chapterLabel(c)}</span>
                 {c.number != null && <span className="badge">#{c.number}</span>}
                 <button
                   className="btn btn-ghost"
                   disabled={downloading}
                   onClick={() => downloadChapter(c)}
-                  aria-label={`Télécharger ${c.title ?? 'le chapitre'}`}
+                  aria-label={`Télécharger ${chapterLabel(c)}`}
                 >
                   Télécharger
                 </button>
@@ -626,6 +897,61 @@ export default function Home() {
           </div>
         )}
 
+        <div className="select-bar">
+          {selectMode ? (
+            <>
+              <span className="muted">
+                {picked.size} webtoon{picked.size > 1 ? 's' : ''} sélectionné
+                {picked.size > 1 ? 's' : ''}
+              </span>
+              <div className="select-actions">
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => setPicked(new Set(latest.map(mangaKey)))}
+                >
+                  Tout
+                </button>
+                <button className="btn btn-ghost" onClick={leaveSelectMode}>
+                  Annuler
+                </button>
+                <button
+                  className="btn btn-primary"
+                  disabled={picked.size === 0 || queueRunning}
+                  onClick={startQueue}
+                >
+                  {queueRunning ? 'Téléchargement…' : `Télécharger (${picked.size})`}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <span className="muted">Clique un webtoon pour voir ses chapitres.</span>
+              <button className="btn" onClick={() => setSelectMode(true)} disabled={latest.length === 0}>
+                Sélectionner
+              </button>
+            </>
+          )}
+        </div>
+
+        {queueRunning && (
+          <div className="progress" role="status">
+            <div
+              className="progress-bar"
+              style={{
+                width: `${
+                  progress && progress.total > 0
+                    ? Math.round((progress.page / progress.total) * 100)
+                    : 15
+                }%`,
+              }}
+            />
+            <span>
+              {queue.find((q) => q.state === 'téléchargement')?.title ?? 'File en cours'}
+              {progress ? ` — ${progress.chapter} ${progress.page}/${progress.total || '?'}` : ''}
+            </span>
+          </div>
+        )}
+
         {error && selected && (
           <div className="alert">
             <p>{describeError(error, selected.name)}</p>
@@ -654,21 +980,42 @@ export default function Home() {
           </div>
         ) : (
           <div className="manga-grid">
-            {latest.map((m) => (
-              <button key={m.source + '|' + m.url} className="manga" onClick={() => loadChapters(m)}>
-                {m.coverUrl ? (
-                  <img className="thumb" src={m.coverUrl} alt="" loading="lazy" />
-                ) : (
-                  <span className="thumb" />
-                )}
-                <span className="label">{m.title}</span>
-              </button>
-            ))}
+            {latest.map((m) => {
+              const key = mangaKey(m);
+              const isPicked = picked.has(key);
+              return (
+                <button
+                  key={key}
+                  className={`manga${selectMode ? ' pickable' : ''}${isPicked ? ' picked' : ''}`}
+                  aria-pressed={selectMode ? isPicked : undefined}
+                  onClick={() => (selectMode ? togglePick(m) : loadChapters(m))}
+                >
+                  {m.coverUrl ? (
+                    <img className="thumb" src={m.coverUrl} alt="" loading="lazy" />
+                  ) : (
+                    <span className="thumb" />
+                  )}
+                  <span className="label">{m.title}</span>
+                  {selectMode && (
+                    <span className="pick" aria-hidden="true">
+                      {isPicked ? '✓' : ''}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
 
         {latest.length === 0 && !loading && !error && (
           <p className="muted">Aucun résultat sur cette source.</p>
+        )}
+
+        {onePageOnly && (
+          <p className="muted note">
+            {selected?.name} ne renvoie qu&apos;une seule page : son catalogue est plus
+            court qu&apos;il n&apos;y paraît (limite du site, pas de l&apos;application).
+          </p>
         )}
 
         {hasMore && !loading && (

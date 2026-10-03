@@ -9,13 +9,22 @@ use tauri::State;
 use super::pagecache::PageCache;
 use super::supervisor::Supervisor;
 
-/// Listes, filtres et pagination : 30 s suffisent pour une source qui répond ;
-/// au-delà c'est une source morte (mesuré : 404, hôte inconnu, 403 anti-bot).
-const LIST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Listes, filtres et pagination. 60 s par défaut : certaines sources
+/// scannent réellement le catalogue (EXHENTAI mesuré à 35,7 s pour une page),
+/// mais au-delà on ne gagne plus rien — le délai de lecture OkHttp du moteur
+/// est lui-même de 60 s.
+const LIST_TIMEOUT: Duration = Duration::from_secs(60);
+/// Plafond dur, même si l'utilisateur règle un délai absurde.
+const LIST_TIMEOUT_MAX: Duration = Duration::from_secs(180);
 /// Détails et chapitres : une source qui pose une page de plus est normale.
 const DEEP_TIMEOUT: Duration = Duration::from_secs(60);
 /// `listSources` est un calcul local (index du JAR), pas un appel réseau.
 const LOCAL_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn list_timeout(seconds: Option<u32>) -> Duration {
+    let asked = Duration::from_secs(seconds.unwrap_or(60).clamp(10, 180) as u64);
+    asked.min(LIST_TIMEOUT_MAX)
+}
 
 #[tauri::command]
 pub async fn filter_options(
@@ -49,6 +58,7 @@ pub async fn list_sources(sup: State<'_, Arc<Supervisor>>) -> Result<serde_json:
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn latest(
     sup: State<'_, Arc<Supervisor>>,
     source: String,
@@ -57,7 +67,9 @@ pub async fn latest(
     query: Option<String>,
     tags: Option<Vec<String>>,
     content_rating: Option<String>,
+    timeout_secs: Option<u32>,
 ) -> Result<serde_json::Value, String> {
+    let timeout = list_timeout(timeout_secs);
     // Une seule classification à la fois : plusieurs lèvent « Multiple Content
     // ratings are not supported by this source » côté parser (mesuré sur MangaDex).
     let rating = match content_rating.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
@@ -78,7 +90,7 @@ pub async fn latest(
         "tags": tags.unwrap_or_default(),
         "contentRating": rating,
     });
-    let r = into_result(sup.request("latest", params, LIST_TIMEOUT).await?)?;
+    let r = into_result(sup.request("latest", params, timeout).await?)?;
     tracing::info!(
         "latest ok: {} items",
         r.get("list")

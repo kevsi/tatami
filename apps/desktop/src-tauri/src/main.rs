@@ -3,6 +3,7 @@
 mod cbz;
 mod commands;
 mod download;
+mod library;
 mod pagecache;
 mod supervisor;
 
@@ -71,7 +72,8 @@ fn main() {
             commands::latest,
             commands::filter_options,
             download::download_chapter,
-            download::list_downloads
+            library::list_library,
+            library::existing_chapters
         ])
         .manage(download::DownloadState::default())
         .setup(|app| {

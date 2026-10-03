@@ -20,6 +20,40 @@ use tokio::sync::{oneshot, Mutex};
 
 const PROTOCOL_MAJOR: &str = "0";
 const HELLO_TIMEOUT: Duration = Duration::from_secs(30);
+/// Deux nouvelles tentatives : 1,5 s puis 3 s. Suffisant pour un DNS qui
+/// titille, sans faire attendre une source vraiment morte.
+const RETRY_ATTEMPTS: u32 = 2;
+const RETRY_BASE: Duration = Duration::from_millis(1500);
+
+/// Un échec réseau qui se résorbera tout seul. Le message vient de
+/// `commands.rs::into_result` (« CODE: message ») ou du superviseur.
+fn is_transient(result: &Result<Value, String>) -> bool {
+    let Err(message) = result else {
+        return false;
+    };
+    if message.contains("PARSE_ERROR") || message.contains("CHALLENGE_REQUIRED") {
+        return false;
+    }
+    if message.starts_with("RATE_LIMITED") {
+        return true;
+    }
+    if message.starts_with("TIMEOUT") || message.contains("timeout") {
+        return true;
+    }
+    // Côté moteur, ces exceptions JDK viennent toutes du réseau ou du site.
+    [
+        "UnknownHostException",
+        "SocketTimeoutException",
+        "ConnectException",
+        "NoRouteToHostException",
+        "SSLException",
+        "503 Service Unavailable",
+        "502 Bad Gateway",
+        "500 Internal Server Error",
+    ]
+    .iter()
+    .any(|marker| message.contains(marker))
+}
 
 type PendingMap = Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>;
 
@@ -90,6 +124,10 @@ impl Supervisor {
             .args([
                 "-Xmx256m",
                 "-XX:+UseSerialGC",
+                // Les sites répondent souvent en IPv6 alors que le réseau local ne
+                // l'a pas : mesuré 6,7 s en IPv4 contre 8,1 s sur EXHENTAI, et
+                // plus aucune résolution DNS en échec sur ce portable.
+                "-Djava.net.preferIPv4Stack=true",
                 // stdout est du NDJSON UTF-8 : on verrouille l'encodage JVM.
                 "-Dfile.encoding=UTF-8",
                 "-Dsun.stdout.encoding=UTF-8",
@@ -232,6 +270,33 @@ impl Supervisor {
             .await
             .map_err(|_| format!("timeout {timeout:?} sur {method}"))?
             .map_err(|_| format!("sidecar relancé pendant {method}"))
+    }
+
+    /// Comme `request`, mais réessaie les échecs réseau transitoires.
+    ///
+    /// Un `UnknownHostException` ou un timeout arrive sur des sources qui
+    /// répondent très bien une seconde plus tard (DNS qui titille, box qui
+    /// bascule). Sans nouvelle tentative, un chapitre était marqué en échec
+    /// définitivement alors que le simple fait de réessayer suffisait.
+    /// Les erreurs définitives (paramètre invalide, challenge anti-bot) ne sont
+    /// jamais réessayées.
+    pub async fn request_with_retry(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value, String> {
+        let mut attempt = 0;
+        loop {
+            let result = self.request(method, params.clone(), timeout).await;
+            if attempt >= RETRY_ATTEMPTS || !is_transient(&result) {
+                return result;
+            }
+            attempt += 1;
+            let wait = RETRY_BASE * attempt;
+            tracing::warn!("{method}: échec transitoire, nouvel essai dans {wait:?}");
+            tokio::time::sleep(wait).await;
+        }
     }
 
     async fn fail_pending(&self, reason: &str) {

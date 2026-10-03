@@ -210,7 +210,7 @@ async fn run_download(
 
     // 1. chapitres -> details (le cache moteur a le manga de la source)
     let details = sup
-        .request(
+        .request_with_retry(
             "details",
             serde_json::json!({
                 "source": source,
@@ -224,7 +224,7 @@ async fn run_download(
 
     // 2. pages du chapitre
     let pages = sup
-        .request(
+        .request_with_retry(
             "pages",
             serde_json::json!({ "source": source, "chapterUrl": chapter_url }),
             FETCH_TIMEOUT,
@@ -265,7 +265,7 @@ async fn run_download(
         let _ = app.emit("download://progress", &progress);
 
         let fetched = sup
-            .request(
+            .request_with_retry(
                 "fetchImage",
                 serde_json::json!({ "source": source, "pageUrl": page_url }),
                 FETCH_TIMEOUT,

@@ -32,7 +32,7 @@ pub async fn filter_options(
     source: String,
 ) -> Result<serde_json::Value, String> {
     into_result(
-        sup.request(
+        sup.request_with_retry(
             "filterOptions",
             serde_json::json!({ "source": source.trim() }),
             LIST_TIMEOUT,
@@ -90,7 +90,7 @@ pub async fn latest(
         "tags": tags.unwrap_or_default(),
         "contentRating": rating,
     });
-    let r = into_result(sup.request("latest", params, timeout).await?)?;
+    let r = into_result(sup.request_with_retry("latest", params, timeout).await?)?;
     tracing::info!(
         "latest ok: {} items",
         r.get("list")
@@ -147,7 +147,7 @@ pub async fn search(
         "limit": limit.unwrap_or(20).min(50),
         "contentRating": rating,
     });
-    into_result(sup.request("search", params, LIST_TIMEOUT).await?)
+    into_result(sup.request_with_retry("search", params, LIST_TIMEOUT).await?)
 }
 
 #[tauri::command]
@@ -168,7 +168,7 @@ pub async fn chapters(
         "mangaUrl": manga_url,
         "mangaTitle": manga_title.unwrap_or_default(),
     });
-    into_result(sup.request("chapters", params, DEEP_TIMEOUT).await?)
+    into_result(sup.request_with_retry("chapters", params, DEEP_TIMEOUT).await?)
 }
 
 #[tauri::command]
@@ -182,7 +182,7 @@ pub async fn pages(
         return Err("PARSE_ERROR: chapter_url vide".to_string());
     }
     let params = serde_json::json!({ "source": source.trim(), "chapterUrl": chapter_url });
-    let mut result = into_result(sup.request("pages", params, DEEP_TIMEOUT).await?)?;
+    let mut result = into_result(sup.request_with_retry("pages", params, DEEP_TIMEOUT).await?)?;
     if let Some(arr) = result.get_mut("pages").and_then(|v| v.as_array_mut()) {
         for p in arr.iter_mut() {
             if let Some(url) = p.get("url").and_then(|v| v.as_str()) {

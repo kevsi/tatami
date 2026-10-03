@@ -266,7 +266,9 @@ private suspend fun dispatch(
         val options = parser.getFilterOptions()
         val tags = JSONArray()
         options.availableTags.forEach { tags.put(JSONObject().put("title", it.title).put("key", it.key)) }
-        JSONObject().put("tags", tags)
+        val orders = JSONArray()
+        parser.availableSortOrders.forEach { orders.put(it.name) }
+        JSONObject().put("tags", tags).put("sortOrders", orders)
     }
 
     "latest" -> {
@@ -276,7 +278,14 @@ private suspend fun dispatch(
         val query = p.optString("query", "")
         val tagKeys = p.optJSONArray("tags")
         val parser = context.newParserInstance(parseSource(sourceName))
-        val order = parser.availableSortOrders.first()
+        // availableSortOrders est un Set : on le convertit pour pouvoir choisir
+        // un tri par son rang.
+        val orders = parser.availableSortOrders.toList()
+        // Tri explicite si demandé, sinon le premier disponible (comportement
+        // initial). L'app mobile permet de choisir le tri ; sans cela on reste
+        // bloqué sur un seul sous-ensemble du catalogue.
+        val orderIndex = p.optInt("sortOrder", 0)
+        val order = if (orderIndex in orders.indices) orders[orderIndex] else orders[0]
         val options = parser.getFilterOptions()
         val tags = if (tagKeys == null || tagKeys.length() == 0) {
             emptySet()

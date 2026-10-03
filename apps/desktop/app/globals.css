@@ -374,6 +374,25 @@ button:disabled {
   padding: 1px 5px;
 }
 
+.card.dead {
+  opacity: 0.55;
+  border-color: rgba(255, 93, 107, 0.25);
+}
+
+.card.dead:hover {
+  opacity: 1;
+}
+
+.dead-badge {
+  color: var(--danger);
+  border-color: rgba(255, 93, 107, 0.4);
+  margin-left: auto;
+}
+
+.card.dead .badge:last-child {
+  margin-left: 4px;
+}
+
 /* ---------------- Grille des webtoons ---------------- */
 .manga-grid {
   display: grid;

@@ -154,6 +154,31 @@ function saveQueue(items: Manga[]) {
   window.localStorage.setItem(QUEUE_KEY, JSON.stringify({ items, startedAt: Date.now() }));
 }
 
+const HEALTH_KEY = 'tatami.sourceHealth';
+/** Source en échec réseau, mémorisé pour ne pas la retester à chaque visite. */
+type SourceHealth = Record<string, { code: string; message: string; at: number }>;
+
+function loadHealth(): SourceHealth {
+  if (typeof window === 'undefined') return {};
+  try {
+    return JSON.parse(window.localStorage.getItem(HEALTH_KEY) || '{}') as SourceHealth;
+  } catch {
+    return {};
+  }
+}
+
+function noteHealth(sources: string[], code: string, message: string) {
+  const all = loadHealth();
+  for (const s of sources) all[s] = { code, message, at: Date.now() };
+  window.localStorage.setItem(HEALTH_KEY, JSON.stringify(all));
+}
+
+function clearHealthFor(sources: string[]) {
+  const all = loadHealth();
+  for (const s of sources) delete all[s];
+  window.localStorage.setItem(HEALTH_KEY, JSON.stringify(all));
+}
+
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.round(bytes || 0)} o`;
   const mb = bytes / (1024 * 1024);
@@ -206,6 +231,7 @@ export default function Home() {
   const [onePageOnly, setOnePageOnly] = useState(false);
   const [listTimeout, setListTimeout] = useState(60);
   const [deleteTarget, setDeleteTarget] = useState<LibraryItem | null>(null);
+  const [health, setHealth] = useState<SourceHealth>({});
   // Sélection multiple de webtoons + file de téléchargement
   const [selectMode, setSelectMode] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -219,6 +245,7 @@ export default function Home() {
     setEnabled(prefs.enabled);
     setRating(prefs.rating);
     setListTimeout(prefs.listTimeout);
+    setHealth(loadHealth());
     invoke<{ sources: Source[] }>('list_sources')
       .then((r) => setSources(r.sources ?? []))
       .catch((e) => setError(String(e)));
@@ -278,6 +305,7 @@ export default function Home() {
         timeoutSecs: listTimeout,
       });
       const items = r.list ?? [];
+      if (items.length > 0 && selected) clearHealthFor([selected.name]);
       setLatest((prev) => (offset === 0 ? items : [...prev, ...items]));
       setLatestOffset(offset + items.length);
       // Une source qui renvoie 0 au-delà de la première page ne pagine pas
@@ -286,7 +314,14 @@ export default function Home() {
       setHasMore(items.length > 0);
       if (offset > 0 && items.length === 0) setOnePageOnly(true);
     } catch (e) {
-      setError(String(e));
+      const raw = String(e);
+      setError(raw);
+      // Mémorise la source en échec : elle sera signalée dans le catalogue.
+      if (selected) {
+        const code = raw.slice(0, raw.indexOf(':') > 0 ? raw.indexOf(':') : 12);
+        noteHealth([selected.name], code, describeError(raw, selected.name));
+        setHealth(loadHealth());
+      }
     } finally {
       setLoadingState(false);
     }
@@ -474,7 +509,7 @@ export default function Home() {
         });
         list = r.chapters ?? [];
       } catch (e) {
-        patch({ state: 'erreur', current: String(e) });
+        patch({ state: 'erreur', current: describeError(String(e), m.source) });
         continue;
       }
       patch({ total: list.length });
@@ -689,6 +724,22 @@ export default function Home() {
             Dossier de téléchargement : <code>%APPDATA%\Tatami\downloads</code>
           </p>
         </section>
+
+        {Object.keys(health).length > 0 && (
+          <p className="muted">
+            {Object.keys(health).length} source(s) signalée(s) hors service lors d'une
+            visite.{' '}
+            <button
+              className="btn btn-ghost"
+              onClick={() => {
+                window.localStorage.removeItem(HEALTH_KEY);
+                setHealth({});
+              }}
+            >
+              Tout réessayer
+            </button>
+          </p>
+        )}
 
         <section className="panel">
           <h2>Catalogues affichés</h2>
@@ -1219,12 +1270,21 @@ export default function Home() {
       </p>
 
       <div className="grid">
-        {filtered.slice(0, shownSources).map((s) => (
-          <button key={s.name + '-' + s.lang} className="card" onClick={() => openSource(s)}>
-            <span className="name">{s.name}</span>
-            <span className="badge">{s.lang}</span>
-          </button>
-        ))}
+        {filtered.slice(0, shownSources).map((s) => {
+          const dead = health[s.name];
+          return (
+            <button
+              key={s.name + '-' + s.lang}
+              className={`card${dead ? ' dead' : ''}`}
+              onClick={() => openSource(s)}
+              title={dead ? `Dernier échec : ${dead.message}` : undefined}
+            >
+              <span className="name">{s.name}</span>
+              {dead ? <span className="badge dead-badge">hors service</span> : null}
+              <span className="badge">{s.lang}</span>
+            </button>
+          );
+        })}
       </div>
 
       {filtered.length > shownSources && (

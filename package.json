@@ -6,7 +6,11 @@
   "license": "GPL-3.0-only",
   "packageManager": "pnpm@12.8.1",
   "scripts": {
-    "lint": "echo \"no workspaces yet (phase 0.1)\"",
-    "typecheck": "echo \"no workspaces yet (phase 0.1)\""
+    "dev": "pnpm -C apps/desktop dev",
+    "tauri": "pnpm -C apps/desktop tauri",
+    "typecheck": "pnpm -C apps/desktop typecheck",
+    "lint": "pnpm -C apps/desktop lint",
+    "build": "pnpm -C apps/desktop build",
+    "engine": "powershell -ExecutionPolicy Bypass -File scripts/build-engine.ps1"
   }
 }

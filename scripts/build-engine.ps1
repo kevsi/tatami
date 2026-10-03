@@ -42,17 +42,28 @@ $modules = (& jdeps --multi-release 21 --ignore-missing-deps --print-module-deps
 $modules = "$modules,jdk.crypto.ec"
 Write-Host "Modules: $modules"
 
-if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
-$runtime = Join-Path $dist 'runtime'
+# Build dans un dossier temoin, echange seulement a la fin : un jlink en echec
+# ne doit jamais laisser un dist a moitie supprime (constaté le 2026-10-02).
+$stage = Join-Path $engine 'dist\.stage'
+if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+$runtime = Join-Path $stage 'runtime'
 & jlink --add-modules $modules --strip-debug --no-header-files --no-man-pages --compress=2 --output $runtime
-if ($LASTEXITCODE -ne 0) { throw 'jlink a échoué.' }
+if ($LASTEXITCODE -ne 0) { throw 'jlink a échoué (dist existant laissé intact).' }
 
-Copy-Item $installLib (Join-Path $dist 'lib') -Recurse
+Copy-Item $installLib (Join-Path $stage 'lib') -Recurse
 @'
 @echo off
 setlocal
 "%~dp0runtime\bin\java" -Xmx256m -XX:+UseSerialGC -cp "%~dp0lib\*" org.tatami.engine.MainKt %*
-'@ | Set-Content (Join-Path $dist 'tatami-engine.bat') -Encoding Ascii
+'@ | Set-Content (Join-Path $stage 'tatami-engine.bat') -Encoding Ascii
 
+if (Test-Path $dist) {
+    try {
+        Remove-Item -Recurse -Force $dist -ErrorAction Stop
+    } catch {
+        throw "Impossible de remplacer $dist (fichiers utilises ?). Fermez l'application puis relancez : le build est pret dans $stage."
+    }
+}
+Move-Item $stage $dist
 $mb = [math]::Round(((Get-ChildItem $dist -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
 Write-Host "OK: $dist ($mb MB)"

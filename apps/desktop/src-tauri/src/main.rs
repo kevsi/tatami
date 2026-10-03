@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod cbz;
+mod challenge;
 mod commands;
 mod download;
 mod library;
@@ -76,7 +77,10 @@ fn main() {
             download::clean_partials,
             library::list_library,
             library::existing_chapters,
-            library::remove_download
+            library::remove_download,
+            challenge::open_challenge,
+            challenge::solve_challenge,
+            challenge::cancel_challenge
         ])
         .manage(download::DownloadState::default())
         .setup(|app| {

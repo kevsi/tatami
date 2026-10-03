@@ -190,6 +190,12 @@ function formatBytes(bytes: number): string {
   return `${mb.toFixed(1).replace('.', ',')} Mo`;
 }
 
+/** Extrait l'URL de vérification d'une erreur `CHALLENGE_REQUIRED`. */
+function challengeUrl(raw: string): string | null {
+  const m = raw.match(/challenge at (\S+)/);
+  return m ? m[1] : null;
+}
+
 /** Traduit une erreur brute du moteur en un message court, sans l'URL technique.
  *  Les codes viennent de contract/protocol.json ; le reste est heuristique sur
  *  les messages d'exception observés (sources mortes : 404, hôte inconnu, 403). */
@@ -237,6 +243,8 @@ export default function Home() {
   const [deleteTarget, setDeleteTarget] = useState<LibraryItem | null>(null);
   const [reader, setReader] = useState<Reader | null>(null);
   const [readerLoading, setReaderLoading] = useState(false);
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [challengeBusy, setChallengeBusy] = useState(false);
   const [health, setHealth] = useState<SourceHealth>({});
   // Sélection multiple de webtoons + file de téléchargement
   const [selectMode, setSelectMode] = useState(false);
@@ -322,8 +330,11 @@ export default function Home() {
     } catch (e) {
       const raw = String(e);
       setError(raw);
+      const url = challengeUrl(raw);
+      setChallenge(url && selected ? url : null);
       // Mémorise la source en échec : elle sera signalée dans le catalogue.
-      if (selected) {
+      // Une demande de vérification n'est PAS un échec : à résoudre par l'humain.
+      if (selected && !url) {
         const code = raw.slice(0, raw.indexOf(':') > 0 ? raw.indexOf(':') : 12);
         noteHealth([selected.name], code, describeError(raw, selected.name));
         setHealth(loadHealth());
@@ -603,8 +614,7 @@ export default function Home() {
     setQueue([]);
   }
 
-  async function removeDownload(item: LibraryItem) {
-    try {
+  async function removeDownload(item: LibraryItem) {    try {
       const n = await invoke<number>('remove_download', {
         source: item.source,
         title: item.title,
@@ -618,6 +628,46 @@ export default function Home() {
 
   function cancelQueueNow() {
     cancelQueue.current = true;
+  }
+
+  /** Tâche 0.11 : ouvre la fenêtre de résolution anti-bot. */
+  async function startChallenge() {
+    if (!challenge || !selected) return;
+    setChallengeBusy(true);
+    setError(null);
+    try {
+      await invoke('open_challenge', { source: selected.name, url: challenge });
+    } catch (e) {
+      setError(`Fenêtre de vérification impossible : ${e}`);
+    } finally {
+      setChallengeBusy(false);
+    }
+  }
+
+  /** Après résolution : pousse les cookies au moteur et rejoue la requête. */
+  async function applyChallenge() {
+    if (!challenge || !selected) return;
+    setChallengeBusy(true);
+    setError(null);
+    try {
+      const n = await invoke<number>('solve_challenge', {
+        source: selected.name,
+        url: challenge,
+      });
+      setNotice(`${n} cookie(s) transmis à ${selected.name}.`);
+      setChallenge(null);
+      await loadSource(selected, 0);
+    } catch (e) {
+      setError(`Vérification non appliquée : ${e}`);
+    } finally {
+      setChallengeBusy(false);
+    }
+  }
+
+  async function cancelChallenge() {
+    if (!selected) return;
+    setChallenge(null);
+    await invoke('cancel_challenge', { source: selected.name }).catch(() => {});
   }
 
   function backToSource() {
@@ -1278,13 +1328,48 @@ if (reader) {
         {error && selected && (
           <div className="alert">
             <p>{describeError(error, selected.name)}</p>
+            {challenge && (
+              <p className="muted">
+                Ce site demande une vérification anti-robot. Résous-la dans la fenêtre
+                qui va s&apos;ouvrir, puis reviens ici : les cookies seront transmis au
+                moteur et la requête rejouée.
+              </p>
+            )}
             <div className="alert-actions">
-              <button className="btn" disabled={loading} onClick={() => loadSource(selected, 0)}>
-                Réessayer
-              </button>
-              <button className="btn btn-ghost" onClick={backToCatalog}>
-                Changer de catalogue
-              </button>
+              {challenge ? (
+                <>
+                  <button
+                    className="btn btn-primary"
+                    disabled={challengeBusy}
+                    onClick={() => void startChallenge()}
+                  >
+                    Résoudre la vérification
+                  </button>
+                  <button
+                    className="btn"
+                    disabled={challengeBusy}
+                    onClick={() => void applyChallenge()}
+                  >
+                    C&apos;est fait, réessayer
+                  </button>
+                  <button className="btn btn-ghost" onClick={() => void cancelChallenge()}>
+                    Annuler
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="btn"
+                    disabled={loading}
+                    onClick={() => loadSource(selected, 0)}
+                  >
+                    Réessayer
+                  </button>
+                  <button className="btn btn-ghost" onClick={backToCatalog}>
+                    Changer de catalogue
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}

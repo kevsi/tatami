@@ -73,6 +73,9 @@ pub struct Supervisor {
     pending: PendingMap,
     child: Arc<Mutex<Option<ChildHandles>>>,
     engine_proc: Arc<Mutex<Option<Child>>>,
+    /// User-agent du moteur, appris au `hello`. La fenêtre de résolution
+    /// anti-bot s'en sert pour que la clearance soit émise pour le même agent.
+    user_agent: Arc<Mutex<String>>,
 }
 
 impl Supervisor {
@@ -83,7 +86,13 @@ impl Supervisor {
             pending: Arc::new(Mutex::new(HashMap::new())),
             child: Arc::new(Mutex::new(None)),
             engine_proc: Arc::new(Mutex::new(None)),
+            user_agent: Arc::new(Mutex::new(String::new())),
         })
+    }
+
+    /// User-agent annoncé par le moteur (vide avant le premier `hello`).
+    pub async fn user_agent(&self) -> String {
+        self.user_agent.lock().await.clone()
     }
 
     /// Boucle de supervision : ne rend la main qu'à l'arrêt de l'app.
@@ -213,6 +222,13 @@ impl Supervisor {
         let major = version.split('.').next().unwrap_or("");
         if major != PROTOCOL_MAJOR {
             return Err(format!("protocolVersion incompatible : {version}"));
+        }
+        if let Some(ua) = hello
+            .get("result")
+            .and_then(|r| r.get("defaultUserAgent"))
+            .and_then(Value::as_str)
+        {
+            *self.user_agent.lock().await = ua.to_string();
         }
         tracing::info!("hello OK (protocol={version})");
 

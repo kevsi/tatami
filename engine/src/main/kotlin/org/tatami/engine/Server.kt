@@ -250,6 +250,9 @@ private suspend fun dispatch(
         .put("protocolVersion", PROTOCOL_VERSION)
         .put("engineVersion", ENGINE_VERSION)
         .put("parsersVersion", PARSERS_VERSION)
+        // Rust s'en sert pour donner à la fenêtre de résolution anti-bot le même
+        // user-agent que le moteur : une clearance est émise pour un agent donné.
+        .put("defaultUserAgent", context.getDefaultUserAgent())
 
     "listSources" -> {
         val arr = JSONArray()

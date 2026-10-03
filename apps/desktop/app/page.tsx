@@ -7,6 +7,10 @@ import { listen } from '@tauri-apps/api/event';
 type Source = { name: string; lang: string };
 type Manga = { url: string; title: string; source: string; coverUrl?: string | null };
 type Chapter = { url: string; title?: string | null; number?: number };
+type Page = { index: number; url: string; previewUrl?: string | null; token: string };
+/** Lecteur paginé (tâche 0.10) : les images viennent du protocole `tatami://`,
+ *  jamais d'un appel direct aux hôtes distants. */
+type Reader = { chapter: Chapter; pages: Page[]; index: number };
 type Tag = { key: string; title: string };
 type LibraryItem = {
   title: string;
@@ -231,6 +235,8 @@ export default function Home() {
   const [onePageOnly, setOnePageOnly] = useState(false);
   const [listTimeout, setListTimeout] = useState(60);
   const [deleteTarget, setDeleteTarget] = useState<LibraryItem | null>(null);
+  const [reader, setReader] = useState<Reader | null>(null);
+  const [readerLoading, setReaderLoading] = useState(false);
   const [health, setHealth] = useState<SourceHealth>({});
   // Sélection multiple de webtoons + file de téléchargement
   const [selectMode, setSelectMode] = useState(false);
@@ -640,7 +646,71 @@ export default function Home() {
     window.localStorage.setItem(SOURCES_KEY, JSON.stringify(next));
   }
 
-  // ---------- Vue : Réglages ----------
+  // ---------- Lecteur (0.10) ----------
+
+function pageSrc(token: string) {
+  // Sous Windows, le protocole enregistré s'atteint par ce nom d'hôte.
+  return `http://tatami.localhost/page/${token}`;
+}
+
+async function openReader(c: Chapter) {
+  if (!selected) return;
+  setReaderLoading(true);
+  setError(null);
+  try {
+    const r = await invoke<{ pages: Page[] }>('pages', {
+      source: selected.name,
+      chapterUrl: c.url,
+    });
+    const pages = r.pages ?? [];
+    if (pages.length === 0) {
+      setError('Ce chapitre n’a aucune page lisible.');
+      return;
+    }
+    setReader({ chapter: c, pages, index: 0 });
+  } catch (e) {
+    setError(`Lecture impossible : ${e}`);
+  } finally {
+    setReaderLoading(false);
+  }
+}
+
+function closeReader() {
+  setReader(null);
+}
+
+function turn(delta: number) {
+  setReader((r) => {
+    if (!r) return r;
+    const next = r.index + delta;
+    if (next < 0 || next >= r.pages.length) return r;
+    return { ...r, index: next };
+  });
+}
+
+useEffect(() => {
+  if (!reader) return;
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'ArrowRight' || e.key === ' ') {
+      e.preventDefault();
+      turn(1);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      turn(-1);
+    } else if (e.key === 'Escape') {
+      closeReader();
+    } else if (e.key === 'Home') {
+      setReader((r) => (r ? { ...r, index: 0 } : r));
+    } else if (e.key === 'End') {
+      setReader((r) => (r ? { ...r, index: r.pages.length - 1 } : r));
+    }
+  };
+  window.addEventListener('keydown', onKey);
+  return () => window.removeEventListener('keydown', onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [reader]);
+
+// ---------- Vue : Réglages ----------
   if (tab === 'settings') {
     return (
       <main>
@@ -944,6 +1014,57 @@ export default function Home() {
     );
   }
 
+  // ---------- Vue : lecteur ----------
+if (reader) {
+    const { pages, index, chapter } = reader;
+    const page = pages[index];
+    const next = pages[index + 1];
+    return (
+      <main className="reader">
+        <header className="reader-bar">
+          <button className="btn btn-ghost" onClick={closeReader}>
+            {'←'} Chapitres
+          </button>
+          <span className="reader-title">
+            {openManga?.title} · {chapterLabel(chapter)}
+          </span>
+          <span className="reader-count">
+            {index + 1} / {pages.length}
+          </span>
+        </header>
+
+        <div className="reader-stage">
+          {page ? (
+            <img
+              key={page.token}
+              src={pageSrc(page.token)}
+              alt={`Page ${index + 1} sur ${pages.length}`}
+            />
+          ) : (
+            <p className="muted">Page introuvable.</p>
+          )}
+        </div>
+
+        <div className="reader-nav">
+          <button className="btn" disabled={index === 0} onClick={() => turn(-1)}>
+            Page précédente
+          </button>
+          <button
+            className="btn btn-primary"
+            disabled={index >= pages.length - 1}
+            onClick={() => turn(1)}
+          >
+            Page suivante
+          </button>
+        </div>
+
+        {next && (
+          <img className="preload" src={pageSrc(next.token)} alt="" aria-hidden="true" />
+        )}
+      </main>
+    );
+  }
+
   // ---------- Vue : chapitres ----------
   if (openManga) {
     const pct = progress && progress.total > 0 ? Math.round((progress.page / progress.total) * 100) : 0;
@@ -1009,6 +1130,14 @@ export default function Home() {
                 />
                 <span className="chapter-label">{chapterLabel(c)}</span>
                 {c.number != null && <span className="badge">#{c.number}</span>}
+                <button
+                  className="btn btn-ghost"
+                  disabled={readerLoading}
+                  onClick={() => void openReader(c)}
+                  aria-label={`Lire ${chapterLabel(c)}`}
+                >
+                  {readerLoading ? 'Chargement…' : 'Lire'}
+                </button>
                 <button
                   className="btn btn-ghost"
                   disabled={downloading}

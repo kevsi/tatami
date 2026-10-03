@@ -446,6 +446,75 @@ button:disabled {
   text-align: left;
 }
 
+/* ---------------- Lecteur ---------------- */
+.reader {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--s5) * 2);
+  /* Plein écran : on annule le padding latéral de .app, sinon la hauteur
+     dépasse la fenêtre et une barre de défilement apparaît. */
+  margin: 0 calc(-1 * var(--s5));
+  padding: 0 var(--s5);
+  background: #05060a;
+}
+
+.reader-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: 10px var(--s5);
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg);
+}
+
+.reader-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.reader-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s4);
+  overflow: hidden;
+}
+
+.reader-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 2px;
+}
+
+.reader-nav {
+  display: flex;
+  justify-content: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s5) var(--s5);
+}
+
+/* Précharge la page suivante sans l'afficher. */
+.preload {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* ---------------- Chapitres ---------------- */
 .chapter-list {
   display: flex;

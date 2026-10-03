@@ -90,6 +90,10 @@ impl Supervisor {
             .args([
                 "-Xmx256m",
                 "-XX:+UseSerialGC",
+                // stdout est du NDJSON UTF-8 : on verrouille l'encodage JVM.
+                "-Dfile.encoding=UTF-8",
+                "-Dsun.stdout.encoding=UTF-8",
+                "-Dsun.stderr.encoding=UTF-8",
                 "-cp",
                 &self.classpath,
                 "org.tatami.engine.MainKt",
@@ -118,20 +122,41 @@ impl Supervisor {
         // stdout => routage des réponses par id.
         let pending = self.pending.clone();
         let reader_task = tokio::spawn(async move {
-            let mut lines = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            let mut lines = BufReader::new(stdout);
+            let mut buf: Vec<u8> = Vec::new();
+            loop {
+                buf.clear();
+                match lines.read_until(b'\n', &mut buf).await {
+                    Ok(0) => {
+                        tracing::warn!("stdout: EOF (moteur ferme)");
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::warn!("lecture stdout terminee: {e}");
+                        break;
+                    }
+                }
+                // Octets -> texte tolerant : un titre exotique ne doit pas tuer
+                // la boucle de lecture (incident UTF-8 / cp1252 sur Windows).
+                let line = String::from_utf8_lossy(&buf).trim().to_string();
                 let value: Value = match serde_json::from_str(&line) {
                     Ok(v) => v,
                     Err(e) => {
-                        tracing::warn!("ligne stdout non-JSON ignorée : {e}");
+                        tracing::warn!("ligne stdout non-JSON ignoree: {e}");
                         continue;
                     }
                 };
                 let id = value.get("id").and_then(Value::as_str).unwrap_or("");
-                if let Some(tx) = pending.lock().await.remove(id) {
-                    let _ = tx.send(value);
+                tracing::info!("stdout recu id={id} len={}", line.len());
+                match pending.lock().await.remove(id) {
+                    Some(tx) => {
+                        let _ = tx.send(value);
+                    }
+                    None => tracing::warn!("stdout: id inconnu {id}"),
                 }
             }
+            tracing::warn!("stdout: boucle de lecture terminee");
         });
 
         *self.child.lock().await = Some(ChildHandles { stdin, reader_task });
@@ -177,6 +202,9 @@ impl Supervisor {
             "id": id,
             "method": method,
             "params": params,
+            // Le moteur abandonne au même instant que nous : sinon il reste
+            // coincé sur un parser bloqué (thread, sockets).
+            "timeoutMs": timeout.as_millis() as u64,
         })
         .to_string();
         let (tx, rx) = oneshot::channel();

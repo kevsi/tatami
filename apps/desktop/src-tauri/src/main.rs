@@ -1,11 +1,22 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cbz;
+mod commands;
+mod download;
+mod pagecache;
 mod supervisor;
 
 use std::sync::Arc;
 
 use supervisor::{dev_sidecar_paths, Supervisor};
 use tauri::Manager;
+
+fn not_found() -> tauri::http::Response<Vec<u8>> {
+    tauri::http::Response::builder()
+        .status(404)
+        .body(Vec::new())
+        .unwrap_or_else(|_| tauri::http::Response::new(Vec::new()))
+}
 
 fn main() {
     tracing_subscriber::fmt()
@@ -15,9 +26,54 @@ fn main() {
     let (java, classpath) = dev_sidecar_paths();
     tracing::info!("sidecar java={} (dev)", java.display());
     let sup: Arc<Supervisor> = Supervisor::new(java, classpath);
+    let cache_dir = std::env::var("APPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("Tatami")
+        .join("cache");
+    let cache = pagecache::PageCache::new(cache_dir);
 
     tauri::Builder::default()
-        .manage(sup)
+        .manage(sup.clone())
+        .manage(cache.clone())
+        .register_asynchronous_uri_scheme_protocol("tatami", move |_ctx, request, responder| {
+            let sup = sup.clone();
+            let cache = cache.clone();
+            tauri::async_runtime::spawn(async move {
+                let path = request.uri().path().trim_start_matches('/');
+                let Some(token) = path.strip_prefix("page/") else {
+                    responder.respond(not_found());
+                    return;
+                };
+                let Some(pages) = cache.resolve(token) else {
+                    responder.respond(not_found());
+                    return;
+                };
+                match pagecache::serve_page(&sup, &cache, &pages, token).await {
+                    Ok((bytes, ct)) => responder.respond(
+                        tauri::http::Response::builder()
+                            .header("Content-Type", ct)
+                            .body(bytes)
+                            .unwrap_or_else(|_| not_found()),
+                    ),
+                    Err(e) => {
+                        tracing::warn!("tatami serve error: {e}");
+                        responder.respond(not_found());
+                    }
+                }
+            });
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::search,
+            commands::chapters,
+            commands::pages,
+            commands::list_sources,
+            commands::latest,
+            commands::filter_options,
+            download::download_chapter,
+            download::list_downloads
+        ])
+        .manage(download::DownloadState::default())
         .setup(|app| {
             let handle = app.state::<Arc<Supervisor>>().inner().clone();
             tauri::async_runtime::spawn(async move { handle.run().await });

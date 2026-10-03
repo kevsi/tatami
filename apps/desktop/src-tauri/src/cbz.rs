@@ -2,66 +2,68 @@
 //!
 //! Un CBZ = un ZIP dont les entrees sont des images, dans l'ordre des pages.
 //! Les images sont deja compressees (webp/jpg) : la compression ZIP n'ajouterait
-//! rien, on ecrit donc en mode stored (le lecteur de CBZ l'accepte tel quel).
+//! rien et degrade le resultat, on ecrit donc en mode stored.
+//!
+//! Le fichier est ecrit au fil de l'eau : un chapitre de 300 pages ne tient
+//! jamais en memoire. Seul le repertoire central (≈60 octets par page) est
+//! conserve, ce qui est negligeable.
 
-pub struct CbzWriter {
-    buf: Vec<u8>,
-    entries: Vec<(String, u32, u32, u32)>, // (nom, offset local, crc32, taille)
+use std::io::{self, Write};
+use std::path::Path;
+
+pub struct CbzWriter<W: Write> {
+    out: W,
+    /// (nom, offset local, crc32, taille)
+    entries: Vec<(String, u32, u32, u32)>,
     offset: u32,
 }
 
-impl Default for CbzWriter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl CbzWriter {
-    pub fn new() -> Self {
+impl<W: Write> CbzWriter<W> {
+    pub fn new(out: W) -> Self {
         Self {
-            buf: Vec::new(),
+            out,
             entries: Vec::new(),
             offset: 0,
         }
     }
 
-    pub fn add_image(&mut self, index: usize, content_type: &str, bytes: &[u8]) {
+    /// Ecrit une page : en-tete local puis octets, ecrits immediatement.
+    pub fn add_image(&mut self, index: usize, content_type: &str, bytes: &[u8]) -> io::Result<()> {
         let name = format!("{:03}.{}", index, extension(content_type));
         let name_bytes = name.as_bytes();
         let crc = crc32(bytes);
         let size = bytes.len() as u32;
+        let local_offset = self.offset;
 
-        // En-tete local
-        self.buf.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
-        self.buf.extend_from_slice(&20u16.to_le_bytes()); // version needed
-        self.buf.extend_from_slice(&0u16.to_le_bytes()); // flags
-        self.buf.extend_from_slice(&0u16.to_le_bytes()); // method = stored
-        self.buf.extend_from_slice(&0u16.to_le_bytes()); // mod time
-        self.buf.extend_from_slice(&0x21u16.to_le_bytes()); // date 1980-01-01
-        self.buf.extend_from_slice(&crc.to_le_bytes());
-        self.buf.extend_from_slice(&size.to_le_bytes());
-        self.buf.extend_from_slice(&size.to_le_bytes());
-        self.buf
-            .extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
-        self.buf.extend_from_slice(&0u16.to_le_bytes()); // extra field len
-        self.buf.extend_from_slice(name_bytes);
-        self.buf.extend_from_slice(bytes);
+        let mut header = [0u8; 30];
+        header[0..4].copy_from_slice(&0x0403_4b50u32.to_le_bytes());
+        header[4..6].copy_from_slice(&20u16.to_le_bytes()); // version needed
+        header[6..8].copy_from_slice(&0u16.to_le_bytes()); // flags
+        header[8..10].copy_from_slice(&0u16.to_le_bytes()); // method = stored
+        header[10..12].copy_from_slice(&0u16.to_le_bytes()); // mod time
+        header[12..14].copy_from_slice(&0x21u16.to_le_bytes()); // date 1980-01-01
+        header[14..18].copy_from_slice(&crc.to_le_bytes());
+        header[18..22].copy_from_slice(&size.to_le_bytes());
+        header[22..26].copy_from_slice(&size.to_le_bytes());
+        header[26..28].copy_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+        header[28..30].copy_from_slice(&0u16.to_le_bytes()); // extra field len
 
-        self.entries
-            .push((name.to_string(), self.offset, crc, size));
-        self.offset += 30 + name_bytes.len() as u32 + size;
+        self.out.write_all(&header)?;
+        self.out.write_all(name_bytes)?;
+        self.out.write_all(bytes)?;
+
+        let name_len = name_bytes.len() as u32;
+        self.entries.push((name, local_offset, crc, size));
+        self.offset += 30 + name_len + size;
+        Ok(())
     }
 
-    /// Repertoire central + EOCD, puis retour du fichier CBZ complet.
-    pub fn finish(mut self) -> Vec<u8> {
+    /// Repertoire central + EOCD, puis vide le tampon. Renvoie la taille écrite.
+    pub fn finish(&mut self) -> io::Result<u64> {
         let cd_offset = self.offset;
-        let mut cd = Vec::new();
-        let owned: Vec<(Vec<u8>, u32, u32, u32)> = self
-            .entries
-            .iter()
-            .map(|(name, off, crc, size)| (name.as_bytes().to_vec(), *off, *crc, *size))
-            .collect();
-        for (name_bytes, local_offset, crc, size) in &owned {
+        let mut cd = Vec::with_capacity(46 * self.entries.len());
+        for (name, local_offset, crc, size) in &self.entries {
+            let name_bytes = name.as_bytes();
             cd.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
             cd.extend_from_slice(&20u16.to_le_bytes()); // version made by
             cd.extend_from_slice(&20u16.to_le_bytes()); // version needed
@@ -82,18 +84,36 @@ impl CbzWriter {
             cd.extend_from_slice(name_bytes);
         }
         let cd_size = cd.len() as u32;
-        self.buf.extend_from_slice(&cd);
-        self.buf.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
-        self.buf.extend_from_slice(&0u16.to_le_bytes()); // disk
-        self.buf.extend_from_slice(&0u16.to_le_bytes()); // cd start disk
-        self.buf
-            .extend_from_slice(&(self.entries.len() as u16).to_le_bytes());
-        self.buf
-            .extend_from_slice(&(self.entries.len() as u16).to_le_bytes());
-        self.buf.extend_from_slice(&cd_size.to_le_bytes());
-        self.buf.extend_from_slice(&cd_offset.to_le_bytes());
-        self.buf.extend_from_slice(&0u16.to_le_bytes()); // comment len
-        self.buf
+        self.out.write_all(&cd)?;
+        self.out.write_all(&0x0605_4b50u32.to_le_bytes())?;
+        self.out.write_all(&0u16.to_le_bytes())?; // disk
+        self.out.write_all(&0u16.to_le_bytes())?; // cd start disk
+        self.out
+            .write_all(&(self.entries.len() as u16).to_le_bytes())?;
+        self.out
+            .write_all(&(self.entries.len() as u16).to_le_bytes())?;
+        self.out.write_all(&cd_size.to_le_bytes())?;
+        self.out.write_all(&cd_offset.to_le_bytes())?;
+        self.out.write_all(&0u16.to_le_bytes())?; // comment len
+        self.out.flush()?;
+        Ok(u64::from(cd_offset) + u64::from(cd_size) + 22)
+    }
+
+    /// Rend la main à l'écrivain sous-jacent (utilisé par les tests).
+    #[cfg(test)]
+    pub fn into_inner(self) -> W {
+        self.out
+    }
+}
+
+impl CbzWriter<std::io::BufWriter<std::fs::File>> {
+    /// Cree le fichier et renvoie un ecrivain tamponne dessus.
+    pub fn create(path: &Path) -> io::Result<Self> {
+        let file = std::fs::File::create(path)?;
+        Ok(CbzWriter::new(std::io::BufWriter::with_capacity(
+            256 * 1024,
+            file,
+        )))
     }
 }
 
@@ -133,19 +153,53 @@ fn crc32(data: &[u8]) -> u32 {
 mod tests {
     use super::*;
 
+    fn build(pages: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut w = CbzWriter::new(Vec::new());
+        for (i, (ct, bytes)) in pages.iter().enumerate() {
+            w.add_image(i + 1, ct, bytes).unwrap();
+        }
+        w.finish().unwrap();
+        w.into_inner()
+    }
+
     #[test]
     fn cbz_has_local_header_and_central_directory() {
-        let mut w = CbzWriter::new();
-        w.add_image(1, "image/webp", b"page-one");
-        w.add_image(2, "image/jpeg", b"page-two");
-        let bytes = w.finish();
-        // signatures locales + central + EOCD
+        let bytes = build(&[("image/webp", b"page-one"), ("image/jpeg", b"page-two")]);
         assert_eq!(&bytes[0..4], &[0x50, 0x4b, 0x03, 0x04]);
-        assert!(bytes.windows(2).any(|w| w == [0x50, 0x4b]));
         assert_eq!(
             &bytes[bytes.len() - 22..bytes.len() - 18],
             &[0x50, 0x4b, 0x05, 0x06]
         );
-        assert!(bytes.len() > 30 + 8 + 30 + 8);
+    }
+
+    #[test]
+    fn entrees_en_mode_stored_sans_recompression() {
+        // Un lecteur ZIP doit retrouver les octets exacts et une taille
+        // compressee egale a la taille reelle (aucune compression appliquee).
+        let payload = vec![7u8; 4096];
+        let bytes = build(&[("image/jpeg", &payload)]);
+        assert_eq!(&bytes[0..4], &[0x50, 0x4b, 0x03, 0x04]);
+        // methode = 0 (stored) dans l'en-tete local
+        assert_eq!(&bytes[8..10], &0u16.to_le_bytes());
+        assert!(bytes.windows(7).any(|w| w == b"001.jpg"));
+        let expected = 30 + 7 + payload.len() + 46 + 7 + 22;
+        assert_eq!(bytes.len(), expected, "taille inattendue");
+    }
+
+    #[test]
+    fn ecriture_fichier_reel_via_create() {
+        let dir = std::env::temp_dir().join(format!("tatami-cbz-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test.cbz");
+        let written = {
+            let mut w = CbzWriter::create(&path).unwrap();
+            w.add_image(1, "image/png", b"abc").unwrap();
+            w.add_image(2, "image/png", b"de").unwrap();
+            w.finish().unwrap()
+        };
+        let on_disk = std::fs::read(&path).unwrap();
+        assert_eq!(on_disk.len() as u64, written);
+        assert_eq!(&on_disk[0..4], &[0x50, 0x4b, 0x03, 0x04]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

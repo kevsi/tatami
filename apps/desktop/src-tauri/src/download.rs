@@ -145,6 +145,7 @@ async fn run_download(
 ) -> Result<String, String> {
     let root = downloads_root();
     let dir = chapter_dir(&root, source, manga_title);
+    let file = dir.join(chapter_file_name(chapter_title, chapter_url));
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| format!("création dossier: {e}"))?;
@@ -177,7 +178,12 @@ async fn run_download(
         return Err("chapitre sans page".to_string());
     }
 
-    let mut cbz = CbzWriter::new();
+    // Écriture au fil de l'eau dans un .part : les pages ne sont jamais gardées en
+    // mémoire (un chapitre de 42 Mo tiendrait mal dans un tas de 256 Mo avec la
+    // copie base64), et un arrêt en cours de route ne laisse pas un .cbz tronqué
+    // compté comme téléchargé — le renommage n'a lieu qu'à la fin.
+    let partial = file.with_extension("cbz.part");
+    let mut cbz = CbzWriter::create(&partial).map_err(|e| format!("création: {e}"))?;
     for (i, page) in page_list.iter().enumerate() {
         let page_url = page
             .get("url")
@@ -230,18 +236,12 @@ async fn run_download(
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| format!("décodage base64: {e}"))?;
-        cbz.add_image(i + 1, content_type, &bytes);
+        cbz.add_image(i + 1, content_type, &bytes)
+            .map_err(|e| format!("écriture page {}: {e}", i + 1))?;
     }
 
     let written = total;
-    let file = dir.join(chapter_file_name(chapter_title, chapter_url));
-    let data = cbz.finish();
-    // Écriture atomique : un arrêt au milieu ne doit pas laisser un .cbz
-    // tronqué, que la bibliothèque compterait comme un chapitre téléchargé.
-    let partial = file.with_extension("cbz.part");
-    tokio::fs::write(&partial, &data)
-        .await
-        .map_err(|e| format!("écriture {}: {e}", partial.display()))?;
+    cbz.finish().map_err(|e| format!("finalisation: {e}"))?;
     tokio::fs::rename(&partial, &file)
         .await
         .map_err(|e| format!("renommage {}: {e}", file.display()))?;

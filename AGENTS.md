@@ -226,3 +226,20 @@ Sont concernées : protocole du sidecar, schéma de base de données, stockage d
 - Contourner les permissions Tauri ou la CSP pour "faire passer" une fonctionnalité.
 - Affirmer qu'une chose fonctionne sans l'avoir exécutée.
 - Copier du code d'un autre projet sans vérifier sa licence et sans l'attribuer.
+
+## 14. Leçons de session
+
+Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de sonde ou du CSS de lecteur.
+
+- **Le `stdout` du moteur arrive en morceaux de 8 Ko.** Un script qui découpe sur `\n` sans buffer vorher jette les fragments et affiche « aucune réponse » alors que la réponse est arrivée. Bufferiser puis découper — une réponse `listSources` fait ~47 Ko.
+- **Une image `<img>` cassée est déjà « visible » pour Playwright.** Attendre `img.complete && img.naturalWidth > 0`, sinon on mesure une image de 21 px de haut et on conclut à tort que le CSS est fautif.
+- **`page.waitForFunction(fn, options)` n'existe pas.** La signature est `(fn, arg, options)` ; passer l'objet en 2ᵉ argument fait retomber silencieusement sur le délai par défaut de 30 s.
+- **Les préférences du lecteur sont relues seulement au montage.** Écrire `localStorage` puis attendre ne change rien à l'état React : un walk doit cliquer les segments.
+- **Dans une grille, `grid-template-rows` implicite vaut `auto`.** `height: 100%` et `max-height: 100%` sur un enfant s'y résolvent alors en `auto` et l'image déborde (mesuré : 6 300 px dans un cadre de 685). Écrire `grid-template-rows: minmax(0, 1fr)`.
+- **`max-width: 100%` ne borne pas la hauteur.** Sur une page très haute il faut aussi `max-height`.
+- **Une valeur servie par le cache mais jamais reportée dans l'état reste invisible.** L'effet voit la cache valide, ne relance aucune requête, et l'affichage reste vide indéfiniment. Reporter la cache dans l'état dans le même effet.
+- **Un champ non typé côté TS peut déjà arriver du moteur.** `uploadDate` était émis et transmis par Rust (pass-through) depuis le début, seul le type l'ignorait. Avant d'ajouter une requête, vérifier ce que le moteur renvoie déjà.
+- **Les résumés de sources arrivent en HTML.** Stripper balises et entités avant affichage, sinon `<p>…</p>` s'affiche tel quel.
+- **« Le filtre réduit le nombre de cellules » peut ne rien prouver.** Sur une série à 286 chapitres, filtrer « 2 » matche `Ch. 2`, `Ch. 20`, `Ch. 21`… Choisir un numéro rare, calculé depuis le DOM.
+- **Une source qui répond à `pages` peut refuser les images.** REMANGA et SEIMANGA renvoient leurs pages mais `fetchImage` répond 403 (le CDN refuse l'user-agent du moteur). Vérifier l'image, pas seulement la liste.
+- **Les nombres flottants des sources sont des identifiants, pas des données.** Une division flottante du site arrivait jusqu'à l'écran (« Ch. 38.09999847… ») : arrondir avant d'afficher, et `Math.round` plutôt que `Math.floor` pour comparer.

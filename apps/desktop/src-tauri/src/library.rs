@@ -141,10 +141,9 @@ pub async fn list_library(root: String) -> Result<Vec<LibraryItem>, String> {
             };
             while let Ok(Some(file)) = files.next_entry().await {
                 let name = file.file_name().to_string_lossy().to_string();
-                if name == META {
-                    continue;
+                if name != META && !name.ends_with(".part") {
+                    entry.loose_files.push(name);
                 }
-                entry.loose_files.push(name);
             }
             // Reconstruit l'état si le meta est absent ou incomplet.
             if entry.title.is_empty() {
@@ -231,7 +230,9 @@ async fn count_chapters(dir: &Path) -> usize {
     };
     let mut n = 0;
     while let Ok(Some(file)) = files.next_entry().await {
-        if file.file_name() != META {
+        let name = file.file_name().to_string_lossy().to_string();
+        // Un .part = téléchargement interrompu : pas un chapitre acquis.
+        if name != META && !name.ends_with(".part") {
             n += 1;
         }
     }

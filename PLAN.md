@@ -41,6 +41,15 @@ tatami/
 
 ## 3. Périmètre
 
+> **Exigence permanente (demandée par l'utilisateur le 2026-10-02) :** tout
+> téléchargement doit être **reprenable**. Un webtoon entamé doit pouvoir être
+> repris là où il s'est arrêté, sans jamais retélécharger ce qui est déjà
+> présent — y compris après un redémarrage de l'application ou une coupure
+> réseau. Un téléchargement non reprenable est un **défaut**, pas une limite.
+> Critères de vérif : `missing_chapters` ne renvoie que l'absent (test
+> unitaire), un `.part` compte comme absent, et l'interface expose « Reprendre »
+> sur tout webtoon partiel.
+
 **Dans la v1** : sources, recherche et filtres ; bibliothèque, favoris, catégories, historique, signets ; lecteur paginé et webtoon ; téléchargements et CBZ ; notifications de nouveaux chapitres ; suivi AniList/MAL/Shikimori/Kitsu ; sync ; import d'un backup mobile.
 
 **Ordre v1 (décision humain, 2026-10-02)** : catalogue (1.1→1.7) puis téléchargements (phase 2, en bloc ou par sélection) puis lecteur (1.8/1.9) en dernier. La lecture est différée, pas supprimée.

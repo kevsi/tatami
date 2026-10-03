@@ -477,34 +477,41 @@ export default function Home() {
       }
       patch({ total: list.length });
 
-      let existing: string[] = [];
+      // Reprise : on ne télécharge que ce qui manque vraiment. Le nom de fichier
+      // attendu est calculé par Rust (même règle que le téléchargement), donc
+      // aucune approximation côté interface.
+      let todo: Chapter[] = list;
       try {
-        existing = await invoke<string[]>('existing_chapters', {
+        await invoke('clean_partials', { source: m.source, title: m.title });
+        const missingUrls = await invoke<string[]>('missing_chapters', {
           source: m.source,
           title: m.title,
+          urls: list.map((c) => c.url),
+          titles: list.map((c) => chapterLabel(c)),
         });
+        const missing = new Set(missingUrls);
+        todo = list.filter((c) => missing.has(c.url));
       } catch {
-        existing = [];
+        todo = list;
       }
+      const skipped = list.length - todo.length;
+      patch({ skipped });
 
       let done = 0;
-      let skipped = 0;
       let failed = 0;
-      for (const c of list) {
+      for (const c of todo) {
         if (cancelQueue.current) {
-          patch({ done, skipped, failed, state: 'annulé' });
+          patch({ done, failed, state: 'annulé' });
           break;
         }
         try {
           // eslint-disable-next-line no-await-in-loop
-          const file = await fetchOneChapter(m.source, m, c, list.length);
-          const name = file.split(/[\\/]/).pop() ?? '';
-          if (existing.includes(name)) skipped += 1;
-          else done += 1;
+          await fetchOneChapter(m.source, m, c, list.length);
+          done += 1;
         } catch {
           failed += 1;
         }
-        patch({ done, skipped, failed, current: chapterLabel(c) });
+        patch({ done, failed, current: chapterLabel(c) });
       }
       patch({
         done,
@@ -537,6 +544,15 @@ export default function Home() {
   function resumeQueue() {
     const saved = loadSavedQueue();
     if (saved) void runQueue(saved.items);
+  }
+
+  /** Reprend un webtoon précis déjà entamé : on ne retélécharge que les
+   *  chapitres absents (la commande `missing_chapters` fait la différence). */
+  async function resumeManga(item: LibraryItem) {
+    if (queueRunning) return;
+    await runQueue([
+      { url: item.url, title: item.title, source: item.source, coverUrl: item.coverUrl ?? null },
+    ]);
   }
 
   function forgetQueue() {
@@ -822,10 +838,16 @@ export default function Home() {
                       {item.complete ? 'Terminé' : 'Partiel'}
                     </span>
                     <div className="dl-actions">
-                      <button
-                        className="btn btn-ghost"
-                        onClick={() => setDeleteTarget(item)}
-                      >
+                      {!item.complete && item.downloaded > 0 && (
+                        <button
+                          className="btn"
+                          disabled={queueRunning}
+                          onClick={() => void resumeManga(item)}
+                        >
+                          Reprendre
+                        </button>
+                      )}
+                      <button className="btn btn-ghost" onClick={() => setDeleteTarget(item)}>
                         Supprimer
                       </button>
                     </div>

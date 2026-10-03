@@ -94,6 +94,64 @@ fn chapter_file_name(chapter_title: &str, chapter_url: &str) -> String {
     }
 }
 
+/// Chapitres réellement absents du dossier d'un webtoon — c'est ce qui permet
+/// de reprendre un téléchargement interrompu sans tout retélécharger. Le nom de
+/// fichier attendu est calculé ici, avec la même règle que `download_chapter` :
+/// la règle de nommage reste à un seul endroit.
+///
+/// `urls` et `titles` sont deux tableaux parallèles (la macro de commande
+/// Tauri n'accepte pas les structures Personalized en argument).
+#[tauri::command]
+pub async fn missing_chapters(
+    source: String,
+    title: String,
+    urls: Vec<String>,
+    titles: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let dir = chapter_dir(&downloads_root(), &source, &title);
+    Ok(missing_in_dir(&dir, &urls, &titles))
+}
+
+/// Logique de reprise : renvoie les chapitres dont le `.cbz` est absent.
+/// Un `.part` compte comme absent (téléchargement interrompu).
+fn missing_in_dir(dir: &Path, urls: &[String], titles: &[String]) -> Vec<String> {
+    let mut present: Vec<String> = Vec::new();
+    if let Ok(files) = std::fs::read_dir(dir) {
+        for entry in files.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".part") {
+                present.push(name);
+            }
+        }
+    }
+    urls.iter()
+        .enumerate()
+        .filter(|(i, url)| {
+            let label = titles.get(*i).map_or("", String::as_str);
+            !present.contains(&chapter_file_name(label, url))
+        })
+        .map(|(_, url)| url.clone())
+        .collect()
+}
+
+/// Supprime les `.part` laissés par un téléchargement interrompu (le chapitre
+/// sera retéléchargé en entier).
+#[tauri::command]
+pub async fn clean_partials(source: String, title: String) -> Result<usize, String> {
+    let dir = chapter_dir(&downloads_root(), &source, &title);
+    let mut removed = 0;
+    let Ok(mut files) = tokio::fs::read_dir(&dir).await else {
+        return Ok(0);
+    };
+    while let Ok(Some(file)) = files.next_entry().await {
+        let name = file.file_name().to_string_lossy().to_string();
+        if name.ends_with(".part") && tokio::fs::remove_file(file.path()).await.is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn download_chapter(
@@ -183,6 +241,9 @@ async fn run_download(
     // copie base64), et un arrêt en cours de route ne laisse pas un .cbz tronqué
     // compté comme téléchargé — le renommage n'a lieu qu'à la fin.
     let partial = file.with_extension("cbz.part");
+    // Un .part d'une session précédente est écrasé : le chapitre sera
+    // retéléchargé en entier plutôt que résumé (on ne sait pas où il s'était arrêté).
+    let _ = tokio::fs::remove_file(&partial).await;
     let mut cbz = CbzWriter::create(&partial).map_err(|e| format!("création: {e}"))?;
     for (i, page) in page_list.iter().enumerate() {
         let page_url = page
@@ -273,4 +334,33 @@ async fn run_download(
         },
     );
     Ok(file.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reprise_ne_retelecharge_pas_les_chapitres_deja_la() {
+        let dir = std::env::temp_dir().join(format!("tatami-dl-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let urls = vec!["c/1".to_string(), "c/2".to_string(), "c/3".to_string()];
+        let titles = vec!["Chapitre 1".to_string(), "Chapitre 2".to_string(), "Chapitre 3".to_string()];
+        // Le chapitre 2 est déjà là, le 3 est interrompu (.part).
+        std::fs::write(dir.join("Chapitre 2.cbz"), b"x").unwrap();
+        std::fs::write(dir.join("Chapitre 3.cbz.part"), b"x").unwrap();
+
+        let missing = missing_in_dir(&dir, &urls, &titles);
+        assert_eq!(missing, vec!["c/1".to_string(), "c/3".to_string()]);
+
+        // Une fois téléchargé, il ne manque plus que le premier.
+        std::fs::write(dir.join("Chapitre 1.cbz"), b"x").unwrap();
+        std::fs::write(dir.join("Chapitre 3.cbz"), b"x").unwrap();
+        std::fs::remove_file(dir.join("Chapitre 3.cbz.part")).unwrap();
+        assert!(missing_in_dir(&dir, &urls, &titles).is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

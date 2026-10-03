@@ -72,6 +72,8 @@ fn main() {
             commands::latest,
             commands::filter_options,
             download::download_chapter,
+            download::missing_chapters,
+            download::clean_partials,
             library::list_library,
             library::existing_chapters,
             library::remove_download

@@ -346,6 +346,7 @@ export default function Home() {
       const r = await invoke<{ chapters: Chapter[] }>('chapters', {
         source: m.source,
         mangaUrl: m.url,
+        mangaTitle: m.title,
       });
       setChapters(r.chapters ?? []);
     } catch (e) {
@@ -469,6 +470,7 @@ export default function Home() {
         const r = await invoke<{ chapters: Chapter[] }>('chapters', {
           source: m.source,
           mangaUrl: m.url,
+          mangaTitle: m.title,
         });
         list = r.chapters ?? [];
       } catch (e) {

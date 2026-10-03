@@ -133,6 +133,36 @@ private fun parseSource(name: String): MangaParserSource = try {
 }
 
 /**
+ * Webtoon à utiliser pour `getDetails`.
+ *
+ * Le cache de session est vide après un redémarrage du moteur : or c'est
+ * exactement le cas d'une reprise de téléchargement (l'app rouvre un webtoon
+ * enregistré, elle ne repasse pas par une recherche). On reconstruit donc un
+ * `Manga` minimal à partir de l'url et du titre — la plupart des parsers s'en
+ * contentent puisque `getDetails` repart de `manga.url`.
+ */
+private fun mangaForDetails(
+    cache: SessionCache,
+    sourceName: String,
+    url: String,
+    title: String,
+    source: MangaParserSource,
+): Manga = cache.getManga(sourceName, url) ?: Manga(
+    id = 0L,
+    title = title.ifBlank { url },
+    altTitles = emptySet(),
+    url = url,
+    publicUrl = url,
+    rating = 0f,
+    contentRating = null,
+    coverUrl = null,
+    tags = emptySet(),
+    state = null,
+    authors = emptySet(),
+    source = source,
+)
+
+/**
  * Classification demand�e : par d�faut on exclut ADULT.
  * Beaucoup de parsers n'acceptent qu'UNE seule classification
  * (� Multiple Content ratings are not supported by this source �, MangaDex) :
@@ -288,10 +318,11 @@ private suspend fun dispatch(
     "details" -> {
         val sourceName = p.reqString("source")
         val url = p.reqString("url")
-        val cached = cache.getManga(sourceName, url)
-            ?: throw ParamException("unknown manga url, call search first: $url")
-        val parser = context.newParserInstance(parseSource(sourceName))
-        val full = parser.getDetails(cached)
+        val title = p.optString("mangaTitle", "")
+        val parsed = parseSource(sourceName)
+        val seed = mangaForDetails(cache, sourceName, url, title, parsed)
+        val parser = context.newParserInstance(parsed)
+        val full = parser.getDetails(seed)
         cache.putManga(sourceName, full)
         JSONObject().put("manga", mangaToJson(full, sourceName))
     }
@@ -299,10 +330,11 @@ private suspend fun dispatch(
     "chapters" -> {
         val sourceName = p.reqString("source")
         val mangaUrl = p.reqString("mangaUrl")
-        val cached = cache.getManga(sourceName, mangaUrl)
-            ?: throw ParamException("unknown manga url, call search/details first: $mangaUrl")
-        val parser = context.newParserInstance(parseSource(sourceName))
-        val full = parser.getDetails(cached)
+        val title = p.optString("mangaTitle", "")
+        val parsed = parseSource(sourceName)
+        val seed = mangaForDetails(cache, sourceName, mangaUrl, title, parsed)
+        val parser = context.newParserInstance(parsed)
+        val full = parser.getDetails(seed)
         val list = full.chapters ?: emptyList()
         cache.putManga(sourceName, full)
         cache.putChapters(sourceName, list)

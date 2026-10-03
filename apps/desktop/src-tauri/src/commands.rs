@@ -155,12 +155,19 @@ pub async fn chapters(
     sup: State<'_, Arc<Supervisor>>,
     source: String,
     manga_url: String,
+    manga_title: Option<String>,
 ) -> Result<serde_json::Value, String> {
     if manga_url.trim().is_empty() {
         return Err("PARSE_ERROR: manga_url vide".to_string());
     }
     tracing::info!("chapters source={source} manga_url={manga_url}");
-    let params = serde_json::json!({ "source": source.trim(), "mangaUrl": manga_url });
+    // `mangaTitle` permet au moteur de reconstruire le webtoon après un
+    // redémarrage (cache de session vide) : sans lui, toute reprise échoue.
+    let params = serde_json::json!({
+        "source": source.trim(),
+        "mangaUrl": manga_url,
+        "mangaTitle": manga_title.unwrap_or_default(),
+    });
     into_result(sup.request("chapters", params, DEEP_TIMEOUT).await?)
 }
 

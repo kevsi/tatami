@@ -212,7 +212,11 @@ async fn run_download(
     let details = sup
         .request(
             "details",
-            serde_json::json!({ "source": source, "url": manga_url }),
+            serde_json::json!({
+                "source": source,
+                "url": manga_url,
+                "mangaTitle": manga_title,
+            }),
             FETCH_TIMEOUT,
         )
         .await?;

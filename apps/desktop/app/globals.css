@@ -1,0 +1,656 @@
+/* Tatami — thème « cinéma sombre »
+   fond quasi noir, surfaces très basses, un seul accent (indigo),
+   hiérarchie par la lumière et le poids plutôt que par la couleur. */
+
+:root {
+  --bg: #08090d;
+  --bg-elev: #0d0f15;
+  --surface: #13161e;
+  --surface-2: #1a1e28;
+  --surface-3: #212636;
+  --line: #262b38;
+  --line-soft: #191d27;
+
+  --text: #eef1f7;
+  --text-2: #98a1b6;
+  --text-3: #69707f;
+
+  --accent: #6d8cff;
+  --accent-dim: rgba(109, 140, 255, 0.14);
+  --accent-ink: #070910;
+  --ok: #35c07a;
+  --danger: #ff5d6b;
+
+  --r-sm: 7px;
+  --r: 11px;
+  --r-lg: 16px;
+
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 22px;
+
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 0;
+  background: none;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-3) transparent;
+}
+
+.app {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 var(--s5) 56px;
+}
+
+/* ---------------- Barre supérieure ---------------- */
+.appbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  /* étalée sur toute la largeur : les marges négatives compensent le padding
+     de .app, sinon la barre collante laisse voir le contenu dans les gouttières */
+  margin: 0 calc(-1 * var(--s5)) var(--s5);
+  padding: 10px var(--s5);
+  background: rgba(8, 9, 13, 0.86);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+
+.brand .logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 3px;
+}
+
+.tab {
+  border-radius: 999px;
+  padding: 5px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab[aria-pressed='true'] {
+  background: var(--surface-3);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* ---------------- Titres ---------------- */
+.page-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+.page-head h1 {
+  font-size: 21px;
+  font-weight: 680;
+  letter-spacing: -0.4px;
+  margin: 0;
+}
+
+.page-head .sub {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: var(--s3);
+  padding: 4px 11px 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-elev);
+}
+
+.crumb:hover {
+  color: var(--text);
+  border-color: var(--line);
+}
+
+/* ---------------- Champs ---------------- */
+.search {
+  width: 100%;
+  padding: 10px 13px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  color: var(--text);
+  margin-bottom: var(--s3);
+  font-size: 13.5px;
+}
+
+.search::placeholder {
+  color: var(--text-3);
+}
+
+.search:hover {
+  border-color: var(--surface-3);
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.source-search {
+  display: flex;
+  gap: var(--s2);
+  margin-bottom: var(--s3);
+}
+
+.source-search .search {
+  margin-bottom: 0;
+}
+
+/* ---------------- Chips ---------------- */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--s4);
+}
+
+.chip {
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.chip:hover {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--surface-3);
+}
+
+.chip[aria-pressed='true'] {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: #cdd8ff;
+}
+
+.chip-clear {
+  color: #ffb0b6;
+  border-color: rgba(255, 93, 107, 0.35);
+}
+
+.chip-clear:hover {
+  color: #fff;
+  background: rgba(255, 93, 107, 0.16);
+  border-color: var(--danger);
+}
+
+.chips-note {
+  color: var(--text-3);
+  font-size: 11.5px;
+  padding-left: var(--s1);
+}
+
+/* ---------------- Boutons ---------------- */
+.btn {
+  border-radius: var(--r-sm);
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 650;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--surface-3);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  box-shadow: none;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #8199ff;
+  border-color: #8199ff;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text-2);
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+
+.btn-more {
+  display: block;
+  margin: var(--s5) auto 0;
+}
+
+/* ---------------- Grille des catalogues ---------------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+  gap: 6px;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  text-align: left;
+  background: var(--bg-elev);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.card:hover {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+.card .name {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  margin-left: auto;
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* ---------------- Grille des webtoons ---------------- */
+.manga-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: var(--s4) var(--s3);
+}
+
+.manga {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r);
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  transition: border-color 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
+}
+
+.manga:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.manga .thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+
+.manga .label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  /* 2 lignes reserves, pas une de plus : sans ce max-height la 3e ligne se
+     peint dans le padding bas (overflow clippe sur la padding-box). */
+  min-height: calc(2 * 1.4em);
+  max-height: calc(2 * 1.4em + var(--s2));
+  margin-top: auto;
+  padding: var(--s2) 10px;
+  font-size: 12.5px;
+  font-weight: 550;
+  line-height: 1.4;
+  color: var(--text);
+  text-align: left;
+}
+
+/* ---------------- Chapitres ---------------- */
+.chapter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.chapter {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  background: var(--bg-elev);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 7px 11px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.chapter:hover {
+  background: var(--surface);
+  border-color: var(--line-soft);
+}
+
+.chapter input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+.chapter-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+}
+
+.chapter .badge {
+  margin-left: auto;
+}
+
+.dl-bar {
+  margin-bottom: var(--s3);
+}
+
+/* ---------------- Panneaux / messages ---------------- */
+.panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r);
+  padding: var(--s4);
+  margin-bottom: var(--s3);
+}
+
+.panel h2 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 0 0 var(--s3);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  font-size: 13.5px;
+}
+
+.field select {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 6px 9px;
+  font: inherit;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.switch-row input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+.switch-row .muted {
+  margin-left: auto;
+  font-size: 12px;
+  text-align: right;
+}
+
+.muted {
+  color: var(--text-3);
+}
+
+.count {
+  color: var(--text-3);
+  font-size: 12.5px;
+  margin: 0 0 var(--s3);
+}
+
+.error,
+.notice {
+  border-radius: var(--r-sm);
+  padding: 9px 13px;
+  margin-bottom: var(--s3);
+  font-size: 13px;
+}
+
+.error {
+  background: rgba(255, 93, 107, 0.1);
+  border: 1px solid rgba(255, 93, 107, 0.3);
+  color: #ffb3b9;
+}
+
+.alert {
+  background: rgba(255, 93, 107, 0.08);
+  border: 1px solid rgba(255, 93, 107, 0.28);
+  border-radius: var(--r);
+  padding: var(--s4);
+  margin-bottom: var(--s4);
+}
+
+.alert p {
+  margin: 0 0 var(--s3);
+  font-size: 14px;
+  color: #ffc4c9;
+}
+
+.alert-actions {
+  display: flex;
+  gap: var(--s2);
+}
+
+.notice {
+  background: rgba(53, 192, 122, 0.1);
+  border: 1px solid rgba(53, 192, 122, 0.3);
+  color: #9fe6c1;
+}
+
+/* ---------------- Progression ---------------- */
+.progress {
+  background: var(--bg-elev);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  margin-bottom: var(--s3);
+}
+
+.progress-bar {
+  height: 3px;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+.progress span {
+  display: block;
+  padding: 7px 11px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+/* ---------------- Téléchargements ---------------- */
+.dl-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.file {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.chip-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: var(--s2);
+}
+
+.setting-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-bottom: var(--s3);
+}
+
+/* ---------------- Chargement ---------------- */
+.skeleton {
+  border-radius: var(--r);
+  aspect-ratio: 2 / 3;
+  background: linear-gradient(100deg, var(--surface) 30%, var(--surface-2) 50%, var(--surface) 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+.skeleton-row {
+  height: 32px;
+  background: linear-gradient(100deg, var(--bg-elev) 30%, var(--surface) 50%, var(--bg-elev) 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}

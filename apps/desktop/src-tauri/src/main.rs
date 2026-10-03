@@ -73,7 +73,8 @@ fn main() {
             commands::filter_options,
             download::download_chapter,
             library::list_library,
-            library::existing_chapters
+            library::existing_chapters,
+            library::remove_download
         ])
         .manage(download::DownloadState::default())
         .setup(|app| {

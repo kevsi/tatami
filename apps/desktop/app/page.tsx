@@ -134,6 +134,26 @@ function chapterLabel(c: Chapter): string {
   return 'Sans titre';
 }
 
+/** File de téléchargement persistée : ce qui reste à faire si l'app s'arrête. */
+type SavedQueue = { items: Manga[]; startedAt: number };
+const QUEUE_KEY = 'tatami.queue';
+
+function loadSavedQueue(): SavedQueue | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(QUEUE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SavedQueue;
+    return parsed.items?.length ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveQueue(items: Manga[]) {
+  window.localStorage.setItem(QUEUE_KEY, JSON.stringify({ items, startedAt: Date.now() }));
+}
+
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.round(bytes || 0)} o`;
   const mb = bytes / (1024 * 1024);
@@ -185,6 +205,7 @@ export default function Home() {
   const [rating, setRating] = useState('SUGGESTIVE');
   const [onePageOnly, setOnePageOnly] = useState(false);
   const [listTimeout, setListTimeout] = useState(60);
+  const [deleteTarget, setDeleteTarget] = useState<LibraryItem | null>(null);
   // Sélection multiple de webtoons + file de téléchargement
   const [selectMode, setSelectMode] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -408,21 +429,22 @@ export default function Home() {
     setPicked(new Set());
   }
 
-  /** Télécharge tous les chapitres de chaque webtoon sélectionné, un par un,
-   *  en ignorant ce qui est déjà sur le disque. Annulable. */
-  async function startQueue() {
-    if (!selected || queueRunning) return;
-    const targets = latest.filter((m) => picked.has(mangaKey(m)));
-    if (targets.length === 0) return;
+  /** Télécharge tous les chapitres de chaque webtoon de `targets`, un par un,
+   *  en ignorant ce qui est déjà sur le disque. Annulable, et la file est
+   *  persistée : si l'app s'arrête, il reste à la reprise. */
+  async function runQueue(targets: Manga[]) {
+    if (queueRunning || targets.length === 0) return;
 
     cancelQueue.current = false;
     setQueueRunning(true);
     setError(null);
+    const pending = [...targets];
+    saveQueue(pending);
     setQueue(
       targets.map((m) => ({
         key: mangaKey(m),
         title: m.title,
-        source: selected.name,
+        source: m.source,
         total: 0,
         done: 0,
         skipped: 0,
@@ -490,12 +512,49 @@ export default function Home() {
         failed,
         state: cancelQueue.current ? 'annulé' : failed > 0 ? 'erreur' : 'terminé',
       });
+
+      // Ce webtoon est réglé : il sort de la file persistée (sauf annulation,
+      // où il reste pour reprendre plus tard).
+      if (!cancelQueue.current) {
+        const at = pending.findIndex((x) => mangaKey(x) === key);
+        if (at >= 0) pending.splice(at, 1);
+        saveQueue(pending);
+      }
     }
 
+    if (cancelQueue.current) saveQueue(pending);
     setQueueRunning(false);
     setProgress(null);
     refreshDownloads();
     setTab('downloads');
+  }
+
+  function startQueue() {
+    if (!selected) return;
+    void runQueue(latest.filter((m) => picked.has(mangaKey(m))));
+  }
+
+  function resumeQueue() {
+    const saved = loadSavedQueue();
+    if (saved) void runQueue(saved.items);
+  }
+
+  function forgetQueue() {
+    window.localStorage.removeItem(QUEUE_KEY);
+    setQueue([]);
+  }
+
+  async function removeDownload(item: LibraryItem) {
+    try {
+      const n = await invoke<number>('remove_download', {
+        source: item.source,
+        title: item.title,
+      });
+      setNotice(`${item.title} : ${n} chapitre(s) supprimé(s).`);
+      refreshDownloads();
+    } catch (e) {
+      setError(`Suppression impossible : ${e}`);
+    }
   }
 
   function cancelQueueNow() {
@@ -659,6 +718,7 @@ export default function Home() {
   // ---------- Vue : Téléchargements ----------
   if (tab === 'downloads') {
     const running = queue.find((q) => q.state === 'téléchargement');
+    const savedQueue = loadSavedQueue();
     return (
       <main>
         <AppBar tab={tab} onTab={goTab} />
@@ -668,6 +728,27 @@ export default function Home() {
             {library.length} webtoon · {library.reduce((n, i) => n + i.downloaded, 0)} chapitres
           </span>
         </header>
+
+        {error && <p className="error">{error}</p>}
+        {notice && <p className="notice">{notice}</p>}
+
+        {savedQueue && savedQueue.items.length > 0 && !queueRunning && (
+          <section className="panel resume">
+            <h2>File interrompue</h2>
+            <p className="muted">
+              {savedQueue.items.length} webtoon{savedQueue.items.length > 1 ? 's' : ''} attendaient
+              encore des chapitres. Les chapitres déjà téléchargés seront ignorés.
+            </p>
+            <div className="alert-actions">
+              <button className="btn btn-primary" onClick={resumeQueue}>
+                Reprendre
+              </button>
+              <button className="btn btn-ghost" onClick={forgetQueue}>
+                Abandonner la file
+              </button>
+            </div>
+          </section>
+        )}
 
         {queue.length > 0 && (
           <section className="panel queue">
@@ -740,11 +821,49 @@ export default function Home() {
                     <span className={`badge ${item.complete ? 'state-termine' : 'state-attente'}`}>
                       {item.complete ? 'Terminé' : 'Partiel'}
                     </span>
+                    <div className="dl-actions">
+                      <button
+                        className="btn btn-ghost"
+                        onClick={() => setDeleteTarget(item)}
+                      >
+                        Supprimer
+                      </button>
+                    </div>
                   </div>
                 </article>
               );
             })}
           </div>
+        )}
+
+        {deleteTarget && (
+          <dialog
+            className="confirm"
+            open
+            aria-labelledby="confirm-titre"
+            onCancel={() => setDeleteTarget(null)}
+          >
+            <h3 id="confirm-titre">Supprimer {deleteTarget.title} ?</h3>
+            <p className="muted">
+              {deleteTarget.downloaded} chapitre(s), {formatBytes(deleteTarget.sizeBytes)} seront
+              supprimés du dossier de téléchargements. Le webtoon reste téléchargeable ensuite.
+            </p>
+            <div className="alert-actions">
+              <button
+                className="btn btn-danger"
+                onClick={() => {
+                  const target = deleteTarget;
+                  setDeleteTarget(null);
+                  void removeDownload(target);
+                }}
+              >
+                Supprimer définitivement
+              </button>
+              <button className="btn btn-ghost" onClick={() => setDeleteTarget(null)}>
+                Annuler
+              </button>
+            </div>
+          </dialog>
         )}
       </main>
     );

@@ -198,6 +198,46 @@ pub async fn existing_chapters(source: String, title: String) -> Result<Vec<Stri
     Ok(out)
 }
 
+/// Supprime le dossier d'un webtoon téléchargé (chapitres + meta.json).
+/// Le nom est assaini comme au téléchargement, donc jamais de `..` ni de
+/// séparateur : la suppression reste confinée à `%APPDATA%\Tatami\downloads`.
+#[tauri::command]
+pub async fn remove_download(source: String, title: String) -> Result<usize, String> {
+    let root = super::download::downloads_root();
+    let dir = manga_dir(&root, &source, &title);
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| format!("racine introuvable ({}): {e}", root.display()))?;
+    let canonical_dir = dir
+        .canonicalize()
+        .map_err(|_| format!("{title} n'est pas téléchargé"))?;
+    if !canonical_dir.starts_with(&canonical_root) {
+        return Err("refus : hors du dossier de téléchargements".to_string());
+    }
+    let removed = count_chapters(&canonical_dir).await;
+    tokio::fs::remove_dir_all(&canonical_dir)
+        .await
+        .map_err(|e| format!("suppression: {e}"))?;
+    // Un dossier de source vide ne sert plus à rien.
+    if let Some(parent) = canonical_dir.parent() {
+        let _ = tokio::fs::remove_dir(parent).await;
+    }
+    Ok(removed)
+}
+
+async fn count_chapters(dir: &Path) -> usize {
+    let Ok(mut files) = tokio::fs::read_dir(dir).await else {
+        return 0;
+    };
+    let mut n = 0;
+    while let Ok(Some(file)) = files.next_entry().await {
+        if file.file_name() != META {
+            n += 1;
+        }
+    }
+    n
+}
+
 /// Ajoute un chapitre au `meta.json` du webtoon (idempotent par url).
 #[allow(clippy::too_many_arguments)]
 pub async fn note_chapter(

@@ -236,9 +236,15 @@ async fn run_download(
     let written = total;
     let file = dir.join(chapter_file_name(chapter_title, chapter_url));
     let data = cbz.finish();
-    tokio::fs::write(&file, &data)
+    // Écriture atomique : un arrêt au milieu ne doit pas laisser un .cbz
+    // tronqué, que la bibliothèque compterait comme un chapitre téléchargé.
+    let partial = file.with_extension("cbz.part");
+    tokio::fs::write(&partial, &data)
         .await
-        .map_err(|e| format!("écriture {}: {e}", file.display()))?;
+        .map_err(|e| format!("écriture {}: {e}", partial.display()))?;
+    tokio::fs::rename(&partial, &file)
+        .await
+        .map_err(|e| format!("renommage {}: {e}", file.display()))?;
 
     // État d'avancement du webtoon (library.rs) : c'est ce que lit la vue
     // Téléchargements pour afficher « 12/40 chapitres ».

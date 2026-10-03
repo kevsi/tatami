@@ -475,11 +475,79 @@ button:disabled {
   white-space: nowrap;
 }
 
-.reader-count {
+.reader-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
   margin-left: auto;
+}
+
+.reader-count {
   font-size: 13px;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
+}
+
+.seg {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 2px;
+}
+
+.seg-btn {
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-2);
+}
+
+.seg-btn:hover {
+  color: var(--text);
+}
+
+.seg-btn[aria-pressed='true'] {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 12px;
+}
+
+.zoom input {
+  width: 110px;
+  accent-color: var(--accent);
+}
+
+/* Bande webtoon : défilement vertical continu. */
+.webtoon {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #05060a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  scrollbar-gutter: stable;
+}
+
+.webtoon img {
+  display: block;
+  height: auto;
+  max-width: none;
+  border-bottom: 1px solid #0b0d13;
+}
+
+.webtoon img:hover {
+  cursor: zoom-in;
 }
 
 .reader-stage {

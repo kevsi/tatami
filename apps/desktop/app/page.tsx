@@ -141,6 +141,10 @@ function chapterLabel(c: Chapter): string {
 /** File de téléchargement persistée : ce qui reste à faire si l'app s'arrête. */
 type SavedQueue = { items: Manga[]; startedAt: number };
 const QUEUE_KEY = 'tatami.queue';
+const READER_MODE_KEY = 'tatami.readerMode';
+const READER_ZOOM_KEY = 'tatami.readerZoom';
+
+type ReaderMode = 'page' | 'webtoon';
 
 function loadSavedQueue(): SavedQueue | null {
   if (typeof window === 'undefined') return null;
@@ -245,6 +249,11 @@ export default function Home() {
   const [readerLoading, setReaderLoading] = useState(false);
   const [challenge, setChallenge] = useState<string | null>(null);
   const [challengeBusy, setChallengeBusy] = useState(false);
+  // Confort de lecture : mode paginé ou webtoon (bande verticale), et largeur.
+  const [readerMode, setReaderMode] = useState<ReaderMode>('page');
+  const [zoom, setZoom] = useState(100);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const stripImages = useRef<(HTMLImageElement | null)[]>([]);
   const [health, setHealth] = useState<SourceHealth>({});
   // Sélection multiple de webtoons + file de téléchargement
   const [selectMode, setSelectMode] = useState(false);
@@ -260,6 +269,10 @@ export default function Home() {
     setRating(prefs.rating);
     setListTimeout(prefs.listTimeout);
     setHealth(loadHealth());
+    if (typeof window !== 'undefined') {
+      setReaderMode((window.localStorage.getItem(READER_MODE_KEY) as ReaderMode) || 'page');
+      setZoom(Number(window.localStorage.getItem(READER_ZOOM_KEY)) || 100);
+    }
     invoke<{ sources: Source[] }>('list_sources')
       .then((r) => setSources(r.sources ?? []))
       .catch((e) => setError(String(e)));
@@ -729,6 +742,48 @@ function closeReader() {
   setReader(null);
 }
 
+function switchMode(mode: ReaderMode) {
+  setReaderMode(mode);
+  window.localStorage.setItem(READER_MODE_KEY, mode);
+}
+
+function changeZoom(next: number) {
+  const value = Math.min(200, Math.max(50, next));
+  setZoom(value);
+  window.localStorage.setItem(READER_ZOOM_KEY, String(value));
+}
+
+/** Fait défiler la bande jusqu'à la page demandée (mode webtoon). */
+function scrollToPage(i: number) {
+  const el = stripImages.current[i];
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setReader((r) => (r ? { ...r, index: i } : r));
+  } else {
+    turn(i - (reader?.index ?? 0));
+  }
+}
+
+// En mode webtoon, le compteur suit la page réellement visible.
+useEffect(() => {
+  if (!reader || readerMode !== 'webtoon') return;
+  const root = stripRef.current;
+  if (!root) return;
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const i = stripImages.current.indexOf(entry.target as HTMLImageElement);
+        if (i >= 0) setReader((r) => (r && r.index !== i ? { ...r, index: i } : r));
+      }
+    },
+    { root, threshold: 0.6 },
+  );
+  for (const el of stripImages.current) if (el) observer.observe(el);
+  return () => observer.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [reader?.chapter.url, readerMode, reader?.pages.length]);
+
 function turn(delta: number) {
   setReader((r) => {
     if (!r) return r;
@@ -741,24 +796,34 @@ function turn(delta: number) {
 useEffect(() => {
   if (!reader) return;
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'ArrowRight' || e.key === ' ') {
-      e.preventDefault();
-      turn(1);
-    } else if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      turn(-1);
-    } else if (e.key === 'Escape') {
+    const webtoon = readerMode === 'webtoon';
+    const last = reader ? reader.pages.length - 1 : 0;
+    if (e.key === 'Escape') {
       closeReader();
+      return;
+    }
+    const forward = ['ArrowRight', 'ArrowDown', 'PageDown', ' '];
+    const back = ['ArrowLeft', 'ArrowUp', 'PageUp'];
+    if (forward.includes(e.key)) {
+      e.preventDefault();
+      webtoon ? scrollToPage(Math.min(last, reader!.index + 1)) : turn(1);
+    } else if (back.includes(e.key)) {
+      e.preventDefault();
+      webtoon ? scrollToPage(Math.max(0, reader!.index - 1)) : turn(-1);
     } else if (e.key === 'Home') {
-      setReader((r) => (r ? { ...r, index: 0 } : r));
+      e.preventDefault();
+      webtoon ? scrollToPage(0) : setReader((r) => (r ? { ...r, index: 0 } : r));
     } else if (e.key === 'End') {
-      setReader((r) => (r ? { ...r, index: r.pages.length - 1 } : r));
+      e.preventDefault();
+      webtoon
+        ? scrollToPage(last)
+        : setReader((r) => (r ? { ...r, index: r.pages.length - 1 } : r));
     }
   };
   window.addEventListener('keydown', onKey);
   return () => window.removeEventListener('keydown', onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [reader]);
+}, [reader, readerMode]);
 
 // ---------- Vue : Réglages ----------
   if (tab === 'settings') {
@@ -1078,37 +1143,108 @@ if (reader) {
           <span className="reader-title">
             {openManga?.title} · {chapterLabel(chapter)}
           </span>
-          <span className="reader-count">
-            {index + 1} / {pages.length}
-          </span>
+
+          <div className="reader-tools">
+            <div className="seg" role="group" aria-label="Mode de lecture">
+              <button
+                className="seg-btn"
+                aria-pressed={readerMode === 'page'}
+                onClick={() => switchMode('page')}
+              >
+                Pagé
+              </button>
+              <button
+                className="seg-btn"
+                aria-pressed={readerMode === 'webtoon'}
+                onClick={() => switchMode('webtoon')}
+              >
+                Webtoon
+              </button>
+            </div>
+            <label className="zoom">
+              <span className="muted">{zoom}%</span>
+              <input
+                type="range"
+                min={50}
+                max={200}
+                step={10}
+                value={zoom}
+                onChange={(e) => changeZoom(Number(e.target.value))}
+                onWheel={(e) => {
+                  if (!e.ctrlKey) return;
+                  e.preventDefault();
+                  changeZoom(zoom + (e.deltaY < 0 ? 10 : -10));
+                }}
+                aria-label="Largeur de la page en pourcentage"
+              />
+            </label>
+            <span className="reader-count">
+              {index + 1} / {pages.length}
+            </span>
+          </div>
         </header>
 
-        <div className="reader-stage">
-          {page ? (
-            <img
-              key={page.token}
-              src={pageSrc(page.token)}
-              alt={`Page ${index + 1} sur ${pages.length}`}
-            />
-          ) : (
-            <p className="muted">Page introuvable.</p>
-          )}
-        </div>
+        {readerMode === 'webtoon' ? (
+          <div className="webtoon" ref={stripRef}>
+            {pages.map((p, i) => (
+              <img
+                key={p.token}
+                ref={(el) => {
+                  stripImages.current[i] = el;
+                }}
+                src={pageSrc(p.token)}
+                alt={`Page ${i + 1}`}
+                loading="lazy"
+                decoding="async"
+                style={{ width: `${zoom}%` }}
+                onDoubleClick={() => changeZoom(zoom >= 200 ? 100 : 200)}
+              />
+            ))}
+          </div>
+        ) : (
+          <>
+            <div className="reader-stage">
+              {page ? (
+                <img
+                  key={page.token}
+                  src={pageSrc(page.token)}
+                  alt={`Page ${index + 1} sur ${pages.length}`}
+                />
+              ) : (
+                <p className="muted">Page introuvable.</p>
+              )}
+            </div>
+            <div className="reader-nav">
+              <button className="btn" disabled={index === 0} onClick={() => turn(-1)}>
+                Page précédente
+              </button>
+              <button
+                className="btn btn-primary"
+                disabled={index >= pages.length - 1}
+                onClick={() => turn(1)}
+              >
+                Page suivante
+              </button>
+            </div>
+          </>
+        )}
 
-        <div className="reader-nav">
-          <button className="btn" disabled={index === 0} onClick={() => turn(-1)}>
-            Page précédente
-          </button>
-          <button
-            className="btn btn-primary"
-            disabled={index >= pages.length - 1}
-            onClick={() => turn(1)}
-          >
-            Page suivante
-          </button>
-        </div>
+        {readerMode === 'webtoon' && (
+          <div className="reader-nav">
+            <button className="btn" disabled={index === 0} onClick={() => scrollToPage(index - 1)}>
+              {'↑'} Page précédente
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={index >= pages.length - 1}
+              onClick={() => scrollToPage(index + 1)}
+            >
+              Page suivante {'↓'}
+            </button>
+          </div>
+        )}
 
-        {next && (
+        {readerMode === 'page' && next && (
           <img className="preload" src={pageSrc(next.token)} alt="" aria-hidden="true" />
         )}
       </main>

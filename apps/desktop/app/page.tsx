@@ -5,8 +5,21 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 type Source = { name: string; lang: string };
-type Manga = { url: string; title: string; source: string; coverUrl?: string | null };
-type Chapter = { url: string; title?: string | null; number?: number };
+type Manga = {
+  url: string;
+  title: string;
+  source: string;
+  coverUrl?: string | null;
+  authors?: string[];
+  altTitle?: string | null;
+  description?: string | null;
+  state?: string | null;
+  rating?: number;
+  tags?: Tag[];
+};
+// `uploadDate` est déjà émis par le moteur (epoch ms, 0 si la source ne le
+// fournit pas) : Rust fait du pass-through, seul le type le ignorait.
+type Chapter = { url: string; title?: string | null; number?: number; uploadDate?: number | null };
 type Page = { index: number; url: string; previewUrl?: string | null; token: string };
 /** Lecteur paginé (tâche 0.10) : les images viennent du protocole `tatami://`,
  *  jamais d'un appel direct aux hôtes distants. */
@@ -138,13 +151,145 @@ function chapterLabel(c: Chapter): string {
   return 'Sans titre';
 }
 
+/** Numéro brut quand la source en donne un : « Ch. 392 » plutôt que le titre.
+ *  Les flottants se rounds : la capture montrait « Ch. 38.09999847… », une
+ *  division flottante de la source ne doit pas fuiter dans l'interface. */
+function chapterShort(c: Chapter): string {
+  if (c.number == null) return chapterLabel(c);
+  const n = c.number;
+  if (!Number.isFinite(n)) return chapterLabel(c);
+  if (Number.isInteger(n)) return `Ch. ${n}`;
+  const arrondi = Math.round(n * 100) / 100;
+  return `Ch. ${Number.isInteger(arrondi) ? arrondi.toFixed(0) : arrondi}`;
+}
+
+const DATE_FR = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/** Date de publication d'un chapitre. Le moteur émet l'epoch en ms, 0 quand la
+ *  source ne la fournit pas : dans ce cas on n'affiche rien plutôt qu'un 1970. */
+function chapterDate(c: Chapter): string | null {
+  const ms = c.uploadDate;
+  if (ms == null || !Number.isFinite(ms) || ms <= 0) return null;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return null;
+  return DATE_FR.format(d);
+}
+
+/** Les résumés de sources arrivent en HTML (mesuré sur REMANGA : `<p>…</p>`) ;
+ *  on retire les balises et on retombe sur des espaces, sinon le balisage
+ *  s'affiche tel quel dans le texte. */
+function plainText(raw?: string | null): string {
+  if (!raw) return '';
+  return raw
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Libellé lisible de l'état d'une série, tel que le moteur l'énumère. */
+const STATE_FR: Record<string, string> = {
+  ONGOING: 'En cours',
+  FINISHED: 'Terminé',
+  ABANDONED: 'Abandonné',
+  LICENSED: 'Sous licence',
+  PUBLISHING_FINISHED: 'Publication terminée',
+  ON_HIATUS: 'En pause',
+  NOT_YET: 'Pas encore publié',
+  DISCONTINUED: 'Interrompu',
+  UNKNOWN: '',
+};
+
+/** Les lignes de la table d'informations : on n'affiche que ce que la source a
+ *  réellement donné, une ligne vide est pire qu'une ligne absente. */
+function infoRows(m: Manga | null): { label: string; value: string }[] {
+  if (!m) return [];
+  const rows: { label: string; value: string }[] = [];
+  const state = m.state ? (STATE_FR[m.state] ?? '') : '';
+  if (state) rows.push({ label: 'Statut', value: state });
+  if (m.authors && m.authors.length > 0) {
+    rows.push({ label: 'Auteur', value: m.authors.join(', ') });
+  }
+  const genres = m.tags ?? [];
+  if (genres.length > 0) {
+    rows.push({ label: 'Genres', value: genres.map((t) => t.title).join(', ') });
+  }
+  const alt = plainText(m.altTitle);
+  if (alt.length > 0) {
+    rows.push({ label: 'Titre alternatif', value: alt });
+  }
+  if (m.rating != null && m.rating > 0) {
+    rows.push({ label: 'Note', value: `${m.rating.toFixed(1)} / 5` });
+  }
+  rows.push({ label: 'Source', value: m.source });
+  return rows;
+}
+
+/** Ancienneté en français court : « 5 mois », « 3 j » — le format des cartes
+ *  de catalogue, où la date exacte Takes trop de place. */
+function sinceFr(ms: number): string {
+  const diff = Date.now() - ms;
+  if (diff < 0) return "aujourd'hui";
+  const min = Math.round(diff / 60_000);
+  if (min < 60) return min <= 1 ? "à l'instant" : `${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} h`;
+  const d = Math.round(h / 24);
+  if (d < 31) return `${d} j`;
+  const mo = Math.round(d / 30.44);
+  if (mo < 12) return `${mo} mois`;
+  const y = Math.floor(d / 365.25);
+  return y <= 1 ? '1 an' : `${y} ans`;
+}
+
+/* Tâche 0.16 : derniers chapitres dans la carte du catalogue.
+   Coût assumé : UNE requête `chapters` par carte affichée. Le cache local
+   évite de répéter ces requêtes à chaque visite (30 min), et la concurrence
+   est bornée pour ne pas marteler la source. */
+const RECENT_KEY = 'tatami.recent';
+const RECENT_TTL = 30 * 60 * 1000;
+const RECENT_CONCURRENCY = 4;
+
+type RecentEntry = { labels: string[]; total: number; at: number };
+
+function loadRecentCache(): Record<string, RecentEntry> {
+  try {
+    const raw = window.localStorage.getItem(RECENT_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, RecentEntry>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveRecentCache(cache: Record<string, RecentEntry>) {
+  try {
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(cache));
+  } catch {
+    /* quota atteint : le cache est un confort, pas une donnée */
+  }
+}
+
 /** File de téléchargement persistée : ce qui reste à faire si l'app s'arrête. */
 type SavedQueue = { items: Manga[]; startedAt: number };
 const QUEUE_KEY = 'tatami.queue';
 const READER_MODE_KEY = 'tatami.readerMode';
 const READER_ZOOM_KEY = 'tatami.readerZoom';
+const READER_FIT_KEY = 'tatami.readerFit';
+const READER_SPREAD_KEY = 'tatami.readerSpread';
+const READER_DIR_KEY = 'tatami.readerDir';
 
 type ReaderMode = 'page' | 'webtoon';
+/** Tâche 0.13 : comment la page est mise à l'échelle dans le cadre. */
+type ReaderFit = 'width' | 'height';
+/** Ordre de lecture d'une double page. Le manga se lit de droite à gauche. */
+type ReaderDir = 'rtl' | 'ltr';
 
 function loadSavedQueue(): SavedQueue | null {
   if (typeof window === 'undefined') return null;
@@ -226,8 +371,12 @@ export default function Home() {
   const [latestOffset, setLatestOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [openManga, setOpenManga] = useState<Manga | null>(null);
+  // Tâche 0.17 : fiche détaillée (résumé, état, genres). Les chapters arrivent
+  // à part : les deux appels sont indépendants et l'un ne doit pas masquer l'autre.
+  const [info, setInfo] = useState<Manga | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [chapterLimit, setChapterLimit] = useState(CHAPTER_PAGE);
+  const [chapterQuery, setChapterQuery] = useState('');
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -252,6 +401,12 @@ export default function Home() {
   // Confort de lecture : mode paginé ou webtoon (bande verticale), et largeur.
   const [readerMode, setReaderMode] = useState<ReaderMode>('page');
   const [zoom, setZoom] = useState(100);
+  // Tâche 0.13 : ajustement largeur/hauteur, double page, sens de lecture.
+  const [fit, setFit] = useState<ReaderFit>('width');
+  const [spread, setSpread] = useState(false);
+  const [readerDir, setReaderDir] = useState<ReaderDir>('rtl');
+  // Tâche 0.14 : aller directement à un chapitre sans repasser par la fiche.
+  const [pageJump, setPageJump] = useState('');
   const stripRef = useRef<HTMLDivElement>(null);
   const stripImages = useRef<(HTMLImageElement | null)[]>([]);
   const [health, setHealth] = useState<SourceHealth>({});
@@ -259,6 +414,12 @@ export default function Home() {
   const [selectMode, setSelectMode] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  // Tâche 0.16 : derniers chapitres par carte du catalogue
+  const [cardRecent, setCardRecent] = useState<Record<string, string[]>>({});
+  const [cardTotal, setCardTotal] = useState<Record<string, number>>({});
+  const [recentBusy, setRecentBusy] = useState(0);
+  const [showRecent, setShowRecent] = useState(true);
+  const recentInFlight = useRef<Set<string>>(new Set());
   const [queueRunning, setQueueRunning] = useState(false);
   const cancelQueue = useRef(false);
 
@@ -272,6 +433,9 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       setReaderMode((window.localStorage.getItem(READER_MODE_KEY) as ReaderMode) || 'page');
       setZoom(Number(window.localStorage.getItem(READER_ZOOM_KEY)) || 100);
+      setFit((window.localStorage.getItem(READER_FIT_KEY) as ReaderFit) || 'width');
+      setSpread(window.localStorage.getItem(READER_SPREAD_KEY) === '1');
+      setReaderDir((window.localStorage.getItem(READER_DIR_KEY) as ReaderDir) || 'rtl');
     }
     invoke<{ sources: Source[] }>('list_sources')
       .then((r) => setSources(r.sources ?? []))
@@ -310,6 +474,20 @@ export default function Home() {
   );
   const byLang = lang === 'all' ? visibleSources : visibleSources.filter((s) => s.lang === lang);
   const filtered = byLang.filter((s) => s.name.toLowerCase().includes(nameFilter.toLowerCase()));
+
+  // Tâche 0.15 : filtre de la grille de chapitres. Un terme numérique compare
+  // aussi les numéros, « 1180 » trouve donc le chapitre 1180 même quand son
+  // titre ne contient que des lettres.
+  const filteredChapters = useMemo(() => {
+    const q = chapterQuery.trim().toLowerCase();
+    if (!q) return chapters;
+    const n = Number(q);
+    return chapters.filter(
+      (c) =>
+        chapterLabel(c).toLowerCase().includes(q) ||
+        (c.number != null && Number.isFinite(n) && Math.round(n) === Math.round(c.number)),
+    );
+  }, [chapters, chapterQuery]);
 
   async function loadSource(s: Source, offset = 0, opts?: { tags?: string[]; query?: string }) {
     const useTags = opts?.tags ?? activeTags;
@@ -400,13 +578,99 @@ export default function Home() {
   const setLoadingState = (v: boolean) => setBusy(v);
   const loading = busy;
 
+  // Charge en arrière-plan les derniers chapitres des cartes affichées.
+  // `recentInFlight` empêche les doublons quand l'effet se redéclenche avant
+  // la fin des requêtes ; le cache local évite de refaire le travail au retour.
+  useEffect(() => {
+    if (!showRecent || latest.length === 0) return;
+    const cache = loadRecentCache();
+    const now = Date.now();
+    const sourceName = selected?.name;
+    const fresh: Record<string, string[]> = {};
+    const freshTotal: Record<string, number> = {};
+    const todo = latest
+      .map((m) => ({ m, key: mangaKey(m) }))
+      .filter(({ key }) => {
+        const hit = cache[key];
+        // Cache valide : on l'affiche sans requête. Sans ce report dans l'état,
+        // une carte servie par le cache resterait vide (plus aucune requête à
+        // faire pour la remplir) — c'est le bug mesuré au 3e run.
+        if (hit && now - hit.at <= RECENT_TTL) {
+          fresh[key] = hit.labels;
+          freshTotal[key] = hit.total;
+          return false;
+        }
+        if (recentInFlight.current.has(key)) return false;
+        return true;
+      });
+    if (Object.keys(fresh).length > 0) {
+      setCardRecent((prev) => ({ ...prev, ...fresh }));
+      setCardTotal((prev) => ({ ...prev, ...freshTotal }));
+    }
+    if (todo.length === 0) return;
+
+    let cursor = 0;
+    const run = async () => {
+      while (cursor < todo.length) {
+        const { m, key } = todo[cursor++];
+        recentInFlight.current.add(key);
+        setRecentBusy((n) => n + 1);
+        try {
+          const r = await invoke<{ chapters: Chapter[] }>('chapters', {
+            source: m.source,
+            mangaUrl: m.url,
+            mangaTitle: m.title,
+          });
+          const list = r.chapters ?? [];
+          const labels = list
+            .slice(0, 3)
+            .map(
+              (c) =>
+                `${chapterShort(c)}${
+                  c.uploadDate != null && c.uploadDate > 0 ? ` · ${sinceFr(c.uploadDate)}` : ''
+                }`,
+            );
+          cache[key] = { labels, total: list.length, at: Date.now() };
+          saveRecentCache(cache);
+          // Si la source a changé entre-temps, le résultat ne appartient plus à
+          // l'écran courant : on l'écrit quand même au cache, on ne l'affiche pas.
+          if (m.source === sourceName) {
+            setCardRecent((prev) => ({ ...prev, [key]: labels }));
+            setCardTotal((prev) => ({ ...prev, [key]: list.length }));
+          }
+        } catch {
+          // Source morte ou chapitre vide : la carte reste simplement sans ligne.
+          // Rien n'est mémorisé pour ne pas figer un échec définitif.
+        } finally {
+          recentInFlight.current.delete(key);
+          setRecentBusy((n) => Math.max(0, n - 1));
+        }
+      }
+    };
+    void Promise.all(
+      Array.from({ length: Math.min(RECENT_CONCURRENCY, todo.length) }, () => run()),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latest, showRecent, selected?.name]);
+
   async function loadChapters(m: Manga) {
     setOpenManga(m);
     setLoadingState(true);
     setError(null);
     setChapters([]);
+    setInfo(null);
     setChapterLimit(CHAPTER_PAGE);
+    setChapterQuery('');
     setChecked(new Set());
+    // La fiche et les chapitres partent en parallèle : une source lente pour
+    // l'une ne doit pas retarder l'autre.
+    void invoke<{ manga: Manga }>('details', {
+      source: m.source,
+      mangaUrl: m.url,
+      mangaTitle: m.title,
+    })
+      .then((r) => setInfo(r.manga ?? null))
+      .catch(() => setInfo(null));
     try {
       const r = await invoke<{ chapters: Chapter[] }>('chapters', {
         source: m.source,
@@ -687,6 +951,7 @@ export default function Home() {
     setOpenManga(null);
     setChapters([]);
     setChapterLimit(CHAPTER_PAGE);
+    setChapterQuery('');
   }
 
   function backToCatalog() {
@@ -695,6 +960,7 @@ export default function Home() {
     setOpenManga(null);
     setChapters([]);
     setChapterLimit(CHAPTER_PAGE);
+    setChapterQuery('');
   }
 
   function savePageSize(value: number) {
@@ -730,6 +996,7 @@ async function openReader(c: Chapter) {
       setError('Ce chapitre n’a aucune page lisible.');
       return;
     }
+    setPageJump('');
     setReader({ chapter: c, pages, index: 0 });
   } catch (e) {
     setError(`Lecture impossible : ${e}`);
@@ -751,6 +1018,44 @@ function changeZoom(next: number) {
   const value = Math.min(200, Math.max(50, next));
   setZoom(value);
   window.localStorage.setItem(READER_ZOOM_KEY, String(value));
+}
+
+/** En double page, un cran de navigation avance de deux pages. */
+function step(): number {
+  return readerMode === 'page' && spread ? 2 : 1;
+}
+
+function switchFit(next: ReaderFit) {
+  setFit(next);
+  window.localStorage.setItem(READER_FIT_KEY, next);
+}
+
+function toggleSpread() {
+  setSpread((prev) => {
+    const next = !prev;
+    window.localStorage.setItem(READER_SPREAD_KEY, next ? '1' : '0');
+    // Referme sur une page paire pour que la double page démarre sur un
+    // couple cohérent (0-1, 2-3, ...) au lieu d'un décalage d'une page.
+    setReader((r) => (r && next && r.index % 2 === 1 ? { ...r, index: r.index - 1 } : r));
+    return next;
+  });
+}
+
+function switchDir() {
+  setReaderDir((prev) => {
+    const next: ReaderDir = prev === 'rtl' ? 'ltr' : 'rtl';
+    window.localStorage.setItem(READER_DIR_KEY, next);
+    return next;
+  });
+}
+
+/** Tâche 0.14 : saute à la page demandée (1 → index 0). */
+function jumpToPage(raw: string) {
+  const n = Number(raw);
+  setPageJump('');
+  if (!reader || !Number.isFinite(n) || n < 1) return;
+  const target = Math.min(reader.pages.length, Math.round(n)) - 1;
+  setReader((r) => (r ? { ...r, index: target } : r));
 }
 
 /** Fait défiler la bande jusqu'à la page demandée (mode webtoon). */
@@ -798,6 +1103,9 @@ useEffect(() => {
   const onKey = (e: KeyboardEvent) => {
     const webtoon = readerMode === 'webtoon';
     const last = reader ? reader.pages.length - 1 : 0;
+    // Un cran = 1 page, ou 2 en double page : le lecteur ne s'arrête jamais
+    // au milieu d'un couple de pages.
+    const by = step();
     if (e.key === 'Escape') {
       closeReader();
       return;
@@ -806,10 +1114,10 @@ useEffect(() => {
     const back = ['ArrowLeft', 'ArrowUp', 'PageUp'];
     if (forward.includes(e.key)) {
       e.preventDefault();
-      webtoon ? scrollToPage(Math.min(last, reader!.index + 1)) : turn(1);
+      webtoon ? scrollToPage(Math.min(last, reader!.index + 1)) : turn(by);
     } else if (back.includes(e.key)) {
       e.preventDefault();
-      webtoon ? scrollToPage(Math.max(0, reader!.index - 1)) : turn(-1);
+      webtoon ? scrollToPage(Math.max(0, reader!.index - 1)) : turn(-by);
     } else if (e.key === 'Home') {
       e.preventDefault();
       webtoon ? scrollToPage(0) : setReader((r) => (r ? { ...r, index: 0 } : r));
@@ -823,7 +1131,7 @@ useEffect(() => {
   window.addEventListener('keydown', onKey);
   return () => window.removeEventListener('keydown', onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [reader, readerMode]);
+}, [reader, readerMode, spread]);
 
 // ---------- Vue : Réglages ----------
   if (tab === 'settings') {
@@ -1133,7 +1441,19 @@ useEffect(() => {
 if (reader) {
     const { pages, index, chapter } = reader;
     const page = pages[index];
-    const next = pages[index + 1];
+    const by = readerMode === 'page' && spread ? 2 : 1;
+    const next = pages[index + by];
+    // En double page, la page courante et la suivante partagent le cadre. En RTL
+    // (défaut manga) la page courante est à droite : l'ordre DOM est donc
+    // inversé, et il ne reste qu'une page à la dernière.
+    const visible: Page[] = [];
+    if (readerMode === 'page' && spread) {
+      const second = pages[index + 1];
+      if (page && second) visible.push(...(readerDir === 'rtl' ? [second, page] : [page, second]));
+      else if (page) visible.push(page);
+    } else if (page) {
+      visible.push(page);
+    }
     return (
       <main className="reader">
         <header className="reader-bar">
@@ -1161,6 +1481,64 @@ if (reader) {
                 Webtoon
               </button>
             </div>
+
+            {readerMode === 'page' && (
+              <>
+                <div className="seg" role="group" aria-label="Pages par écran">
+                  <button
+                    className="seg-btn"
+                    aria-pressed={!spread}
+                    onClick={() => {
+                      if (spread) toggleSpread();
+                    }}
+                  >
+                    Simple
+                  </button>
+                  <button
+                    className="seg-btn"
+                    aria-pressed={spread}
+                    onClick={() => {
+                      if (!spread) toggleSpread();
+                    }}
+                  >
+                    Double
+                  </button>
+                </div>
+
+                <div className="seg" role="group" aria-label="Ajustement de la page">
+                  <button
+                    className="seg-btn"
+                    aria-pressed={fit === 'width'}
+                    onClick={() => switchFit('width')}
+                  >
+                    Largeur
+                  </button>
+                  <button
+                    className="seg-btn"
+                    aria-pressed={fit === 'height'}
+                    onClick={() => switchFit('height')}
+                  >
+                    Hauteur
+                  </button>
+                </div>
+
+                {spread && (
+                  <button
+                    className="seg-btn solo"
+                    onClick={switchDir}
+                    title="Inverser l'ordre des deux pages"
+                    aria-label={
+                      readerDir === 'rtl'
+                        ? 'Sens de lecture droite à gauche, inverser'
+                        : 'Sens de lecture gauche à droite, inverser'
+                    }
+                  >
+                    {readerDir === 'rtl' ? 'RTL' : 'LTR'}
+                  </button>
+                )}
+              </>
+            )}
+
             <label className="zoom">
               <span className="muted">{zoom}%</span>
               <input
@@ -1178,9 +1556,47 @@ if (reader) {
                 aria-label="Largeur de la page en pourcentage"
               />
             </label>
-            <span className="reader-count">
-              {index + 1} / {pages.length}
-            </span>
+            {chapters.length > 0 && (
+              <select
+                className="chapter-select"
+                aria-label="Changer de chapitre"
+                value={chapter.url}
+                disabled={readerLoading}
+                onChange={(e) => {
+                  const target = chapters.find((c) => c.url === e.target.value);
+                  if (target) void openReader(target);
+                }}
+              >
+                {chapters.map((c) => (
+                  <option key={c.url} value={c.url}>
+                    {chapterLabel(c)}
+                  </option>
+                ))}
+              </select>
+            )}
+            <form
+              className="page-jump"
+              onSubmit={(e) => {
+                e.preventDefault();
+                jumpToPage(pageJump);
+              }}
+            >
+              <label className="page-jump-label" htmlFor="reader-page">
+                Page
+              </label>
+              <input
+                id="reader-page"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={pages.length}
+                placeholder={String(index + 1)}
+                value={pageJump}
+                onChange={(e) => setPageJump(e.target.value)}
+                aria-label="Aller à la page"
+              />
+              <span className="muted">/ {pages.length}</span>
+            </form>
           </div>
         </header>
 
@@ -1203,25 +1619,30 @@ if (reader) {
           </div>
         ) : (
           <>
-            <div className="reader-stage">
-              {page ? (
-                <img
-                  key={page.token}
-                  src={pageSrc(page.token)}
-                  alt={`Page ${index + 1} sur ${pages.length}`}
-                />
+            <div className={`reader-stage fit-${fit}${spread ? ' spread' : ''}`}>
+              {visible.length > 0 ? (
+                visible.map((p) => {
+                  const at = pages.indexOf(p);
+                  return (
+                    <img
+                      key={p.token}
+                      src={pageSrc(p.token)}
+                      alt={`Page ${at + 1} sur ${pages.length}`}
+                    />
+                  );
+                })
               ) : (
                 <p className="muted">Page introuvable.</p>
               )}
             </div>
             <div className="reader-nav">
-              <button className="btn" disabled={index === 0} onClick={() => turn(-1)}>
+              <button className="btn" disabled={index === 0} onClick={() => turn(-by)}>
                 Page précédente
               </button>
               <button
                 className="btn btn-primary"
                 disabled={index >= pages.length - 1}
-                onClick={() => turn(1)}
+                onClick={() => turn(by)}
               >
                 Page suivante
               </button>
@@ -1254,6 +1675,10 @@ if (reader) {
   // ---------- Vue : chapitres ----------
   if (openManga) {
     const pct = progress && progress.total > 0 ? Math.round((progress.page / progress.total) * 100) : 0;
+    // `info` peut être en retard sur les chapitres : on affiche ce qu'on a.
+    const fiche = info ?? openManga;
+    const rows = infoRows(info);
+    const summary = plainText(info?.description);
     return (
       <main>
         <AppBar tab={tab} onTab={goTab} />
@@ -1264,6 +1689,27 @@ if (reader) {
           <h1>{openManga.title}</h1>
           <span className="sub">{selected?.name}</span>
         </header>
+
+        {(summary || rows.length > 0 || fiche.coverUrl) && (
+          <section className="sheet">
+            {fiche.coverUrl && (
+              <img className="sheet-cover" src={fiche.coverUrl} alt="" loading="lazy" />
+            )}
+            <div className="sheet-body">
+              {summary && <p className="sheet-desc">{summary}</p>}
+              {rows.length > 0 && (
+                <dl className="info-table">
+                  {rows.map((r) => (
+                    <div className="info-row" key={r.label}>
+                      <dt>{r.label}</dt>
+                      <dd>{r.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </div>
+          </section>
+        )}
 
         {error && <p className="error">{error}</p>}
         {notice && <p className="notice">{notice}</p>}
@@ -1283,6 +1729,14 @@ if (reader) {
           >
             {downloading ? 'Téléchargement…' : `Télécharger la sélection (${checked.size})`}
           </button>
+          <input
+            className="search chapter-search"
+            type="search"
+            aria-label="Filtrer les chapitres par numéro ou titre"
+            placeholder="Filtrer un chapitre…"
+            value={chapterQuery}
+            onChange={(e) => setChapterQuery(e.target.value)}
+          />
         </div>
 
         {progress && (
@@ -1299,54 +1753,64 @@ if (reader) {
         )}
 
         {loading && chapters.length === 0 ? (
-          <div className="chapter-list" aria-busy="true" aria-label="Chargement des chapitres">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div className="chapter skeleton-row" key={i} />
+          <div className="chapter-grid" aria-busy="true" aria-label="Chargement des chapitres">
+            {Array.from({ length: 15 }).map((_, i) => (
+              <div className="chapter-cell skeleton-row" key={i} />
             ))}
           </div>
         ) : (
-          <div className="chapter-list">
-            {chapters.slice(0, chapterLimit).map((c) => (
-              <div key={c.url} className="chapter">
-                <input
-                  type="checkbox"
-                  checked={checked.has(c.url)}
-                  onChange={() => toggleChapter(c.url)}
-                  aria-label={`Sélectionner ${chapterLabel(c)}`}
-                />
-                <span className="chapter-label">{chapterLabel(c)}</span>
-                {c.number != null && <span className="badge">#{c.number}</span>}
-                <button
-                  className="btn btn-ghost"
-                  disabled={readerLoading}
-                  onClick={() => void openReader(c)}
-                  aria-label={`Lire ${chapterLabel(c)}`}
-                >
-                  {readerLoading ? 'Chargement…' : 'Lire'}
-                </button>
-                <button
-                  className="btn btn-ghost"
-                  disabled={downloading}
-                  onClick={() => downloadChapter(c)}
-                  aria-label={`Télécharger ${chapterLabel(c)}`}
-                >
-                  Télécharger
-                </button>
-              </div>
-            ))}
+          <div className="chapter-grid">
+            {filteredChapters.slice(0, chapterLimit).map((c) => {
+              const date = chapterDate(c);
+              const on = checked.has(c.url);
+              return (
+                <div className={`chapter-cell${on ? ' on' : ''}`} key={c.url}>
+                  <label className="chapter-check">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggleChapter(c.url)}
+                      aria-label={`Sélectionner ${chapterLabel(c)}`}
+                    />
+                  </label>
+                  <button
+                    className="chapter-open"
+                    disabled={readerLoading}
+                    onClick={() => void openReader(c)}
+                    aria-label={`Lire ${chapterLabel(c)}`}
+                  >
+                    <span className="chapter-num">{chapterShort(c)}</span>
+                    <span className="chapter-sub">{date ?? chapterLabel(c)}</span>
+                  </button>
+                  <button
+                    className="chapter-dl"
+                    disabled={downloading}
+                    onClick={() => void downloadChapter(c)}
+                    aria-label={`Télécharger ${chapterLabel(c)}`}
+                    title="Télécharger"
+                  >
+                    ↓
+                  </button>
+                </div>
+              );
+            })}
           </div>
+        )}
+
+        {!loading && chapters.length > 0 && filteredChapters.length === 0 && (
+          <p className="muted">Aucun chapitre ne correspond à « {chapterQuery} ».</p>
         )}
 
         {!loading && chapters.length === 0 && !error && (
           <p className="muted">Aucun chapitre disponible sur cette source.</p>
         )}
 
-        {chapters.length > chapterLimit && (
+        {filteredChapters.length > chapterLimit && (
           <button
             className="btn btn-more"
             onClick={() => setChapterLimit((n) => n + CHAPTER_STEP)}
           >
-            Afficher plus ({chapters.length - chapterLimit} restants)
+            Afficher plus ({filteredChapters.length - chapterLimit} restants)
           </button>
         )}
       </main>
@@ -1435,9 +1899,24 @@ if (reader) {
           ) : (
             <>
               <span className="muted">Clique un webtoon pour voir ses chapitres.</span>
-              <button className="btn" onClick={() => setSelectMode(true)} disabled={latest.length === 0}>
-                Sélectionner
-              </button>
+              <div className="select-actions">
+                <label className="recent-toggle">
+                  <input
+                    type="checkbox"
+                    checked={showRecent}
+                    onChange={(e) => setShowRecent(e.target.checked)}
+                  />
+                  <span>Chapitres récents</span>
+                  <span className="muted">
+                    {recentBusy > 0
+                      ? `${recentBusy} en cours…`
+                      : `${Object.keys(cardRecent).length}/${latest.length}`}
+                  </span>
+                </label>
+                <button className="btn" onClick={() => setSelectMode(true)} disabled={latest.length === 0}>
+                  Sélectionner
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -1534,12 +2013,28 @@ if (reader) {
                   aria-pressed={selectMode ? isPicked : undefined}
                   onClick={() => (selectMode ? togglePick(m) : loadChapters(m))}
                 >
-                  {m.coverUrl ? (
-                    <img className="thumb" src={m.coverUrl} alt="" loading="lazy" />
-                  ) : (
-                    <span className="thumb" />
-                  )}
+                  <span className="cover">
+                    {m.coverUrl ? (
+                      <img className="thumb" src={m.coverUrl} alt="" loading="lazy" />
+                    ) : (
+                      <span className="thumb" />
+                    )}
+                    {cardTotal[key] > 0 && (
+                      <span className="card-count" title={`${cardTotal[key]} chapitres`}>
+                        {cardTotal[key]} ch.
+                      </span>
+                    )}
+                  </span>
                   <span className="label">{m.title}</span>
+                  {showRecent && cardRecent[key] && cardRecent[key].length > 0 && (
+                    <span className="recent">
+                      {cardRecent[key].map((line) => (
+                        <span className="recent-line" key={line}>
+                          {line}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                   {selectMode && (
                     <span className="pick" aria-hidden="true">
                       {isPicked ? '✓' : ''}

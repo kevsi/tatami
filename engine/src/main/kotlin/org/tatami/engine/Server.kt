@@ -63,6 +63,9 @@ private class SessionCache {
 private fun JSONObject.reqString(name: String): String =
     if (has(name)) getString(name) else throw ParamException("missing param: $name")
 
+// Tâche 0.17 : la fiche série a besoin de l'état, des genres et du résumé.
+// `getDetails` les remplit, `getList` les laisse souvent vides : on n'envoie
+// que ce qui est réellement présent, l'interface affiche une ligne par champ.
 private fun mangaToJson(m: Manga, source: String): JSONObject = JSONObject()
     .put("url", m.url)
     .put("title", m.title)
@@ -70,6 +73,24 @@ private fun mangaToJson(m: Manga, source: String): JSONObject = JSONObject()
     .put("publicUrl", m.publicUrl)
     .put("coverUrl", m.coverUrl ?: JSONObject.NULL)
     .put("authors", JSONArray(m.authors.toList()))
+    // `altTitle` est déprécié côté parsers au profit du set `altTitles` : on prend
+// le set, c'est la même information sans passer par une API sur le départ.
+.put("altTitle", m.altTitles.firstOrNull() ?: JSONObject.NULL)
+    .put("state", m.state?.name ?: "UNKNOWN")
+    .put("rating", m.rating.toDouble())
+    .put("description", m.description ?: JSONObject.NULL)
+    .put(
+        "tags",
+        JSONArray().apply {
+            m.tags.forEach { tag ->
+                put(
+                    JSONObject()
+                        .put("key", tag.key)
+                        .put("title", tag.title)
+                )
+            }
+        },
+    )
 
 private fun chapterToJson(c: MangaChapter): JSONObject = JSONObject()
     .put("url", c.url)

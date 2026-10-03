@@ -146,10 +146,13 @@ button:disabled {
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
-/* ---------------- Titres ---------------- */
+/* ---------------- Titres ----------------
+   Tâche 0.17 : bandeau de section. Le motif est emprunté aux sites de scan
+   (un bloc posé sur le contenu, arrondi seulement en haut) — il sert ici de
+   repère stable entre les écrans. */
 .page-head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-end;
   gap: var(--s3);
   margin-bottom: var(--s4);
 }
@@ -159,6 +162,11 @@ button:disabled {
   font-weight: 680;
   letter-spacing: -0.4px;
   margin: 0;
+  padding: 6px 18px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-bottom: 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
 }
 
 .page-head .sub {
@@ -419,12 +427,32 @@ button:disabled {
   box-shadow: var(--shadow);
 }
 
+/* La couverture porte le compteur de chapitres : il faut un conteneur pour le
+   placer en surimpression, d'où `.cover`. */
+.manga .cover {
+  position: relative;
+  display: block;
+}
+
 .manga .thumb {
   display: block;
   width: 100%;
   aspect-ratio: 2 / 3;
   object-fit: cover;
   background: var(--surface-2);
+}
+
+.card-count {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(8, 9, 13, 0.82);
+  backdrop-filter: blur(4px);
+  border-top-left-radius: var(--r-sm);
 }
 
 .manga .label {
@@ -438,12 +466,50 @@ button:disabled {
   min-height: calc(2 * 1.4em);
   max-height: calc(2 * 1.4em + var(--s2));
   margin-top: auto;
-  padding: var(--s2) 10px;
+  padding: var(--s2) 10px 0;
   font-size: 12.5px;
   font-weight: 550;
   line-height: 1.4;
   color: var(--text);
   text-align: left;
+}
+
+/* Tâche 0.16 : les 3 derniers chapitres, comme sur un site de scan. */
+.manga .recent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px 9px;
+  margin-top: var(--s1);
+  border-top: 1px solid var(--line-soft);
+}
+
+.recent-line {
+  font-size: 11px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.recent-toggle input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
+
+.recent-toggle .muted {
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------- Lecteur ---------------- */
@@ -462,6 +528,10 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: var(--s3);
+  /* Les contrôles se multiplient (mode, double page, ajustement, sens, zoom,
+     saut de page) : sur une fenêtre étroite ils passent à la ligne plutôt que
+     de déborder ou de sortir de l'écran. */
+  flex-wrap: wrap;
   padding: 10px var(--s5);
   border-bottom: 1px solid var(--line-soft);
   background: var(--bg);
@@ -473,6 +543,7 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 320px;
 }
 
 .reader-tools {
@@ -482,10 +553,56 @@ button:disabled {
   margin-left: auto;
 }
 
-.reader-count {
-  font-size: 13px;
+.seg-btn.solo {
+  border: 1px solid var(--line-soft);
+  background: var(--bg-elev);
+}
+
+.chapter-select {
+  max-width: 200px;
+  background: var(--surface);
   color: var(--text-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.chapter-select:hover {
+  color: var(--text);
+  border-color: var(--surface-3);
+}
+
+.page-jump {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.page-jump-label {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.page-jump input {
+  width: 52px;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.page-jump input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 .seg {
@@ -560,11 +677,50 @@ button:disabled {
   overflow: hidden;
 }
 
-.reader-stage img {
+/* Ajustement à la largeur (défaut) : la page occupe toute la largeur du cadre et
+   défile verticalement si elle est plus haute que la fenêtre — c'est le mode le
+   plus lisible pour une case trop longue. */
+.reader-stage.fit-width {
+  align-items: flex-start;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.reader-stage.fit-width img {
+  width: 100%;
+  height: auto;
+  max-width: none;
+  max-height: none;
+}
+
+/* Ajusté à la hauteur : toute la page est visible, la largeur s'adapte. */
+.reader-stage.fit-height img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
+
+/* Double page : deux colonnes de largeur égale. En RTL la page courante est
+   rendue à droite (ordre DOM inversé), en LTR à gauche.
+   `minmax(0, 1fr)` sur la ligne est indispensable : sans une hauteur de ligne
+   DÉFINIE, `height: 100%` et `max-height: 100%` se résolvent en `auto` et la
+   page déborde du cadre (mesuré : 6 300 px dans un cadre de 685). */
+.reader-stage.spread {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  gap: 2px;
+  align-items: center;
+  overflow: hidden;
+}
+
+.reader-stage.spread img {
+  width: 100%;
+  height: 100%;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  border-radius: 2px;
 }
 
 .reader-nav {
@@ -583,49 +739,190 @@ button:disabled {
   pointer-events: none;
 }
 
-/* ---------------- Chapitres ---------------- */
-.chapter-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+/* ---------------- Chapitres ----------------
+   Tâche 0.15 : grille multi-colonnes (numéro + date) au lieu de la liste
+   verticale — une série de 1 000 chapitres tient alors en un écran. */
+.chapter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 6px;
 }
 
-.chapter {
+.chapter-cell {
   display: flex;
   align-items: center;
-  gap: var(--s3);
+  gap: var(--s2);
+  min-width: 0;
+  padding: 7px 9px;
   background: var(--bg-elev);
   border: 1px solid transparent;
   border-radius: var(--r-sm);
-  padding: 7px 11px;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 
-.chapter:hover {
+.chapter-cell:hover {
   background: var(--surface);
   border-color: var(--line-soft);
 }
 
-.chapter input {
-  width: 15px;
-  height: 15px;
-  accent-color: var(--accent);
-  flex: none;
+/* Sélectionné : le fond change, sinon on ne sait pas ce que le bouton
+   « Télécharger la sélection » va prendre. */
+.chapter-cell.on {
+  background: var(--accent-dim);
+  border-color: var(--accent);
 }
 
-.chapter-label {
+.chapter-check {
+  display: flex;
+  flex: none;
+  cursor: pointer;
+}
+
+.chapter-cell input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
+
+.chapter-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+  padding: 0;
+}
+
+.chapter-num {
+  font-size: 13px;
+  font-weight: 620;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13.5px;
 }
 
-.chapter .badge {
-  margin-left: auto;
+.chapter-sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Le bouton de téléchargement reste dans le DOM et dans l'ordre de tabulation
+   (donc atteignable au clavier) ; il n'apparaît qu'au survol ou au focus. */
+.chapter-dl {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--text-3);
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.chapter-cell:hover .chapter-dl,
+.chapter-cell:focus-within .chapter-dl,
+.chapter-dl:focus-visible {
+  opacity: 1;
+}
+
+.chapter-dl:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.chapter-dl:disabled {
+  cursor: default;
+}
+
+.chapter-check input:focus-visible,
+.chapter-open:focus-visible,
+.chapter-dl:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .dl-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
   margin-bottom: var(--s3);
+}
+
+.chapter-search {
+  margin-bottom: 0;
+  max-width: 260px;
+}
+
+/* ---------------- Fiche série (tâche 0.17) ---------------- */
+.sheet {
+  display: flex;
+  gap: var(--s4);
+  padding: var(--s4);
+  margin-bottom: var(--s4);
+  background: var(--bg-elev);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r);
+}
+
+.sheet-cover {
+  width: 132px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  flex: none;
+}
+
+.sheet-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.sheet-desc {
+  margin: 0 0 var(--s3);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+/* Table 2 colonnes : le libellé a une colonne fixe pour que les valeurs
+   s'alignent, sans avoir à deviner où elles commencent. */
+.info-table {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  background: var(--line-soft);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.info-row {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: var(--s3);
+  background: var(--surface);
+  padding: 6px 11px;
+}
+
+.info-row dt {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-3);
+}
+
+.info-row dd {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 /* ---------------- Téléchargements ---------------- */

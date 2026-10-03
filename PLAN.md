@@ -90,6 +90,16 @@ Objectif : prouver que les trois risques majeurs sont maîtrisables avant de con
 - [x] **0.11** Source protégée (Cloudflare/captcha) : si le moteur renvoie `CHALLENGE_REQUIRED`, ouvrir une fenêtre webview, laisser l'utilisateur résoudre, récupérer cookies et user-agent (vérifier ce que l'API de Tauri v2 permet pour les cookies), les transmettre via `setCookies`, rejouer la requête. Documenter les limites observées (liaison à l'IP, expiration).
 - [ ] **0.12** Écrire `docs/spike-phase0.md` : mesures (taille, démarrage, RAM), ce qui marche, ce qui bloque, décisions, ajustements proposés au plan. Créer `docs/smoke-test.md`. Figer et mettre à jour les commandes de vérification dans `AGENTS.md`.
 
+### Phase 0 bis — Adaptation de l'interface d'après l'analyse de sushiscan.net (M)
+
+Origine : analyse de structure et de style de `sushiscan.net` (WordPress + thème custom dérivé Madara, LiteSpeed + Cloudflare, 4 écrans, lecteur à 4 contrôles). Demande humaine : 5 chantiers retenus le 2026-10-03. Ces tâches affinent l'interface déjà livrée en 0.9–0.11 ; elles ne remplacent pas la phase 1.
+
+- [ ] **0.13** Lecteur : ajustement à la largeur ou à la hauteur, double page, sens de lecture. Critères : `Par défaut` / `Ajusté à la hauteur` → vérifié par `getComputedStyle(img).width/height` distincts entre les deux modes ; double page → vérifié par 2 `<img>` dans `.reader-stage` et un pas de 2 pages ; RTL par défaut.
+- [ ] **0.14** Lecteur : sélecteur de chapitre + saut de page (`n/N` cliquable). Critères : `<select>` de chapitres dans `.reader-bar` × `aria-label="Changer de chapitre"` ; champ numérique × `aria-label="Aller à la page"` qui positionne l'index.
+- [ ] **0.15** Fiche série : chapitres en grille 5 colonnes (numéro + date de publication) + filtre par numéro/titre. Critères : `.chapter-grid` à `repeat(auto-fill, minmax(...))` avec ≥ 5 colonnes à 1440 px ; date affichée → vérifié par sonde moteurconfirmant `uploadDate` non nul ; filtre → vérifié par capture.
+- [ ] **0.16** Catalogue : derniers chapitres dans la carte (comme « Ch. 392 · 5 mois »). Critères : concurrence bornée (4), cache localStorage 30 min, interrupteur on/off, compteur `x/y` chargés. Limite assumée : 1 requête `chapters` par carte affichée.
+- [ ] **0.17** Style : bandeaux de section, table d'informations 2 colonnes sur la fiche série, badges. La table exige la commande Rust `details` + `mangaToJson` étendu (`description`, `state`, `tags`) → rebuild du moteur + redémarrage de l'app. Critères : `cargo clippy -D warnings` 0, `gradle installDist` OK, table rendue avec ≥ 1 ligne.
+
 **Critère de sortie** : lire un chapitre complet d'une source ouverte dans l'interface Tauri avec le moteur empaqueté, et un résultat documenté (succès ou limites claires) pour une source protégée.
 
 ### Phase 1 — Bibliothèque et lecteur (L)
@@ -190,6 +200,26 @@ _Format d'une entrée :_
 - Preuve : commande + résumé de la sortie
 - Points ouverts :
 ```
+
+### 2026-10-03 — Analyse de sushiscan.net (site de référence, aucune source ajoutée)
+- Plan : (1) ne PAS toucher aux sources malgré la présence de `SushiScan` dans le JAR ; (2) analyser l'architecture, les écrans et le style pour adapter l'interface de Tatami.
+- Fait : site mesuré au navigateur (4 captures). **Architecture** : WordPress + thème custom `wp-content/themes/sushiscan` (dérivé Madara) + LiteSpeed Cache + Cloudflare devant (`cf-cache-status: HIT`, `cdn-cgi/challenge-platform` = détection active). Pas d'API REST de contenu : la 1re page du chapitre est dans le HTML (`img.ts-main-image`), les suivantes par `POST /wp-admin/admin-ajax.php`. **Images** : CDN séparé `c.sushiscan.net`, WebP, nommage `OPChap1180-01.webp`. **Routes** : `/catalogue/<slug>/`, `/<slug>-chapitre-<N>/`, `/catalogue/?order=update`, `/random`, plus Liste de Lecture et Historique.
+- **Lecteur mesuré** : 4 contrôles (`chapter`, `readingmode` = *Lecture Verticale* | *Lecture par Page*, `customreader` = *Par défaut* | *Ajusté à la Hauteur*, `select-paged` = `1/15`). En mode page 1 seule image dans le DOM ; en mode vertical 11 images sur 15, page de 17 885 px de haut.
+- **Tokens mesurés** : fond accueil `#000000`, fond lecteur `#16151D`, texte `#B8B8B8`, Roboto 14px, contrôles `bg #111` + `border 2px #444` + `radius 20px` + `13px/600`, couverture `radius 6px` en `loading=lazy` affichée 167×228, bandeau de section `bg #111` + `radius 5px 5px 0 0` + `padding 5px 20px` + `14px/600`.
+- Preuve : captures `audit/sushi/{1-accueil,2b-detail-complet,3-lecteur,4-catalogue}.png` ; mesures dans `audit/sushi/mesures.txt` et `livraison.txt` (scripts `analyse-sushi*.js`).
+- **À retenir** : le parser `mangareader/fr/SushiScan` du JAR cible la famille MangaReader.to, **pas** ce site (schéma d'URL différent). Le DOM est bien dérivé Madara, donc un parser Madara sur mesure fonctionnerait. Non fait, hors demande.
+- Points ouverts : les pubs (3 emplacements dans le flux) et le logo servi en 3965×660 pour 180×30 sont des défauts, pas des références à copier.
+
+### 2026-10-03 — Tâches 0.13 à 0.17 (adaptation de l'interface)
+- Plan : (1) 0.13+0.14 lecteur (TS/CSS seuls) ; (2) 0.15 grille de chapitres + date ; (3) 0.16 chapitres récents sur les cartes (TS, concurrence bornée + cache) ; (4) 0.17 bandeaux + table d'informations (CSS + commande Rust `details` + `mangaToJson` étendu, donc rebuild moteur).
+- **Fait 0.13** : types `ReaderFit` (width/height) et `ReaderDir` (rtl/ltr), état `fit`/`spread`/`readerDir` persistés (`tatami.readerFit`, `tatami.readerSpread`, `tatami.readerDir`). Un cran de navigation = 2 pages en double page (`step()`), utilisé par le clavier comme par les boutons. Le cadre porte `fit-width` (page pleine largeur, défilement vertical) ou `fit-height` (page entière visible), et `spread` (grille 2 colonnes, ordre DOM inversé en RTL — la page courante est à droite, comme un manga).
+- **Fait 0.14** : sélecteur de chapitre (`aria-label="Changer de chapitre"`) et champ de saut de page (`#reader-page`, min 1 max N, validation à la soumission) dans la barre du lecteur. La barre passe en `flex-wrap` pour tenir sur une fenêtre étroite.
+- **Fait 0.15** : `.chapter-list` (liste verticale) remplacée par `.chapter-grid` (`auto-fill minmax(170px, 1fr)`). Chaque cellule = case à cocher + numéro + date + bouton de téléchargement révélé au survol **ou au focus** (donc atteignable au clavier). Champ de filtre : un terme numérique compare aussi les numéros, « 1180 » trouve le chapitre 1180 même si son titre n'a que des lettres.
+- **Fait 0.16** : les 3 derniers chapitres + leur ancienneté (« Ch. 1 · 2 ans ») dans la carte du catalogue, et le nombre total de chapitres en pastille sur la couverture. Coût assumé : 1 requête `chapters` par carte, concurrence bornée à 4, cache `localStorage` 30 min, interrupteur activable, compteur `x/y` affiché.
+- **Fait 0.17** : bandeau de section sur tous les `.page-head h1` ; fiche série avec couverture + résumé + table d'informations 2 colonnes (`.info-table`) alimentée par une nouvelle commande Rust `details`. `mangaToJson` étendu côté Kotlin (`state`, `rating`, `description`, `tags`, `altTitle` via `altTitles.firstOrNull()` — `altTitle` est déprécié côté parsers).
+- **Preuve** : `pnpm typecheck` → exit 0. `pnpm build` → `✓ Compiled successfully in 10.4s`. `cargo clippy --all-targets -- -D warnings` → exit 0, aucune alerte. `cargo test` → `7 passed; 0 failed`. `gradle installDist` → `BUILD SUCCESSFUL in 14s` (1er essai en échec : `MangaState?` nullable sur `.state.name`, corrigé en `m.state?.name ?: "UNKNOWN"`), 18 JAR copiés dans `engine/dist/tatami-engine/lib`.
+- **Preuve moteur** : `details` sur MANGABUFF → `state="ONGOING"`, `altTitle="Tears on withered flowers"`, `rating=0.89`, `tags` = 9 genres, `description` = 1470 caractères. `chapters` → 121 chapitres, `uploadDate` non nul sur **121/121**, lu et affiché « 22 juin 2024 ». Le champ était donc déjà transmis (Rust fait du pass-through), seul le type TS l'ignorait.
+- Points ouverts : 0.16 ajoute 1 requête par carte affichée — à mesurer sur l'app réelle. 0.17 exige un redémarrage de l'app (le JAR chargé en mémoire ne se recharge pas à chaud). `_` non vérifié visuellement : la passe CDP est en cours.
 
 ### 2026-10-02 — Création
 - Plan et directives créés. Nom provisoire "Tatami". Aucune tâche commencée.

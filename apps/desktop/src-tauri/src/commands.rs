@@ -150,6 +150,27 @@ pub async fn search(
     into_result(sup.request_with_retry("search", params, LIST_TIMEOUT).await?)
 }
 
+/// Tâche 0.17 : fiche détaillée (résumé, état, genres). Distinct de
+/// `chapters` : celle-ci récupère la liste des chapitres, celle-là la fiche.
+#[tauri::command]
+pub async fn details(
+    sup: State<'_, Arc<Supervisor>>,
+    source: String,
+    manga_url: String,
+    manga_title: Option<String>,
+) -> Result<serde_json::Value, String> {
+    if manga_url.trim().is_empty() {
+        return Err("PARSE_ERROR: manga_url vide".to_string());
+    }
+    tracing::info!("details source={source} manga_url={manga_url}");
+    let params = serde_json::json!({
+        "source": source.trim(),
+        "url": manga_url,
+        "mangaTitle": manga_title.unwrap_or_default(),
+    });
+    into_result(sup.request_with_retry("details", params, DEEP_TIMEOUT).await?)
+}
+
 #[tauri::command]
 pub async fn chapters(
     sup: State<'_, Arc<Supervisor>>,

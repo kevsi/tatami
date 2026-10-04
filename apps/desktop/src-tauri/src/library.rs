@@ -228,24 +228,6 @@ pub async fn lister(
         .collect())
 }
 
-/// Noms de fichiers déjà présents pour un webtoon ( permet d'ignorer les
-/// chapitres déjà téléchargés et de relancer une file interrompue).
-#[tauri::command]
-pub async fn existing_chapters(source: String, title: String) -> Result<Vec<String>, String> {
-    let dir = manga_dir(&super::download::downloads_root(), &source, &title);
-    let mut out = Vec::new();
-    let Ok(mut files) = tokio::fs::read_dir(&dir).await else {
-        return Ok(out);
-    };
-    while let Ok(Some(file)) = files.next_entry().await {
-        let name = file.file_name().to_string_lossy().to_string();
-        if name != META {
-            out.push(name);
-        }
-    }
-    Ok(out)
-}
-
 /// Supprime le dossier d'un webtoon téléchargé (chapitres + meta.json).
 /// Le nom est assaini comme au téléchargement, donc jamais de `..` ni de
 /// séparateur : la suppression reste confinée à `%APPDATA%\Tatami\downloads`.

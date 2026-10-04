@@ -117,6 +117,24 @@ fn requested_rating(content_rating: Option<&str>) -> Option<String> {
         .map(str::to_ascii_uppercase)
 }
 
+/// Paramètres invariants de `latest`, isolés pour être testables.
+///
+/// `safeOnly: false` désarme le repli `SAFE` du moteur : sans cette clé, une
+/// option « Toutes » demandait du SAFE et les sources adultes renvoyaient zéro
+/// résultat (mesuré sur WAMANGA). Et `contentRating` est **absent** tant que
+/// l'utilisateur n'a pas choisi : la classification se décide une fois, dans les
+/// réglages, jamais par défaut.
+fn latest_params() -> serde_json::Value {
+    serde_json::json!({
+        "source": "",
+        "offset": 0,
+        "limit": 24,
+        "query": "",
+        "tags": [],
+        "safeOnly": false,
+    })
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn latest(
@@ -141,18 +159,12 @@ pub async fn latest(
         tags.as_ref().map_or(0, Vec::len),
         rating.as_deref().unwrap_or("AUCUN"),
     );
-    let mut params = serde_json::json!({
-        "source": source.trim(),
-        "offset": offset.unwrap_or(0),
-        "limit": limit.unwrap_or(24).min(100),
-        "query": query.unwrap_or_default(),
-        "tags": tags.unwrap_or_default(),
-        // Le moteur retombe sur SAFE quand `contentRating` est vide ET
-        // `safeOnly` est vrai. Le choix est déjà fait en amont (réglages), donc
-        // on désactive ce repli : sinon l'option « Toutes » renvoyait SAFE et
-        // les sources adultes ne donnaient rien (mesuré sur WAMANGA).
-        "safeOnly": false,
-    });
+    let mut params = latest_params();
+    params["source"] = serde_json::json!(source.trim());
+    params["offset"] = serde_json::json!(offset.unwrap_or(0));
+    params["limit"] = serde_json::json!(limit.unwrap_or(24).min(100));
+    params["query"] = serde_json::json!(query.unwrap_or_default());
+    params["tags"] = serde_json::json!(tags.unwrap_or_default());
     if let Some(r) = &rating {
         params["contentRating"] = serde_json::json!(r);
     }
@@ -189,41 +201,6 @@ fn into_result(envelope: serde_json::Value) -> Result<serde_json::Value, String>
             .unwrap_or("");
         Err(format!("{code}: {msg}"))
     }
-}
-
-#[tauri::command]
-pub async fn search(
-    sup: State<'_, Arc<Supervisor>>,
-    cache: State<'_, Arc<PageCache>>,
-    source: String,
-    query: String,
-    limit: Option<u32>,
-    content_rating: Option<String>,
-) -> Result<serde_json::Value, String> {
-    let query = query.trim();
-    if query.is_empty() {
-        return Err("PARSE_ERROR: query vide".to_string());
-    }
-    let rating = match content_rating
-        .as_deref()
-        .map(str::trim)
-        .filter(|r| !r.is_empty())
-    {
-        Some(r) => r.to_ascii_uppercase(),
-        None => "SAFE".to_string(),
-    };
-    let params = serde_json::json!({
-        "source": source.trim(),
-        "query": query,
-        "limit": limit.unwrap_or(20).min(50),
-        "contentRating": rating,
-    });
-    let mut r = into_result(
-        sup.request_with_retry("search", params, LIST_TIMEOUT)
-            .await?,
-    )?;
-    ajouter_jetons_couverture(&cache, source.trim(), &mut r);
-    Ok(r)
 }
 
 /// Tâche 0.17 : fiche détaillée (résumé, état, genres). Distinct de
@@ -306,7 +283,7 @@ pub async fn pages(
 
 #[cfg(test)]
 mod tests {
-    use super::requested_rating;
+    use super::{latest_params, requested_rating};
 
     #[test]
     fn une_chaine_vide_ne_signifie_pas_safe() {
@@ -317,5 +294,29 @@ mod tests {
         assert_eq!(requested_rating(None), None);
         assert_eq!(requested_rating(Some("adult")), Some(String::from("ADULT")));
         assert_eq!(requested_rating(Some(" safe ")), Some(String::from("SAFE")));
+    }
+
+    /// Le repli `SAFE` du moteur ne doit jamais être armé par accident.
+    ///
+    /// `requested_rating` renvoie `None` pour « Toutes », et `latest` construit
+    /// alors ses params **sans** `contentRating` : c'est le moteur qui décide,
+    /// et il ne demandera que du SAFE que si `safeOnly` est vrai. La commande
+    /// `search`, qui faisait l'inverse (SAFE par défaut), a été retirée : deux
+    /// sémantiques opposées pour le même réglage étaient le vrai défaut.
+    #[test]
+    fn le_repli_safe_du_moteur_nest_jamais_arme_par_l_accident() {
+        let params = latest_params();
+        assert_eq!(
+            params["safeOnly"],
+            serde_json::Value::Bool(false),
+            "`safeOnly: false` doit être explicite : c'est lui qui désarme le repli SAFE"
+        );
+        assert!(
+            !params
+                .as_object()
+                .expect("params objet")
+                .contains_key("contentRating"),
+            "aucune classification ne doit être envoyée quand l'option est « Toutes »"
+        );
     }
 }

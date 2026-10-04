@@ -14,11 +14,14 @@
       "enum": [
         "hello",
         "listSources",
+        "filterOptions",
+        "latest",
         "search",
         "details",
         "chapters",
         "pages",
         "fetchImage",
+        "fetchCover",
         "setCookies",
         "health",
         "shutdown"
@@ -107,7 +110,42 @@
       "properties": {
         "name": { "type": "string", "description": "Nom d'entrée MangaParserSource, ex. MANGADEX." },
         "title": { "type": "string" },
-        "locale": { "type": "string", "description": "ex. \"en\", si exposée par la source." }
+        "locale": { "type": "string", "description": "ex. \"en\", si exposée par la source." },
+        "lang": { "type": "string", "description": "Langue déduite du nom (Server.kt: inferLang), ex. \"fr\", \"int\"." }
+      },
+      "additionalProperties": true
+    },
+    "filterOptions": {
+      "type": "object",
+      "description": "Forme de `result` pour `filterOptions`.",
+      "required": ["tags", "sortOrders"],
+      "properties": {
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["title", "key"],
+            "properties": {
+              "title": { "type": "string" },
+              "key": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "sortOrders": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "imagePayload": {
+      "type": "object",
+      "description": "Forme de `result` pour `fetchImage` et `fetchCover`.",
+      "required": ["data", "contentType"],
+      "properties": {
+        "data": { "type": "string", "description": "Octets de l'image, base64 standard." },
+        "contentType": {
+          "type": "string",
+          "description": "Type ANNONCÉ par le site. Rust ne s'y fie pas : il déduit le type des octets (image::detect) et refuse d'écrire quoi que ce soit qui ne soit pas une image."
+        }
       },
       "additionalProperties": true
     }

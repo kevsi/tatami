@@ -145,7 +145,6 @@ fn main() {
             });
         })
         .invoke_handler(tauri::generate_handler![
-            commands::search,
             commands::details,
             commands::chapters,
             commands::pages,
@@ -158,7 +157,6 @@ fn main() {
             download::local_chapter_pages,
             download::local_file_pages,
             library::list_library,
-            library::existing_chapters,
             library::remove_download,
             shelf::list_favorites,
             shelf::set_favorite,
@@ -179,6 +177,8 @@ fn main() {
             shelf::set_favorite_category,
             shelf::forget_history,
             shelf::clear_history,
+            shelf::forget_history,
+            shelf::add_bookmark,
             challenge::open_challenge,
             challenge::solve_challenge,
             challenge::cancel_challenge
@@ -202,4 +202,69 @@ fn main() {
                 });
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    /// Toute commande enregistrée doit être réellement appelée par l'interface.
+    ///
+    /// Mesuré le 2026-10-04 : `commands::search` et `library::existing_chapters`
+    /// étaient enregistrées depuis la phase 0 et n'étaient plus appelées depuis
+    /// la 0.9 — du code qui compile, se teste vert, et ne sert à rien. Pire,
+    /// `search` portait une sémantique de classification opposée à `latest` pour
+    /// le même réglage. Une commande morte n'échoue jamais ; il faut donc une
+    /// porte qui la fasse échouer.
+    ///
+    /// La recherche est volontairement grossière : elle cherche le nom de la
+    /// commande dans `page.tsx`, sans distinguer la forme de l'appel. Une
+    /// commande citée dans un commentaire ne poserait pas de problème ici — le
+    /// but est d'attraper l'oubli, pas de prouver l'absence.
+    #[test]
+    fn aucune_commande_tauri_nest_morte() {
+        let main = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/main.rs"),
+        )
+        .expect("src/main.rs");
+        let page = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/page.tsx"),
+        )
+        .expect("app/page.tsx");
+
+        let debut = main
+            .find("generate_handler![")
+            .expect("generate_handler! introuvable");
+        let fin = main[debut..]
+            .find("])")
+            .map(|i| debut + i)
+            .expect("fin du handler introuvable");
+        let bloc = &main[debut..fin];
+
+        let mut enregistrees: Vec<&str> = bloc
+            .split("::")
+            .skip(1)
+            .filter_map(|mot| {
+                mot.trim()
+                    .trim_end_matches(',')
+                    .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                    .find(|s| !s.is_empty())
+            })
+            .collect();
+        enregistrees.sort_unstable();
+        enregistrees.dedup();
+        assert!(
+            !enregistrees.is_empty(),
+            "aucune commande extraite : le parseur du handler a régressé"
+        );
+
+        let mortes: Vec<&&str> = enregistrees
+            .iter()
+            .filter(|c| !page.contains(**c))
+            .collect();
+        assert!(
+            mortes.is_empty(),
+            "commandes enregistrées mais jamais appelées par l'interface : {:?}. \
+             Une commande morte ne casse rien : supprimez-la, ou appelez-la.",
+            mortes
+        );
+    }
 }

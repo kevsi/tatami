@@ -399,6 +399,17 @@ private suspend fun dispatch(
             ?: throw ParamException("unknown page url, call pages first: $pageUrl")
         val parser = context.newParserInstance(parseSource(sourceName))
         val imageUrl = parser.getPageUrl(cached)
+        // Garde-fou : une URL d'image vide n'est pas une adresse à aller
+        // chercher. Sans ce test, le client HTTP partait sur l'origine du site
+        // et renvoyait sa page d'accueil — mesuré : 45 entrées HTML identiques
+        // dans un `.cbz` prétendument valide. Le cache était en prime indexé
+        // sur cette chaîne vide, donc les 45 pages partageaient la meme cle.
+        if (imageUrl.isBlank()) {
+            throw ParamException(
+                "the parser returned an empty image URL for $sourceName " +
+                    "(page key '${p.optString("pageUrl", "")}')",
+            )
+        }
         val request = Request.Builder()
             .url(imageUrl)
             .header("User-Agent", context.getDefaultUserAgent())

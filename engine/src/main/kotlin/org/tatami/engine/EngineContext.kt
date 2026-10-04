@@ -33,6 +33,7 @@ class EngineContext : MangaLoaderContext() {
         .cookieJar(cookieJar)
         .addInterceptor(RateLimitInterceptor())
         .addInterceptor(CloudFlareInterceptor())
+        .addInterceptor(LazyLoadInterceptor())
         .addInterceptor { chain ->
             chain.proceed(
                 chain.request().newBuilder()

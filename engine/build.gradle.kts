@@ -22,10 +22,23 @@ dependencies {
     implementation("org.json:json:20240303")
     // Moteur JS : le JDK 21 n'en fournit plus (voir EngineContext.evaluateJs).
     implementation("org.openjdk.nashorn:nashorn-core:15.6")
+
+    // Test uniquement : `kotlin.test` sansJUnit. Le moteur n'avait aucun test
+    // (0 fichier dans build/test-results), donc la porte `gradle test` passait
+    // sans rien vérifier du tout.
+    testImplementation(kotlin("test"))
 }
 
 kotlin {
     jvmToolchain(21)
+}
+
+tasks.test {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "failed", "skipped")
+        showStandardStreams = false
+    }
 }
 
 application {

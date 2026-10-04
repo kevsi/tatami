@@ -102,7 +102,8 @@ Objectif : prouver que les trois risques majeurs sont maîtrisables avant de con
 - [ ] **0.15 (nouveau)** Superviseur : envoyer `shutdown` avant de fermer stdin. Mesuré : fermer stdin ne tue pas le moteur (process encore vivant 4 s plus tard) ; `shutdown` donne `exit 0` en 137 ms. Garder le `kill` en secours.
 - [ ] **0.16 (nouveau)** Chaîne TLS : 3 sources sur 31 échouent en `PKIX path building failed` (MANGAHAUS, MANGALESEN, MANGASORIGINESUNOFFICIAL) avec le runtime `jlink`. **Ne jamais résoudre en désactivant la validation TLS** (AGENTS.md §10) : investiguer le magasin de confiance du runtime réduit.
 - [ ] **0.17 (nouveau)** ZENMANGA sert des octets qui ne sont pas une image (12 premiers octets identiques sur deux pages, aucun en-tête RIFF/WEBP alors que l'URL finit en `.webp`). Hypothèse : il faudrait brancher le parser comme intercepteur pour que `redrawImageResponse` soit appelé — aujourd'hui c'est du code mort (mesuré). Vérifier avant de coder.
-- [x] **0.16 (nouveau)** La fenêtre de vérification d'âge s'ouvre quand le moteur ne signale **aucun** challenge. Fait : deux déclencheurs côté Rust (URL d'image vide, octets non-image), fenêtre ouverte sur `manga.publicUrl`, panneau dans la vue Téléchargements, 9 clés i18n. Walk 17/17 sur l'app réelle, contrôle négatif (0 `.cbz` écrit) et contrôle positif (`.cbz` MANGADEX relu par un lecteur strict : 11 entrées, 2 PNG + 9 JPEG, 11 tailles distinctes). **Reste à prouver à la main** : que la pose du cookie rend les URLs d'images réelles.
+- [x] **0.19 (nouveau)** La fenêtre de vérification s'ouvre quand le moteur ne signale **aucun** challenge. Deux déclencheurs côté Rust (URL d'image vide, octets non-image), fenêtre ouverte sur `manga.publicUrl`, panneau dans la vue Téléchargements, 9 clés i18n. Walk 17/17, contrôle négatif (0 `.cbz` écrit) et contrôle positif (`.cbz` MANGADEX relu par un lecteur strict). **Résolu en 0.20** : sur HENTAIORIGINES le cookie n'était pas la cause, et le panneau était invisible depuis l'onglet Catalogues.
+- [x] **0.20 (nouveau)** Images lazy-loadées illisibles par les parsers : l'URL est dans `data-src` et non `src`. `LazyLoadInterceptor` côté moteur (9 tests), garde `fetchImage` sur URL vide, `testImplementation(kotlin("test"))` — le moteur n'avait aucun test. **Résultat mesuré** : 45 URL remplies, `.cbz` de 9,3 Mo relu par un lecteur strict (45 entrées, 45 WEBP, 45 tailles distinctes), MANGADEX non régressé, aucune fenêtre de vérification. Résiduel : `032.webp` = placeholder 413×42 servi par le site.
 - [ ] **0.18 (nouveau)** Un chapitre sans titre (`title: null`) donne un `.cbz` nommé `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz` (mesuré sur MANGADEX). Le fichier est valide mais inutilisable dans un lecteur externe, ce qui vide l'exigence permanente « un `.cbz` par chapitre ». Corriger `chapterLabel` / le nom de fichier : retomber sur un numéro de chapitre lisible (« Chapitre 1.cbz »), jamais sur l'URL ni un UUID. Vérifier aussi l'assainissement du nom (AGENTS.md §6).
 
 ### Phase 0 bis — Adaptation de l'interface d'après l'analyse de sushiscan.net (M)
@@ -250,7 +251,7 @@ _Format d'une entrée :_
 - Points ouverts :
 ```
 
-### 2026-10-04 — Tâche 0.16 : la fenêtre de vérification se déclenche vraiment
+### 2026-10-04 — Tâche 0.19 : la fenêtre de vérification se déclenche vraiment
 
 **Problème mesuré, pas déduit.** Le moteur ne signale `CHALLENGE_REQUIRED` que sur HTTP **403/503** avec un marqueur Cloudflare. Or HENTAIORIGINES répond **200 OK** avec la page HTML de son interstitiel de vérification d'âge (`document.documentElement.className += document.cookie.indexOf('ori_majeur=1')>-1?'':' ori-age-verif'`). Aucun challenge n'était donc jamais signalé, et rien ne s'ouvrait.
 
@@ -280,6 +281,40 @@ Le chapitre reste **absent** du disque, donc la règle « ne jamais retéléchar
 ### 2026-10-04 — Défaut trouvé par le walk : nom de `.cbz` en UUID
 
 Mesuré : quand la source ne renvoie **pas** de titre de chapitre (`title: null`, cas de MANGADEX ici), `chapterLabel` retombe sur l'URL et le fichier s'appelle `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz`. Le `.cbz` est valide et lisible par Tatami, mais **inutilisable** dans un lecteur externe, ce qui contredit l'intention de l'exigence permanente (« un `.cbz` par chapitre »). Nouvelle tâche 0.18.
+
+### 2026-10-04 — Tâche 0.20 : les images lazy-loadées sont illisibles par les parsers
+
+**L'utilisateur a testé la tâche 0.19 et le résultat a été « rien ne se passe ».** Deux causes, mesurées séparément.
+
+**1. Le cookie n'a jamais été transmis — défaut d'interface, mien.** Le panneau de vérification n'existait que dans la vue Téléchargements. L'utilisateur était dans l'onglet **Catalogues** : relevé sur l'app vivante, `panneauxH2: []` et `boutonsVisibles: []`. Il n'y avait rien à cliquer. Le panneau doit être global, pas lié à une vue.
+
+**2. Mais surtout : le cookie n'aurait rien donné.** La source ne demande aucune vérification d'âge. Mesuré en récupérant la page du chapitre **sans aucun cookie** :
+```
+HTTP 200 | 162 740 caractères | 54 balises <img>
+dont 45 balises WP-manga = exactement les 45 pages annoncées par le parser
+< img id="image-0" data-src=" https://…/page_0001.webp"
+      class="wp-manga-chapter-img img-responsive lazyload-ordered effect-fade" >
+```
+Les URL sont **dans `data-src`**, `src` est absent : le thème sert ses images en lazy-load. Et ces URL servent de **vraies WebP sans cookie** (HTTP 200, `image/webp`, 535 200 octets). Le HTML porte les URL ; c'est la lecture qui est en retard. Deux pièges mesurés : l'espace après `data-src="` (45/45) et le nom d'attribut `data-src`, pas `src`.
+
+**Correctif : intercepteur HTTP du moteur**, `LazyLoadInterceptor`, branché dans `EngineContext`. Il fait ce qu'un navigateur fait : il place l'URL réelle dans `src` avant que le parser ne lise la page. Il ne touche que les `<img>` dont `src` est absent, vide ou placeholder ; une source qui fonctionne garde donc exactement son comportement. Il s'appuie sur `peekBody`, donc une page sans image lazy est renvoyée **octet pour octet**, charset d'origine compris. Attributs couverts : `data-src`, `data-lazy-src`, `data-original`, `data-original-src`, `data-echo`, `data-url`, `data-full-src`, `data-image`, plus `data-srcset`/`srcset` (plus grande variante).
+
+Le correctif est **générique etfondu dans le moteur**, pas dans un parser : corriger le parser supposerait de forker `kotatsu-parsers-redo` (interdit par AGENTS.md §13), alors qu'adapter le contenu HTTP reçu est exactement le rôle du moteur. Plusieurs thèmes WordPress de lecture (Madara, MangaThemesia…) sont concernés.
+
+Garde-fou ajouté dans `fetchImage` : une URL d'image vide lève désormais `ParamException` au lieu de partir sur l'origine du site. C'est ce silence qui avait produit les 37 `.cbz` pleins de HTML ; et le cache était en prime indexé sur cette chaîne vide, donc **les 45 pages partageaient la même clé**.
+
+**Le moteur n'avait aucun test** : `build/test-results` était vide, donc la porte `gradle test` passait sans rien vérifier. Ajout de `testImplementation(kotlin("test"))` (test seul, sansJUnit) et de **9 tests** sur du HTML réel extrait de la page du 2026-10-04, dont les 45 balises. Un des tests a d'abord échoué **à tort** : il cherchait la sous-chaîne `src=" https://`, que `data-src=" https://` contient aussi — l'assertion visait l'attribut d'origine, intact.
+
+**Preuves — 9/9 tests moteur, puis walk sur l'app réelle 9/10 (le 10ᵉ était une assertion fausse, voir plus bas).**
+- Les 45 URL ne sont plus vides : `page_0001.webp` → `page_0045.webp`.
+- Téléchargement **réussi en 12 750 ms** : `HENTAIORIGINES\I Love You Very Much\Chapitre 1.cbz`, 9 330 396 octets.
+- Relecture par un lecteur ZIP **strict** : intégrité OK, **45 entrées, toutes WEBP**, **45 tailles distinctes**, 0 entrée vide, médiane 234 594 octets, premier octet `52494646…57454250` = `RIFF`/`WEBP`.
+- **Non-régression** : MANGADEX télécharge toujours.
+- Aucune fenêtre de vérification ne s'ouvre plus (1 seule fenêtre réelle, comptée via CDP).
+
+**Ce qui reste imparfait, mesuré :** `032.webp` fait 310 octets. Décodé, c'est un WebP valide de **413×42 px** — un placeholder servi par le site lui-même. 44 pages réelles sur 45. Résiduel côté site, pas côté Tatami.
+
+**Une assertion fausse à signaler :** j'ai voulu prouver « plus aucune fenêtre de vérification », en appelant `cancel_challenge`. Or cette commande fait `if let Some(w) = … { w.close() }` puis `Ok(())` **inconditionnellement** : elle réussit donc toujours, même sans fenêtre. Le test passait sans prouver rien. Remplacé par un comptage des fenêtres réelles via CDP (`pages.length === 1`). Retenir : **une commande d'annulation qui réussit toujours ne peut pas servir de preuve d'état**.
 
 ### 2026-10-04 — Correctif : des `.cbz` illisibles (signalé par l'utilisateur)
 

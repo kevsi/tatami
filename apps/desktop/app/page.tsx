@@ -94,6 +94,10 @@ type Reader = {
   /** Le chapitre vient du disque : aucune requête ne part vers le site. */
   horsLigne?: boolean;
   mangaTitre?: string;
+  /** URL du webtoon : le lecteur doit se suffire à lui-même pour enregistrer
+   *  la progression, sans dépendre d'une fiche ouverte. */
+  mangaUrl?: string;
+  coverUrl?: string | null;
 };
 type Tag = { key: string; title: string };
 type LibraryItem = {
@@ -1694,7 +1698,16 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string)
     // La position mémorisée peut dépasser le chapitre si celui-ci a été
     // raccourci depuis : on retombe sur sa dernière page.
     const index = Math.max(0, Math.min(pages.length - 1, startIndex));
-    setReader({ chapter: c, pages, index, source: src, horsLigne, mangaTitre });
+    setReader({
+      chapter: c,
+      pages,
+      index,
+      source: src,
+      horsLigne,
+      mangaTitre,
+      mangaUrl: openManga?.url,
+      coverUrl: openManga?.coverUrl ?? null,
+    });
   } catch (e) {
     setError(t('erreur.lecture', { raison: String(e) }));
   } finally {
@@ -1753,6 +1766,8 @@ async function openLocalChapter(item: LibraryItem, chapter: LibraryItem['chapter
       source: item.source,
       horsLigne: true,
       mangaTitre: item.title,
+      mangaUrl: item.url,
+      coverUrl: item.coverUrl ?? null,
     });
   } catch (e) {
     setError(t('erreur.lecture', { raison: String(e) }));
@@ -1836,15 +1851,22 @@ async function resumeReading(h: HistoryItem) {
 // liste renvoie souvent `UNKNOWN` là où la fiche donne `ADULT`, et c'est
 // cette valeur que l'incognito filtre.
 useEffect(() => {
-  if (!reader || !openManga) return;
+  // Mesuré : la garde `!openManga` faisait que **rien n'était enregistré**
+  // quand on lisait depuis la vue Téléchargements — pas de fiche ouverte, donc
+  // pas d'`openManga`. Le webtoon ne réapparaissait jamais dans « Continuer »
+  // ni dans l'historique. Le lecteur porte désormais lui-même l'URL et le
+  // titre du webtoon, donc il n'a plus besoin de la fiche.
+  if (!reader) return;
+  const mangaUrl = reader.mangaUrl ?? openManga?.url;
+  if (!mangaUrl) return;
   const manga = info ?? openManga;
   const chapterIndex = chapters.findIndex((c) => c.url === reader.chapter.url);
   void invoke('save_progress', {
     source: reader.source,
-    mangaUrl: openManga.url,
-    title: openManga.title,
-    coverUrl: openManga.coverUrl ?? manga.coverUrl ?? null,
-    contentRating: manga.contentRating ?? null,
+    mangaUrl,
+    title: reader.mangaTitre ?? openManga?.title ?? 'sans-titre',
+    coverUrl: reader.coverUrl ?? openManga?.coverUrl ?? manga?.coverUrl ?? null,
+    contentRating: manga?.contentRating ?? null,
     chapterUrl: reader.chapter.url,
     chapterTitle: chapterLabel(reader.chapter),
     chapterIndex,
@@ -1856,9 +1878,28 @@ useEffect(() => {
 }, [reader, openManga, info, chapters]);
 
 function closeReader() {
+  // Sortir du plein écran AVANT de retirer le lecteur. Mesuré : le plein écran
+  // porte sur `.reader`, et supprimer l'élément qui est en plein écran laisse
+  // la fenêtre dans un état dégradé — signalé par l'utilisateur : « le plein
+  // écran a un impact sur toute la fenêtre quand je sors de la lecture ». On
+  // demande donc explicitement la sortie, et le retrait du lecteur a lieu au
+  // tour d'après, le temps que le navigateur applique le changement.
+  if (document.fullscreenElement) {
+    void document.exitFullscreen().catch(() => {});
+    setPleinEcran(false);
+    setTimeout(() => {
+      setReader(null);
+      apresFermetureLecteur();
+    }, 0);
+    return;
+  }
   setReader(null);
-  // Reprise depuis l'accueil : aucune source n'est sélectionnée, on rend donc
-  // l'accueil plutôt qu'une fiche de chapitre orpheline.
+  apresFermetureLecteur();
+}
+
+/** Reprise depuis l'accueil : aucune source n'est sélectionnée, on rend donc
+ *  l'accueil plutôt qu'une fiche de chapitre orpheline. */
+function apresFermetureLecteur() {
   if (!selected) {
     setTab('home');
     setOpenManga(null);

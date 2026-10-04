@@ -37,6 +37,12 @@ type Bookmark = {
   created_at: number;
 };
 
+type Category = {
+  id: number;
+  name: string;
+  color: number;
+};
+
 type Favorite = {
   source: string;
   manga_url: string;
@@ -44,6 +50,8 @@ type Favorite = {
   cover_url: string | null;
   content_rating: string | null;
   added_at: number;
+  category_id: number | null;
+  category_color: number | null;
 };
 
 /** Une entrée de l'historique de lecture (table `history`). */
@@ -109,6 +117,24 @@ const TIMEOUT_KEY = 'tatami.listTimeout';
 const TAGS_SHOWN = 24;
 // Valeurs acceptées par les parsers (enum ContentRating). Une seule à la fois :
 // en envoyer plusieurs lève « Multiple Content ratings are not supported ».
+/** Palette des catégories. La base ne stocke qu'un INDEX, jamais une couleur :
+ *  ces variables sont les seules à fournir une teinte, cf. AGENTS.md §9.2. */
+const CATEGORY_COLORS = [
+  'var(--cat-1)',
+  'var(--cat-2)',
+  'var(--cat-3)',
+  'var(--cat-4)',
+  'var(--cat-5)',
+  'var(--cat-6)',
+  'var(--cat-7)',
+  'var(--cat-8)',
+] as const;
+
+function couleurCategorie(index: number | null | undefined): string {
+  if (index == null) return 'var(--text-3)';
+  return CATEGORY_COLORS[(index - 1) % CATEGORY_COLORS.length];
+}
+
 type Tri = 'source' | 'az' | 'za';
 
 const TRIS: { value: Tri; label: string }[] = [
@@ -452,6 +478,11 @@ export default function Home() {
   const [voirDesactives, setVoirDesactives] = useState(false);
   // Tâche 1.7 : signets. Un signet = une page précise d'un chapitre.
   const [signets, setSignets] = useState<Bookmark[]>([]);
+  // Tâche 1.5 : catégories de favoris. Une seule par favori (choix humain,
+  // parité Kotatsu-Redo) ; `null` = sans catégorie.
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [filtreCategorie, setFiltreCategorie] = useState<number | 'all' | 'aucune'>('all');
+  const [nouvelleCategorie, setNouvelleCategorie] = useState('');
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagsTotal, setTagsTotal] = useState(0);
   const [activeTags, setActiveTags] = useState<string[]>([]);
@@ -555,12 +586,14 @@ export default function Home() {
       // elle dure moins d'une image. Un état pour ça ne servirait qu'à
       // scintiller et à forcer un rendu en cascade.
       try {
-        const [fav, hist] = await Promise.all([
+        const [fav, hist, cats] = await Promise.all([
           invoke<Favorite[]>('list_favorites'),
           invoke<HistoryItem[]>('list_recent', { limit: RECENT_LIMIT, hideAdult: hide }),
+          invoke<Category[]>('list_categories'),
         ]);
         setFavorites(fav ?? []);
         setRecent(hist ?? []);
+        setCategories(cats ?? []);
       } catch (e) {
         // Ne rien afficher ici : l'accueil affiche déjà l'erreur si l'action
         // l'a déclenchée. On trace pour pouvoir diagnostiquer.
@@ -605,6 +638,18 @@ export default function Home() {
     return favorites.some((f) => f.source === m.source && f.manga_url === m.url);
   }
 
+  /** Le favori correspondant à un manga, pour lire sa catégorie. */
+  function favoriDe(m: Manga): Favorite | undefined {
+    return favorites.find((f) => f.source === m.source && f.manga_url === m.url);
+  }
+
+  /** Favoris après application du filtre de catégorie. */
+  const favorisVisibles = useMemo(() => {
+    if (filtreCategorie === 'all') return favorites;
+    if (filtreCategorie === 'aucune') return favorites.filter((f) => f.category_id == null);
+    return favorites.filter((f) => f.category_id === filtreCategorie);
+  }, [favorites, filtreCategorie]);
+
   // Charge la bibliothèque au démarrage. Indispensable : `tab` vaut « home »
   // dès le premier rendu SANS passer par `goTab`, donc rien ne déclencherait
   // le rechargement sinon (mesuré : l'accueil affichait « 0 favori » après un
@@ -623,6 +668,98 @@ export default function Home() {
 
   function estDesactivee(nom: string): boolean {
     return sourcesOff.includes(nom);
+  }
+
+  async function validerNouvelleCategorie() {
+    const nom = nouvelleCategorie.trim();
+    if (nom.length === 0) return;
+    // La couleur tourne : deux catégories créées d'affilée ne se ressemblent pas.
+    const couleur = (categories.length % CATEGORY_COLORS.length) + 1;
+    const c = await creerCategorie(nom, couleur);
+    if (c) setNouvelleCategorie('');
+  }
+
+  /** Affecte une catégorie à un favori (ou la retire avec `null`). */
+  async function choisirCategorie(f: Manga, categoryId: number | null) {
+    const avant = favorites;
+    // Mise à jour optimiste : le sélecteur ne doit pas attendre la base.
+    setFavorites((prev) =>
+      prev.map((x) =>
+        x.source === f.source && x.manga_url === f.url
+          ? {
+              ...x,
+              category_id: categoryId,
+              category_color:
+                categories.find((c) => c.id === categoryId)?.color ?? null,
+            }
+          : x,
+      ),
+    );
+    try {
+      await invoke('set_favorite_category', {
+        source: f.source,
+        mangaUrl: f.url,
+        categoryId,
+      });
+      await refreshShelf();
+    } catch (e) {
+      setFavorites(avant);
+      setError(`Catégorie : ${e}`);
+    }
+  }
+
+  async function creerCategorie(nom: string, couleur: number) {
+    try {
+      const c = await invoke<Category>('add_category', { name: nom, color: couleur });
+      await refreshShelf();
+      return c;
+    } catch (e) {
+      setError(`Catégorie : ${e}`);
+      return null;
+    }
+  }
+
+  async function supprimerCategorie(id: number) {
+    const avant = categories;
+    setCategories((prev) => prev.filter((c) => c.id !== id));
+    try {
+      await invoke('delete_category', { id });
+      // Supprimer une catégorie ne supprime pas ses favoris : ils reviennent
+      // en « sans catégorie », et `list_favorites` est la source de vérité.
+      await refreshShelf();
+    } catch (e) {
+      setCategories(avant);
+      setError(`Catégorie : ${e}`);
+    }
+  }
+
+  /** Déplace une catégorie d'un cran. On renvoie TOUS les identifiants dans
+   *  le nouvel ordre : la base réécrit les positions plutôt que d'échanger
+   *  deux lignes, l'ordre final est donc exactement celui demandé. */
+  async function deplacerCategorie(id: number, pas: -1 | 1) {
+    const ids = categories.map((c) => c.id);
+    const i = ids.indexOf(id);
+    const j = i + pas;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    const avant = categories;
+    setCategories(categories.slice().sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)));
+    try {
+      await invoke('reorder_categories', { ids });
+      await refreshShelf();
+    } catch (e) {
+      setCategories(avant);
+      setError(`Ordre des catégories : ${e}`);
+    }
+  }
+
+  async function renommerCategorie(id: number, nom: string, couleur: number) {
+    try {
+      await invoke('rename_category', { id, name: nom, color: couleur });
+      await refreshShelf();
+    } catch (e) {
+      setError(`Catégorie : ${e}`);
+    }
   }
 
   /** La page affichée porte-t-elle déjà un signet ? */
@@ -768,6 +905,10 @@ export default function Home() {
               cover_url: m.coverUrl ?? null,
               content_rating: m.contentRating ?? null,
               added_at: Date.now(),
+              // Un favori tout juste ajouté n'a pas encore de catégorie ; il
+              // reste visible sous « Sans catégorie » jusqu'au choix.
+              category_id: null,
+              category_color: null,
             },
             ...prev,
           ]
@@ -1689,6 +1830,11 @@ useEffect(() => {
           <h1>Paramètres</h1>
         </header>
 
+        {/* Mesuré : un échec déclenché depuis cet écran (catégorie en double,
+            par exemple) était totalement invisible, l'utilisateur cliquait et
+            rien ne se passait. Les autres vues affichent déjà cette erreur. */}
+        {error && <p className="error">{error}</p>}
+
         <section className="panel">
           <h2>Contenu</h2>
           <label className="field">
@@ -1712,6 +1858,101 @@ useEffect(() => {
             Une seule classification à la fois : les sources n’en acceptent pas
             plusieurs. Les sources qui n’exposent pas de classification ne sont pas filtrées.
           </p>
+        </section>
+
+        <section className="panel">
+          <h2>Catégories de favoris</h2>
+          <p className="muted">
+            Un favori appartient à une seule catégorie. Supprimer une catégorie
+            ne supprime pas ses favoris : ils reviennent en « sans catégorie ».
+          </p>
+
+          {categories.length === 0 ? (
+            <p className="muted">Aucune catégorie pour l&apos;instant.</p>
+          ) : (
+            <ul className="cat-list">
+              {categories.map((c, i) => (
+                <li className="cat-row" key={c.id}>
+                  <span
+                    className="cat-dot"
+                    style={{ background: couleurCategorie(c.color) }}
+                    aria-hidden="true"
+                  />
+                  <input
+                    className="cat-name"
+                    defaultValue={c.name}
+                    aria-label={`Nom de la catégorie ${c.name}`}
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      if (v && v !== c.name) void renommerCategorie(c.id, v, c.color);
+                      else e.target.value = c.name;
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                    }}
+                  />
+                  <div className="chips" role="group" aria-label={`Couleur de ${c.name}`}>
+                    {CATEGORY_COLORS.map((col, k) => (
+                      <button
+                        key={col}
+                        className={`cat-swatch${c.color === k + 1 ? ' on' : ''}`}
+                        style={{ background: col }}
+                        aria-pressed={c.color === k + 1}
+                        aria-label={`Couleur ${k + 1}`}
+                        onClick={() => void renommerCategorie(c.id, c.name, k + 1)}
+                      />
+                    ))}
+                  </div>
+                  <span className="cat-count muted">
+                    {favorites.filter((f) => f.category_id === c.id).length}
+                  </span>
+                  <button
+                    className="btn btn-ghost"
+                    aria-label={`Monter la catégorie ${c.name}`}
+                    disabled={i === 0}
+                    onClick={() => void deplacerCategorie(c.id, -1)}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    aria-label={`Descendre la catégorie ${c.name}`}
+                    disabled={i === categories.length - 1}
+                    onClick={() => void deplacerCategorie(c.id, 1)}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    aria-label={`Supprimer la catégorie ${c.name}`}
+                    onClick={() => void supprimerCategorie(c.id)}
+                  >
+                    Supprimer
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="cat-add">
+            <input
+              className="cat-name"
+              placeholder="Nouvelle catégorie…"
+              aria-label="Nom de la nouvelle catégorie"
+              value={nouvelleCategorie}
+              onChange={(e) => setNouvelleCategorie(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void validerNouvelleCategorie();
+              }}
+            />
+            <button
+              className="btn btn-primary"
+              disabled={nouvelleCategorie.trim().length === 0}
+              onClick={() => void validerNouvelleCategorie()}
+            >
+              Ajouter
+            </button>
+          </div>
         </section>
 
         <section className="panel">
@@ -2282,6 +2523,36 @@ if (reader) {
             {isFavorite(fiche) ? '♥ Dans vos favoris' : '♡ Ajouter aux favoris'}
           </button>
         </header>
+
+        {/* La catégorie n'a de sens que si le titre est déjà favori : on ne
+            propose pas de classer ce qu'on n'a pas choisi de garder. */}
+        {isFavorite(fiche) && (
+          <div className="cat-pick">
+            <label className="field" htmlFor="fiche-categorie">
+              Catégorie
+              <select
+                id="fiche-categorie"
+                value={favoriDe(fiche)?.category_id ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  void choisirCategorie(fiche, v === '' ? null : Number(v));
+                }}
+              >
+                <option value="">Sans catégorie</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {categories.length === 0 && (
+              <p className="muted">
+                Créez vos catégories dans Réglages pour ranger vos favoris.
+              </p>
+            )}
+          </div>
+        )}
 
         {(summary || rows.length > 0 || fiche.coverUrl) && (
           <section className="sheet">
@@ -2879,6 +3150,42 @@ if (reader) {
 
         <div className="band">
           Vos favoris
+          {categories.length > 0 && favorites.length > 0 && (
+            <span className="chips" role="group" aria-label="Filtrer par catégorie">
+              <button
+                className="chip"
+                aria-pressed={filtreCategorie === 'all'}
+                onClick={() => setFiltreCategorie('all')}
+              >
+                Toutes
+              </button>
+              {categories.map((c) => (
+                <button
+                  key={c.id}
+                  className="chip"
+                  aria-pressed={filtreCategorie === c.id}
+                  onClick={() => setFiltreCategorie(c.id)}
+                >
+                  <span
+                    className="cat-dot"
+                    style={{ background: couleurCategorie(c.color) }}
+                    aria-hidden="true"
+                  />
+                  {c.name}
+                  {' ('}
+                  {favorites.filter((f) => f.category_id === c.id).length})
+                </button>
+              ))}
+              <button
+                className="chip"
+                aria-pressed={filtreCategorie === 'aucune'}
+                onClick={() => setFiltreCategorie('aucune')}
+              >
+                Sans catégorie (
+                {favorites.filter((f) => f.category_id == null).length})
+              </button>
+            </span>
+          )}
           {favorites.length > 0 && (
             <button
               className="btn btn-ghost"
@@ -2897,9 +3204,13 @@ if (reader) {
           <p className="muted">
             Aucun favori. Ouvrez un webtoon puis cliquez sur l&apos;icône ♥.
           </p>
+        ) : favorisVisibles.length === 0 ? (
+          <p className="muted">
+            Aucun favori dans cette catégorie.
+          </p>
         ) : (
           <div className="manga-grid">
-            {favorites.map((f) => {
+            {favorisVisibles.map((f) => {
               const m: Manga = {
                 url: f.manga_url,
                 title: f.title,
@@ -2924,6 +3235,16 @@ if (reader) {
                         <span className="thumb thumb-empty" aria-hidden="true">
                           {(f.title.trim()[0] ?? '?').toUpperCase()}
                         </span>
+                      )}
+                      {f.category_id != null && (
+                        <span
+                          className="cat-dot on-cover"
+                          style={{ background: couleurCategorie(f.category_color) }}
+                          title={
+                            categories.find((c) => c.id === f.category_id)?.name ?? 'Catégorie'
+                          }
+                          aria-hidden="true"
+                        />
                       )}
                     </span>
                     <span className="label">{f.title}</span>

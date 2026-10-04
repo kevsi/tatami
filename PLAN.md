@@ -88,7 +88,12 @@ Objectif : prouver que les trois risques majeurs sont maîtrisables avant de con
 - [x] **0.9** Commandes Tauri `search` / `chapters` / `pages` + page d'interface minimale qui affiche une liste de résultats.
 - [x] **0.10** Protocole d'URI personnalisé `tatami://page/...` : Rust demande `fetchImage` au moteur, met en cache sur disque, sert l'image à la webview (vérifier l'API Tauri v2 des protocoles asynchrones dans la doc). Afficher une page de chapitre dans l'interface.
 - [x] **0.11** Source protégée (Cloudflare/captcha) : si le moteur renvoie `CHALLENGE_REQUIRED`, ouvrir une fenêtre webview, laisser l'utilisateur résoudre, récupérer cookies et user-agent (vérifier ce que l'API de Tauri v2 permet pour les cookies), les transmettre via `setCookies`, rejouer la requête. Documenter les limites observées (liaison à l'IP, expiration).
-- [ ] **0.12** Écrire `docs/spike-phase0.md` : mesures (taille, démarrage, RAM), ce qui marche, ce qui bloque, décisions, ajustements proposés au plan. Créer `docs/smoke-test.md`. Figer et mettre à jour les commandes de vérification dans `AGENTS.md`.
+- [ ] **0.12** Écrire `docs/spike-phase0.md` : mesures (taille, démarrage, RAM), ce qui marche, ce qui bloque, décisions, ajustements proposés au plan. Créer `docs/smoke-test.md`. Figer et mettre à jour les commandes de vérification dans `AGENTS.md`. *( partially fait par la session docs : `docs/smoke-test.md` livré ; `docs/spike-phase0.md` reste à écrire )*
+- [ ] **0.13 (nouveau)** Contrat : ajouter un code d'erreur `AUTH_REQUIRED`. Mesuré : `AuthRequiredException` n'est levée que sur HTTP 401 par 16 parseurs, arrive aujourd'hui comme `INTERNAL`, et ne peut pas correspondre à `CHALLENGE_REQUIRED` (qui exige 403/503 + marqueur Cloudflare). Sans ce code, un chapitre protégé par compte affiche une erreur générique et Rust n'a rien à proposer. ADR à écrire (AGENTS.md §9).
+- [ ] **0.14 (nouveau)** Moteur : ne pas perdre `CHALLENGE_REQUIRED` quand le parser emballe l'exception. Mesuré : MANGANATO et KAGANE renvoient `INTERNAL: IOException: canceled due to CloudFlareProtectionException` — un vrai challenge Cloudflare rapporté comme panne interne, donc la fenêtre de résolution de 0.11 ne s'ouvrirait pas.
+- [ ] **0.15 (nouveau)** Superviseur : envoyer `shutdown` avant de fermer stdin. Mesuré : fermer stdin ne tue pas le moteur (process encore vivant 4 s plus tard) ; `shutdown` donne `exit 0` en 137 ms. Garder le `kill` en secours.
+- [ ] **0.16 (nouveau)** Chaîne TLS : 3 sources sur 31 échouent en `PKIX path building failed` (MANGAHAUS, MANGALESEN, MANGASORIGINESUNOFFICIAL) avec le runtime `jlink`. **Ne jamais résoudre en désactivant la validation TLS** (AGENTS.md §10) : investiguer le magasin de confiance du runtime réduit.
+- [ ] **0.17 (nouveau)** ZENMANGA sert des octets qui ne sont pas une image (12 premiers octets identiques sur deux pages, aucun en-tête RIFF/WEBP alors que l'URL finit en `.webp`). Hypothèse : il faudrait brancher le parser comme intercepteur pour que `redrawImageResponse` soit appelé — aujourd'hui c'est du code mort (mesuré). Vérifier avant de coder.
 
 ### Phase 0 bis — Adaptation de l'interface d'après l'analyse de sushiscan.net (M)
 
@@ -110,7 +115,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 - [x] **1.2** Catalogue de sources : liste, activation/désactivation, langue, état (alimenté par `health`).
 - [x] **1.3** Recherche et filtres (nom, genres, tri) avec pagination.
 - [x] **1.4** Page détail d'un manga : infos, liste des chapitres, ajout aux favoris.
-- [ ] **1.5** Favoris organisés en catégories définies par l'utilisateur (favori simple fait, catégories à faire).
+- [x] **1.5** Favoris organisés en catégories définies par l'utilisateur.
 - [x] **1.6** Historique de lecture, reprise au bon chapitre et à la bonne page, mode incognito.
 - [x] **1.7** Signets.
 - [ ] **1.8** Lecteur paginé : sens de lecture, zoom, préchargement via le cache Rust, raccourcis clavier et souris.
@@ -189,6 +194,40 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
 _Aucun pour l'instant. L'agent ajoute ici : date, tâche, description, ce qui a été essayé, option proposée._
 
+## 8 bis. Travail réparti sur plusieurs sessions (depuis le 2026-10-04)
+
+Décision de l'utilisateur : l'avancement est réparti sur **trois sessions OpenCode
+sur le même dossier**. Contraintes mesurées qui ont dicté la répartition :
+
+- **4 Go de RAM libres** sur 11,9 : une seule instance de `pnpm tauri dev`
+  (next + cargo + JVM + WebView2) tient à peine ;
+- ports **3000** et **9223** déjà pris par l'app de la session 1 ;
+- `apps/desktop/app/page.tsx` fait ~3 000 lignes, un seul fichier : toute
+  fonction le touche ;
+- `SCHEMA_VERSION` est une constante unique dans `store.rs`.
+
+Le **code n'est donc pas partageable**, le reste si.
+
+| Session | Fichiers qu'elle seule peut modifier | Mission |
+|---|---|---|
+| **1 — code** | `apps/`, `engine/`, `AGENTS.md`, **`PLAN.md`**, **seule à commiter** | 1.5 catégories, 1.9 virtualisation webtoon, 1.10 thèmes + i18n |
+| **2 — docs** | `docs/`, `README.md` | 0.12 `docs/smoke-test.md`, ADR de la §9, `README.md` |
+| **3 — recherche** | `docs/notes/` uniquement | trancher les « À VÉRIFIER » par la mesure |
+
+Règles données aux trois sessions :
+
+1. **Jamais** de `pnpm dev`, `pnpm tauri dev`, `next dev`, `cargo`, `gradle`
+   ailleurs que dans la session 1.
+2. **Jamais** de commande git ailleurs que dans la session 1 : un `git add -A`
+   prendrait les fichiers des autres dans le même commit.
+3. **Jamais** de modification de `PLAN.md` ailleurs que dans la session 1 :
+   c'est le tableau de coordination, il est recalculé à partir des sous-tâches.
+4. La session 3 n'utilise **ni Playwright ni le port 9223** : elle mesurerait
+   l'app pendant que la session 1 s'en sert. Elle parle au moteur seul en
+   NDJSON.
+5. Chaque session laisse son bilan dans `docs/rapport-session-*.md` ; la session 1
+   récupère ces fichiers dans un commit « docs » dédié.
+
 ## 9. Journal
 
 _Format d'une entrée :_
@@ -200,6 +239,19 @@ _Format d'une entrée :_
 - Preuve : commande + résumé de la sortie
 - Points ouverts :
 ```
+
+### 2026-10-04 — Tâche 1.5 : catégories de favoris
+- Plan : (1) demander à l'humain une catégorie ou plusieurs, plutôt que de deviner (deux applications de référence ne font pas la même chose) ; (2) table `categories` + `favorites.category_id` ; (3) le prouver sur l'app réelle, y compris la suppression d'une catégorie.
+- Décision humaine : **une seule catégorie par favori**, comme dans Kotatsu-Redo, l'app dont on vise la parité.
+- Fait : table `categories` (schéma **v6**) avec nom unique, index de couleur et position ; `favorites.category_id` en clé étrangère `ON DELETE SET NULL`. Commandes `list_categories`, `add_category`, `rename_category`, `delete_category`, `reorder_categories`, `set_favorite_category`. Interface : sélecteur sur la fiche, section de gestion dans les Réglages (renommage, 8 couleurs, monter/descendre, supprimer, ajout), pastille de couleur sur la carte, et filtre sur l'accueil (« Toutes », une pastille par catégorie avec son compte, « Sans catégorie »).
+- Choix : la base ne stocke qu'un **index** de couleur (1..8), jamais une valeur CSS ; l'interface la traduit en variables `--cat-1`…`--cat-8`. Respecte AGENTS.md §9.2 (aucune valeur magique dans le code). L'ordre est réécrit en renvoyant **tous** les identifiants, pas un échange de deux lignes : l'ordre final est alors exactement celui demandé.
+- **Un défaut trouvé en mesurant** : les Réglages n'affichaient aucune erreur. Un échec déclenché dans cet écran (catégorie en double) était totalement invisible — l'utilisateur cliquait et rien ne se passait. Les quatre autres vues affichaient déjà cette erreur ; les Réglages ont été alignés.
+- Preuve :
+  - `cargo test` → **26 passés, 0 échec** (dont `supprimer_une_categorie_ne_supprime_pas_ses_favoris`, `affecter_une_categorie_inexistante_echoue`, `les_categories_ordonnees_et_sans_doublon_de_nom`).
+  - `cargo clippy -D warnings` → 0 · `cargo fmt --check` → 0 · `pnpm typecheck` / `pnpm lint` / `pnpm build` → 0.
+  - Parcours sur l'app réelle via CDP (`walk-categories.js`) : **20 mesures, 0 échec** — création, doublon refusé **avec message**, réordonnancement, affectation depuis la fiche, filtre exact, pastille réellement peinte (`rgb(54, 106, 211)`), catégorie vide qui le dit, survie au rechargement, et suppression qui **conserve** le favori.
+  - Captures : `audit/tatami4/20-reglages-categories.png`, `audit/tatami4/21-favori-filtre.png`.
+- Note de méthode : une mesure échouait alors que l'application était correcte — mon assertion cherchait `existe deja` sans accent alors que le message dit « existe déjà ». Un walk qui coule sur une regex accentuée prouve un défaut de regex, pas un défaut de l'app.
 
 ### 2026-10-04 — Tâche 1.7 : signets
 - Plan : (1) table `bookmarks` (schéma **v5**) avec la page dans la clé, pour pouvoir marquer plusieurs pages d'un même chapitre ; (2) bouton dans le lecteur + section sur l'accueil avec réouverture au bon endroit ; (3) prouver la persistance et l'exactitude de la page.

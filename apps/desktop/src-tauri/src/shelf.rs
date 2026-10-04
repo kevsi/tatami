@@ -7,7 +7,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use tauri::State;
 
-use crate::store::{Bookmark, Favorite, HistoryEntry, Store};
+use crate::store::{Bookmark, Category, Favorite, HistoryEntry, Store};
 
 /// Nombre d'entrées renvoyées quand l'interface ne le précise pas.
 const RECENT_LIMIT: u32 = 24;
@@ -50,6 +50,74 @@ pub async fn set_source_enabled(
 #[tauri::command]
 pub async fn enable_all_sources(store: State<'_, Arc<Store>>) -> Result<(), String> {
     store.enable_all_sources()
+}
+
+/// Catégories de favoris, dans l'ordre choisi par l'utilisateur.
+#[tauri::command]
+pub async fn list_categories(store: State<'_, Arc<Store>>) -> Result<Vec<Category>, String> {
+    store.list_categories()
+}
+
+/// Crée une catégorie. La couleur est un index de palette (1..=8), pas une
+/// valeur CSS : elle est bornée ici pour que l'interface ait toujours une
+/// variable à traduire.
+#[tauri::command]
+pub async fn add_category(
+    store: State<'_, Arc<Store>>,
+    name: String,
+    color: u8,
+) -> Result<Category, String> {
+    let nom = nom_categorie(&name)?;
+    store.add_category(nom, color.clamp(1, 8))
+}
+
+/// Renomme et/ou recolore une catégorie.
+#[tauri::command]
+pub async fn rename_category(
+    store: State<'_, Arc<Store>>,
+    id: i64,
+    name: String,
+    color: u8,
+) -> Result<(), String> {
+    let nom = nom_categorie(&name)?;
+    store.rename_category(id, nom, color.clamp(1, 8))
+}
+
+/// Supprime une catégorie ; ses favoris reviennent en « sans catégorie ».
+#[tauri::command]
+pub async fn delete_category(store: State<'_, Arc<Store>>, id: i64) -> Result<(), String> {
+    store.delete_category(id)
+}
+
+/// Réécrit l'ordre des catégories à partir de la liste d'identifiants.
+#[tauri::command]
+pub async fn reorder_categories(store: State<'_, Arc<Store>>, ids: Vec<i64>) -> Result<(), String> {
+    store.reorder_categories(&ids)
+}
+
+/// Affecte (ou retire) la catégorie d'un favori.
+#[tauri::command]
+pub async fn set_favorite_category(
+    store: State<'_, Arc<Store>>,
+    source: String,
+    manga_url: String,
+    category_id: Option<i64>,
+) -> Result<(), String> {
+    requis(&source, &manga_url)?;
+    store.set_favorite_category(source.trim(), manga_url.trim(), category_id)
+}
+
+/// Nom de catégorie valide : non vide et borné. La longueur maximale évite une
+/// étiquette qui déborde partout ailleurs.
+fn nom_categorie(name: &str) -> Result<&str, String> {
+    let n = name.trim();
+    if n.is_empty() {
+        return Err("PARSE_ERROR: nom de catégorie vide".to_string());
+    }
+    if n.chars().count() > 30 {
+        return Err("PARSE_ERROR: nom de catégorie trop long (30 caractères max)".to_string());
+    }
+    Ok(n)
 }
 
 /// Ajoute un signet sur la page courante.

@@ -606,6 +606,95 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* Palette des catégories (tâche 1.5). La base ne stocke qu'un index : ces
+   variables sont les seules à définir une teinte, cf. AGENTS.md §9.2. */
+:root {
+  --cat-1: #d64b6a;
+  --cat-2: #366ad3;
+  --cat-3: #3f9e52;
+  --cat-4: #d18b28;
+  --cat-5: #8a5cd6;
+  --cat-6: #2f9fa4;
+  --cat-7: #c2553f;
+  --cat-8: #6b7280;
+}
+
+.cat-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex: none;
+}
+
+.cat-dot.on-cover {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.55);
+}
+
+.cat-pick {
+  margin: var(--s3) 0;
+  max-width: 320px;
+}
+
+.cat-list {
+  list-style: none;
+  margin: var(--s3) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.cat-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+}
+
+.cat-name {
+  flex: 1;
+  min-width: 140px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text-1);
+  font-size: 13.5px;
+  padding: 6px 10px;
+}
+
+.cat-count {
+  min-width: 2ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cat-add {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.cat-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  cursor: pointer;
+  border: 2px solid transparent;
+  border-radius: 999px;
+}
+
+.cat-swatch.on {
+  border-color: var(--text-1);
+}
+
 /* Bouton de signet actif dans la barre du lecteur. */
 .seg-btn.on {
   color: var(--accent);

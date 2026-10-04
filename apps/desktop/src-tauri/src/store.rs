@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Version du schéma attendue par ce binaire.
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 
 #[derive(Serialize)]
 pub struct Favorite {
@@ -25,6 +25,10 @@ pub struct Favorite {
     pub cover_url: Option<String>,
     pub content_rating: Option<String>,
     pub added_at: i64,
+    /// Catégorie choisie par l'utilisateur, `None` = sans catégorie.
+    pub category_id: Option<i64>,
+    /// Index de couleur de cette catégorie, déjà résolu par la jointure.
+    pub category_color: Option<u8>,
 }
 
 #[derive(Serialize)]
@@ -49,6 +53,16 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// Une catégorie de favoris créée par l'utilisateur. `color` est un index
+/// dans la palette du thème (1..=8), jamais une valeur CSS : l'interface la
+/// traduit en variable, cf. AGENTS.md §9.2.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Category {
+    pub id: i64,
+    pub name: String,
+    pub color: u8,
 }
 
 /// Un signet : une page précise d'un chapitre d'un webtoon.
@@ -227,6 +241,30 @@ impl Store {
              CREATE INDEX IF NOT EXISTS bookmarks_created_at ON bookmarks (created_at DESC);",
         )
         .map_err(|e| format!("migration v5 : {e}"))?;
+        // v6 : catégories de favoris. Choix humain : UNE catégorie par favori,
+        // comme dans Kotatsu-Redo, l'app dont on vise la parité. `NULL` veut
+        // dire « sans catégorie », et la clé étrangère renvoie automatiquement
+        // dans ce cas quand une catégorie est supprimée : on ne perd pas le
+        // favori, on perd seulement son classement.
+        //
+        // La couleur est un INDEX (1..=8), pas une valeur : l'interface la
+        // traduit en variable CSS du thème (AGENTS.md §9.2, aucune valeur
+        // magique en dur).
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS categories (
+                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                 name       TEXT    NOT NULL UNIQUE,
+                 color      INTEGER NOT NULL DEFAULT 1,
+                 position   INTEGER NOT NULL DEFAULT 0
+             );",
+        )
+        .map_err(|e| format!("migration v6 : {e}"))?;
+        Self::ensure_column(
+            &tx,
+            "favorites",
+            "category_id",
+            "INTEGER REFERENCES categories(id) ON DELETE SET NULL",
+        )?;
         if current < 2 {
             tx.execute_batch("CREATE INDEX IF NOT EXISTS history_title ON history (title);")
                 .map_err(|e| format!("migration : index history_title : {e}"))?;
@@ -335,8 +373,13 @@ impl Store {
             .map_err(|_| "base verrouillée".to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT source, manga_url, title, cover_url, content_rating, added_at
-                 FROM favorites ORDER BY added_at DESC, title ASC",
+                // La catégorie est jointe pour que la carte puisse afficher sa
+                // pastille sans un second aller-retour.
+                "SELECT f.source, f.manga_url, f.title, f.cover_url, f.content_rating,
+                        f.added_at, f.category_id, c.color
+                 FROM favorites f
+                 LEFT JOIN categories c ON c.id = f.category_id
+                 ORDER BY f.added_at DESC, f.title ASC",
             )
             .map_err(|e| format!("favoris : {e}"))?;
         let rows = stmt
@@ -348,11 +391,159 @@ impl Store {
                     cover_url: r.get(3)?,
                     content_rating: r.get(4)?,
                     added_at: r.get(5)?,
+                    category_id: r.get(6)?,
+                    category_color: r.get::<_, Option<i64>>(7)?.map(|c| c as u8),
                 })
             })
             .map_err(|e| format!("favoris : {e}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("favoris : {e}"))
+    }
+
+    // ---------- Catégories de favoris ----------
+
+    /// Catégories dans l'ordre choisi par l'utilisateur.
+    pub fn list_categories(&self) -> Result<Vec<Category>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let mut req = conn
+            .prepare("SELECT id, name, color FROM categories ORDER BY position, name")
+            .map_err(|e| format!("catégories : {e}"))?;
+        let rows = req
+            .query_map([], |r| {
+                Ok(Category {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    color: r.get::<_, i64>(2)? as u8,
+                })
+            })
+            .map_err(|e| format!("catégories : {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("catégories : {e}"))
+    }
+
+    /// Crée une catégorie à la fin de la liste. Le nom est unique : deux
+    /// catégories « Favoris » rendraient le filtrage ambigu.
+    pub fn add_category(&self, name: &str, color: u8) -> Result<Category, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let suivant: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(position), -1) + 1 FROM categories",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|e| format!("catégories : {e}"))?;
+        conn.execute(
+            "INSERT INTO categories (name, color, position) VALUES (?1, ?2, ?3)",
+            params![name, color as i64, suivant],
+        )
+        .map_err(|e| {
+            if e.to_string().contains("UNIQUE") {
+                format!("La catégorie « {name} » existe déjà.")
+            } else {
+                format!("catégories : {e}")
+            }
+        })?;
+        let id = conn.last_insert_rowid();
+        Ok(Category {
+            id,
+            name: name.to_string(),
+            color,
+        })
+    }
+
+    /// Renomme et/ou recolore une catégorie.
+    pub fn rename_category(&self, id: i64, name: &str, color: u8) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let n = conn
+            .execute(
+                "UPDATE categories SET name = ?2, color = ?3 WHERE id = ?1",
+                params![id, name, color as i64],
+            )
+            .map_err(|e| {
+                if e.to_string().contains("UNIQUE") {
+                    format!("La catégorie « {name} » existe déjà.")
+                } else {
+                    format!("catégories : {e}")
+                }
+            })?;
+        if n == 0 {
+            return Err("Cette catégorie n’existe plus.".to_string());
+        }
+        Ok(())
+    }
+
+    /// Supprime une catégorie. Ses favoris ne sont PAS supprimés : la clé
+    /// étrangère `ON DELETE SET NULL` les renvoie en « sans catégorie ».
+    pub fn delete_category(&self, id: i64) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute("DELETE FROM categories WHERE id = ?1", params![id])
+            .map_err(|e| format!("catégories : {e}"))?;
+        Ok(())
+    }
+
+    /// Réécrit l'ordre à partir de la liste d'identifiants reçue. On réécrit
+    /// `position` pour toutes les catégories plutôt que d'échanger deux
+    /// lignes : l'ordre final est alors exactement celui demandé.
+    pub fn reorder_categories(&self, ids: &[i64]) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("catégories : {e}"))?;
+        for (rang, id) in ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE categories SET position = ?2 WHERE id = ?1",
+                params![id, rang as i64],
+            )
+            .map_err(|e| format!("catégories : {e}"))?;
+        }
+        tx.commit().map_err(|e| format!("catégories : {e}"))
+    }
+
+    /// Affecte (ou retire) la catégorie d'un favori. `None` = sans catégorie.
+    pub fn set_favorite_category(
+        &self,
+        source: &str,
+        manga_url: &str,
+        category_id: Option<i64>,
+    ) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        if let Some(id) = category_id {
+            let existe: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM categories WHERE id = ?1",
+                    params![id],
+                    |r| r.get(0),
+                )
+                .map_err(|e| format!("catégories : {e}"))?;
+            if existe == 0 {
+                return Err("Cette catégorie n’existe plus.".to_string());
+            }
+        }
+        conn.execute(
+            "UPDATE favorites SET category_id = ?3
+             WHERE source = ?1 AND manga_url = ?2",
+            params![source, manga_url, category_id],
+        )
+        .map_err(|e| format!("catégories : {e}"))?;
+        Ok(())
     }
 
     // ---------- Signets ----------
@@ -880,6 +1071,73 @@ mod tests {
             s.list_favorites().unwrap()[0].content_rating.as_deref(),
             Some("ADULT")
         );
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn les_categories_ordonnees_et_sans_doublon_de_nom() {
+        let (s, path) = store_vierge();
+        assert!(s.list_categories().unwrap().is_empty());
+        let a = s.add_category("Action", 1).unwrap();
+        let b = s.add_category("Romance", 3).unwrap();
+        assert_eq!(
+            s.list_categories().unwrap(),
+            vec![a.clone(), b.clone()],
+            "elles arrivent dans l'ordre de creation"
+        );
+        // Le nom est unique : deux « Action » rendraient le filtrage ambigu.
+        let doublon = s.add_category("Action", 2).unwrap_err();
+        assert!(doublon.contains("existe déjà"), "message : {doublon}");
+        // Renommer et recolorer.
+        s.rename_category(a.id, "Combat", 5).unwrap();
+        let apres = s.list_categories().unwrap();
+        assert_eq!(apres[0].name, "Combat");
+        assert_eq!(apres[0].color, 5);
+        // Réordonner : la position écrite est celle demandée, pas un échange.
+        s.reorder_categories(&[b.id, a.id]).unwrap();
+        let l = s.list_categories().unwrap();
+        assert_eq!(
+            l.iter().map(|c| c.id).collect::<Vec<_>>(),
+            vec![b.id, a.id],
+            "l'ordre final est exactement celui demande"
+        );
+        // Renommer une catégorie disparue doit échouer franchement.
+        assert!(s.rename_category(999, "Fantome", 1).is_err());
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn supprimer_une_categorie_ne_supprime_pas_ses_favoris() {
+        let (s, path) = store_vierge();
+        let c = s.add_category("Action", 1).unwrap();
+        s.set_favorite("SRC", "/m/1", "Titre", None, Some("SAFE"), true)
+            .unwrap();
+        s.set_favorite_category("SRC", "/m/1", Some(c.id)).unwrap();
+        assert_eq!(s.list_favorites().unwrap()[0].category_id, Some(c.id));
+        assert_eq!(s.list_favorites().unwrap()[0].category_color, Some(1));
+
+        s.delete_category(c.id).unwrap();
+        // Le favori survit, il perd seulement son classement (ON DELETE SET NULL).
+        let f = s.list_favorites().unwrap();
+        assert_eq!(f.len(), 1, "supprimer une categorie ne perd aucun favori");
+        assert_eq!(f[0].category_id, None);
+        assert_eq!(f[0].category_color, None);
+        assert!(s.list_categories().unwrap().is_empty());
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn affecter_une_categorie_inexistante_echoue() {
+        let (s, path) = store_vierge();
+        s.set_favorite("SRC", "/m/1", "Titre", None, None, true)
+            .unwrap();
+        // Sans ce refus, le favori pointerait vers une catégorie fantôme et le
+        // filtrage par catégorie afficherait un vide incompréhensible.
+        assert!(s.set_favorite_category("SRC", "/m/1", Some(42)).is_err());
+        assert_eq!(s.list_favorites().unwrap()[0].category_id, None);
+        // Retirer la catégorie est toujours possible.
+        s.set_favorite_category("SRC", "/m/1", None).unwrap();
+        assert!(s.list_categories().unwrap().is_empty());
         nettoyer(&path);
     }
 

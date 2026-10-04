@@ -282,6 +282,30 @@ Le chapitre reste **absent** du disque, donc la règle « ne jamais retéléchar
 
 Mesuré : quand la source ne renvoie **pas** de titre de chapitre (`title: null`, cas de MANGADEX ici), `chapterLabel` retombe sur l'URL et le fichier s'appelle `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz`. Le `.cbz` est valide et lisible par Tatami, mais **inutilisable** dans un lecteur externe, ce qui contredit l'intention de l'exigence permanente (« un `.cbz` par chapitre »). Nouvelle tâche 0.18.
 
+### 2026-10-04 — Tâche 2.3 : lecture hors ligne (le trou le plus visible de la v1)
+
+L'application écrivait des `.cbz` qu'elle ne savait pas **lire**. Le lecteur passait toujours par le moteur, donc le seul moyen de lire un téléchargement était d'ouvrir un autre logiciel — exactement ce que l'utilisateur a fait.
+
+**Rust** : `zipread.rs` (le pendant de `cbz.rs`), sans dépendance — `Cargo.toml` n'a aucun crate ZIP et en ajouter un est une décision d'architecture (AGENTS.md §9). Nos fichiers sont en `STORED` : lire ce qu'on écrit ne demande que le répertoire central. Une entrée `DEFLATE` (beaucoup de `.cbz` tiers) rend une erreur explicite au lieu de renvoyer des octets faux. **CRC32 vérifié à la lecture** : un `.cbz` corrompu est refusé, pas affiché. `PageRef` devient un enum `Moteur` / `Local`, donc **le lecteur n'a pas eu à changer** — il manipule toujours des jetons. Deux commandes : `local_chapter_pages` (recalcule le chemin avec la **même** fonction que `download_chapter`, pour que les deux règles ne puissent pas diverger) et `local_file_pages` (chemin fourni par l'interface, avec **confinement vérifié** sous le dossier de téléchargement, sinon l'interface pourrait faire lire n'importe quel fichier — AGENTS.md §7). Tri des pages par **numéro** et non alphabétiquement : `page_10` après `page_9`, sinon l'ordre s'inverse dès la dixième page, invisible sur une série de 9.
+
+**Défaut structurel trouvé en route, préexistant.** Chaque vue s'affiche par un `return` conditionnel (`if (tab === 'downloads') { … return … }`), donc le composant retournait **avant** d'atteindre `if (reader)`. Le lecteur était structurellement inatteignable depuis la vue Téléchargements : le clic « Lire » ne faisait strictement rien — aucun message, aucune erreur console. Même famille que la leçon « une fonction qui sort en silence est un piège ».
+
+**Preuves — 8/8 sur l'app réelle** : 14 images décodées, `src = http://tatami.localhost/page/l3713806…` (le préfixe `l` identifie un jeton local, donc aucun moteur impliqué) · mention « Hors ligne » · **moteur tué** (`taskkill /F /IM java.exe`) puis navigation : les images restent décodées. C'est cette dernière mesure qui distingue une vraie lecture locale d'un simple cache. Portes : `pnpm typecheck` / `lint` / `build` = 0 · `cargo test` **37 passés** · clippy 0 · fmt 0 · `gradle test` 9/9.
+
+**Reste pour 2.3** : un sélecteur de chapitre dans la vue Téléchargements (le bouton « Lire » ouvre le premier chapitre téléchargé).
+
+### 2026-10-04 — Tâche 1.9 (diagnostic) : le mode webtoon fonctionne mais n'est pas virtualisé
+
+**Plainte de l'utilisateur** : « la page de lecture n'est pas vraiment longue ». Mesuré sur le plus long chapitre réel du disque — **Killer Peter, 303 pages dans UN seul `.cbz`**.
+
+**Mode Webtoon, état réel** : bande de **657 788 px** de haut, images empilées à `width: 100 %` / `height: auto`, conteneur borné et défilant, `defile: true`. `scrollTop` = 48 000 avant **et** après un défilement de 12 × 4 000 px → **la position ne saute pas**. Coût : 174 ms pour ce défilement. **Le mode webtoon est donc correct et la bande est bien longue** : le reproche ne porte pas sur la longueur.
+
+**Le vrai défaut** : `noeudsDom: 303` et `imagesChargees: 303` — le lecteur rend **toutes** les pages en DOM et le navigateur **charge les 303 images** à l'ouverture. Un chapitre de 303 pages coûte ainsi 211 requêtes `tatami://` dès le premier affichage. Ça passe sur cette machine, pas sur un portable modeste.
+
+**Une tentative retirée, et pourquoi.** J'ai d'abord posé `content-visibility: auto` + `contain-intrinsic-size: auto 1200px` sur `.webtoon img`. Mesure : la bande annonçait **2 479 px** au lieu de 657 788, les 303 images se chargeaient **quand même**, et surtout `scrollTop` **reculait de 3 964 à 1 788** pendant le défilement — la position de lecture était perdue. Cause : la hauteur de réserve est une estimation, donc la barre de défilement est fausse, `loading="lazy"` croit que tout est proche, et la position est recalculée quand la vraie hauteur arrive. **CSS retiré**, retour mesuré au comportement correct et stable. Une virtualisation qui perd la position de lecture est pire que pas de virtualisation.
+
+**La bonne voie, donc** : que Rust **renvoie les dimensions réelles** de chaque page (en-tête JPEG/PNG/WebP, déjà savoir le lire — `image::detect` le fait), pour que l'interface sache la hauteur exacte de chaque page. La hauteur de la bande devient juste dès le premier rendu, `loading="lazy"` fonctionne, et une **fenêtre glissante** peut alors ne rendre qu'une dizaine de nœuds au lieu de 303. C'est la suite de 1.9.
+
 ### 2026-10-04 — Tâche 0.20 : les images lazy-loadées sont illisibles par les parsers
 
 **L'utilisateur a testé la tâche 0.19 et le résultat a été « rien ne se passe ».** Deux causes, mesurées séparément.

@@ -102,6 +102,8 @@ Objectif : prouver que les trois risques majeurs sont maîtrisables avant de con
 - [ ] **0.15 (nouveau)** Superviseur : envoyer `shutdown` avant de fermer stdin. Mesuré : fermer stdin ne tue pas le moteur (process encore vivant 4 s plus tard) ; `shutdown` donne `exit 0` en 137 ms. Garder le `kill` en secours.
 - [ ] **0.16 (nouveau)** Chaîne TLS : 3 sources sur 31 échouent en `PKIX path building failed` (MANGAHAUS, MANGALESEN, MANGASORIGINESUNOFFICIAL) avec le runtime `jlink`. **Ne jamais résoudre en désactivant la validation TLS** (AGENTS.md §10) : investiguer le magasin de confiance du runtime réduit.
 - [ ] **0.17 (nouveau)** ZENMANGA sert des octets qui ne sont pas une image (12 premiers octets identiques sur deux pages, aucun en-tête RIFF/WEBP alors que l'URL finit en `.webp`). Hypothèse : il faudrait brancher le parser comme intercepteur pour que `redrawImageResponse` soit appelé — aujourd'hui c'est du code mort (mesuré). Vérifier avant de coder.
+- [x] **0.16 (nouveau)** La fenêtre de vérification d'âge s'ouvre quand le moteur ne signale **aucun** challenge. Fait : deux déclencheurs côté Rust (URL d'image vide, octets non-image), fenêtre ouverte sur `manga.publicUrl`, panneau dans la vue Téléchargements, 9 clés i18n. Walk 17/17 sur l'app réelle, contrôle négatif (0 `.cbz` écrit) et contrôle positif (`.cbz` MANGADEX relu par un lecteur strict : 11 entrées, 2 PNG + 9 JPEG, 11 tailles distinctes). **Reste à prouver à la main** : que la pose du cookie rend les URLs d'images réelles.
+- [ ] **0.18 (nouveau)** Un chapitre sans titre (`title: null`) donne un `.cbz` nommé `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz` (mesuré sur MANGADEX). Le fichier est valide mais inutilisable dans un lecteur externe, ce qui vide l'exigence permanente « un `.cbz` par chapitre ». Corriger `chapterLabel` / le nom de fichier : retomber sur un numéro de chapitre lisible (« Chapitre 1.cbz »), jamais sur l'URL ni un UUID. Vérifier aussi l'assainissement du nom (AGENTS.md §6).
 
 ### Phase 0 bis — Adaptation de l'interface d'après l'analyse de sushiscan.net (M)
 
@@ -248,7 +250,39 @@ _Format d'une entrée :_
 - Points ouverts :
 ```
 
+### 2026-10-04 — Tâche 0.16 : la fenêtre de vérification se déclenche vraiment
+
+**Problème mesuré, pas déduit.** Le moteur ne signale `CHALLENGE_REQUIRED` que sur HTTP **403/503** avec un marqueur Cloudflare. Or HENTAIORIGINES répond **200 OK** avec la page HTML de son interstitiel de vérification d'âge (`document.documentElement.className += document.cookie.indexOf('ori_majeur=1')>-1?'':' ori-age-verif'`). Aucun challenge n'était donc jamais signalé, et rien ne s'ouvrait.
+
+Sonde NDJSON directe sur le moteur (`sonde-ho.js`) :
+```
+pages     = 45
+url image = { previewUrl: null, index: 0, url: '' }   ← VIDE, et non pas relative
+contentType= text/html  |  taille = 193 283 octets
+```
+Les 45 URLs d'images sont **vides** : le téléchargement partait chercher l'adresse `""` et écrivait la page d'accueil du site 45 fois. Les 37 entrées identiques de 193 043 octets vues au diagnostic s'expliquent exactement.
+
+**Correctif.** Rust déclenche la fenêtre de vérification (tâche 0.11, déjà construite) dans **deux** cas que le moteur ne voit pas :
+1. une page sur N a une URL d'image vide → échec propre, aucun octet écrit ;
+2. les octets reçus ne sont pas une image (`image::detect`) → échec propre, fenêtre ouverte.
+
+Le chapitre reste **absent** du disque, donc la règle « ne jamais retélécharger ce qui est là » le retentera au lieu de le croire terminé. L'URL ouverte est `details.result.manga.publicUrl` (mesuré présent sur cette source : `https://hentai-origines.com/manga/i-love-you-very-much/`), sinon `mangaUrl`. Côté interface : un état `verif` distinct de `challenge` (celui-ci est une URL rattachée à la source ouverte, alors que l'évènement porte source + URL + motif et que l'utilisateur peut être sur la vue Téléchargements sans source sélectionnée), un panneau dans la vue Téléchargements, et 9 clés i18n FR/EN.
+
+**Ce que ça ne fait PAS** : rien n'est contourné. L'utilisateur clique lui-même dans une vraie fenêtre de navigateur, sur le parcours prévu du site. La fenêtre utilise déjà l'agent utilisateur **du moteur** (`challenge.rs`), ce qui limite le risque de cookie refusé.
+
+**Preuves — walk sur l'app réelle, 17/17** (`walk-verif.js`, deux contrôles) :
+- **Négatif** (HENTAIORIGINES) : échec en 2 359 ms avec `« HENTAIORIGINES demande une vérification (45 page(s) sur 45 sans URL d'image). Une fenêtre va s'ouvrir : confirmez-y vous-même, puis relancez le téléchargement. »` · **0 `.cbz` écrit** (44 avant, 44 après) · 0 nouveau `.part` · fenêtre ouverte (`cancel_challenge` accepte) · panneau présent, visible dans la vue Téléchargements, avec « C'est fait, appliquer ».
+- **Positif** (MANGADEX) : téléchargement **réussi** en 16 453 ms, `.cbz` de 8 099 239 octets. Contrôle par un lecteur ZIP **strict** (`zipfile`) : intégrité OK, 11 entrées, genres `{PNG: 2, JPEG: 9}`, **11 tailles distinctes** (donc 11 vraies pages différentes, pas 11 copies du même HTML), 0 entrée vide, médiane 761 959 octets. Sans ce contrôle, le test négatif ne prouverait que « rien de mauvais n'arrive » — pas que la correction n'a pas cassé ce qui marchait.
+- Portes : `pnpm typecheck` / `pnpm lint` / `pnpm build` = 0 · `cargo test` **29 passés** · `cargo clippy -D warnings` = 0 · `cargo fmt --check` = 0.
+
+**Limite honnête** : la dernière étape est manuelle et non automatisable (le clic « j'ai plus de 18 ans »). Que la pose du cookie rende les URLs d'images réelles **n'est pas encore prouvé** — c'est la prochaine étape, à faire à la main. Risque documenté dans `challenge.rs` : le cookie est lié au navigateur, et le moteur parle en agent Firefox pendant que la fenêtre est en Chromium.
+
+### 2026-10-04 — Défaut trouvé par le walk : nom de `.cbz` en UUID
+
+Mesuré : quand la source ne renvoie **pas** de titre de chapitre (`title: null`, cas de MANGADEX ici), `chapterLabel` retombe sur l'URL et le fichier s'appelle `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz`. Le `.cbz` est valide et lisible par Tatami, mais **inutilisable** dans un lecteur externe, ce qui contredit l'intention de l'exigence permanente (« un `.cbz` par chapitre »). Nouvelle tâche 0.18.
+
 ### 2026-10-04 — Correctif : des `.cbz` illisibles (signalé par l'utilisateur)
+
 - Symptôme : « j'ai téléchargé des webtoon, ouvert le `.cbz` avec un logiciel dédié, je ne voyais rien — tout noir ».
 - Diagnostic (mesuré, pas supposé) : les 44 `.cbz` du dossier de téléchargement ouverts avec un lecteur **strict** (`zipfile` de Python). **37 sont corrompus**, tous de HENTAIORIGINES. Les 7 autres (MANGADEX, MANGASORIGINES) sont des ZIP valides, intégrité vérifiée, vraies images JPEG (`ffd8ffe0`). Dans les 37, **toutes** les entrées contiennent la même chose : `202020200a3c21444f4f435459` = `"    \n<!DOC TY` — du **HTML**. Contenu lu : la page du site, avec `ori-age-verif`, son **interstitiel de vérification d'âge**.
 - Cause : trois défauts enchaînés.

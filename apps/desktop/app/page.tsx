@@ -507,6 +507,15 @@ export default function Home() {
   const [readerLoading, setReaderLoading] = useState(false);
   const [challenge, setChallenge] = useState<string | null>(null);
   const [challengeBusy, setChallengeBusy] = useState(false);
+  // Vérification demandée par un TÉLÉCHARGEMENT (et non par une lecture).
+  // État distinct de `challenge` : celui-ci est une simple URL rattachée à la
+  // source ouverte, alors qu'ici l'évènement Rust porte source + URL + motif,
+  // et que l'utilisateur peut être sur la vue Téléchargements sans source
+  // sélectionnée. Mesuré : HENTAIORIGINES répond 200 OK avec sa page de
+  // vérification d'âge, donc le moteur ne signale aucun challenge.
+  const [verif, setVerif] = useState<{ source: string; url: string; reason: string } | null>(
+    null,
+  );
   // Confort de lecture : mode paginé ou webtoon (bande verticale), et largeur.
   const [readerMode, setReaderMode] = useState<ReaderMode>('page');
   const [zoom, setZoom] = useState(100);
@@ -567,8 +576,25 @@ export default function Home() {
     const unlisten = listen<Progress>('download://progress', (event) => {
       setProgress(event.payload);
     });
+    // Une source peut répondre 200 OK avec sa page de vérification d'âge : le
+    // moteur ne signale alors aucun challenge (il ne voit que 403/503). C'est
+    // Rust qui constate l'absence d'image ou l'URL vide et demande l'ouverture
+    // de la fenêtre ; l'utilisateur y confirme lui-même.
+    const unlistenVerif = listen<{ source: string; url: string; reason: string }>(
+      'download://challenge',
+      (event) => {
+        const { source, url, reason } = event.payload;
+        setVerif({ source, url, reason });
+        invoke('open_challenge', { source, url })
+          .then(() => setNotice(t('telechargements.verification.ouverte', { source })))
+          .catch((e) =>
+            setError(t('telechargements.verification.erreur', { detail: String(e) })),
+          );
+      },
+    );
     return () => {
       unlisten.then((off) => off()).catch(() => {});
+      unlistenVerif.then((off) => off()).catch(() => {});
     };
     // Montage uniquement : rejouer cet effet à chaque changement de
     // `refreshDownloads` réabonnerait l'écouteur d'événements.
@@ -1525,6 +1551,36 @@ export default function Home() {
     await invoke('cancel_challenge', { source: selected.name }).catch(() => {});
   }
 
+  /** L'utilisateur a confirmé dans la fenêtre du site : on transmet les
+   *  cookies au moteur. Le chapitre reste absent, donc il sera retéléchargé. */
+  async function applyVerif() {
+    if (!verif) return;
+    setChallengeBusy(true);
+    setError(null);
+    try {
+      const n = await invoke<number>('solve_challenge', {
+        source: verif.source,
+        url: verif.url,
+      });
+      if (n === 0) {
+        setError(t('telechargements.verification.aucun.cookie'));
+      } else {
+        setNotice(t('telechargements.verification.cookies', { n, source: verif.source }));
+        setVerif(null);
+      }
+    } catch (e) {
+      setError(t('telechargements.verification.erreur', { detail: String(e) }));
+    } finally {
+      setChallengeBusy(false);
+    }
+  }
+
+  async function cancelVerif() {
+    if (!verif) return;
+    setVerif(null);
+    await invoke('cancel_challenge', { source: verif.source }).catch(() => {});
+  }
+
   function backToSource() {
     setOpenManga(null);
     setChapters([]);
@@ -2094,6 +2150,25 @@ useEffect(() => {
 
         {error && <p className="error">{error}</p>}
         {notice && <p className="notice">{notice}</p>}
+
+        {/* La vérification peut être demandée par un TÉLÉCHARGEMENT, pas
+            seulement par une lecture : sans ce panneau, l'utilisateur resterait
+            sur cette vue sans jamais voir qu'une fenêtre s'est ouverte. */}
+        {verif && (
+          <section className="panel resume">
+            <h2>{t('telechargements.verification.titre', { source: verif.source })}</h2>
+            <p className="muted">{t('telechargements.verification.note')}</p>
+            <p className="muted">{verif.reason}</p>
+            <div className="alert-actions">
+              <button className="btn" disabled={challengeBusy} onClick={() => void applyVerif()}>
+                {t('telechargements.verification.appliquer')}
+              </button>
+              <button className="btn btn-ghost" onClick={() => void cancelVerif()}>
+                {t('telechargements.verification.fermer')}
+              </button>
+            </div>
+          </section>
+        )}
 
         {savedQueue && savedQueue.items.length > 0 && !queueRunning && (
           <section className="panel resume">

@@ -139,6 +139,18 @@ const FR = {
   'catalogue.vide.langue': 'Toutes les sources de cette langue sont désactivées.',
   'selection.compteur': '{n}/{total} sélectionnés',
   'telechargements.section': 'Téléchargement',
+  'telechargements.verification.ouverte':
+    '{source} demande une vérification : une fenêtre va s’ouvrir, confirmez-y vous-même puis relancez le téléchargement.',
+  'telechargements.verification.titre': 'Vérification — {source}',
+  'telechargements.verification.note':
+    'Confirmez dans la fenêtre du site. Une fois fait, revenez ici et relancez le téléchargement : le cookie sera transmis automatiquement.',
+  'telechargements.verification.appliquer': 'C’est fait, appliquer',
+  'telechargements.verification.fermer': 'Fermer',
+  'telechargements.verification.aucun.cookie':
+    'Aucun cookie : la vérification n’est sans doute pas terminée.',
+  'telechargements.verification.cookies':
+    '{n} cookie(s) transmis à {source}. Relancez le téléchargement.',
+  'telechargements.verification.erreur': 'Vérification non appliquée : {detail}',
   'telechargements.aucun': 'Aucun webtoon téléchargé pour l’instant.',
   'telechargements.recap': 'Récapitulatif des téléchargements',
   'telechargements.stat.webtoons': 'webtoon{s}',
@@ -233,7 +245,7 @@ const FR = {
   'erreur.categories.ordre': 'Ordre des catégories : {raison}',
   'erreur.suppression': 'Suppression impossible : {raison}',
   'erreur.verification': 'Fenêtre de vérification impossible : {raison}',
-  'erreur.verification.non.appliquee': 'Vérification non appliquée : {raison}',
+  'erreur.verification.non.appliquee': 'Vérification non appliquée : {detail}',
   'erreur.telechargement': 'Téléchargement : {raison}',
 } as const;
 
@@ -336,6 +348,18 @@ const EN: Record<Cle, string> = {
   'catalogue.vide.langue': 'Every source in this language is disabled.',
   'selection.compteur': '{n}/{total} selected',
   'telechargements.section': 'Download',
+  'telechargements.verification.ouverte':
+    '{source} asks for a verification: a window will open, confirm there yourself then retry the download.',
+  'telechargements.verification.titre': 'Verification — {source}',
+  'telechargements.verification.note':
+    'Confirm in the site window. Once done, come back and retry the download: the cookie is sent automatically.',
+  'telechargements.verification.appliquer': 'Done, apply',
+  'telechargements.verification.fermer': 'Close',
+  'telechargements.verification.aucun.cookie':
+    'No cookie: the verification is probably not finished.',
+  'telechargements.verification.cookies':
+    '{n} cookie(s) sent to {source}. Retry the download.',
+  'telechargements.verification.erreur': 'Verification not applied: {detail}',
   'telechargements.aucun': 'No webtoon downloaded yet.',
   'telechargements.recap': 'Downloads summary',
   'telechargements.stat.webtoons': 'webtoon{s}',
@@ -446,7 +470,7 @@ const EN: Record<Cle, string> = {
   'erreur.categories.ordre': 'Category order: {raison}',
   'erreur.suppression': 'Cannot delete: {raison}',
   'erreur.verification': 'Cannot open the verification window: {raison}',
-  'erreur.verification.non.appliquee': 'Verification not applied: {raison}',
+  'erreur.verification.non.appliquee': 'Verification not applied: {detail}',
   'erreur.telechargement': 'Download: {raison}',
 };
 

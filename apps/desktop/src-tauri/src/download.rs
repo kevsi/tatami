@@ -220,7 +220,32 @@ async fn run_download(
             FETCH_TIMEOUT,
         )
         .await?;
-    let _ = details; // le moteur complete le cache manga/chapitres
+    let _ = &details; // le moteur complete le cache manga/chapitres
+
+    // URL à ouvrir si une vérification est nécessaire : la page du webtoon sur
+    // le site, que l'utilisateur voit et où il confirme lui-même (âge, captcha).
+    // Mesuré : HENTAIORIGINES répond 200 OK avec sa page de vérification d'âge,
+    // donc le moteur ne signale AUCUN challenge et rien ne s'ouvrait.
+    let page_publique = details
+        .get("result")
+        .and_then(|r| r.get("manga"))
+        .and_then(|m| m.get("publicUrl"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| manga_url.to_string());
+
+    // Demande à l'utilisateur de passer la vérification, puis échoue
+    // proprement : le chapitre reste absent, donc il sera retenté.
+    let demander_verification = |raison: &str| -> String {
+        let _ = app.emit(
+            "download://challenge",
+            serde_json::json!({ "source": source, "url": page_publique, "reason": raison }),
+        );
+        format!(
+            "{source} demande une vérification ({raison}). \
+             Une fenêtre va s'ouvrir : confirmez-y vous-même, puis relancez le téléchargement."
+        )
+    };
 
     // 2. pages du chapitre
     let pages = sup
@@ -238,6 +263,26 @@ async fn run_download(
     let total = page_list.len();
     if total == 0 {
         return Err("chapitre sans page".to_string());
+    }
+
+    // Mesuré : sur une source à vérification d'âge, le moteur renvoie des pages
+    // dont l'URL d'image est VIDE. Le téléchargement partait alors chercher
+    // l'adresse "" et écrivait la page d'accueil du site 45 fois dans le
+    // `.cbz`. Mieux vaut demander la vérification et échouer proprement.
+    let urls_vides = page_list
+        .iter()
+        .filter(|p| {
+            p.get("url")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .unwrap_or("")
+                .is_empty()
+        })
+        .count();
+    if urls_vides > 0 {
+        return Err(demander_verification(&format!(
+            "{urls_vides} page(s) sur {total} sans URL d'image"
+        )));
     }
 
     // Écriture au fil de l'eau dans un .part : les pages ne sont jamais gardées en
@@ -307,8 +352,6 @@ async fn run_download(
         // noir — 37 chapitres sur 44 dans un cas réel. Le type est donc déduit
         // des OCTETS, jamais du `contentType` annoncé.
         let kind = crate::image::detect(&bytes).ok_or_else(|| {
-            let message =
-                crate::image::not_an_image_message(&format!("page {}", i + 1), Some(content_type));
             let _ = app.emit(
                 "download://progress",
                 Progress {
@@ -317,10 +360,14 @@ async fn run_download(
                     page: i + 1,
                     total,
                     done: false,
-                    error: Some(message.clone()),
+                    error: Some("réponse qui n'est pas une image".to_string()),
                 },
             );
-            message
+            // Même symptôme qu'un challenge : la source a renvoyé sa page de
+            // vérification. On ouvre donc la fenêtre plutôt que d'écrire une
+            // page web dans le `.cbz`.
+            let _ = content_type;
+            demander_verification("le serveur a renvoyé une page web au lieu de l'image")
         })?;
         cbz.add_image_kind(i + 1, kind, &bytes)
             .map_err(|e| format!("écriture page {}: {e}", i + 1))?;

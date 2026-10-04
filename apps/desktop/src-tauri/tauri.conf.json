@@ -24,6 +24,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "category": "Utility"
+    "category": "Utility",
+    "resources": {
+      "../../../engine/dist/tatami-engine": "engine/tatami-engine"
+    }
   }
 }

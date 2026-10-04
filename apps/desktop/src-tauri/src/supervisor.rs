@@ -263,24 +263,37 @@ impl Supervisor {
         .to_string();
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(id.clone(), tx);
-        {
+        // ORDRE DE VERROU (invariant du module) : `pending` s'acquiert
+        // TOUJOURS avant `child`, et `child` n'est jamais tenu pendant
+        // l'acquisition de `pending`.
+        //
+        // Pourquoi : `write_all` est le seul await qui tient `child` (le pipe
+        // peut être plein, l'écriture attend le moteur). Si l'écriture échoue
+        // — donc si le moteur meurt pendant l'écriture — le chemin d'erreur
+        // doit reprendre `pending` pour désenregistrer la requête. Ré-acquérir
+        // `pending` en tenant `child`, alors que `fail_pending` (relance après
+        // crash) tient `pending` et attend `child`, forme un cycle ABBA : les
+        // deux futures restent en attente indéfiniment. Les deux taquets tokio
+        // n'ont aucune détection de cycle, donc le superviseur ne relance plus
+        // jamais le moteur et la commande Tauri appelante reste bloquée — avant
+        // même son propre `timeout`, qui n'est atteint qu'après l'écriture.
+        // D'où l'extraction ci-dessous : le résultat de l'écriture est produit
+        // dans le bloc `child`, puis le verrou est lâché avant tout contact
+        // avec `pending`.
+        let write = {
             let mut guard = self.child.lock().await;
             match guard.as_mut() {
-                Some(handles) => {
-                    if let Err(e) = handles
-                        .stdin
-                        .write_all(format!("{line}\n").as_bytes())
-                        .await
-                    {
-                        self.pending.lock().await.remove(&id);
-                        return Err(format!("stdin: {e}"));
-                    }
-                }
-                None => {
-                    self.pending.lock().await.remove(&id);
-                    return Err("sidecar non démarré".to_string());
-                }
+                Some(handles) => handles
+                    .stdin
+                    .write_all(format!("{line}\n").as_bytes())
+                    .await
+                    .map_err(|e| format!("stdin: {e}")),
+                None => Err("sidecar non démarré".to_string()),
             }
+        };
+        if let Err(e) = write {
+            self.pending.lock().await.remove(&id);
+            return Err(e);
         }
         tokio::time::timeout(timeout, rx)
             .await
@@ -316,6 +329,8 @@ impl Supervisor {
     }
 
     async fn fail_pending(&self, reason: &str) {
+        // `pending` puis `child` : conforme à l'invariant documenté dans
+        // `request` (jamais `child` tenu en prenant `pending`).
         let mut map = self.pending.lock().await;
         for (_, tx) in map.drain() {
             let _ = tx.send(serde_json::json!({"id":"","ok":false,
@@ -364,4 +379,153 @@ pub fn dev_sidecar_paths() -> (PathBuf, String) {
     let java = dist.join("runtime").join("bin").join("java.exe");
     let cp = format!(r"{}\lib\*", dist.display());
     (java, cp)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::process::Command as TestCommand;
+
+    /// Un processus quelconque qui ne lit jamais son stdin : il ne sert qu'à
+    /// obtenir une vraie poignée `ChildStdin`, donc un vrai canal. On n'émule
+    /// pas le moteur, seulement le canal.
+    fn spawn_silent_process() -> tokio::process::Child {
+        let mut cmd = if cfg!(windows) {
+            let mut c = TestCommand::new("cmd.exe");
+            c.args(["/c", "ping -n 30 127.0.0.1 > nul"]);
+            c
+        } else {
+            let mut c = TestCommand::new("sh");
+            c.args(["-c", "sleep 30"]);
+            c
+        };
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("processus de substitution")
+    }
+
+    /// Attend qu'une requête soit enregistrée dans `pending` : elle est donc en
+    /// vol, donc à cet instant ou sur le point de viser `child`.
+    async fn wait_enregistree(m: &PendingMap, d: Duration) -> bool {
+        let fin = tokio::time::Instant::now() + d;
+        loop {
+            let vide = m.lock().await.is_empty();
+            if !vide {
+                return true;
+            }
+            if tokio::time::Instant::now() >= fin {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    }
+
+    /// Attend que le verrou soit réellement détenu par une autre tâche.
+    /// `try_lock` est la seule sonde possible : on ne peut pas observer la
+    /// prise d'un verrou sans le prendre soi-même.
+    async fn wait_held<T>(m: &Mutex<T>, d: Duration) -> bool {
+        let fin = tokio::time::Instant::now() + d;
+        loop {
+            if m.try_lock().is_err() {
+                return true;
+            }
+            if tokio::time::Instant::now() >= fin {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    }
+
+    /// Non-régression ABBA.
+    ///
+    /// Scénario réel : le JVM meurt pendant qu'une requête est en vol, et le
+    /// superviseur purge les requêtes en vol au même moment. `request` tient
+    /// alors `child` pendant l'écriture ; l'écriture échoue (lecteur du canal
+    /// mort) et le chemin d'erreur doit reprendre `pending` pour désenregistrer
+    /// la requête. `fail_pending` tient `pending` et attend `child`. Avant le
+    /// correctif : cycle ABBA, les deux futures ne reviennent jamais — le
+    /// superviseur ne relance plus le moteur et la commande appelante reste
+    /// bloquée avant même son propre `timeout`.
+    ///
+    /// L'ordre est forcé par le test (verrou `child` tenu en amont, file FIFO
+    /// de tokio) : sinon la purge peut gagner la course et le cycle ne se forme
+    /// pas. Le délai est borné pour qu'un vrai interblocage fasse échouer le
+    /// test au lieu de figer la suite.
+    #[tokio::test]
+    async fn purge_et_requete_en_vol_ne_se_bloquent_pas() {
+        let sup = Supervisor::new(PathBuf::from("java"), String::new());
+        assert!(sup.child.lock().await.is_none(), "état initial inattendu");
+
+        let mut engine = spawn_silent_process();
+        let mut stdin = engine.stdin.take().expect("stdin");
+        let stdout = engine.stdout.take().expect("stdout");
+
+        // Le moteur meurt. Sa poignée reste pourtant dans `child` : c'est
+        // exactement la fenêtre réelle entre la mort du JVM et le `take()`.
+        let _ = engine.kill().await;
+        let _ = engine.wait().await;
+
+        // Mesuré sur cette plateforme : une écriture vers un canal dont le
+        // lecteur est mort renvoie `Ok` (octets tamponnés par tokio), puis
+        // `Err(BrokenPipe)` au flush suivant. On amorce donc le tampon pour que
+        // l'écriture de la requête échoue à coup sûr.
+        stdin.write_all(b"#").await.expect("amorce");
+
+        let reader_task = tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Ok(Some(_ligne)) = lines.next_line().await {}
+        });
+        *sup.child.lock().await = Some(ChildHandles { stdin, reader_task });
+
+        // On tient `child` pour ordonner l'entrelacement (file FIFO).
+        let garde = sup.child.lock().await;
+
+        // (1) Requête en vol : elle s'enregistre puis attend `child`.
+        let requete = {
+            let sup = sup.clone();
+            tokio::spawn(async move {
+                sup.request("search", serde_json::json!({}), Duration::from_secs(30))
+                    .await
+            })
+        };
+        assert!(
+            wait_enregistree(&sup.pending, Duration::from_secs(5)).await,
+            "la requête ne s'est jamais enregistrée dans `pending`"
+        );
+
+        // (2) Purge concurrente (relance après crash) : elle prend `pending`,
+        //     puis attend `child`. On sonde `pending` : la requête en vol l'a
+        //     déjà relâché (elle attend `child`), donc le détenteur observé ne
+        //     peut être que la purge.
+        let purge = {
+            let sup = sup.clone();
+            tokio::spawn(async move { sup.fail_pending("sidecar restarted").await })
+        };
+        assert!(
+            wait_held(&sup.pending, Duration::from_secs(5)).await,
+            "la purge n'a pas obtenu `pending` : le test ne reproduit pas l'interblocage"
+        );
+
+        // (3) On libère : la requête prend `child` (FIFO), son écriture échoue,
+        //     et elle bifurque sur le chemin d'erreur qui repasse par `pending`.
+        drop(garde);
+
+        let (purge_ok, requete_ok) = tokio::time::timeout(Duration::from_secs(10), async {
+            (purge.await, requete.await)
+        })
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "INTERBLOCAGE ABBA : purge et requête en vol bloquées au-delà de 10 s \
+                 (`child` détenu puis `pending` réclamé, pendant que `pending` est \
+                 détenu puis `child` réclamé)"
+            )
+        });
+        purge_ok.expect("la purge n'a pas terminé");
+        // Une requête annulée par la purge n'a pas à réussir : ce qui compte
+        // est qu'elle rende la main, pas qu'elle obtienne une réponse.
+        let _ = requete_ok.expect("la requête n'a pas terminé");
+    }
 }

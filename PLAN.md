@@ -68,7 +68,7 @@ tatami/
 | 5 | Durcissement et distribution | M | **Pas commencée** |
 
 Phase en cours : **1 et 2 en parallèle**, la phase 2 ayant un manque bloquant.
-Prochaine tâche : **2.3** (lecture hors ligne).
+Prochaine tâche : 1.10 (thèmes clair/sombre), puis la dette de phase 0 (0.13 → 0.17).
 
 **Correction du 2026-10-04** : le tableau disait « phase 2 pas commencée ». C'était
 faux, et c'est vérifiable dans le code — `download.rs` (file séquentielle,
@@ -104,7 +104,7 @@ Objectif : prouver que les trois risques majeurs sont maîtrisables avant de con
 - [ ] **0.17 (nouveau)** ZENMANGA sert des octets qui ne sont pas une image (12 premiers octets identiques sur deux pages, aucun en-tête RIFF/WEBP alors que l'URL finit en `.webp`). Hypothèse : il faudrait brancher le parser comme intercepteur pour que `redrawImageResponse` soit appelé — aujourd'hui c'est du code mort (mesuré). Vérifier avant de coder.
 - [x] **0.19 (nouveau)** La fenêtre de vérification s'ouvre quand le moteur ne signale **aucun** challenge. Deux déclencheurs côté Rust (URL d'image vide, octets non-image), fenêtre ouverte sur `manga.publicUrl`, panneau dans la vue Téléchargements, 9 clés i18n. Walk 17/17, contrôle négatif (0 `.cbz` écrit) et contrôle positif (`.cbz` MANGADEX relu par un lecteur strict). **Résolu en 0.20** : sur HENTAIORIGINES le cookie n'était pas la cause, et le panneau était invisible depuis l'onglet Catalogues.
 - [x] **0.20 (nouveau)** Images lazy-loadées illisibles par les parsers : l'URL est dans `data-src` et non `src`. `LazyLoadInterceptor` côté moteur (9 tests), garde `fetchImage` sur URL vide, `testImplementation(kotlin("test"))` — le moteur n'avait aucun test. **Résultat mesuré** : 45 URL remplies, `.cbz` de 9,3 Mo relu par un lecteur strict (45 entrées, 45 WEBP, 45 tailles distinctes), MANGADEX non régressé, aucune fenêtre de vérification. Résiduel : `032.webp` = placeholder 413×42 servi par le site.
-- [ ] **0.18 (nouveau)** Un chapitre sans titre (`title: null`) donne un `.cbz` nommé `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz` (mesuré sur MANGADEX). Le fichier est valide mais inutilisable dans un lecteur externe, ce qui vide l'exigence permanente « un `.cbz` par chapitre ». Corriger `chapterLabel` / le nom de fichier : retomber sur un numéro de chapitre lisible (« Chapitre 1.cbz »), jamais sur l'URL ni un UUID. Vérifier aussi l'assainissement du nom (AGENTS.md §6).
+- [x] **0.18 (nouveau)** Un chapitre sans titre (`title: null`) donne un `.cbz` nommé `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz` (mesuré sur MANGADEX). Le fichier est valide mais inutilisable dans un lecteur externe, ce qui vide l'exigence permanente « un `.cbz` par chapitre ». Corriger `chapterLabel` / le nom de fichier : retomber sur un numéro de chapitre lisible (« Chapitre 1.cbz »), jamais sur l'URL ni un UUID. Vérifier aussi l'assainissement du nom (AGENTS.md §6).
 
 ### Phase 0 bis — Adaptation de l'interface d'après l'analyse de sushiscan.net (M)
 
@@ -130,7 +130,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 - [x] **1.6** Historique de lecture, reprise au bon chapitre et à la bonne page, mode incognito.
 - [x] **1.7** Signets.
 - [ ] **1.8** Lecteur paginé : sens de lecture, zoom, préchargement via le cache Rust, raccourcis clavier et souris.
-- [ ] **1.9** Mode webtoon (défilement continu, liste virtualisée).
+- [x] **1.9** Mode webtoon (défilement continu, liste virtualisée).
 - [ ] **1.10** Thèmes clair/sombre, i18n français et anglais en place.
 
 **Critère de sortie** : recherche → ajout en favori → lecture → fermeture → reprise exacte à la réouverture, sur au moins 3 sources différentes, avec tests passants.
@@ -139,7 +139,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
 - [x] **2.1** Gestionnaire de téléchargements : file d'attente, reprise après interruption, concurrence limitée. *(fait sauf « débit limité par source » : la file est séquentielle globalement, ce qui est plus strict qu'un débit mais pas équivalent)*
 - [x] **2.2** Stockage CBZ, noms de fichiers assainis. *(fait sauf « chemin en base » : le chemin est dérivé de `downloads_root` + source + titre et un `meta.json` fait foi — cf. dérogation signalée au journal, à trancher)*
-- [ ] **2.3** Lecture hors ligne des chapitres téléchargés. **Bloquant** : `cbz.rs` sait écrire un ZIP mais rien ne sait le lire, le lecteur passe toujours par le moteur.
+- [x] **2.3** Lecture hors ligne des chapitres téléchargés. **Bloquant** : `cbz.rs` sait écrire un ZIP mais rien ne sait le lire, le lecteur passe toujours par le moteur.
 - [ ] **2.4** Import de CBZ tiers et lecture locale ; export d'un chapitre en CBZ.
 - [x] **2.5** Gestion de l'espace : taille utilisée, suppression. *(emplacement configurable pas fait)*
 

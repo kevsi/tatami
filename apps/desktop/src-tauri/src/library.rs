@@ -106,14 +106,34 @@ fn dir_size(dir: &Path) -> u64 {
         .sum()
 }
 
+/// Racine de la bibliothèque, **confinée** au dossier de téléchargements.
+///
+/// Le chemin vient de l'interface : sans contrôle, `list_library` ferait
+/// lister n'importe quel dossier du disque et en exposerait le contenu à la
+/// webview. Même mécanisme que `download::local_file_pages` : canonicalisation
+/// du dossier de téléchargements, canonicalisation du chemin reçu, puis
+/// vérification que le second reste sous le premier. La chaîne vide reste
+/// valide : elle signifie « la racine des téléchargements ».
+fn racine_confinement(root: &str) -> Result<PathBuf, String> {
+    let racine = super::download::downloads_root()
+        .canonicalize()
+        .unwrap_or_else(|_| super::download::downloads_root());
+    if root.is_empty() {
+        return Ok(racine);
+    }
+    let candidat = PathBuf::from(root)
+        .canonicalize()
+        .map_err(|_| "dossier de bibliothèque introuvable".to_string())?;
+    if !candidat.starts_with(&racine) {
+        return Err("refus : hors du dossier de téléchargements".to_string());
+    }
+    Ok(candidat)
+}
+
 /// Liste les webtoons téléchargés (un par dossier), du plus récent au plus ancien.
 #[tauri::command]
 pub async fn list_library(root: String) -> Result<Vec<LibraryItem>, String> {
-    let root = if root.is_empty() {
-        super::download::downloads_root()
-    } else {
-        PathBuf::from(root)
-    };
+    let root = racine_confinement(&root)?;
     let mut out: Vec<MangaEntry> = Vec::new();
     let mut sources = tokio::fs::read_dir(&root)
         .await
@@ -297,11 +317,46 @@ pub async fn note_chapter(
 mod tests {
     use super::*;
 
+    /// Compteur + pid : les tests sont parallèles, deux fixtures ne doivent
+    /// jamais se marcher dessus (leçon AGENTS.md §14).
+    static COMPTEUR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    /// Fixture **dans la vraie racine des téléchargements** : c'est la seule
+    /// racine que `list_library` accepte, donc un test qui verifiableait le
+    /// confinement avec une racine bidon ne prouverait rien.
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("tatami-lib-{tag}-{}", std::process::id()));
+        let n = COMPTEUR.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = crate::download::downloads_root()
+            .join(format!("tatami-test-{tag}-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("dossier temporaire");
         dir
+    }
+
+    /// Un chemin **réellement existant** hors des téléchargements : sans
+    /// cela, un test « le chemin est refusé » passerait aussi quand le chemin
+    /// n'existe pas, et ne prouverait donc rien du confinement.
+    #[tokio::test]
+    async fn list_library_refuse_un_chemin_hors_des_telechargements() {
+        let hors = std::env::temp_dir()
+            .canonicalize()
+            .expect("dossier temporaire");
+        assert!(
+            hors.is_dir(),
+            "le dossier temporaire doit exister pour que le test soit probant"
+        );
+        let err = list_library(hors.to_string_lossy().to_string())
+            .await
+            .expect_err("un chemin hors des téléchargements doit être refusé");
+        assert!(
+            err.contains("hors du dossier de téléchargements"),
+            "message inattendu : {err}"
+        );
+        // La racine par défaut reste utilisable : chaîne vide = téléchargements.
+        assert!(
+            list_library(String::new()).await.is_ok(),
+            "la racine par défaut doit rester fonctionnelle"
+        );
     }
 
     #[tokio::test]

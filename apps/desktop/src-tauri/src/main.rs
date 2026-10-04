@@ -12,6 +12,7 @@ mod store;
 mod supervisor;
 mod zipread;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use supervisor::{dev_sidecar_paths, Supervisor};
@@ -24,13 +25,59 @@ fn not_found() -> tauri::http::Response<Vec<u8>> {
         .unwrap_or_else(|_| tauri::http::Response::new(Vec::new()))
 }
 
+/// Candidats `(java, classpath)` du moteur, testés dans l'ordre : le
+/// **premier dont le `java` existe** gagne.
+///
+/// `CARGO_MANIFEST_DIR` (dans `supervisor::dev_sidecar_paths`) n'existe
+/// qu'à la compilation : dans une app installée, ce chemin ne mène nulle part
+/// et l'app ne démarre aucune source. D'où le second emplacement :
+///
+/// - **dev** — `engine/dist/tatami-engine` à la racine du dépôt, via
+///   `dev_sidecar_paths()`. C'est ce que `cargo tauri dev` utilise : inchangé,
+///   c'est le premier candidat et il existe en local.
+/// - **production** — la ressource empaquetée déclarée dans
+///   `src-tauri/tauri.conf.json` (`bundle.resources`) : le dossier
+///   `engine/tatami-engine` à côté de l'exécutable, soit
+///   `resource_dir()/engine/tatami-engine`. C'est là que vit le moteur dans
+///   une app installée (Windows : `C:\Program Files\Tatami\engine\tatami-engine`).
+fn sidecar_candidates(resource_dir: Option<&std::path::Path>) -> Vec<(PathBuf, String)> {
+    let mut candidats = vec![dev_sidecar_paths()];
+    if let Some(dir) = resource_dir {
+        let dist = dir.join("engine").join("tatami-engine");
+        candidats.push((
+            dist.join("runtime").join("bin").join("java.exe"),
+            format!(r"{}\lib\*", dist.display()),
+        ));
+    }
+    candidats
+}
+
+/// (java, classpath) retenus. Si aucun candidat n'existe, on rend le chemin de
+/// dev : le superviseur échouera en nommant l'emplacement attendu.
+fn sidecar_paths(resource_dir: Option<&std::path::Path>) -> (PathBuf, String) {
+    let candidats = sidecar_candidates(resource_dir);
+    for (java, cp) in &candidats {
+        if java.is_file() {
+            return (java.clone(), cp.clone());
+        }
+    }
+    candidats.into_iter().next().unwrap_or_else(|| {
+        let java = PathBuf::from("java.exe");
+        (java.clone(), java.display().to_string())
+    })
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    let (java, classpath) = dev_sidecar_paths();
-    tracing::info!("sidecar java={} (dev)", java.display());
+    let context = tauri::generate_context!();
+    let resource_dir =
+        tauri::utils::platform::resource_dir(context.package_info(), &tauri::utils::Env::default())
+            .ok();
+    let (java, classpath) = sidecar_paths(resource_dir.as_deref());
+    tracing::info!("sidecar java={}", java.display());
     let sup: Arc<Supervisor> = Supervisor::new(java, classpath);
     let cache_dir = std::env::var("APPDATA")
         .map(std::path::PathBuf::from)
@@ -135,7 +182,7 @@ fn main() {
             tauri::async_runtime::spawn(async move { handle.run().await });
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("tauri build")
         .run(|handle, event| {
             // Arrêt propre : tuer le sidecar avant de quitter, sinon le java reste orphelin.

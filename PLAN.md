@@ -248,6 +248,20 @@ _Format d'une entrée :_
 - Points ouverts :
 ```
 
+### 2026-10-04 — Tâche 1.10 (partiel) : i18n français / anglais
+- Plan : (1) construire la couche i18n avec une **garantie de compilation**, pas seulement un dictionnaire ; (2) convertir écran par écran ; (3) prouver sur l'app réelle que la bascule est immédiate, complète et persistante.
+- Fait : `app/i18n.ts`, sans dépendance. Deux propriétés voulues :
+  1. **Exhaustivité vérifiée par le compilateur** — `EN` est typé `Record<Cle, string>`, donc une clé française sans traduction fait échouer `pnpm typecheck`. Aucun trou silencieux possible, contrairement à un `JSON` que rien ne vérifie.
+  2. **Conversion possible par écrans** — `t()` retombe sur le français, donc convertir l'interface morceau par morceau n'affiche jamais une clé brute.
+  La langue est une préférence d'affichage : `localStorage` (`tatami.lang`), conformément à AGENTS.md §6. Sélecteur dans les Réglages, `document.documentElement.lang` suit.
+- Converti : navigation, Réglages (contenu, catégories, langue, réseau), accueil (continuer, signets, favoris, filtres), catalogues, téléchargements, fiche, lecteur, et tous les messages d'erreur.
+- **Une fuite que seule la capture a révélée** : le walk annonçait 15/15 alors que le titre de l'accueil et le compteur étaient restés en français — mes assertions regardaient les bandeaux et les boutons, pas le `h1`. Les deux ont été convertis **et** ajoutés au walk. Un test qui passe peut masquer ce qu'il ne regarde pas.
+- Preuve :
+  - `pnpm typecheck` / `pnpm lint` / `pnpm build` → 0 / 0 / 0.
+  - Parcours sur l'app réelle via CDP (`walk-i18n.js`) : **17 mesures, 0 échec** — onglets FR puis EN, titre de vue, sections, `html lang`, les trois écrans, retour au français, survie au rechargement, et **aucune clé brute affichée** (détectée par balayage du DOM).
+  - Captures : `audit/tatami4/23-anglais-reglages.png`, `audit/tatami4/24-anglais-accueil.png`.
+- Points ouverts : les **titres de mangas restent dans leur langue d'origine** (volontaire : on ne traduit pas les œuvres). Restent à convertir les libellés menores : sélection de chapitres, fiche détaillée, invite de vérification Cloudflare.
+
 ### 2026-10-04 — Tâche 1.5 : catégories de favoris
 - Plan : (1) demander à l'humain une catégorie ou plusieurs, plutôt que de deviner (deux applications de référence ne font pas la même chose) ; (2) table `categories` + `favorites.category_id` ; (3) le prouver sur l'app réelle, y compris la suppression d'une catégorie.
 - Décision humaine : **une seule catégorie par favori**, comme dans Kotatsu-Redo, l'app dont on vise la parité.

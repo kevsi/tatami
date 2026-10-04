@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
+import { useI18n, type MessageKey } from './i18n';
+
 type Source = { name: string; lang: string };
 type Manga = {
   url: string;
@@ -137,17 +139,19 @@ function couleurCategorie(index: number | null | undefined): string {
 
 type Tri = 'source' | 'az' | 'za';
 
-const TRIS: { value: Tri; label: string }[] = [
-  { value: 'source', label: 'Ordre du site' },
-  { value: 'az', label: 'A → Z' },
-  { value: 'za', label: 'Z → A' },
+const TRIS: { value: Tri; cle: MessageKey }[] = [
+  { value: 'source', cle: 'tri.source' },
+  { value: 'az', cle: 'tri.az' },
+  { value: 'za', cle: 'tri.za' },
 ];
 
+// Les libellés sont des CLÉS i18n, pas du texte : la liste est constante mais
+// sa traduction dépend de la langue courante.
 const RATINGS = [
-  { value: 'SUGGESTIVE', label: 'Suggestive — défaut, exclut le contenu adulte' },
-  { value: 'SAFE', label: 'Safe — plusieurs sources renvoient alors zéro résultat' },
-  { value: 'ALL', label: 'Toutes — aucun filtre' },
-] as const;
+  { value: 'SUGGESTIVE', cle: 'reglages.rating.suggestive' },
+  { value: 'SAFE', cle: 'reglages.rating.safe' },
+  { value: 'ALL', cle: 'reglages.rating.all' },
+] as const satisfies readonly { value: string; cle: MessageKey }[];
 
 const TIMEOUTS = [30, 60, 120] as const;
 
@@ -176,10 +180,10 @@ function loadPrefs(): {
 }
 
 const TABS = [
-  { id: 'home', label: 'Accueil' },
-  { id: 'catalog', label: 'Catalogues' },
-  { id: 'downloads', label: 'Téléchargements' },
-  { id: 'settings', label: 'Paramètres' },
+  { id: 'home', cle: 'nav.accueil' },
+  { id: 'catalog', cle: 'nav.catalogues' },
+  { id: 'downloads', cle: 'nav.telechargements' },
+  { id: 'settings', cle: 'nav.parametres' },
 ] as const;
 
 // Barre d'application persistante : brand + onglets, visible dans toutes les vues.
@@ -192,22 +196,23 @@ function AppBar({
   onTab: (id: string) => void;
   children?: React.ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <div className="appbar">
       <div className="brand">
         <span className="logo" />
-        Tatami
+        {t('app.nom')}
       </div>
-      <nav className="tabs" role="tablist" aria-label="Sections">
-        {TABS.map((t) => (
+      <nav className="tabs" role="tablist" aria-label={t('nav.catalogues')}>
+        {TABS.map((tabule) => (
           <button
-            key={t.id}
+            key={tabule.id}
             className="tab"
             role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => onTab(t.id)}
+            aria-selected={tab === tabule.id}
+            onClick={() => onTab(tabule.id)}
           >
-            {t.label}
+            {t(tabule.cle)}
           </button>
         ))}
       </nav>
@@ -437,6 +442,9 @@ function describeError(raw: string, sourceName: string): string {
 }
 
 export default function Home() {
+  // `lang` et `setLang` sont déjà pris par le FILTRE de langue des
+  // catalogues : ceux de l'i18n sont donc aliassés.
+  const { t, lang: langue, setLang: setLangue } = useI18n();
   const [sources, setSources] = useState<Source[]>([]);
   const [lang, setLang] = useState('all');
   const [nameFilter, setNameFilter] = useState('');
@@ -704,7 +712,7 @@ export default function Home() {
       await refreshShelf();
     } catch (e) {
       setFavorites(avant);
-      setError(`Catégorie : ${e}`);
+      setError(t('erreur.categorie', { raison: String(e) }));
     }
   }
 
@@ -714,7 +722,7 @@ export default function Home() {
       await refreshShelf();
       return c;
     } catch (e) {
-      setError(`Catégorie : ${e}`);
+      setError(t('erreur.categorie', { raison: String(e) }));
       return null;
     }
   }
@@ -729,7 +737,7 @@ export default function Home() {
       await refreshShelf();
     } catch (e) {
       setCategories(avant);
-      setError(`Catégorie : ${e}`);
+      setError(t('erreur.categorie', { raison: String(e) }));
     }
   }
 
@@ -749,7 +757,7 @@ export default function Home() {
       await refreshShelf();
     } catch (e) {
       setCategories(avant);
-      setError(`Ordre des catégories : ${e}`);
+      setError(t('erreur.categories.ordre', { raison: String(e) }));
     }
   }
 
@@ -758,7 +766,7 @@ export default function Home() {
       await invoke('rename_category', { id, name: nom, color: couleur });
       await refreshShelf();
     } catch (e) {
-      setError(`Catégorie : ${e}`);
+      setError(t('erreur.categorie', { raison: String(e) }));
     }
   }
 
@@ -811,7 +819,7 @@ export default function Home() {
       await refreshSignets();
     } catch (e) {
       setSignets(avant);
-      setError(`Signet : ${e}`);
+      setError(t('erreur.signet', { raison: String(e) }));
     }
   }
 
@@ -847,7 +855,7 @@ export default function Home() {
       setInfo(ficheRes.value.manga);
     }
     if (chapitresRes.status === 'rejected') {
-      setError(`Chapitres indisponibles : ${chapitresRes.reason}`);
+      setError(t('erreur.chapitres', { raison: String(chapitresRes.reason) }));
       return;
     }
     const list: Chapter[] = chapitresRes.value.chapters ?? [];
@@ -877,7 +885,7 @@ export default function Home() {
       await invoke('set_source_enabled', { source: nom, enabled: actif });
     } catch (e) {
       setSourcesOff(avant);
-      setError(`Activation de la source impossible : ${e}`);
+      setError(t('erreur.source', { raison: String(e) }));
     }
   }
 
@@ -888,7 +896,7 @@ export default function Home() {
       await invoke('enable_all_sources');
     } catch (e) {
       setSourcesOff(avant);
-      setError(`Réactivation impossible : ${e}`);
+      setError(t('erreur.reactivation', { raison: String(e) }));
     }
   }
 
@@ -927,7 +935,7 @@ export default function Home() {
     } catch (e) {
       // On annule l'optimisme si la base refuse : l'interface ne ment pas.
       await refreshShelf();
-      setError(`Favori non enregistré : ${e}`);
+      setError(t('erreur.favori', { raison: String(e) }));
     }
   }
 
@@ -1294,7 +1302,7 @@ export default function Home() {
       setNotice(`Téléchargé : ${file}`);
       refreshDownloads();
     } catch (e) {
-      setError(`Téléchargement échoué : ${e}`);
+      setError(t('erreur.telechargement', { raison: String(e) }));
     } finally {
       setDownloading(false);
       setProgress(null);
@@ -1469,7 +1477,7 @@ export default function Home() {
       setNotice(`${item.title} : ${n} chapitre(s) supprimé(s).`);
       refreshDownloads();
     } catch (e) {
-      setError(`Suppression impossible : ${e}`);
+      setError(t('erreur.suppression', { raison: String(e) }));
     }
   }
 
@@ -1579,7 +1587,7 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string)
     const index = Math.max(0, Math.min(pages.length - 1, startIndex));
     setReader({ chapter: c, pages, index, source: src });
   } catch (e) {
-    setError(`Lecture impossible : ${e}`);
+    setError(t('erreur.lecture', { raison: String(e) }));
   } finally {
     setReaderLoading(false);
   }
@@ -1636,7 +1644,7 @@ async function resumeReading(h: HistoryItem) {
     }
   }
   if (chapitresRes.status === 'rejected') {
-    setError(`Chapitres indisponibles : ${chapitresRes.reason}`);
+    setError(t('erreur.chapitres', { raison: String(chapitresRes.reason) }));
     return;
   }
   const list: Chapter[] = chapitresRes.value.chapters ?? [];
@@ -1827,7 +1835,7 @@ useEffect(() => {
           {'←'} Catalogues
         </button>
         <header className="page-head">
-          <h1>Paramètres</h1>
+          <h1>{t('nav.parametres')}</h1>
         </header>
 
         {/* Mesuré : un échec déclenché depuis cet écran (catégorie en double,
@@ -1836,39 +1844,33 @@ useEffect(() => {
         {error && <p className="error">{error}</p>}
 
         <section className="panel">
-          <h2>Contenu</h2>
+          <h2>{t('reglages.contenu')}</h2>
           <label className="field">
-            Contenu affiché
+            {t('reglages.contenu.affiche')}
             <select
               value={rating}
               onChange={(e) => {
                 setRating(e.target.value);
                 window.localStorage.setItem(SAFE_KEY, e.target.value);
               }}
-              aria-label="Classification de contenu maximale affichée"
+              aria-label={t('reglages.contenu.affiche')}
             >
               {RATINGS.map((r) => (
                 <option key={r.value} value={r.value}>
-                  {r.label}
+                  {t(r.cle)}
                 </option>
               ))}
             </select>
           </label>
-          <p className="muted">
-            Une seule classification à la fois : les sources n’en acceptent pas
-            plusieurs. Les sources qui n’exposent pas de classification ne sont pas filtrées.
-          </p>
+          <p className="muted">{t('reglages.contenu.note')}</p>
         </section>
 
         <section className="panel">
-          <h2>Catégories de favoris</h2>
-          <p className="muted">
-            Un favori appartient à une seule catégorie. Supprimer une catégorie
-            ne supprime pas ses favoris : ils reviennent en « sans catégorie ».
-          </p>
+          <h2>{t('reglages.categories')}</h2>
+          <p className="muted">{t('reglages.categories.note')}</p>
 
           {categories.length === 0 ? (
-            <p className="muted">Aucune catégorie pour l&apos;instant.</p>
+            <p className="muted">{t('reglages.categories.vide')}</p>
           ) : (
             <ul className="cat-list">
               {categories.map((c, i) => (
@@ -1881,7 +1883,7 @@ useEffect(() => {
                   <input
                     className="cat-name"
                     defaultValue={c.name}
-                    aria-label={`Nom de la catégorie ${c.name}`}
+                    aria-label={t('reglages.categories.nom', { nom: c.name })}
                     onBlur={(e) => {
                       const v = e.target.value.trim();
                       if (v && v !== c.name) void renommerCategorie(c.id, v, c.color);
@@ -1898,7 +1900,7 @@ useEffect(() => {
                         className={`cat-swatch${c.color === k + 1 ? ' on' : ''}`}
                         style={{ background: col }}
                         aria-pressed={c.color === k + 1}
-                        aria-label={`Couleur ${k + 1}`}
+                        aria-label={t('reglages.categories.couleur', { nom: c.name })}
                         onClick={() => void renommerCategorie(c.id, c.name, k + 1)}
                       />
                     ))}
@@ -1908,7 +1910,8 @@ useEffect(() => {
                   </span>
                   <button
                     className="btn btn-ghost"
-                    aria-label={`Monter la catégorie ${c.name}`}
+                    aria-label={t('reglages.categories.monter', { nom: c.name })}
+                    title={t('reglages.categories.monter', { nom: c.name })}
                     disabled={i === 0}
                     onClick={() => void deplacerCategorie(c.id, -1)}
                   >
@@ -1916,7 +1919,8 @@ useEffect(() => {
                   </button>
                   <button
                     className="btn btn-ghost"
-                    aria-label={`Descendre la catégorie ${c.name}`}
+                    aria-label={t('reglages.categories.descendre', { nom: c.name })}
+                    title={t('reglages.categories.descendre', { nom: c.name })}
                     disabled={i === categories.length - 1}
                     onClick={() => void deplacerCategorie(c.id, 1)}
                   >
@@ -1924,10 +1928,10 @@ useEffect(() => {
                   </button>
                   <button
                     className="btn btn-ghost"
-                    aria-label={`Supprimer la catégorie ${c.name}`}
+                    aria-label={t('reglages.categories.supprimer')}
                     onClick={() => void supprimerCategorie(c.id)}
                   >
-                    Supprimer
+                    {t('reglages.categories.supprimer')}
                   </button>
                 </li>
               ))}
@@ -1937,8 +1941,8 @@ useEffect(() => {
           <div className="cat-add">
             <input
               className="cat-name"
-              placeholder="Nouvelle catégorie…"
-              aria-label="Nom de la nouvelle catégorie"
+              placeholder={t('reglages.categories.nouvelle')}
+              aria-label={t('reglages.categories.nouvelle')}
               value={nouvelleCategorie}
               onChange={(e) => setNouvelleCategorie(e.target.value)}
               onKeyDown={(e) => {
@@ -1950,15 +1954,31 @@ useEffect(() => {
               disabled={nouvelleCategorie.trim().length === 0}
               onClick={() => void validerNouvelleCategorie()}
             >
-              Ajouter
+              {t('reglages.categories.ajouter')}
             </button>
           </div>
         </section>
 
         <section className="panel">
-          <h2>Réseau</h2>
+          <h2>{t('reglages.langue')}</h2>
           <label className="field">
-            Délai avant abandon
+            {t('reglages.langue')}
+            <select
+              value={langue}
+              onChange={(e) => setLangue(e.target.value === 'en' ? 'en' : 'fr')}
+              aria-label={t('reglages.langue')}
+            >
+              <option value="fr">{t('reglages.langue.fr')}</option>
+              <option value="en">{t('reglages.langue.en')}</option>
+            </select>
+          </label>
+          <p className="muted">{t('reglages.langue.note')}</p>
+        </section>
+
+        <section className="panel">
+          <h2>{t('reglages.reseau')}</h2>
+          <label className="field">
+            {t('reglages.reseau.delai')}
             <select
               value={listTimeout}
               onChange={(e) => {
@@ -1966,20 +1986,16 @@ useEffect(() => {
                 setListTimeout(v);
                 window.localStorage.setItem(TIMEOUT_KEY, String(v));
               }}
-              aria-label="Délai avant abandon d'une source, en secondes"
+              aria-label={t('reglages.reseau.delai')}
             >
-              {TIMEOUTS.map((t) => (
-                <option key={t} value={t}>
-                  {t} secondes
+              {TIMEOUTS.map((secondes) => (
+                <option key={secondes} value={secondes}>
+                  {t('reglages.reseau.secondes', { n: secondes })}
                 </option>
               ))}
             </select>
           </label>
-          <p className="muted">
-            Certaines sources scannent tout leur catalogue avant de répondre
-            (EXHENTAI : 36 s). Au-delà du délai, la source est signalée hors
-            service plutôt que de faire attendre.
-          </p>
+          <p className="muted">{t('reglages.reseau.note')}</p>
         </section>
 
         <section className="panel">
@@ -2073,7 +2089,7 @@ useEffect(() => {
       <main>
         <AppBar tab={tab} onTab={goTab} />
         <header className="page-head">
-          <h1>Téléchargements</h1>
+          <h1>{t('nav.telechargements')}</h1>
         </header>
 
         {error && <p className="error">{error}</p>}
@@ -2081,17 +2097,19 @@ useEffect(() => {
 
         {savedQueue && savedQueue.items.length > 0 && !queueRunning && (
           <section className="panel resume">
-            <h2>File interrompue</h2>
+            <h2>{t('telechargements.file.interrompue')}</h2>
             <p className="muted">
-              {savedQueue.items.length} webtoon{savedQueue.items.length > 1 ? 's' : ''} attendaient
-              encore des chapitres. Les chapitres déjà téléchargés seront ignorés.
+              {t('telechargements.file.interrompue.note', {
+                n: savedQueue.items.length,
+                s: savedQueue.items.length > 1 ? 's' : '',
+              })}
             </p>
             <div className="alert-actions">
               <button className="btn btn-primary" onClick={resumeQueue}>
-                Reprendre
+                {t('telechargements.file.reprendre')}
               </button>
               <button className="btn btn-ghost" onClick={forgetQueue}>
-                Abandonner la file
+                {t('telechargements.file.abandonner')}
               </button>
             </div>
           </section>
@@ -2099,10 +2117,10 @@ useEffect(() => {
 
         {queue.length > 0 && (
           <section className="panel queue">
-            <h2>File de téléchargement</h2>
+            <h2>{t('telechargements.file')}</h2>
             {queueRunning ? (
               <button className="btn" onClick={cancelQueueNow}>
-                Arrêter après le chapitre en cours
+                {t('telechargements.arreter.apres')}
               </button>
             ) : (
               <button className="btn btn-ghost" onClick={() => setQueue([])}>
@@ -2140,29 +2158,33 @@ useEffect(() => {
         )}
 
         {library.length === 0 ? (
-          <p className="muted">Aucun webtoon téléchargé pour l&apos;instant.</p>
+          <p className="muted">{t('telechargements.aucun')}</p>
         ) : (
           <>
-            <section className="dl-stats" aria-label="Récapitulatif des téléchargements">
+            <section className="dl-stats" aria-label={t('telechargements.recap')}>
               <div className="dl-stat">
                 <b>{library.length}</b>
-                <span>webtoon{library.length > 1 ? 's' : ''}</span>
+                <span>
+                  {t('telechargements.stat.webtoons', {
+                    s: library.length > 1 ? 's' : '',
+                  })}
+                </span>
               </div>
               <div className="dl-stat">
                 <b>{totalChapters}</b>
-                <span>chapitres</span>
+                <span>{t('telechargements.stat.chapitres')}</span>
               </div>
               <div className="dl-stat">
                 <b>{formatBytes(totalBytes)}</b>
-                <span>sur le disque</span>
+                <span>{t('telechargements.stat.disque')}</span>
               </div>
               <div className="dl-stat">
                 <b>{partiels}</b>
-                <span>à compléter</span>
+                <span>{t('telechargements.stat.a.completer')}</span>
               </div>
             </section>
 
-            <div className="band">Vos webtoons</div>
+            <div className="band">{t('telechargements.vos.webtoons')}</div>
 
             <div className="dl-grid">
               {library.map((item) => {
@@ -2188,7 +2210,7 @@ useEffect(() => {
                       <span className="muted dl-meta">
                         {item.source} ·{' '}
                         {item.totalChapters > 0
-                          ? `${item.downloaded}/${item.totalChapters} chapitres`
+                          ? t('telechargements.chapitres.compte', { n: item.downloaded, total: item.totalChapters })
                           : `${item.downloaded} chapitre${item.downloaded > 1 ? 's' : ''}`}{' '}
                         · {formatBytes(item.sizeBytes)}
                       </span>
@@ -2205,7 +2227,7 @@ useEffect(() => {
                             disabled={queueRunning}
                             onClick={() => void resumeManga(item)}
                           >
-                            Reprendre
+                            {t('telechargements.file.reprendre')}
                           </button>
                         )}
                         <button className="btn btn-ghost" onClick={() => setDeleteTarget(item)}>
@@ -2289,7 +2311,7 @@ if (reader) {
               onClick={() => void basculerSignet()}
               title="Marquer cette page pour la retrouver plus tard"
             >
-              {marque ? 'Signet ✓' : 'Signet'}
+              {marque ? t('lecteur.signet.actif') : t('lecteur.signet')}
             </button>
 
             <div className="seg" role="group" aria-label="Mode de lecture">
@@ -2520,7 +2542,7 @@ if (reader) {
             aria-pressed={isFavorite(fiche)}
             onClick={() => void toggleFavorite(fiche)}
           >
-            {isFavorite(fiche) ? '♥ Dans vos favoris' : '♡ Ajouter aux favoris'}
+            {isFavorite(fiche) ? t('fiche.dans.favoris') : t('fiche.ajouter.favori')}
           </button>
         </header>
 
@@ -2538,7 +2560,7 @@ if (reader) {
                   void choisirCategorie(fiche, v === '' ? null : Number(v));
                 }}
               >
-                <option value="">Sans catégorie</option>
+                <option value="">{t('fiche.sans.categorie')}</option>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -2886,14 +2908,14 @@ if (reader) {
               {loading ? ' — chargement…' : ''}
             </p>
             <div className="chips" role="group" aria-label="Tri des titres">
-              {TRIS.map((t) => (
+              {TRIS.map((option) => (
                 <button
-                  key={t.value}
+                  key={option.value}
                   className="chip"
-                  aria-pressed={tri === t.value}
-                  onClick={() => setTri(t.value)}
+                  aria-pressed={tri === option.value}
+                  onClick={() => setTri(option.value)}
                 >
-                  {t.label}
+                  {t(option.cle)}
                 </button>
               ))}
             </div>
@@ -2933,7 +2955,7 @@ if (reader) {
                         </span>
                       )}
                       {cardTotal[key] > 0 && (
-                        <span className="card-count" title={`${cardTotal[key]} chapitres`}>
+                        <span className="card-count" title={t('telechargements.chapitres.compte', { n: cardTotal[key], total: cardTotal[key] })}>
                           {cardTotal[key]} ch.
                         </span>
                       )}
@@ -3003,10 +3025,13 @@ if (reader) {
       <main>
         <AppBar tab={tab} onTab={goTab} />
         <header className="page-head">
-          <h1>Accueil</h1>
+          <h1>{t('nav.accueil')}</h1>
           <span className="sub">
-            {recent.length} lu{recent.length > 1 ? 's' : ''} récemment ·{' '}
-            {favorites.length} favori{favorites.length > 1 ? 's' : ''}
+            {t('accueil.lu.recemment', { n: recent.length })} ·{' '}
+            {t('accueil.favori', {
+              n: favorites.length,
+              s: favorites.length > 1 ? 's' : '',
+            })}
           </span>
         </header>
 
@@ -3014,8 +3039,11 @@ if (reader) {
         {notice && <p className="notice">{notice}</p>}
 
         <div className="band">
-          Continuer la lecture
-          <label className="recent-toggle" title="Masque de l'accueil les titres classés adultes par leur source. Ils restent accessibles en recherche.">
+          {t('accueil.continuer')}
+          <label
+            className="recent-toggle"
+            title={t('accueil.incognito.note')}
+          >
             <input
               type="checkbox"
               checked={incognito}
@@ -3026,17 +3054,12 @@ if (reader) {
                 void refreshShelf(hide);
               }}
             />
-            <span>Incognito</span>
+            <span>{t('accueil.incognito')}</span>
           </label>
         </div>
 
         {recent.length === 0 ? (
-          <p className="muted">
-            Rien à reprendre. Lancez une lecture depuis un catalogue, elle apparaîtra ici
-            {incognito
-              ? ' — les titres classés adultes restent masqués tant que l’incognito est actif.'
-              : '.'}
-          </p>
+          <p className="muted">{t('accueil.rien.a.reprendre')}</p>
         ) : (
           <div className="dl-grid">
             {recent.map((h) => (
@@ -3055,8 +3078,11 @@ if (reader) {
                     {h.chapter_title ? ` · ${h.chapter_title}` : ''}
                   </span>
                   <span className="muted dl-meta">
-                    page {h.page_index + 1}/{h.page_count || '?'} ·{' '}
-                    {sinceFr(h.read_at)}
+                    {t('accueil.page.sur', {
+                      p: h.page_index + 1,
+                      n: h.page_count || '?',
+                      quand: sinceFr(h.read_at),
+                    })}
                   </span>
                   <div className="dl-actions">
                     <button
@@ -3064,21 +3090,22 @@ if (reader) {
                       disabled={readerLoading}
                       onClick={() => void resumeReading(h)}
                     >
-                      {readerLoading ? 'Ouverture…' : 'Reprendre'}
+                      {readerLoading ? t('accueil.ouverture') : t('accueil.reprendre')}
                     </button>
                     <button
                       className="btn btn-ghost"
-                      aria-label={`Oublier ${h.title} dans l'historique`}
+                      aria-label={t('accueil.oublier.titre', { titre: h.title })}
+                      title={t('accueil.oublier.titre', { titre: h.title })}
                       onClick={() => {
                         void invoke('forget_history', {
                           source: h.source,
                           mangaUrl: h.manga_url,
                         })
                           .then(() => refreshShelf())
-                          .catch((e) => setError(`Suppression impossible : ${e}`));
+                          .catch((e) => setError(t('erreur.purge', { raison: String(e) })));
                       }}
                     >
-                      Oublier
+                      {t('accueil.oublier')}
                     </button>
                   </div>
                 </div>
@@ -3090,10 +3117,12 @@ if (reader) {
         {signets.length > 0 && (
           <>
             <div className="band">
-              Vos signets
+              {t('accueil.vos.signets')}
               <span className="muted">
-                {signets.length} page{signets.length > 1 ? 's' : ''} marquée
-                {signets.length > 1 ? 's' : ''}
+                {t('accueil.pages.marquees', {
+                  n: signets.length,
+                  s: signets.length > 1 ? 's' : '',
+                })}
               </span>
             </div>
             <div className="bm-list">
@@ -3115,12 +3144,16 @@ if (reader) {
                     <b>{b.title}</b>
                     <span className="muted">
                       {b.source}
-                      {b.chapter_title ? ` · ${b.chapter_title}` : ''} · page{' '}
-                      {b.page_index + 1}/{b.page_count} · {sinceFr(b.created_at)}
+                      {b.chapter_title ? ` · ${b.chapter_title}` : ''} ·{' '}
+                      {t('accueil.page.sur', {
+                        p: b.page_index + 1,
+                        n: b.page_count,
+                        quand: sinceFr(b.created_at),
+                      })}
                     </span>
                   </span>
                   <button className="btn" onClick={() => void ouvrirSignet(b)}>
-                    Rouvrir
+                    {t('accueil.rouvrir')}
                   </button>
                   <button
                     className="btn btn-ghost"
@@ -3136,11 +3169,11 @@ if (reader) {
                         .then(() => refreshSignets())
                         .catch((e) => {
                           setSignets(avant);
-                          setError(`Signet : ${e}`);
+                          setError(t('erreur.signet', { raison: String(e) }));
                         });
                     }}
                   >
-                    Retirer
+                    {t('accueil.retirer')}
                   </button>
                 </div>
               ))}
@@ -3149,15 +3182,15 @@ if (reader) {
         )}
 
         <div className="band">
-          Vos favoris
+          {t('accueil.vos.favoris')}
           {categories.length > 0 && favorites.length > 0 && (
-            <span className="chips" role="group" aria-label="Filtrer par catégorie">
+            <span className="chips" role="group" aria-label={t('reglages.categories')}>
               <button
                 className="chip"
                 aria-pressed={filtreCategorie === 'all'}
                 onClick={() => setFiltreCategorie('all')}
               >
-                Toutes
+                {t('accueil.filtre.toutes')}
               </button>
               {categories.map((c) => (
                 <button
@@ -3181,8 +3214,9 @@ if (reader) {
                 aria-pressed={filtreCategorie === 'aucune'}
                 onClick={() => setFiltreCategorie('aucune')}
               >
-                Sans catégorie (
-                {favorites.filter((f) => f.category_id == null).length})
+                {t('accueil.filtre.sans', {
+                  n: favorites.filter((f) => f.category_id == null).length,
+                })}
               </button>
             </span>
           )}
@@ -3192,22 +3226,18 @@ if (reader) {
               onClick={() => {
                 void invoke('clear_history')
                   .then(() => refreshShelf())
-                  .catch((e) => setError(`Purge impossible : ${e}`));
+                  .catch((e) => setError(t('erreur.purge', { raison: String(e) })));
               }}
             >
-              Vider l&apos;historique
+              {t('accueil.vider.historique')}
             </button>
           )}
         </div>
 
         {favorites.length === 0 ? (
-          <p className="muted">
-            Aucun favori. Ouvrez un webtoon puis cliquez sur l&apos;icône ♥.
-          </p>
+          <p className="muted">{t('accueil.favoris.vide')}</p>
         ) : favorisVisibles.length === 0 ? (
-          <p className="muted">
-            Aucun favori dans cette catégorie.
-          </p>
+          <p className="muted">{t('accueil.favoris.filtre.vide')}</p>
         ) : (
           <div className="manga-grid">
             {favorisVisibles.map((f) => {
@@ -3272,18 +3302,20 @@ if (reader) {
       <AppBar tab={tab} onTab={goTab} />
 
       <header className="page-head">
-        <h1>Catalogues</h1>
+        <h1>{t('nav.catalogues')}</h1>
         <span className="sub">
-          {visibleSources.length} sources disponibles
-          {sourcesOff.length > 0 ? ` · ${sourcesOff.length} désactivée${sourcesOff.length > 1 ? 's' : ''}` : ''}
+          {t('catalogue.sources.disponibles', { n: visibleSources.length })}
+          {sourcesOff.length > 0
+            ? ` · ${t('catalogue.sources.desactivees', { n: sourcesOff.length })}`
+            : ''}
         </span>
       </header>
 
       <input
         className="search"
         type="search"
-        aria-label="Rechercher un catalogue"
-        placeholder="Rechercher un catalogue…"
+        aria-label={t('catalogue.rechercher')}
+        placeholder={t('catalogue.rechercher')}
         value={nameFilter}
         onChange={(e) => {
           setNameFilter(e.target.value);
@@ -3291,18 +3323,18 @@ if (reader) {
         }}
       />
 
-      <div className="chips" role="group" aria-label="Langue">
-        {langs.map((l) => (
+      <div className="chips" role="group" aria-label={t('reglages.langue')}>
+        {langs.map((code) => (
           <button
-            key={l}
+            key={code}
             className="chip"
             onClick={() => {
-              setLang(l);
+              setLang(code);
               setShownSources(48);
             }}
-            aria-pressed={l === lang}
+            aria-pressed={code === lang}
           >
-            {l === 'all' ? 'Toutes' : l.toUpperCase()}
+            {code === 'all' ? t('catalogue.langue.toutes') : code.toUpperCase()}
           </button>
         ))}
       </div>
@@ -3311,7 +3343,10 @@ if (reader) {
 
       {sourcesOff.length > 0 && (
         <div className="row-actions">
-          <label className="recent-toggle" title="Les sources désactivées restent enregistrées, elles sont juste masquées.">
+          <label
+            className="recent-toggle"
+            title={t('catalogue.desactivees.note')}
+          >
             <input
               type="checkbox"
               checked={voirDesactives}
@@ -3320,10 +3355,15 @@ if (reader) {
                 setShownSources(48);
               }}
             />
-            <span>Afficher les {sourcesOff.length} source{sourcesOff.length > 1 ? 's' : ''} désactivée{sourcesOff.length > 1 ? 's' : ''}</span>
+            <span>
+              {t('catalogue.desactivees.afficher', {
+                n: sourcesOff.length,
+                s: sourcesOff.length > 1 ? 's' : '',
+              })}
+            </span>
           </label>
           <button className="btn btn-ghost" onClick={() => void reactiverToutes()}>
-            Tout réactiver
+            {t('catalogue.reactiver.tout')}
           </button>
         </div>
       )}
@@ -3331,8 +3371,10 @@ if (reader) {
       {enTiles ? (
         <>
           <p className="count">
-            {visibleSources.length} sources réparties en {langCounts.length} langues. Choisissez
-            une langue pour parcourir ses sources.
+            {t('catalogue.compte.langues', {
+              n: visibleSources.length,
+              langs: langCounts.length,
+            })}
           </p>
           <div className="lang-grid">
             {langCounts.map(([code, n]) => (
@@ -3363,11 +3405,11 @@ if (reader) {
 
           {filtered.length === 0 ? (
             <div className="empty">
-              <p className="empty-title">Aucune source à afficher</p>
+              <p className="empty-title">{t('catalogue.vide.titre')}</p>
               <p className="muted">
                 {nameFilter
-                  ? `Aucune source ne correspond à « ${nameFilter} ».`
-                  : 'Toutes les sources de cette langue sont désactivées.'}{' '}
+                  ? t('catalogue.vide.texte', { nom: nameFilter })
+                  : t('catalogue.vide.langue')}{' '}
                 {sourcesOff.length > 0 && (
                   <button
                     className="btn btn-ghost"
@@ -3376,7 +3418,10 @@ if (reader) {
                       setShownSources(48);
                     }}
                   >
-                    Afficher les sources désactivées
+                    {t('catalogue.desactivees.afficher', {
+                      n: sourcesOff.length,
+                      s: sourcesOff.length > 1 ? 's' : '',
+                    })}
                   </button>
                 )}
               </p>
@@ -3384,8 +3429,10 @@ if (reader) {
           ) : (
             <>
               <div className="band">
-                {lang === 'all' ? 'Toutes les langues' : `${lang.toUpperCase()} — ${NOMS_LANGUE[lang] ?? ''}`}
-                <span className="muted">{filtered.length} source{filtered.length > 1 ? 's' : ''}</span>
+                {lang === 'all'
+                  ? t('catalogue.bandeau.langues')
+                  : `${lang.toUpperCase()} — ${NOMS_LANGUE[lang] ?? ''}`}
+                <span className="muted">{filtered.length}</span>
               </div>
 
               <div className="grid">
@@ -3400,23 +3447,25 @@ if (reader) {
                   <button
                     className={`card${dead ? ' dead' : ''}`}
                     onClick={() => openSource(s)}
-                    title={dead ? `Dernier échec : ${dead.message}` : undefined}
-                    aria-label={`Ouvrir la source ${s.name}`}
+                    title={dead ? `${t('catalogue.hors.service')} : ${dead.message}` : undefined}
+                    aria-label={t('catalogue.ouvrir', { nom: s.name })}
                   >
                     <span className="name">{s.name}</span>
-                    {dead ? <span className="badge dead-badge">hors service</span> : null}
+                    {dead ? (
+                      <span className="badge dead-badge">{t('catalogue.hors.service')}</span>
+                    ) : null}
                     {lang === 'all' && <span className="badge">{s.lang}</span>}
                   </button>
                   <button
                     className="slot-switch"
                     role="switch"
                     aria-checked={!off}
-                    aria-label={`${off ? 'Réactiver' : 'Désactiver'} la source ${s.name}`}
-                    title={
-                      off
-                        ? 'Source désactivée : elle n’apparaît plus dans le catalogue'
-                        : 'Désactiver cette source'
-                    }
+                    aria-label={t(off ? 'catalogue.reactiver' : 'catalogue.desactiver', {
+                      nom: s.name,
+                    })}
+                    title={t(off ? 'catalogue.reactiver' : 'catalogue.desactiver', {
+                      nom: s.name,
+                    })}
                     onClick={() => void basculerSource(s.name, off)}
                   >
                     <span className="slot-knob" />

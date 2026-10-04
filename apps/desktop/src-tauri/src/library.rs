@@ -10,8 +10,10 @@
 //! fichier est le format intermédiaire, volontairement lisible et remplaçable.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use tauri::State;
 
 const META: &str = "meta.json";
 const META_VERSION: u32 = 1;
@@ -69,6 +71,8 @@ pub struct LibraryItem {
     pub source: String,
     pub url: String,
     pub cover_url: Option<String>,
+    /// Jeton `tatami://cover/...` à utiliser par l'interface (cf. `cover_url`).
+    pub cover_token: Option<String>,
     pub dir: String,
     pub downloaded: usize,
     pub total_chapters: usize,
@@ -131,9 +135,23 @@ fn racine_confinement(root: &str) -> Result<PathBuf, String> {
 }
 
 /// Liste les webtoons téléchargés (un par dossier), du plus récent au plus ancien.
+///
+/// Commande fine : elle valide la racine et délègue. Toute la logique est dans
+/// `lister`, testable sans Tauri — `State` n'est pas constructible dans un test.
 #[tauri::command]
-pub async fn list_library(root: String) -> Result<Vec<LibraryItem>, String> {
-    let root = racine_confinement(&root)?;
+pub async fn list_library(
+    root: String,
+    cache: State<'_, Arc<crate::pagecache::PageCache>>,
+) -> Result<Vec<LibraryItem>, String> {
+    lister(&root, &cache).await
+}
+
+/// Le travail réel de `list_library`, testable sans l'injection Tauri.
+pub async fn lister(
+    root: &str,
+    cache: &crate::pagecache::PageCache,
+) -> Result<Vec<LibraryItem>, String> {
+    let root = racine_confinement(root)?;
     let mut out: Vec<MangaEntry> = Vec::new();
     let mut sources = tokio::fs::read_dir(&root)
         .await
@@ -183,18 +201,29 @@ pub async fn list_library(root: String) -> Result<Vec<LibraryItem>, String> {
     out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(a.title.cmp(&b.title)));
     Ok(out
         .into_iter()
-        .map(|entry| LibraryItem {
-            downloaded: entry.downloaded(),
-            complete: entry.complete(),
-            title: entry.title,
-            source: entry.source,
-            url: entry.url,
-            cover_url: entry.cover_url,
-            dir: entry.dir,
-            total_chapters: entry.total_chapters,
-            size_bytes: entry.size_bytes,
-            updated_at: entry.updated_at,
-            chapters: entry.chapters,
+        .map(|entry| {
+            // Le jeton est calculé AVANT le déplacement des champs : il lit
+            // `source`, `url` et `cover_url`, que la structuelle consomme.
+            let cover_token = crate::pagecache::jeton_cover(
+                cache,
+                &entry.source,
+                &entry.url,
+                entry.cover_url.as_deref(),
+            );
+            LibraryItem {
+                downloaded: entry.downloaded(),
+                complete: entry.complete(),
+                title: entry.title,
+                source: entry.source,
+                url: entry.url,
+                cover_url: entry.cover_url,
+                cover_token,
+                dir: entry.dir,
+                total_chapters: entry.total_chapters,
+                size_bytes: entry.size_bytes,
+                updated_at: entry.updated_at,
+                chapters: entry.chapters,
+            }
         })
         .collect())
 }
@@ -333,6 +362,14 @@ mod tests {
         dir
     }
 
+    /// Cache jetable pour les tests : seule la couverture l'utilise, et un
+    /// cache réel ici laisserait des fichiers derrière lui.
+    fn cache_de_test() -> std::sync::Arc<crate::pagecache::PageCache> {
+        crate::pagecache::PageCache::new(
+            crate::download::downloads_root().join("tatami-cache-test"),
+        )
+    }
+
     /// Un chemin **réellement existant** hors des téléchargements : sans
     /// cela, un test « le chemin est refusé » passerait aussi quand le chemin
     /// n'existe pas, et ne prouverait donc rien du confinement.
@@ -345,7 +382,8 @@ mod tests {
             hors.is_dir(),
             "le dossier temporaire doit exister pour que le test soit probant"
         );
-        let err = list_library(hors.to_string_lossy().to_string())
+        let cache = cache_de_test();
+        let err = lister(&hors.to_string_lossy(), &cache)
             .await
             .expect_err("un chemin hors des téléchargements doit être refusé");
         assert!(
@@ -354,7 +392,7 @@ mod tests {
         );
         // La racine par défaut reste utilisable : chaîne vide = téléchargements.
         assert!(
-            list_library(String::new()).await.is_ok(),
+            lister("", &cache).await.is_ok(),
             "la racine par défaut doit rester fonctionnelle"
         );
     }
@@ -393,7 +431,7 @@ mod tests {
         .await
         .unwrap();
 
-        let items = list_library(root.to_string_lossy().to_string())
+        let items = lister(&root.to_string_lossy(), &cache_de_test())
             .await
             .unwrap();
         assert_eq!(items.len(), 1);
@@ -413,7 +451,7 @@ mod tests {
         std::fs::write(manga.join("Chapitre 1.cbz"), b"x").unwrap();
         std::fs::write(manga.join("Chapitre 2.cbz"), b"x").unwrap();
 
-        let items = list_library(dir.to_string_lossy().to_string())
+        let items = lister(&dir.to_string_lossy(), &cache_de_test())
             .await
             .unwrap();
         assert_eq!(items.len(), 1);

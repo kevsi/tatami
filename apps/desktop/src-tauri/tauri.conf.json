@@ -18,7 +18,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' https: data: http://tatami.localhost asset: http://asset.localhost; style-src 'unsafe-inline' 'self'; connect-src 'self' ipc: http://ipc.localhost tauri: http://tauri.localhost"
+      "csp": "default-src 'self'; img-src 'self' data: http://tatami.localhost asset: http://asset.localhost; style-src 'unsafe-inline' 'self'; connect-src 'self' ipc: http://ipc.localhost tauri: http://tauri.localhost"
     }
   },
   "bundle": {

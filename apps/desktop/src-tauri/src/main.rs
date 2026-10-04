@@ -114,8 +114,15 @@ fn main() {
             let sup = sup.clone();
             let cache = cache.clone();
             tauri::async_runtime::spawn(async move {
+                // Deux préfixes, deux natures : `page/` (lecteur) et `cover/`
+                // (vignettes). Les deux passent par le moteur — la webview ne
+                // contacte jamais un site de manga elle-même.
                 let path = request.uri().path().trim_start_matches('/');
-                let Some(token) = path.strip_prefix("page/") else {
+                let item = path
+                    .strip_prefix("page/")
+                    .map(|t| (t, "page"))
+                    .or_else(|| path.strip_prefix("cover/").map(|t| (t, "cover")));
+                let Some((token, _genre)) = item else {
                     responder.respond(not_found());
                     return;
                 };

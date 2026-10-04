@@ -1,22 +1,24 @@
-//! Commandes Tauri du magasin de données (favoris, historique, reprise).
+//! Commandes Tauri du magasin de donnÃ©es (favoris, historique, reprise).
 //!
 //! Elles sont fines : valident, appellent `store::Store`, renvoient un type
-//! sérialisable. Toute la logique est dans `store.rs`, testable sans Tauri.
+//! sÃ©rialisable. Toute la logique est dans `store.rs`, testable sans Tauri.
 
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::State;
 
+use crate::pagecache::jeton_cover as jeton;
+use crate::pagecache::PageCache;
 use crate::store::{Bookmark, Category, Favorite, HistoryEntry, Store};
 
-/// Nombre d'entrées renvoyées quand l'interface ne le précise pas.
+/// Nombre d'entrÃ©es renvoyÃ©es quand l'interface ne le prÃ©cise pas.
 const RECENT_LIMIT: u32 = 24;
 
 fn vide(v: &str) -> bool {
     v.trim().is_empty()
 }
 
-/// Résout un paramètre obligatoire sous peine d'erreur explicite.
+/// RÃ©sout un paramÃ¨tre obligatoire sous peine d'erreur explicite.
 fn requis(source: &str, manga_url: &str) -> Result<(), String> {
     if vide(source) {
         return Err("PARSE_ERROR: source vide".to_string());
@@ -27,13 +29,13 @@ fn requis(source: &str, manga_url: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Sources que l'utilisateur a écartées. Liste vide = toutes actives.
+/// Sources que l'utilisateur a Ã©cartÃ©es. Liste vide = toutes actives.
 #[tauri::command]
 pub async fn list_disabled_sources(store: State<'_, Arc<Store>>) -> Result<Vec<String>, String> {
     store.disabled_sources()
 }
 
-/// Active ou désactive une source. Une source jamais touchée est active.
+/// Active ou dÃ©sactive une source. Une source jamais touchÃ©e est active.
 #[tauri::command]
 pub async fn set_source_enabled(
     store: State<'_, Arc<Store>>,
@@ -46,21 +48,21 @@ pub async fn set_source_enabled(
     store.set_source_enabled(source.trim(), enabled)
 }
 
-/// Réactive toutes les sources d'un coup.
+/// RÃ©active toutes les sources d'un coup.
 #[tauri::command]
 pub async fn enable_all_sources(store: State<'_, Arc<Store>>) -> Result<(), String> {
     store.enable_all_sources()
 }
 
-/// Catégories de favoris, dans l'ordre choisi par l'utilisateur.
+/// CatÃ©gories de favoris, dans l'ordre choisi par l'utilisateur.
 #[tauri::command]
 pub async fn list_categories(store: State<'_, Arc<Store>>) -> Result<Vec<Category>, String> {
     store.list_categories()
 }
 
-/// Crée une catégorie. La couleur est un index de palette (1..=8), pas une
-/// valeur CSS : elle est bornée ici pour que l'interface ait toujours une
-/// variable à traduire.
+/// CrÃ©e une catÃ©gorie. La couleur est un index de palette (1..=8), pas une
+/// valeur CSS : elle est bornÃ©e ici pour que l'interface ait toujours une
+/// variable Ã  traduire.
 #[tauri::command]
 pub async fn add_category(
     store: State<'_, Arc<Store>>,
@@ -71,7 +73,7 @@ pub async fn add_category(
     store.add_category(nom, color.clamp(1, 8))
 }
 
-/// Renomme et/ou recolore une catégorie.
+/// Renomme et/ou recolore une catÃ©gorie.
 #[tauri::command]
 pub async fn rename_category(
     store: State<'_, Arc<Store>>,
@@ -83,19 +85,19 @@ pub async fn rename_category(
     store.rename_category(id, nom, color.clamp(1, 8))
 }
 
-/// Supprime une catégorie ; ses favoris reviennent en « sans catégorie ».
+/// Supprime une catÃ©gorie ; ses favoris reviennent en Â« sans catÃ©gorie Â».
 #[tauri::command]
 pub async fn delete_category(store: State<'_, Arc<Store>>, id: i64) -> Result<(), String> {
     store.delete_category(id)
 }
 
-/// Réécrit l'ordre des catégories à partir de la liste d'identifiants.
+/// RÃ©Ã©crit l'ordre des catÃ©gories Ã  partir de la liste d'identifiants.
 #[tauri::command]
 pub async fn reorder_categories(store: State<'_, Arc<Store>>, ids: Vec<i64>) -> Result<(), String> {
     store.reorder_categories(&ids)
 }
 
-/// Affecte (ou retire) la catégorie d'un favori.
+/// Affecte (ou retire) la catÃ©gorie d'un favori.
 #[tauri::command]
 pub async fn set_favorite_category(
     store: State<'_, Arc<Store>>,
@@ -107,15 +109,15 @@ pub async fn set_favorite_category(
     store.set_favorite_category(source.trim(), manga_url.trim(), category_id)
 }
 
-/// Nom de catégorie valide : non vide et borné. La longueur maximale évite une
-/// étiquette qui déborde partout ailleurs.
+/// Nom de catÃ©gorie valide : non vide et bornÃ©. La longueur maximale Ã©vite une
+/// Ã©tiquette qui dÃ©borde partout ailleurs.
 fn nom_categorie(name: &str) -> Result<&str, String> {
     let n = name.trim();
     if n.is_empty() {
-        return Err("PARSE_ERROR: nom de catégorie vide".to_string());
+        return Err("PARSE_ERROR: nom de catÃ©gorie vide".to_string());
     }
     if n.chars().count() > 30 {
-        return Err("PARSE_ERROR: nom de catégorie trop long (30 caractères max)".to_string());
+        return Err("PARSE_ERROR: nom de catÃ©gorie trop long (30 caractÃ¨res max)".to_string());
     }
     Ok(n)
 }
@@ -150,7 +152,7 @@ pub async fn add_bookmark(
     )
 }
 
-/// Retire le signet d'une page précise.
+/// Retire le signet d'une page prÃ©cise.
 #[tauri::command]
 pub async fn remove_bookmark(
     store: State<'_, Arc<Store>>,
@@ -168,10 +170,11 @@ pub async fn remove_bookmark(
     )
 }
 
-/// Signets, du plus récent au plus ancien, éventuellement limités à un webtoon.
+/// Signets, du plus rÃ©cent au plus ancien, Ã©ventuellement limitÃ©s Ã  un webtoon.
 #[tauri::command]
 pub async fn list_bookmarks(
     store: State<'_, Arc<Store>>,
+    cache: State<'_, Arc<PageCache>>,
     limit: Option<u32>,
     manga_url: Option<String>,
 ) -> Result<Vec<Bookmark>, String> {
@@ -180,7 +183,11 @@ pub async fn list_bookmarks(
         .as_deref()
         .map(str::trim)
         .filter(|u| !u.is_empty());
-    store.list_bookmarks(n, filtre)
+    let mut lignes = store.list_bookmarks(n, filtre)?;
+    for l in lignes.iter_mut() {
+        l.cover_token = jeton(&cache, &l.source, &l.manga_url, l.cover_url.as_deref());
+    }
+    Ok(lignes)
 }
 
 #[derive(Serialize)]
@@ -192,12 +199,19 @@ pub struct FavoriteState {
 }
 
 #[tauri::command]
-pub async fn list_favorites(store: State<'_, Arc<Store>>) -> Result<Vec<Favorite>, String> {
-    store.list_favorites()
+pub async fn list_favorites(
+    store: State<'_, Arc<Store>>,
+    cache: State<'_, Arc<PageCache>>,
+) -> Result<Vec<Favorite>, String> {
+    let mut lignes = store.list_favorites()?;
+    for l in lignes.iter_mut() {
+        l.cover_token = jeton(&cache, &l.source, &l.manga_url, l.cover_url.as_deref());
+    }
+    Ok(lignes)
 }
 
-/// Ajoute ou retire un favori. Le retour indique l'état obtenu, pour que
-/// l'interface n'ait pas à refaire une requête.
+/// Ajoute ou retire un favori. Le retour indique l'Ã©tat obtenu, pour que
+/// l'interface n'ait pas Ã  refaire une requÃªte.
 #[tauri::command]
 pub async fn set_favorite(
     store: State<'_, Arc<Store>>,
@@ -230,8 +244,8 @@ pub async fn set_favorite(
     })
 }
 
-/// Enregistre la position de lecture. Appelée à chaque changement de chapitre
-/// ou de page, elle doit être bon marché : c'est un `INSERT ... ON CONFLICT`.
+/// Enregistre la position de lecture. AppelÃ©e Ã  chaque changement de chapitre
+/// ou de page, elle doit Ãªtre bon marchÃ© : c'est un `INSERT ... ON CONFLICT`.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn save_progress(
@@ -265,9 +279,9 @@ pub async fn save_progress(
     )
 }
 
-/// Mémorise la classification d'un titre déjà présent dans l'historique.
-/// Appelée quand la fiche est chargée : c'est là que le classement est fiable
-/// (mesuré, la liste renvoie `UNKNOWN` là où la fiche dit `ADULT`).
+/// MÃ©morise la classification d'un titre dÃ©jÃ  prÃ©sent dans l'historique.
+/// AppelÃ©e quand la fiche est chargÃ©e : c'est lÃ  que le classement est fiable
+/// (mesurÃ©, la liste renvoie `UNKNOWN` lÃ  oÃ¹ la fiche dit `ADULT`).
 #[tauri::command]
 pub async fn note_content_rating(
     store: State<'_, Arc<Store>>,
@@ -276,7 +290,7 @@ pub async fn note_content_rating(
     content_rating: String,
 ) -> Result<(), String> {
     requis(&source, &manga_url)?;
-    // Une source qui ne classe rien ne doit pas écraser une valeur connue.
+    // Une source qui ne classe rien ne doit pas Ã©craser une valeur connue.
     if vide(&content_rating) || content_rating.eq_ignore_ascii_case("UNKNOWN") {
         return Ok(());
     }
@@ -286,10 +300,15 @@ pub async fn note_content_rating(
 #[tauri::command]
 pub async fn list_recent(
     store: State<'_, Arc<Store>>,
+    cache: State<'_, Arc<PageCache>>,
     limit: Option<i64>,
     hide_adult: Option<bool>,
 ) -> Result<Vec<HistoryEntry>, String> {
-    store.list_recent(limit.unwrap_or(24), hide_adult.unwrap_or(false))
+    let mut lignes = store.list_recent(limit.unwrap_or(24), hide_adult.unwrap_or(false))?;
+    for l in lignes.iter_mut() {
+        l.cover_token = jeton(&cache, &l.source, &l.manga_url, l.cover_url.as_deref());
+    }
+    Ok(lignes)
 }
 
 #[tauri::command]

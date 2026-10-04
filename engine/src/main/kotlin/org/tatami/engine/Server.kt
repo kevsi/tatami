@@ -187,9 +187,9 @@ private fun mangaForDetails(
 )
 
 /**
- * Classification demand�e : par d�faut on exclut ADULT.
+ * Classification demandée : par défaut on exclut ADULT.
  * Beaucoup de parsers n'acceptent qu'UNE seule classification
- * (� Multiple Content ratings are not supported by this source �, MangaDex) :
+ * (Â« Multiple Content ratings are not supported by this source Â», MangaDex) :
  * on ne renvoie donc jamais un set de plusieurs valeurs, et seulement si la
  * source annonce cette classification dans ses options.
  */
@@ -202,6 +202,39 @@ private fun requestedRatings(p: JSONObject, options: MangaListFilterOptions): Se
         else -> null
     } ?: return emptySet()
     return if (wanted in options.availableContentRating) setOf(wanted) else emptySet()
+}
+
+/**
+ * Télécharge une image par le client du moteur (UA du moteur, cookie jar,
+ * intercepteurs Cloudflare / lazy-load) et rend les **octets** + le type
+ * réellement annoncé. Commun à `fetchImage` et `fetchCover` : c'est le même
+ * chemin réseau, la seule différence est l'origine de l'URL.
+ */
+private fun fetch_octets(
+    context: EngineContext,
+    url: String,
+    referer: String,
+): Pair<ByteArray, String> {
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        throw ParamException("not an http(s) url: $url")
+    }
+    val request = Request.Builder()
+        .url(url)
+        .header("User-Agent", context.getDefaultUserAgent())
+        .header("Referer", referer)
+        .get()
+        .build()
+    // Note 0.6 : pas de désembrouillage ici (redrawImageResponse sert dans les
+    // intercepteurs du parser). Les sources qui embrouillent auront un traitement
+    // dédié quand un cas réel l'exigera — MangaDex sert des images directes.
+    val response = context.httpClient.newCall(request).execute()
+    response.use {
+        if (!it.isSuccessful) throw IllegalStateException("HTTP ${it.code}")
+        val body = checkNotNull(it.body) { "Empty image body" }
+        val bytes = body.bytes()
+        if (bytes.isEmpty()) throw IllegalStateException("empty image body for $url")
+        return bytes to (body.contentType()?.toString() ?: "application/octet-stream")
+    }
 }
 
 fun serve() {
@@ -392,6 +425,32 @@ private suspend fun dispatch(
         JSONObject().put("pages", arr)
     }
 
+    // Couverture : elle aussi passe par le moteur (UA, cookies, intercepteurs),
+    // jamais par un appel direct de la webview. Sans cela une source derrière
+    // Cloudflare renvoyait une couverture vide, en silence.
+    "fetchCover" -> {
+        val sourceName = p.reqString("source")
+        val mangaUrl = p.reqString("mangaUrl")
+        val cached = cache.getManga(sourceName, mangaUrl)
+        // Le cache de session est vide après un redémarrage : on retombe alors
+        // sur l'URL mémorisée par Rust (favoris, signets, historique), qu'on
+        // refuse de traiter si elle n'est pas une adresse web.
+        val coverUrl = when {
+            !cached?.coverUrl.isNullOrBlank() -> cached!!.coverUrl!!
+            else -> p.optString("coverUrl", "")
+                .takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                ?: throw ParamException("no cover known for $sourceName / $mangaUrl")
+        }
+        val referer = cached?.publicUrl?.takeIf { it.startsWith("http") }
+            ?: p.optString("referer", "")
+                .takeIf { it.startsWith("http") }
+            ?: coverUrl.substringBeforeLast('/', "https://" + coverUrl.substringAfter("//").substringBefore('/'))
+        val (bytes, contentType) = fetch_octets(context, coverUrl, referer)
+        JSONObject()
+            .put("data", Base64.getEncoder().encodeToString(bytes))
+            .put("contentType", contentType)
+    }
+
     "fetchImage" -> {
         val sourceName = p.reqString("source")
         val pageUrl = p.reqString("pageUrl")
@@ -410,24 +469,15 @@ private suspend fun dispatch(
                     "(page key '${p.optString("pageUrl", "")}')",
             )
         }
-        val request = Request.Builder()
-            .url(imageUrl)
-            .header("User-Agent", context.getDefaultUserAgent())
-            .header("Referer", imageUrl)
-            .get()
-            .build()
+        // Même chemin réseau que `fetchCover` : UA du moteur, cookie jar,
+        // intercepteurs Cloudflare / lazy-load.
+        val (bytes, contentType) = fetch_octets(context, imageUrl, imageUrl)
         // Note 0.6 : pas de désembrouillage ici (redrawImageResponse sert dans les
         // intercepteurs du parser). Les sources qui embrouillent auront un traitement
-        // dédié quand un cas réel l'exigera � MangaDex sert des images directes.
-        val response = context.httpClient.newCall(request).execute()
-        response.use {
-            if (!it.isSuccessful) throw IllegalStateException("HTTP ${it.code}")
-            val body = checkNotNull(it.body) { "Empty image body" }
-            val bytes = body.bytes()
-            JSONObject()
-                .put("data", Base64.getEncoder().encodeToString(bytes))
-                .put("contentType", body.contentType()?.toString() ?: "application/octet-stream")
-        }
+        // délégué quand un cas réel l'exigera — MangaDex sert des images directes.
+        JSONObject()
+            .put("data", Base64.getEncoder().encodeToString(bytes))
+            .put("contentType", contentType)
     }
 
     "setCookies" -> {

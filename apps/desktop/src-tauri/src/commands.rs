@@ -26,6 +26,53 @@ fn list_timeout(seconds: Option<u32>) -> Duration {
     asked.min(LIST_TIMEOUT_MAX)
 }
 
+/// Ajoute un jeton de couverture à chaque manga d'une réponse du moteur.
+///
+/// La webview ne doit jamais appeler un site de manga : elle perdrait le
+/// user-agent, les cookies et le déblocage Cloudflare que le moteur met en
+/// place, et l'échec serait silencieux (vignette vide, console propre). Le jeton
+/// est donc la seule chose que l'interface connaît ; `coverUrl` reste dans la
+/// charge utile parce que Rust s'en sert pour la résolution après redémarrage.
+fn ajouter_jetons_couverture(cache: &PageCache, source: &str, result: &mut serde_json::Value) {
+    let Some(listes) = result.get_mut("list").and_then(|v| v.as_array_mut()) else {
+        return;
+    };
+    for manga in listes.iter_mut() {
+        porter_jeton(cache, source, manga);
+    }
+}
+
+/// Même chose pour un manga unique (`details` renvoie `{ manga: {...} }`).
+fn ajouter_jeton_couverture_unique(
+    cache: &PageCache,
+    source: &str,
+    result: &mut serde_json::Value,
+) {
+    if let Some(manga) = result.get_mut("manga") {
+        porter_jeton(cache, source, manga);
+    }
+}
+
+fn porter_jeton(cache: &PageCache, source: &str, manga: &mut serde_json::Value) {
+    let Some(objet) = manga.as_object_mut() else {
+        return;
+    };
+    let url = objet
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let cover = objet
+        .get("coverUrl")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    if url.is_empty() || cover.is_none() {
+        return;
+    }
+    let token = cache.register_cover(source, &url, cover.as_deref());
+    objet.insert("coverToken".to_string(), serde_json::Value::String(token));
+}
+
 #[tauri::command]
 pub async fn filter_options(
     sup: State<'_, Arc<Supervisor>>,
@@ -74,6 +121,7 @@ fn requested_rating(content_rating: Option<&str>) -> Option<String> {
 #[allow(clippy::too_many_arguments)]
 pub async fn latest(
     sup: State<'_, Arc<Supervisor>>,
+    cache: State<'_, Arc<PageCache>>,
     source: String,
     offset: Option<u32>,
     limit: Option<u32>,
@@ -108,7 +156,8 @@ pub async fn latest(
     if let Some(r) = &rating {
         params["contentRating"] = serde_json::json!(r);
     }
-    let r = into_result(sup.request_with_retry("latest", params, timeout).await?)?;
+    let mut r = into_result(sup.request_with_retry("latest", params, timeout).await?)?;
+    ajouter_jetons_couverture(&cache, source.trim(), &mut r);
     tracing::info!(
         "latest ok: {} items",
         r.get("list")
@@ -145,6 +194,7 @@ fn into_result(envelope: serde_json::Value) -> Result<serde_json::Value, String>
 #[tauri::command]
 pub async fn search(
     sup: State<'_, Arc<Supervisor>>,
+    cache: State<'_, Arc<PageCache>>,
     source: String,
     query: String,
     limit: Option<u32>,
@@ -168,10 +218,12 @@ pub async fn search(
         "limit": limit.unwrap_or(20).min(50),
         "contentRating": rating,
     });
-    into_result(
+    let mut r = into_result(
         sup.request_with_retry("search", params, LIST_TIMEOUT)
             .await?,
-    )
+    )?;
+    ajouter_jetons_couverture(&cache, source.trim(), &mut r);
+    Ok(r)
 }
 
 /// Tâche 0.17 : fiche détaillée (résumé, état, genres). Distinct de
@@ -179,6 +231,7 @@ pub async fn search(
 #[tauri::command]
 pub async fn details(
     sup: State<'_, Arc<Supervisor>>,
+    cache: State<'_, Arc<PageCache>>,
     source: String,
     manga_url: String,
     manga_title: Option<String>,
@@ -192,10 +245,12 @@ pub async fn details(
         "url": manga_url,
         "mangaTitle": manga_title.unwrap_or_default(),
     });
-    into_result(
+    let mut r = into_result(
         sup.request_with_retry("details", params, DEEP_TIMEOUT)
             .await?,
-    )
+    )?;
+    ajouter_jeton_couverture_unique(&cache, source.trim(), &mut r);
+    Ok(r)
 }
 
 #[tauri::command]

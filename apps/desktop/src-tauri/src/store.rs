@@ -23,6 +23,13 @@ pub struct Favorite {
     pub manga_url: String,
     pub title: String,
     pub cover_url: Option<String>,
+    /// Jeton `tatami://cover/...` à utiliser par l'interface.
+    ///
+    /// Rempli par la couche commande (`shelf`), pas par la base : la base ne
+    /// connaît pas le cache d'images. C'est le SEUL champ que la webview doit
+    /// utiliser pour afficher une vignette — `cover_url` est une adresse de site
+    /// de manga, à ne jamais appeler depuis la page (AGENTS.md §4 règle 4).
+    pub cover_token: Option<String>,
     pub content_rating: Option<String>,
     pub added_at: i64,
     /// Catégorie choisie par l'utilisateur, `None` = sans catégorie.
@@ -37,6 +44,8 @@ pub struct HistoryEntry {
     pub manga_url: String,
     pub title: String,
     pub cover_url: Option<String>,
+    /// Jeton `tatami://cover/...` — cf. `Favorite::cover_token`.
+    pub cover_token: Option<String>,
     pub content_rating: Option<String>,
     pub chapter_url: Option<String>,
     pub chapter_title: Option<String>,
@@ -73,6 +82,8 @@ pub struct Bookmark {
     pub chapter_url: String,
     pub title: String,
     pub cover_url: Option<String>,
+    /// Jeton `tatami://cover/...` — cf. `Favorite::cover_token`.
+    pub cover_token: Option<String>,
     pub chapter_title: Option<String>,
     pub page_index: u16,
     pub page_count: u16,
@@ -87,6 +98,7 @@ fn bookmark_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Bookmark> {
         chapter_url: r.get(2)?,
         title: r.get(3)?,
         cover_url: r.get(4)?,
+        cover_token: None,
         chapter_title: r.get(5)?,
         page_index: r.get::<_, i64>(6)? as u16,
         page_count: r.get::<_, i64>(7)? as u16,
@@ -389,6 +401,7 @@ impl Store {
                     manga_url: r.get(1)?,
                     title: r.get(2)?,
                     cover_url: r.get(3)?,
+                    cover_token: None,
                     content_rating: r.get(4)?,
                     added_at: r.get(5)?,
                     category_id: r.get(6)?,
@@ -833,6 +846,7 @@ impl Store {
                     manga_url: r.get(1)?,
                     title: r.get(2)?,
                     cover_url: r.get(3)?,
+                    cover_token: None,
                     content_rating: r.get(4)?,
                     chapter_url: r.get(5)?,
                     chapter_title: r.get(6)?,

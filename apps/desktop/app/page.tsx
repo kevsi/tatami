@@ -11,7 +11,12 @@ type Manga = {
   url: string;
   title: string;
   source: string;
+  /** URL distante de la couverture. **Ne jamais l'utiliser dans un `<img src>`** :
+   *  la webview n'a ni user-agent, ni cookies, ni déblocage Cloudflare, et
+   *  l'échec est silencieux (vignette vide, console propre). */
   coverUrl?: string | null;
+  /** Jeton `tatami://cover/...` — la seule source à afficher. */
+  coverToken?: string | null;
   authors?: string[];
   altTitle?: string | null;
   description?: string | null;
@@ -48,6 +53,8 @@ type Bookmark = {
   chapter_url: string;
   title: string;
   cover_url: string | null;
+  /** Jeton `tatami://cover/...` — seul champ à afficher (cf. `Manga.coverUrl`). */
+  cover_token: string | null;
   chapter_title: string | null;
   page_index: number;
   page_count: number;
@@ -65,6 +72,7 @@ type Favorite = {
   manga_url: string;
   title: string;
   cover_url: string | null;
+  cover_token: string | null;
   content_rating: string | null;
   added_at: number;
   category_id: number | null;
@@ -77,6 +85,7 @@ type HistoryItem = {
   manga_url: string;
   title: string;
   cover_url: string | null;
+  cover_token: string | null;
   content_rating: string | null;
   chapter_url: string | null;
   chapter_title: string | null;
@@ -105,6 +114,8 @@ type LibraryItem = {
   source: string;
   url: string;
   coverUrl?: string | null;
+  /** Jeton `tatami://cover/...` — seul champ à afficher (cf. `Manga.coverUrl`). */
+  coverToken?: string | null;
   dir: string;
   downloaded: number;
   totalChapters: number;
@@ -858,6 +869,7 @@ export default function Home() {
       chapter_url: chapter.url,
       title: manga.title,
       cover_url: manga.coverUrl ?? null,
+      cover_token: manga.coverToken ?? null,
       chapter_title: chapterLabel(chapter),
       page_index: index,
       page_count: pages.length,
@@ -896,6 +908,7 @@ export default function Home() {
       title: b.title,
       source: b.source,
       coverUrl: b.cover_url,
+      coverToken: b.cover_token,
     };
     setOpenManga(manga);
     // Le moteur ne connaît un chapitre que si la fiche a été listée dans la
@@ -972,6 +985,7 @@ export default function Home() {
               manga_url: m.url,
               title: m.title,
               cover_url: m.coverUrl ?? null,
+              cover_token: m.coverToken ?? null,
               content_rating: m.contentRating ?? null,
               added_at: Date.now(),
               // Un favori tout juste ajouté n'a pas encore de catégorie ; il
@@ -1651,6 +1665,15 @@ function pageSrc(token: string) {
   return `http://tatami.localhost/page/${token}`;
 }
 
+/** Couverture via le moteur : même protocole, préfixe `cover/`.
+ *
+ *  C'est cette fonction, et non `coverUrl`, qui doit alimenter un `<img src>`.
+ *  Rust répond `undefined` si la série n'a pas de couverture, ce qui laisse la
+ *  vignette de remplacement s'afficher au lieu d'une image cassée. */
+function coverSrc(token?: string | null): string | undefined {
+  return token ? `http://tatami.localhost/cover/${token}` : undefined;
+}
+
 async function openReader(c: Chapter) {
   return openReaderAt(c, 0);
 }
@@ -1790,6 +1813,7 @@ async function resumeReading(h: HistoryItem) {
     title: h.title,
     source: h.source,
     coverUrl: h.cover_url,
+    coverToken: h.cover_token,
     contentRating: h.content_rating,
   };
   if (!h.chapter_url) {
@@ -2596,8 +2620,8 @@ useEffect(() => {
                     : 100;
                 return (
                   <article className="dl-card" key={item.dir}>
-                    {item.coverUrl ? (
-                      <img className="thumb" src={item.coverUrl} alt="" loading="lazy" />
+                    {item.coverToken ? (
+                      <img className="thumb" src={coverSrc(item.coverToken)} alt="" loading="lazy" />
                     ) : (
                       // Pas de couverture enregistrée (téléchargements
                       // antérieurs à la colonne `coverUrl` de meta.json) : une
@@ -3050,8 +3074,8 @@ if (reader) {
 
         {(summary || rows.length > 0 || fiche.coverUrl) && (
           <section className="sheet">
-            {fiche.coverUrl && (
-              <img className="sheet-cover" src={fiche.coverUrl} alt="" loading="lazy" />
+            {fiche.coverToken && (
+              <img className="sheet-cover" src={coverSrc(fiche.coverToken)} alt="" loading="lazy" />
             )}
             <div className="sheet-body">
               {summary && <p className="sheet-desc">{summary}</p>}
@@ -3419,8 +3443,8 @@ if (reader) {
                     onClick={() => (selectMode ? togglePick(m) : loadChapters(m))}
                   >
                     <span className="cover">
-                      {m.coverUrl ? (
-                        <img className="thumb" src={m.coverUrl} alt="" loading="lazy" />
+                      {m.coverToken ? (
+                        <img className="thumb" src={coverSrc(m.coverToken)} alt="" loading="lazy" />
                       ) : (
                         <span className="thumb thumb-empty" aria-hidden="true">
                           {(m.title.trim()[0] ?? '?').toUpperCase()}
@@ -3536,8 +3560,8 @@ if (reader) {
           <div className="dl-grid">
             {recent.map((h) => (
               <article className="dl-card" key={`${h.source}|${h.manga_url}`}>
-                {h.cover_url ? (
-                  <img className="thumb" src={h.cover_url} alt="" loading="lazy" />
+                {h.cover_token ? (
+                  <img className="thumb" src={coverSrc(h.cover_token)} alt="" loading="lazy" />
                 ) : (
                   <span className="thumb thumb-empty" aria-hidden="true">
                     {(h.title.trim()[0] ?? '?').toUpperCase()}
@@ -3604,8 +3628,8 @@ if (reader) {
                   key={`${b.source}|${b.manga_url}|${b.chapter_url}|${b.page_index}`}
                 >
                   <span className="bm-cover">
-                    {b.cover_url ? (
-                      <img className="thumb" src={b.cover_url} alt="" loading="lazy" />
+                    {b.cover_token ? (
+                      <img className="thumb" src={coverSrc(b.cover_token)} alt="" loading="lazy" />
                     ) : (
                       <span className="thumb thumb-empty" aria-hidden="true">
                         {(b.title.trim()[0] ?? '?').toUpperCase()}
@@ -3718,6 +3742,7 @@ if (reader) {
                 title: f.title,
                 source: f.source,
                 coverUrl: f.cover_url,
+                coverToken: f.cover_token,
                 // Le classement voyage avec le favori : sans lui, ouvrir depuis
                 // l'accueil n'aurait aucun contexte et l'incognito ne pourrait
                 // rien masquer.
@@ -3731,8 +3756,8 @@ if (reader) {
                     aria-label={`Ouvrir ${f.title}`}
                   >
                     <span className="cover">
-                      {f.cover_url ? (
-                        <img className="thumb" src={f.cover_url} alt="" loading="lazy" />
+                      {f.cover_token ? (
+                        <img className="thumb" src={coverSrc(f.cover_token)} alt="" loading="lazy" />
                       ) : (
                         <span className="thumb thumb-empty" aria-hidden="true">
                           {(f.title.trim()[0] ?? '?').toUpperCase()}

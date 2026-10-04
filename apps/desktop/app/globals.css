@@ -536,6 +536,15 @@ button:disabled {
   margin-bottom: 4px;
 }
 
+/* Barre au-dessus d'une liste : le nombre d'un côté, les tris de l'autre. */
+.list-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
 .card .name {
   font-weight: 600;
   font-size: 13.5px;

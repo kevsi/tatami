@@ -97,6 +97,14 @@ const TIMEOUT_KEY = 'tatami.listTimeout';
 const TAGS_SHOWN = 24;
 // Valeurs acceptées par les parsers (enum ContentRating). Une seule à la fois :
 // en envoyer plusieurs lève « Multiple Content ratings are not supported ».
+type Tri = 'source' | 'az' | 'za';
+
+const TRIS: { value: Tri; label: string }[] = [
+  { value: 'source', label: 'Ordre du site' },
+  { value: 'az', label: 'A → Z' },
+  { value: 'za', label: 'Z → A' },
+];
+
 const RATINGS = [
   { value: 'SUGGESTIVE', label: 'Suggestive — défaut, exclut le contenu adulte' },
   { value: 'SAFE', label: 'Safe — plusieurs sources renvoient alors zéro résultat' },
@@ -434,6 +442,10 @@ export default function Home() {
   const [tagsTotal, setTagsTotal] = useState(0);
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [mangaQuery, setMangaQuery] = useState('');
+  // Tâche 1.3 : tri. Décidé avec l'utilisateur : alphabétique seul, appliqué
+  // à tout ce qui est chargé (le moteur ne propose pas de tri, et un tri par
+  // « dernière mise à jour » coûterait une requête par source).
+  const [tri, setTri] = useState<Tri>('source');
   const [rating, setRating] = useState('SUGGESTIVE');
   const [onePageOnly, setOnePageOnly] = useState(false);
   const [listTimeout, setListTimeout] = useState(60);
@@ -655,6 +667,23 @@ export default function Home() {
   }, [sources, enabled, sourcesOff, voirDesactives]);
   const byLang = lang === 'all' ? visibleSources : visibleSources.filter((s) => s.lang === lang);
   const filtered = byLang.filter((s) => s.name.toLowerCase().includes(nameFilter.toLowerCase()));
+
+  // Tri appliqué à TOUT ce qui est chargé, pas seulement à la page courante :
+  // sinon l'ordre changerait à chaque « Voir plus ». `localeCompare` sans
+  // locale explicite utilise celle du navigateur, quirange correctement les
+  // accents et les chiffres ; `numeric` place « Ch. 2 » avant « Ch. 10 ».
+  const latestTrie = useMemo(() => {
+    if (tri === 'source') return latest;
+    const copie = [...latest];
+    copie.sort((a, b) => {
+      const r = a.title.localeCompare(b.title, undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      });
+      return tri === 'az' ? r : -r;
+    });
+    return copie;
+  }, [latest, tri]);
 
   /* 1 370 noms à plat ne se parcourent pas : deux états.
      - Sans recherche et sans langue choisie, on montre les LANGUES (19 tuiles
@@ -2433,10 +2462,24 @@ if (reader) {
           </div>
         )}
           {latest.length > 0 && (
-          <p className="count">
-            {latest.length} webtoon{latest.length > 1 ? 's' : ''}
-            {loading ? ' — chargement…' : ''}
-          </p>
+          <div className="list-bar">
+            <p className="count">
+              {latest.length} webtoon{latest.length > 1 ? 's' : ''}
+              {loading ? ' — chargement…' : ''}
+            </p>
+            <div className="chips" role="group" aria-label="Tri des titres">
+              {TRIS.map((t) => (
+                <button
+                  key={t.value}
+                  className="chip"
+                  aria-pressed={tri === t.value}
+                  onClick={() => setTri(t.value)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
         {loading && latest.length === 0 ? (
@@ -2447,7 +2490,7 @@ if (reader) {
           </div>
         ) : (
           <div className="manga-grid">
-            {latest.map((m) => {
+            {latestTrie.map((m) => {
               const key = mangaKey(m);
               const isPicked = picked.has(key);
               return (

@@ -108,7 +108,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
 - [x] **1.1** SQLite côté Rust, système de migrations forward-only, sauvegarde avant migration, tests de migration.
 - [x] **1.2** Catalogue de sources : liste, activation/désactivation, langue, état (alimenté par `health`).
-- [ ] **1.3** Recherche et filtres (nom, genres, pagination faits ; **tri à faire**).
+- [x] **1.3** Recherche et filtres (nom, genres, tri) avec pagination.
 - [x] **1.4** Page détail d'un manga : infos, liste des chapitres, ajout aux favoris.
 - [ ] **1.5** Favoris organisés en catégories définies par l'utilisateur (favori simple fait, catégories à faire).
 - [x] **1.6** Historique de lecture, reprise au bon chapitre et à la bonne page, mode incognito.
@@ -200,6 +200,16 @@ _Format d'une entrée :_
 - Preuve : commande + résumé de la sortie
 - Points ouverts :
 ```
+
+### 2026-10-04 — Tâche 1.3 : tri des titres (alphabétique, choisi avec l'utilisateur)
+- Plan : (1) demander à l'humain quel tri, plutôt que d'inventer (le moteur n'expose pas de tri « dernière mise à jour ») ; (2) implémenter alphabétique ; (3) prouver sur l'app réelle que l'ordre est bien appliqué et qu'il revient à l'ordre du site.
+- Décision humaine : **alphabétique seul** (ordre du site / A → Z / Z → A). Écarté : « dernier chapitre en premier », trop approximatif sur les sources sans dates.
+- Fait : barre de liste (nombre de webtoons à gauche, tris à droite), tri appliqué à **tout ce qui est chargé** et non à la seule page courante — sinon l'ordre changerait à chaque « Voir plus ». `localeCompare` sans locale explicite (celle du navigateur) range correctement les accents, `numeric: true` place « Ch. 2 » avant « Ch. 10 ». L'état du tri est global, il survit donc au changement de source.
+- Preuve :
+  - `pnpm typecheck` / `pnpm lint` / `pnpm build` → 0 / 0 / 0. Aucun changement Rust.
+  - Parcours sur l'app réelle via CDP (`walk-tri.js`) : **11 mesures, 0 échec** — les 3 tris présents, « Ordre du site » par défaut, A→Z effectivement trié, Z→A = inverse **exact** d'A→Z, retour à l'ordre du moteur, et conservation après changement de source.
+  - Capture : `audit/tatami4/17-tri-az.png`.
+- Point de méthode : ma première version du walk lisait les titres avec un sélecteur faux et renvoyait des listes **vides** — trois mesures passaient alors à vide sans rien prouver. Un garde-fou « les titres sont bien lus dans le DOM (≥ 3) » a été ajouté avant de croire le résultat. Une mesure qui passe sur un tableau vide ne prouve rien.
 
 ### 2026-10-04 — Tâche 1.2 : activation/désactivation des sources
 - Plan : (1) auditer 1.2 et 1.3 avant d'ajouter 1.7, dans l'ordre du plan ; (2) combler le seul manque de 1.2 (activation/désactivation) ; (3) le prouver sur l'app réelle, persistance comprise.

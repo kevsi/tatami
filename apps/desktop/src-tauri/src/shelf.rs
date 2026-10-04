@@ -7,7 +7,10 @@ use serde::Serialize;
 use std::sync::Arc;
 use tauri::State;
 
-use crate::store::{Favorite, HistoryEntry, Store};
+use crate::store::{Bookmark, Favorite, HistoryEntry, Store};
+
+/// Nombre d'entrées renvoyées quand l'interface ne le précise pas.
+const RECENT_LIMIT: u32 = 24;
 
 fn vide(v: &str) -> bool {
     v.trim().is_empty()
@@ -47,6 +50,69 @@ pub async fn set_source_enabled(
 #[tauri::command]
 pub async fn enable_all_sources(store: State<'_, Arc<Store>>) -> Result<(), String> {
     store.enable_all_sources()
+}
+
+/// Ajoute un signet sur la page courante.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn add_bookmark(
+    store: State<'_, Arc<Store>>,
+    source: String,
+    manga_url: String,
+    chapter_url: String,
+    title: String,
+    cover_url: Option<String>,
+    chapter_title: Option<String>,
+    page_index: u16,
+    page_count: u16,
+) -> Result<(), String> {
+    requis(&source, &manga_url)?;
+    if vide(&chapter_url) {
+        return Err("PARSE_ERROR: chapter_url vide".to_string());
+    }
+    store.add_bookmark(
+        source.trim(),
+        manga_url.trim(),
+        chapter_url.trim(),
+        title.trim(),
+        cover_url.as_deref(),
+        chapter_title.as_deref(),
+        page_index,
+        page_count,
+    )
+}
+
+/// Retire le signet d'une page précise.
+#[tauri::command]
+pub async fn remove_bookmark(
+    store: State<'_, Arc<Store>>,
+    source: String,
+    manga_url: String,
+    chapter_url: String,
+    page_index: u16,
+) -> Result<(), String> {
+    requis(&source, &manga_url)?;
+    store.remove_bookmark(
+        source.trim(),
+        manga_url.trim(),
+        chapter_url.trim(),
+        page_index,
+    )
+}
+
+/// Signets, du plus récent au plus ancien, éventuellement limités à un webtoon.
+#[tauri::command]
+pub async fn list_bookmarks(
+    store: State<'_, Arc<Store>>,
+    limit: Option<u32>,
+    manga_url: Option<String>,
+) -> Result<Vec<Bookmark>, String> {
+    let n = limit.unwrap_or(RECENT_LIMIT).min(200);
+    let filtre = manga_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|u| !u.is_empty());
+    store.list_bookmarks(n, filtre)
 }
 
 #[derive(Serialize)]

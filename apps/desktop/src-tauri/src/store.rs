@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Version du schéma attendue par ce binaire.
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 #[derive(Serialize)]
 pub struct Favorite {
@@ -49,6 +49,35 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// Un signet : une page précise d'un chapitre d'un webtoon.
+#[derive(Debug, Clone, Serialize)]
+pub struct Bookmark {
+    pub source: String,
+    pub manga_url: String,
+    pub chapter_url: String,
+    pub title: String,
+    pub cover_url: Option<String>,
+    pub chapter_title: Option<String>,
+    pub page_index: u16,
+    pub page_count: u16,
+    pub created_at: i64,
+}
+
+/// Lecteur de ligne partagé par `list_bookmarks` et ses variantes filtrées.
+fn bookmark_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Bookmark> {
+    Ok(Bookmark {
+        source: r.get(0)?,
+        manga_url: r.get(1)?,
+        chapter_url: r.get(2)?,
+        title: r.get(3)?,
+        cover_url: r.get(4)?,
+        chapter_title: r.get(5)?,
+        page_index: r.get::<_, i64>(6)? as u16,
+        page_count: r.get::<_, i64>(7)? as u16,
+        created_at: r.get(8)?,
+    })
 }
 
 pub struct Store {
@@ -179,6 +208,25 @@ impl Store {
              );",
         )
         .map_err(|e| format!("migration v4 : {e}"))?;
+        // v5 : signets. La clé comporte la page : on peut donc marquer plusieurs
+        // pages d'un même chapitre, et retirer un signet est exact (aucun
+        // « dernier signet du chapitre » à deviner).
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS bookmarks (
+                 source        TEXT    NOT NULL,
+                 manga_url     TEXT    NOT NULL,
+                 chapter_url   TEXT    NOT NULL,
+                 title         TEXT    NOT NULL,
+                 cover_url     TEXT,
+                 chapter_title TEXT,
+                 page_index    INTEGER NOT NULL,
+                 page_count    INTEGER NOT NULL,
+                 created_at    INTEGER NOT NULL,
+                 PRIMARY KEY (source, manga_url, chapter_url, page_index)
+             );
+             CREATE INDEX IF NOT EXISTS bookmarks_created_at ON bookmarks (created_at DESC);",
+        )
+        .map_err(|e| format!("migration v5 : {e}"))?;
         if current < 2 {
             tx.execute_batch("CREATE INDEX IF NOT EXISTS history_title ON history (title);")
                 .map_err(|e| format!("migration : index history_title : {e}"))?;
@@ -305,6 +353,129 @@ impl Store {
             .map_err(|e| format!("favoris : {e}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("favoris : {e}"))
+    }
+
+    // ---------- Signets ----------
+
+    /// Ajoute un signet. Réécrit le signet s'il existe déjà : marquer deux fois
+    /// la même page ne doit pas créer de doublon.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_bookmark(
+        &self,
+        source: &str,
+        manga_url: &str,
+        chapter_url: &str,
+        title: &str,
+        cover_url: Option<&str>,
+        chapter_title: Option<&str>,
+        page_index: u16,
+        page_count: u16,
+    ) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute(
+            "INSERT INTO bookmarks
+                 (source, manga_url, chapter_url, title, cover_url, chapter_title,
+                  page_index, page_count, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(source, manga_url, chapter_url, page_index) DO UPDATE SET
+                 title = ?4, cover_url = ?5, chapter_title = ?6, page_count = ?8",
+            params![
+                source,
+                manga_url,
+                chapter_url,
+                title,
+                cover_url,
+                chapter_title,
+                page_index,
+                page_count,
+                now_ms()
+            ],
+        )
+        .map_err(|e| format!("signet : {e}"))?;
+        Ok(())
+    }
+
+    /// Retire un signet précis (une page d'un chapitre). Sans effet s'il n'existe
+    /// pas : retirer deux fois le même signet doit rester sans erreur.
+    pub fn remove_bookmark(
+        &self,
+        source: &str,
+        manga_url: &str,
+        chapter_url: &str,
+        page_index: u16,
+    ) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute(
+            "DELETE FROM bookmarks
+             WHERE source = ?1 AND manga_url = ?2 AND chapter_url = ?3 AND page_index = ?4",
+            params![source, manga_url, chapter_url, page_index],
+        )
+        .map_err(|e| format!("signet : {e}"))?;
+        Ok(())
+    }
+
+    /// Does this page already carry a bookmark? Derived on the interface side
+    /// from `list_bookmarks`: one call feeds both the reader button state and
+    /// the chapter grid badges, so an extra command would be dead weight.
+    #[cfg(test)]
+    fn has_bookmark(
+        &self,
+        source: &str,
+        manga_url: &str,
+        chapter_url: &str,
+        page_index: u16,
+    ) -> Result<bool, String> {
+        Ok(self.list_bookmarks(500, Some(manga_url))?.iter().any(|b| {
+            b.source == source && b.chapter_url == chapter_url && b.page_index == page_index
+        }))
+    }
+
+    /// Signets du plus récent au plus ancien, éventuellement limités à un
+    /// webtoon. Le même ordre que l'historique, pour que les deux sections de
+    /// l'accueil se lisent pareil.
+    pub fn list_bookmarks(
+        &self,
+        limit: u32,
+        manga_url: Option<&str>,
+    ) -> Result<Vec<Bookmark>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let colonnes = "source, manga_url, chapter_url, title, cover_url, chapter_title,
+                        page_index, page_count, created_at";
+        let (sql, args): (&str, Vec<Box<dyn rusqlite::ToSql>>) = match manga_url {
+            Some(u) => (
+                &*format!(
+                    "SELECT {colonnes} FROM bookmarks WHERE manga_url = ?1
+                     ORDER BY created_at DESC, page_index DESC LIMIT ?2"
+                ),
+                vec![Box::new(u.to_string()), Box::new(limit as i64)],
+            ),
+            None => (
+                &*format!(
+                    "SELECT {colonnes} FROM bookmarks
+                     ORDER BY created_at DESC, page_index DESC LIMIT ?1"
+                ),
+                vec![Box::new(limit as i64)],
+            ),
+        };
+        let mut req = conn.prepare(sql).map_err(|e| format!("signets : {e}"))?;
+        let params: Vec<&dyn rusqlite::ToSql> = args
+            .iter()
+            .map(|b| b.as_ref() as &dyn rusqlite::ToSql)
+            .collect();
+        let rows = req
+            .query_map(params.as_slice(), bookmark_from_row)
+            .map_err(|e| format!("signets : {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("signets : {e}"))
     }
 
     // ---------- Sources activées ----------
@@ -708,6 +879,114 @@ mod tests {
         assert_eq!(
             s.list_favorites().unwrap()[0].content_rating.as_deref(),
             Some("ADULT")
+        );
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn un_signet_memorise_la_page_exacte() {
+        let (s, path) = store_vierge();
+        assert!(s.list_bookmarks(50, None).unwrap().is_empty());
+        s.add_bookmark(
+            "SRC",
+            "/m/1",
+            "/c/1",
+            "Titre",
+            Some("http://c"),
+            Some("Chapitre 1"),
+            4,
+            12,
+        )
+        .unwrap();
+        let l = s.list_bookmarks(50, None).unwrap();
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].page_index, 4);
+        assert_eq!(l[0].page_count, 12);
+        assert!(s.has_bookmark("SRC", "/m/1", "/c/1", 4).unwrap());
+        // Marquer deux fois la même page ne duplique pas.
+        s.add_bookmark(
+            "SRC",
+            "/m/1",
+            "/c/1",
+            "Titre",
+            Some("http://c"),
+            Some("Chapitre 1"),
+            4,
+            12,
+        )
+        .unwrap();
+        assert_eq!(s.list_bookmarks(50, None).unwrap().len(), 1);
+        // Une autre page du même chapitre est un signet distinct.
+        s.add_bookmark(
+            "SRC",
+            "/m/1",
+            "/c/1",
+            "Titre",
+            Some("http://c"),
+            Some("Chapitre 1"),
+            7,
+            12,
+        )
+        .unwrap();
+        assert_eq!(s.list_bookmarks(50, None).unwrap().len(), 2);
+        // Retirer est exact et idempotent.
+        s.remove_bookmark("SRC", "/m/1", "/c/1", 4).unwrap();
+        s.remove_bookmark("SRC", "/m/1", "/c/1", 4).unwrap();
+        assert_eq!(s.list_bookmarks(50, None).unwrap().len(), 1);
+        assert!(!s.has_bookmark("SRC", "/m/1", "/c/1", 4).unwrap());
+        assert!(s.has_bookmark("SRC", "/m/1", "/c/1", 7).unwrap());
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn les_signets_se_lisent_du_plus_recent_au_plus_ancien() {
+        let (s, path) = store_vierge();
+        for (page, manga) in [(1, "/m/1"), (2, "/m/1"), (3, "/m/2")] {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            s.add_bookmark("SRC", manga, "/c/1", "Titre", None, None, page, 10)
+                .unwrap();
+        }
+        let l = s.list_bookmarks(50, None).unwrap();
+        assert_eq!(
+            l.iter().map(|b| b.page_index).collect::<Vec<_>>(),
+            vec![3, 2, 1],
+            "le plus recent d'abord"
+        );
+        // Le filtre par webtoon ne renvoie que le sien.
+        let un = s.list_bookmarks(50, Some("/m/1")).unwrap();
+        assert_eq!(un.len(), 2);
+        assert!(un.iter().all(|b| b.manga_url == "/m/1"));
+        // La limite est respectee.
+        assert_eq!(s.list_bookmarks(1, None).unwrap().len(), 1);
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn un_signet_ne_touche_pas_l_historique() {
+        let (s, path) = store_vierge();
+        s.add_bookmark("SRC", "/m/1", "/c/1", "Titre", None, None, 2, 10)
+            .unwrap();
+        // Marquer une page ne doit pas fabriquer d'historique : « Continuer la
+        // lecture » ne montre que ce qui a ete lu.
+        assert!(s.list_recent(10, false).unwrap().is_empty());
+        s.save_progress(
+            "SRC",
+            "/m/1",
+            "Titre",
+            None,
+            None,
+            Some("/c/1"),
+            None,
+            2,
+            2,
+            10,
+        )
+        .unwrap();
+        s.remove_bookmark("SRC", "/m/1", "/c/1", 2).unwrap();
+        assert_eq!(
+            s.list_recent(10, false).unwrap().len(),
+            1,
+            "retirer un signet ne doit rien effacer de l'historique"
         );
         nettoyer(&path);
     }

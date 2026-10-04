@@ -545,6 +545,73 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+/* Signets : une ligne par page marquée, avec la couverture à gauche. */
+.bm-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  margin-bottom: var(--s4);
+}
+
+.bm {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+}
+
+.bm-cover {
+  flex: none;
+  width: 34px;
+}
+
+.bm-cover .thumb {
+  width: 34px;
+  height: 48px;
+  border-radius: 4px;
+}
+
+/* Sans couverture, la pastille héritait du format portrait des cartes et
+   dessinait un rectangle vide qui passait pour une image cassée : on la
+   ramène à un carré, l'initiale suffit. */
+.bm-cover .thumb-empty {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  font-size: 15px;
+}
+
+.bm-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bm-text b {
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bm-text .muted {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Bouton de signet actif dans la barre du lecteur. */
+.seg-btn.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .card .name {
   font-weight: 600;
   font-size: 13.5px;

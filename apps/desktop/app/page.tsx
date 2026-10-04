@@ -25,6 +25,18 @@ type Page = { index: number; url: string; previewUrl?: string | null; token: str
 /** Lecteur paginé (tâche 0.10) : les images viennent du protocole `tatami://`,
  *  jamais d'un appel direct aux hôtes distants. */
 /** Un favori enregistré par l'utilisateur (table `favorites`). */
+type Bookmark = {
+  source: string;
+  manga_url: string;
+  chapter_url: string;
+  title: string;
+  cover_url: string | null;
+  chapter_title: string | null;
+  page_index: number;
+  page_count: number;
+  created_at: number;
+};
+
 type Favorite = {
   source: string;
   manga_url: string;
@@ -438,6 +450,8 @@ export default function Home() {
   // préférence d'affichage : elle vit en base, cf. AGENTS.md §6).
   const [sourcesOff, setSourcesOff] = useState<string[]>([]);
   const [voirDesactives, setVoirDesactives] = useState(false);
+  // Tâche 1.7 : signets. Un signet = une page précise d'un chapitre.
+  const [signets, setSignets] = useState<Bookmark[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagsTotal, setTagsTotal] = useState(0);
   const [activeTags, setActiveTags] = useState<string[]>([]);
@@ -558,17 +572,33 @@ export default function Home() {
     [incognito],
   );
 
+  const refreshSignets = useCallback(async (mangaUrl?: string) => {
+    try {
+      const r = await invoke<Bookmark[]>('list_bookmarks', {
+        limit: 200,
+        mangaUrl: mangaUrl ?? null,
+      });
+      setSignets(r ?? []);
+    } catch (e) {
+      console.error('lecture des signets impossible', e);
+      setSignets([]);
+    }
+  }, []);
+
   const goTab = useCallback(
     (id: string) => {
       if (id === 'downloads') refreshDownloads();
-      if (id === 'home') void refreshShelf();
+      if (id === 'home') {
+        void refreshShelf();
+        void refreshSignets();
+      }
       // Changer d'onglet quitte la vue en cours (source, fiche) : sinon
       // l'ancien écran, rendu avant l'accueil, resterait affiché par-dessus.
       setOpenManga(null);
       if (id !== 'catalog') setSelected(null);
       setTab(id);
     },
-    [refreshDownloads, refreshShelf],
+    [refreshDownloads, refreshShelf, refreshSignets],
   );
 
   function isFavorite(m: Manga): boolean {
@@ -584,6 +614,7 @@ export default function Home() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshShelf();
+    void refreshSignets();
     invoke<string[]>('list_disabled_sources')
       .then((r) => setSourcesOff(r ?? []))
       .catch(() => setSourcesOff([]));
@@ -592,6 +623,111 @@ export default function Home() {
 
   function estDesactivee(nom: string): boolean {
     return sourcesOff.includes(nom);
+  }
+
+  /** La page affichée porte-t-elle déjà un signet ? */
+  function pageMarquee(): boolean {
+    if (!reader) return false;
+    return signets.some(
+      (b) =>
+        b.chapter_url === reader.chapter.url && b.page_index === reader.index,
+    );
+  }
+
+  async function basculerSignet() {
+    if (!reader) return;
+    const { chapter, index, pages } = reader;
+    const manga = info ?? openManga;
+    if (!manga) return;
+    const cle = { chapter_url: chapter.url, page_index: index };
+    const dejaLa = signets.some(
+      (b) => b.chapter_url === cle.chapter_url && b.page_index === cle.page_index,
+    );
+    // Mise à jour optimiste avec retour arrière, comme pour les favoris et les
+    // sources : l'interface ne montre jamais un état qu'elle ne tient pas.
+    const avant = signets;
+    const apercu: Bookmark = {
+      source: manga.source,
+      manga_url: manga.url,
+      chapter_url: chapter.url,
+      title: manga.title,
+      cover_url: manga.coverUrl ?? null,
+      chapter_title: chapterLabel(chapter),
+      page_index: index,
+      page_count: pages.length,
+      created_at: Date.now(),
+    };
+    setSignets(dejaLa ? avant.filter((b) => !sameSignet(b, cle)) : [apercu, ...avant]);
+    try {
+      await invoke(dejaLa ? 'remove_bookmark' : 'add_bookmark', {
+        source: manga.source,
+        mangaUrl: manga.url,
+        chapterUrl: chapter.url,
+        title: manga.title,
+        coverUrl: manga.coverUrl ?? null,
+        chapterTitle: chapterLabel(chapter),
+        pageIndex: index,
+        pageCount: pages.length,
+      });
+      // On relit depuis la base : la source de vérité reste SQLite, pas l'état
+      // optimiste qui vient de disparaître.
+      await refreshSignets();
+    } catch (e) {
+      setSignets(avant);
+      setError(`Signet : ${e}`);
+    }
+  }
+
+  function sameSignet(b: Bookmark, cle: { chapter_url: string; page_index: number }): boolean {
+    return b.chapter_url === cle.chapter_url && b.page_index === cle.page_index;
+  }
+
+  /** Rejouer un signet : rouvre son chapitre exactement à sa page. */
+  async function ouvrirSignet(b: Bookmark) {
+    setError(null);
+    const manga: Manga = {
+      url: b.manga_url,
+      title: b.title,
+      source: b.source,
+      coverUrl: b.cover_url,
+    };
+    setOpenManga(manga);
+    // Le moteur ne connaît un chapitre que si la fiche a été listée dans la
+    // session : sans cet appel, `pages` échoue et le lecteur ne s'ouvre pas.
+    const [ficheRes, chapitresRes] = await Promise.allSettled([
+      invoke<{ manga: Manga }>('details', {
+        source: b.source,
+        mangaUrl: b.manga_url,
+        mangaTitle: b.title,
+      }),
+      invoke<{ chapters: Chapter[] }>('chapters', {
+        source: b.source,
+        mangaUrl: b.manga_url,
+        mangaTitle: b.title,
+      }),
+    ]);
+    if (ficheRes.status === 'fulfilled' && ficheRes.value.manga) {
+      setInfo(ficheRes.value.manga);
+    }
+    if (chapitresRes.status === 'rejected') {
+      setError(`Chapitres indisponibles : ${chapitresRes.reason}`);
+      return;
+    }
+    const list: Chapter[] = chapitresRes.value.chapters ?? [];
+    setChapters(list);
+    const chapter =
+      list.find((c) => c.url === b.chapter_url) ?? list[0];
+    if (!chapter) {
+      setError('Ce chapitre n’est plus disponible dans cette source.');
+      return;
+    }
+    // Le nom de source doit être passé explicitement : ouvert depuis l'accueil,
+    // aucune source n'est sélectionnée et `openReaderAt` sortirait en silence.
+    await openReaderAt(
+      chapter,
+      Math.min(b.page_index, Math.max(0, b.page_count - 1)),
+      b.source,
+    );
   }
 
   async function basculerSource(nom: string, actif: boolean) {
@@ -1880,6 +2016,8 @@ useEffect(() => {
 if (reader) {
     const { pages, index, chapter } = reader;
     const page = pages[index];
+    // Signet présent sur la page affichée : l'état du bouton du lecteur.
+    const marque = pageMarquee();
     const by = readerMode === 'page' && spread ? 2 : 1;
     const next = pages[index + by];
     // En double page, la page courante et la suivante partagent le cadre. En RTL
@@ -1904,6 +2042,15 @@ if (reader) {
           </span>
 
           <div className="reader-tools">
+            <button
+              className={`seg-btn${marque ? ' on' : ''}`}
+              aria-pressed={marque}
+              onClick={() => void basculerSignet()}
+              title="Marquer cette page pour la retrouver plus tard"
+            >
+              {marque ? 'Signet ✓' : 'Signet'}
+            </button>
+
             <div className="seg" role="group" aria-label="Mode de lecture">
               <button
                 className="seg-btn"
@@ -2667,6 +2814,67 @@ if (reader) {
               </article>
             ))}
           </div>
+        )}
+
+        {signets.length > 0 && (
+          <>
+            <div className="band">
+              Vos signets
+              <span className="muted">
+                {signets.length} page{signets.length > 1 ? 's' : ''} marquée
+                {signets.length > 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="bm-list">
+              {signets.map((b) => (
+                <div
+                  className="bm"
+                  key={`${b.source}|${b.manga_url}|${b.chapter_url}|${b.page_index}`}
+                >
+                  <span className="bm-cover">
+                    {b.cover_url ? (
+                      <img className="thumb" src={b.cover_url} alt="" loading="lazy" />
+                    ) : (
+                      <span className="thumb thumb-empty" aria-hidden="true">
+                        {(b.title.trim()[0] ?? '?').toUpperCase()}
+                      </span>
+                    )}
+                  </span>
+                  <span className="bm-text">
+                    <b>{b.title}</b>
+                    <span className="muted">
+                      {b.source}
+                      {b.chapter_title ? ` · ${b.chapter_title}` : ''} · page{' '}
+                      {b.page_index + 1}/{b.page_count} · {sinceFr(b.created_at)}
+                    </span>
+                  </span>
+                  <button className="btn" onClick={() => void ouvrirSignet(b)}>
+                    Rouvrir
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      const avant = signets;
+                      setSignets(avant.filter((x) => !sameSignet(x, b) || x.chapter_url !== b.chapter_url || x.page_index !== b.page_index || x.source !== b.source));
+                      void invoke('remove_bookmark', {
+                        source: b.source,
+                        mangaUrl: b.manga_url,
+                        chapterUrl: b.chapter_url,
+                        pageIndex: b.page_index,
+                      })
+                        .then(() => refreshSignets())
+                        .catch((e) => {
+                          setSignets(avant);
+                          setError(`Signet : ${e}`);
+                        });
+                    }}
+                  >
+                    Retirer
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
         )}
 
         <div className="band">

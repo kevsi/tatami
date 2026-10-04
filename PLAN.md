@@ -112,7 +112,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 - [x] **1.4** Page détail d'un manga : infos, liste des chapitres, ajout aux favoris.
 - [ ] **1.5** Favoris organisés en catégories définies par l'utilisateur (favori simple fait, catégories à faire).
 - [x] **1.6** Historique de lecture, reprise au bon chapitre et à la bonne page, mode incognito.
-- [ ] **1.7** Signets.
+- [x] **1.7** Signets.
 - [ ] **1.8** Lecteur paginé : sens de lecture, zoom, préchargement via le cache Rust, raccourcis clavier et souris.
 - [ ] **1.9** Mode webtoon (défilement continu, liste virtualisée).
 - [ ] **1.10** Thèmes clair/sombre, i18n français et anglais en place.
@@ -200,6 +200,20 @@ _Format d'une entrée :_
 - Preuve : commande + résumé de la sortie
 - Points ouverts :
 ```
+
+### 2026-10-04 — Tâche 1.7 : signets
+- Plan : (1) table `bookmarks` (schéma **v5**) avec la page dans la clé, pour pouvoir marquer plusieurs pages d'un même chapitre ; (2) bouton dans le lecteur + section sur l'accueil avec réouverture au bon endroit ; (3) prouver la persistance et l'exactitude de la page.
+- Fait : `add_bookmark` / `remove_bookmark` / `list_bookmarks` (+ filtre par webtoon et limite). Bouton « Signet » dans la barre du lecteur (état actif + libellé « Signet ✓ », `aria-pressed`). Section « Vos signets » sur l'accueil : couverture, titre, source, chapitre, page, ancienneté, « Rouvrir » et « Retirer ». `ouvrirSignet` recharge la fiche, les chapitres, puis rouvre à la page exacte.
+- Choix : pas de commande `has_bookmark`. Un seul appel `list_bookmarks` alimente l'état du bouton du lecteur et l'affichage ; une commande de plus aurait été du poids mort (`clippy` l'a d'ailleurs signalé comme morte). L'état du bouton du lecteur est donc dérivé d'une liste — si l'utilisateur dépasse 200 signets, les plus anciens ne sont plus en mémoire (limite documentée dans la commande).
+- **Deux bugs réels trouvés en mesurant :**
+  1. `ouvrirSignet` n'ouvrait **rien** : `openReaderAt(c, index, sourceName)` sort en silence quand aucune source n'est sélectionnée, ce qui est exactement le cas depuis l'accueil. Le nom de source doit être passé explicitement, comme le fait déjà `resumeReading`.
+  2. Un walk précédent mesurait « ouvert à la page 1 » alors que l'app ouvrait bien la page 9 : la forme chaînée `locator(...).locator(...).click()` visait une ligne périmée. `.first()` + un affichage de la ligne réellement cliquée ont rendu la mesure fiable. **Encore un cas où le test, pas l'app, était faux.**
+- Preuve :
+  - `cargo test` → **23 passés, 0 échec** (dont `un_signet_memorise_la_page_exacte`, `les_signets_se_lisent_du_plus_recent_au_plus_ancien`, `un_signet_ne_touche_pas_l_historique` — marquer une page ne fabrique pas d'historique, retirer un signet n'efface rien).
+  - `cargo clippy -D warnings` → 0 · `cargo fmt --check` → 0 · `pnpm typecheck` / `pnpm lint` / `pnpm build` → 0.
+  - Parcours sur l'app réelle via CDP (`walk-signets.js`) : **22 mesures, 0 échec** — marquage, libellé, page exacte, pas de doublon en marquer/retirer/marquer, deux pages distinctes, section d'accueil, réouverture à la **page 9/9**, bouton déjà marqué, retrait, survie au rechargement, et table vide après nettoyage.
+  - Captures : `audit/tatami4/18-signets-accueil.png`, `audit/tatami4/19-signet-ouvert.png`.
+- Points ouverts : pas encore de pastille de signet sur les chapitres de la fiche (un signet n'est donc visible que depuis l'accueil et le lecteur) ; les signets ne sont pas encore exportables ni attachés à une catégorie (1.5).
 
 ### 2026-10-04 — Tâche 1.3 : tri des titres (alphabétique, choisi avec l'utilisateur)
 - Plan : (1) demander à l'humain quel tri, plutôt que d'inventer (le moteur n'expose pas de tri « dernière mise à jour ») ; (2) implémenter alphabétique ; (3) prouver sur l'app réelle que l'ordre est bien appliqué et qu'il revient à l'ordre du site.

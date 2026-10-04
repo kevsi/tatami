@@ -62,10 +62,10 @@ tatami/
 |---|---|---|---|
 | 0 | Fondations et spike des risques | M | **En cours** — 0.1 à 0.11 faits, 0.12 partiel, 0.13 à 0.17 à faire |
 | 1 | Bibliothèque et lecteur | L | **Presque finie** — 1.1 à 1.7 faits, 1.8 à 1.10 à faire |
-| 2 | Hors ligne | M | **≈ 60 % faite** — file, reprise, CBZ, assainissement et stats existent ; **il manque la lecture hors ligne** |
+| 2 | Hors ligne | M | **Faite** — file, reprise, CBZ, lecture hors ligne, assainissement et stats ; durcie le 2026-10-04 (un `.cbz` par chapitre, `sync_all`, verrou RAII) |
 | 3 | Tâches de fond et notifications | M | **Pas commencée** |
 | 4 | Comptes et synchronisation | L | **Pas commencée** |
-| 5 | Durcissement et distribution | M | **Pas commencée** |
+| 5 | Durcissement et distribution | M | **Partiellement entamée** — audit de code du 2026-10-04 et ses 5 correctifs livrés |
 
 Phase en cours : **1 et 2 en parallèle**, la phase 2 ayant un manque bloquant.
 Prochaine tâche : 1.10 (thèmes clair/sombre), puis la dette de phase 0 (0.13 → 0.17).
@@ -240,6 +240,61 @@ Règles données aux trois sessions :
    récupère ces fichiers dans un commit « docs » dédié.
 
 ## 9. Journal
+
+### 2026-10-04 — Audit du code réel et correction des 5 constats
+
+- Plan : audit du dépôt **sans se fier aux `.md`**, puis correction de chaque
+  constat mesuré. Périmètre validé par l'utilisateur : le suivi AniList/MAL est
+  **hors v1** (decision humaine : l'app sera terminee). L'audit a fait
+  ressortir deux constats d'architecture et trois de robustesse.
+- **Constat 1 — les couvertures contournaient le moteur.** Les 6 vignettes
+  faisaient `<img src={coverUrl}>` sur une adresse de site, et la CSP
+  l'autorisait (`img-src ... https:`) : violation directe du §4 règle 4, avec
+  un échec silencieux (vignette vide, console propre). Corrigé de bout en bout :
+  `fetchCover` côté moteur, `PageRef::Couverture` + `tatami://cover/<jeton>`
+  côté Rust, `coverToken` dans toutes les réponses (moteur **et** base), `https:`
+  retiré de la CSP. Au passage : index O(1) au lieu d'un balayage O(n²),
+  plafonds d'éviction, écriture de cache atomique.
+- **Constat 2 — le contrat était en retard de deux méthodes.** `latest` (qui
+  porte l'essentiel du parcours) et `filterOptions` étaient implémentées et
+  utilisées mais absentes de l'`enum` `method`. Une porte de validation contre
+  le schéma serait passée à côté. `fetchCover` ajoutée, formes de `result`
+  décrites, points ouverts honnêtes (`health` n'est appelé par personne).
+- **Constat 3 — deux commandes mortes et deux sémantiques opposées.**
+  `commands::search` (jamais appelée depuis la 0.9) envoyait `SAFE` par défaut
+  quand `latest` n'en envoie aucun : même réglage, deux comportements
+  contraires. `library::existing_chapters` remplacée par `missing_chapters`.
+  Retirées. Nouvelle porte `aucune_commande_tauri_nest_morte`.
+- **Constat 4 — cinq défauts sur le chemin de production d'un `.cbz`.**
+  Collision de nom entre chapitres homonymes (« un `.cbz` par chapitre » n'était
+  pas tenu), `note_chapter` ignoré en silence, noms réservés Windows non
+  gérés, débordement `u32` tronqué sans bruit dans l'écrivain ZIP, `flush` au
+  lieu de `sync_all` (donc un `.cbz` tronqué portant le nom définitif). Plus le
+  verrou de téléchargement qui restait pris sur une panique.
+- **Constat 5 — i18n mesuré sur le dictionnaire, pas sur l'affichage.**
+  199 clés pour 108 utilisées : **91 clés jamais affichées**. Sept libellés
+  restaient en français en dur. Nettoyé, plus `pnpm i18n:check`.
+- **Bonus mesuré — le moteur jetait les requêtes en vol.** Cinq requêtes d'un
+  bloc puis fermeture de stdin : **0 ligne sur stdout** (`shutdownNow()`
+  interrompait les workers). Corrigé, avec test.
+- Preuve :
+  - `pnpm typecheck` 0 · `pnpm lint` 0 erreur (4 warnings `exhaustive-deps`
+    antérieurs) · `pnpm build` OK · `pnpm i18n:check` 127/127
+  - `cargo fmt --check` 0 · `cargo clippy --all-targets -D warnings` 0 ·
+    `cargo test` **56 passés, 0 échec**
+  - `gradle test` **10 passés, 0 échec** (dont `FermetureStdinTest`)
+  - `fetchCover` sur MangaDex : **43 981 octets, signature `FF D8 FF E0`** ;
+    `file://` refusé ; repli `coverUrl` OK
+  - Fermeture stdin : **0 → 5 réponses** ; `shutdown` : 6/6
+  - 4 commits : `7bab520`, `2d26a45`, `df77322`, `a7e83bb`, `4eedc99`
+- Points ouverts :
+  - **Suivi AniList/MAL, sync et notifications : hors v1** (décision humaine du
+    2026-10-04). Le tableau des phases les garde visibles, pas engagements.
+  - Aucune porte ne couvre encore le rendu visuel : `page.tsx` fait 3750 lignes
+    et n'a aucun test. Une régression d'affichage ne serait vue qu'à l'écran.
+  - `store.rs` : `history_title` est la seule brique encore verrouillée par
+    version alors que le fichier prône la réparation par présence.
+  - Un commit (`5be3849`) est apparu pendant l'audit sans que je l'aie lancé.
 
 _Format d'une entrée :_
 

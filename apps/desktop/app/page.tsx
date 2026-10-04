@@ -23,9 +23,22 @@ type Manga = {
 // `uploadDate` est déjà émis par le moteur (epoch ms, 0 si la source ne le
 // fournit pas) : Rust fait du pass-through, seul le type le ignorait.
 type Chapter = { url: string; title?: string | null; number?: number; uploadDate?: number | null };
-type Page = { index: number; url: string; previewUrl?: string | null; token: string };
+type Page = {
+  index: number;
+  url: string;
+  previewUrl?: string | null;
+  token: string;
+  /** Taille réelle en pixels, lue par Rust dans l'en-tête. 0 = inconnue.
+   *  Indispensable au mode webtoon : sans elle, la hauteur de la bande ne peut
+   *  qu'être estimée, et une estimation fausse perd la position de lecture. */
+  largeur?: number;
+  hauteur?: number;
+};
 /** Page d'un `.cbz` déjà téléchargé : servie par Rust, sans moteur ni réseau. */
-type LocalPage = { index: number; token: string; name: string };
+type LocalPage = { index: number; token: string; name: string; width: number; height: number };
+/** Référence stable : `reader?.pages ?? []` créerait un nouveau tableau à chaque
+ *  rendu, donc les `useMemo` de la bande recalculeraient sans cesse. */
+const EMPTY_PAGES: Page[] = [];
 /** Lecteur paginé (tâche 0.10) : les images viennent du protocole `tatami://`,
  *  jamais d'un appel direct aux hôtes distants. */
 /** Un favori enregistré par l'utilisateur (table `favorites`). */
@@ -513,6 +526,9 @@ export default function Home() {
   const [onePageOnly, setOnePageOnly] = useState(false);
   const [listTimeout, setListTimeout] = useState(60);
   const [deleteTarget, setDeleteTarget] = useState<LibraryItem | null>(null);
+  // Sélecteur de chapitre d'un webtoon téléchargé : avant, « Lire » ouvrait
+  // toujours le premier chapitre, ce qui est inutilisable sur une série de 137.
+  const [chapitresVisibles, setChapitresVisibles] = useState<LibraryItem | null>(null);
   const [reader, setReader] = useState<Reader | null>(null);
   const [readerLoading, setReaderLoading] = useState(false);
   const [challenge, setChallenge] = useState<string | null>(null);
@@ -537,6 +553,13 @@ export default function Home() {
   const [pageJump, setPageJump] = useState('');
   const stripRef = useRef<HTMLDivElement>(null);
   const stripImages = useRef<(HTMLImageElement | null)[]>([]);
+  // Virtualisation de la bande webtoon (tâche 1.9) : hauteur réelle de chaque
+  // page, position de la bande, et largeur du conteneur (la hauteur affichée
+  // est proportionnelle à cette largeur).
+  const dernierScroll = useRef(0);
+  const enAttente = useRef(false);
+  const [scrollY, setScrollY] = useState(0);
+  const [largeurBande, setLargeurBande] = useState(0);
   const [health, setHealth] = useState<SourceHealth>({});
   // Sélection multiple de webtoons + file de téléchargement
   const [selectMode, setSelectMode] = useState(false);
@@ -608,8 +631,7 @@ export default function Home() {
     };
     // Montage uniquement : rejouer cet effet à chaque changement de
     // `refreshDownloads` réabonnerait l'écouteur d'événements.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const refreshDownloads = useCallback(() => {
@@ -707,8 +729,7 @@ export default function Home() {
     invoke<string[]>('list_disabled_sources')
       .then((r) => setSourcesOff(r ?? []))
       .catch(() => setSourcesOff([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    }, []);
 
   function estDesactivee(nom: string): boolean {
     return sourcesOff.includes(nom);
@@ -1656,7 +1677,7 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string)
     let pages: Page[];
     let horsLigne = false;
     if (locales.length > 0) {
-      pages = locales.map((p) => ({ index: p.index, url: '', token: p.token }));
+      pages = locales.map((p) => ({ index: p.index, url: '', token: p.token, largeur: p.width, hauteur: p.height }));
       horsLigne = true;
     } else {
       const r = await invoke<{ pages: Page[] }>('pages', {
@@ -1681,6 +1702,36 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string)
   }
 }
 
+/**
+ * Panneau de vérification d'une source, rendu **après la barre de navigation
+ * dans toutes les vues**.
+ *
+ * Il était d'abord rendu seulement dans la vue Téléchargements. Mesuré le
+ * 2026-10-04 : l'utilisateur était dans l'onglet Catalogues, donc
+ * `panneauxH2: []` et `boutonsVisibles: []` — le bouton « C'est fait,
+ * appliquer » n'existait nulle part, et le clic ne pouvait rien déclencher.
+ * Un panneau d'action doit être visible là où l'action a été demandée, pas
+ * dans la vue où l'on pense qu'elle restera.
+ */
+function renderVerif() {
+  if (!verif) return null;
+  return (
+    <section className="panel resume">
+      <h2>{t('telechargements.verification.titre', { source: verif.source })}</h2>
+      <p className="muted">{t('telechargements.verification.note')}</p>
+      <p className="muted">{verif.reason}</p>
+      <div className="alert-actions">
+        <button className="btn" disabled={challengeBusy} onClick={() => void applyVerif()}>
+          {t('telechargements.verification.appliquer')}
+        </button>
+        <button className="btn btn-ghost" onClick={() => void cancelVerif()}>
+          {t('telechargements.verification.fermer')}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 /** Ouvre un chapitre téléchargé directement depuis la vue Téléchargements. */
 async function openLocalChapter(item: LibraryItem, chapter: LibraryItem['chapters'][number]) {
   setReaderLoading(true);
@@ -1697,7 +1748,7 @@ async function openLocalChapter(item: LibraryItem, chapter: LibraryItem['chapter
     setPageJump('');
     setReader({
       chapter: { url: chapter.url, title: chapter.title, number: 0, uploadDate: 0 },
-      pages: pages.map((p) => ({ index: p.index, url: '', token: p.token })),
+      pages: pages.map((p) => ({ index: p.index, url: '', token: p.token, largeur: p.width, hauteur: p.height })),
       index: 0,
       source: item.source,
       horsLigne: true,
@@ -1863,15 +1914,130 @@ function jumpToPage(raw: string) {
   setReader((r) => (r ? { ...r, index: target } : r));
 }
 
-/** Fait défiler la bande jusqu'à la page demandée (mode webtoon). */
+/** Fait défiler la bande jusqu'à la page demandée (mode webtoon).
+ *
+ *  En mode virtualisé, l'image n'existe peut-être pas encore dans le DOM : on
+ *  positionne alors le conteneur sur l'offset **calculé**, ce qui fonctionne
+ *  dans les deux cas et évite de dépendre du rendu.
+ */
 function scrollToPage(i: number) {
-  const el = stripImages.current[i];
+  const root = stripRef.current;
+  const cible = i >= 0 && i < pagesBande.length ? i : 0;
+  const haut = offsets[cible];
+  if (root && haut !== undefined) {
+    root.scrollTo({ top: Math.max(0, haut - 8), behavior: 'smooth' });
+    setReader((r) => (r ? { ...r, index: cible } : r));
+    return;
+  }
+  const el = stripImages.current[cible];
   if (el) {
     el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    setReader((r) => (r ? { ...r, index: i } : r));
+    setReader((r) => (r ? { ...r, index: cible } : r));
   } else {
-    turn(i - (reader?.index ?? 0));
+    turn(cible - (reader?.index ?? 0));
   }
+}
+
+// ---------- Bande webtoon virtualisée (tâche 1.9) ----------
+// Rust renvoie la **taille réelle** de chaque page (lue dans l'en-tête de
+// l'image). On en déduit la hauteur affichée, puis la position de chaque page.
+// La hauteur de la bande est donc exacte dès le premier rendu : la barre de
+// défilement est juste et une fenêtre glissante peut ne monter qu'une dizaine
+// de nœuds au lieu de 303 (mesuré : Killer Peter, 303 pages dans un `.cbz`).
+//
+// Ces `useMemo` sont ici, **avant** les retours conditionnels de vue : les mettre
+// dans le bloc du lecteur violerait l'ordre des hooks, puisque le composant
+// retourne avant d'y arriver selon la vue affichée.
+const pagesBande = reader?.pages ?? EMPTY_PAGES;
+const formatBande = (readerMode === 'webtoon' ? zoom : 100) / 100;
+const hauteurs = useMemo(() => {
+  const l = largeurBande || 1;
+  return pagesBande.map((p) => {
+    const w = p.largeur ?? 0;
+    const h = p.hauteur ?? 0;
+    if (w <= 0 || h <= 0) return 0;
+    return Math.round((l * formatBande * h) / w);
+  });
+}, [pagesBande, largeurBande, formatBande]);
+
+const offsets = useMemo(() => {
+  const out: number[] = [];
+  let y = 0;
+  for (const h of hauteurs) {
+    out.push(y);
+    y += h;
+  }
+  return out;
+}, [hauteurs]);
+
+const bandeHauteur = useMemo(() => {
+  // Sans dimension connue (chapitre lu en ligne : le moteur ne renvoie pas la
+  // taille), on ne peut rien virtualiser sans risquer de perdre la position.
+  // On rend alors tout, comme avant — jamais une estimation.
+  if (hauteurs.some((h) => h <= 0)) return 0;
+  return hauteurs.reduce((n, h) => n + h, 0);
+}, [hauteurs]);
+
+const fenetre = useMemo(() => {
+  const tous = pagesBande.map((_, i) => i);
+  if (readerMode !== 'webtoon' || bandeHauteur <= 0) return tous;
+  let premier = 0;
+  while (
+    premier < pagesBande.length &&
+    (offsets[premier] ?? 0) + (hauteurs[premier] ?? 0) < scrollY
+  ) {
+    premier += 1;
+  }
+  const marge = 2;
+  const debut = Math.max(0, premier - marge);
+  // On monte jusqu'à couvrir la fenêtre visible plus une page, puis deux de
+  // marge : de quoi éviter le « trou blanc » pendant un défilement rapide.
+  let y = offsets[premier] ?? 0;
+  let fin = premier;
+  while (fin < pagesBande.length && y < scrollY + 2000) {
+    y += hauteurs[fin] ?? 0;
+    fin += 1;
+  }
+  const limite = Math.min(pagesBande.length, fin + marge);
+  const out: number[] = [];
+  for (let i = debut; i < limite; i += 1) out.push(i);
+  return out;
+}, [pagesBande, readerMode, scrollY, offsets, hauteurs, bandeHauteur]);
+
+// La largeur du conteneur décide de la hauteur affichée : il faut la mesurer,
+// sinon la première bande est dimensionnée sur une largeur nulle.
+const nbPagesBande = pagesBande.length;
+useEffect(() => {
+  const root = stripRef.current;
+  if (!root) return;
+  const mesurer = () => setLargeurBande(root.clientWidth);
+  mesurer();
+  const observateur = new ResizeObserver(mesurer);
+  observateur.observe(root);
+  return () => observateur.disconnect();
+}, [nbPagesBande, readerMode]);
+
+/** Défilement de la bande : recalcule la fenêtre de pages montées. */
+function onScrollBande() {
+  const root = stripRef.current;
+  if (!root) return;
+  const y = root.scrollTop;
+  if (Math.abs(y - dernierScroll.current) < 40) return; // seuil : évite un rendu par pixel
+  dernierScroll.current = y;
+  if (!enAttente.current) {
+    enAttente.current = true;
+    requestAnimationFrame(() => {
+      enAttente.current = false;
+      setScrollY(y);
+    });
+  }
+  // Le compteur de pages suit la page réellement visible.
+  let i = 0;
+  for (let k = 0; k < offsets.length; k += 1) {
+    if ((offsets[k] ?? 0) <= y + 8) i = k;
+    else break;
+  }
+  if (reader && i !== reader.index) setReader((r) => (r ? { ...r, index: i } : r));
 }
 
 // En mode webtoon, le compteur suit la page réellement visible.
@@ -1894,7 +2060,6 @@ useEffect(() => {
   // L'observateur dépend du chapitre, du mode et du nombre de pages — pas de
   // l'objet `reader` complet, qui est recréé à chaque changement de page et
   // rejouerait l'observation sans raison.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [reader?.chapter.url, readerMode, reader?.pages.length]);
 
 function turn(delta: number) {
@@ -1940,7 +2105,6 @@ useEffect(() => {
   return () => window.removeEventListener('keydown', onKey);
   // `scrollToPage` et `step` sont redéfinies à chaque rendu ; les inclure
   // rebouclerait l'écouteur sur chaque changement d'état du lecteur.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [reader, readerMode, spread]);
 
   // ---------- Vue : Réglages ----------
@@ -1952,7 +2116,7 @@ useEffect(() => {
   if (tab === 'settings' && !reader) {
     return (
       <main>
-        <AppBar tab={tab} onTab={goTab} />
+        <AppBar tab={tab} onTab={goTab} />{renderVerif()}
         <button className="crumb" onClick={() => setTab('catalog')}>
           {'←'} Catalogues
         </button>
@@ -2209,7 +2373,7 @@ useEffect(() => {
     const partiels = library.filter((i) => !i.complete).length;
     return (
       <main>
-        <AppBar tab={tab} onTab={goTab} />
+        <AppBar tab={tab} onTab={goTab} />{renderVerif()}
         <header className="page-head">
           <h1>{t('nav.telechargements')}</h1>
         </header>
@@ -2217,23 +2381,39 @@ useEffect(() => {
         {error && <p className="error">{error}</p>}
         {notice && <p className="notice">{notice}</p>}
 
-        {/* La vérification peut être demandée par un TÉLÉCHARGEMENT, pas
-            seulement par une lecture : sans ce panneau, l'utilisateur resterait
-            sur cette vue sans jamais voir qu'une fenêtre s'est ouverte. */}
-        {verif && (
-          <section className="panel resume">
-            <h2>{t('telechargements.verification.titre', { source: verif.source })}</h2>
-            <p className="muted">{t('telechargements.verification.note')}</p>
-            <p className="muted">{verif.reason}</p>
+        {chapitresVisibles && (
+          <dialog
+            className="confirm"
+            open
+            aria-labelledby="chapitres-titre"
+            onCancel={() => setChapitresVisibles(null)}
+          >
+            <h2 id="chapitres-titre">{chapitresVisibles.title}</h2>
+            {chapitresVisibles.chapters.length === 0 ? (
+              <p className="muted">{t('telechargements.chapitres.aucun')}</p>
+            ) : (
+              <div className="chap-list">
+                {chapitresVisibles.chapters.map((c) => (
+                  <button
+                    key={c.file}
+                    className="btn"
+                    onClick={() => {
+                      const cible = chapitresVisibles;
+                      setChapitresVisibles(null);
+                      void openLocalChapter(cible, c);
+                    }}
+                  >
+                    {c.title}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="alert-actions">
-              <button className="btn" disabled={challengeBusy} onClick={() => void applyVerif()}>
-                {t('telechargements.verification.appliquer')}
-              </button>
-              <button className="btn btn-ghost" onClick={() => void cancelVerif()}>
+              <button className="btn btn-ghost" onClick={() => setChapitresVisibles(null)}>
                 {t('telechargements.verification.fermer')}
               </button>
             </div>
-          </section>
+          </dialog>
         )}
 
         {savedQueue && savedQueue.items.length > 0 && !queueRunning && (
@@ -2366,12 +2546,23 @@ useEffect(() => {
                             l'application. Avant, il fallait l'ouvrir dans un autre
                             logiciel — le lecteur passait toujours par le moteur. */}
                         {item.chapters.length > 0 && (
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => void openLocalChapter(item, item.chapters[0])}
-                          >
-                            {t('telechargements.lecture.lancer')}
-                          </button>
+                          <>
+                            <button
+                              className="btn btn-primary"
+                              onClick={() => void openLocalChapter(item, item.chapters[0])}
+                            >
+                              {t('telechargements.lecture.lancer')}
+                            </button>
+                            {item.chapters.length > 1 && (
+                              <button
+                                className="btn"
+                                onClick={() => setChapitresVisibles(item)}
+                                aria-label={t('telechargements.chapitres.ouvrir')}
+                              >
+                                {t('telechargements.chapitres.ouvrir')} ({item.chapters.length})
+                              </button>
+                            )}
+                          </>
                         )}
                         {!item.complete && item.downloaded > 0 && (
                           <button
@@ -2611,21 +2802,43 @@ if (reader) {
         </header>
 
         {readerMode === 'webtoon' ? (
-          <div className="webtoon" ref={stripRef}>
-            {pages.map((p, i) => (
-              <img
-                key={p.token}
-                ref={(el) => {
-                  stripImages.current[i] = el;
-                }}
-                src={pageSrc(p.token)}
-                alt={`Page ${i + 1}`}
-                loading="lazy"
-                decoding="async"
-                style={{ width: `${zoom}%` }}
-                onDoubleClick={() => changeZoom(zoom >= 200 ? 100 : 200)}
-              />
-            ))}
+          <div className="webtoon" ref={stripRef} onScroll={onScrollBande}>
+            {/* Tâche 1.9 — virtualisation. Mesuré : Killer Peter = 303 pages
+                dans UN `.cbz` ; rendues toutes, le navigateur chargeait les
+                303 images à l'ouverture (211 requêtes `tatami://`).
+
+                Rust renvoie la **hauteur réelle** de chaque page (lue dans
+                l'en-tête), donc la bande a une hauteur exacte dès le premier
+                rendu et une fenêtre glissante peut ne monter qu'une dizaine de
+                nœuds. Une hauteur estimée avait été essayée et retirée : la
+                position de défilement reculait de 3 964 à 1 788 px. */}
+            <div className="webtoon-inner" style={{ height: bandeHauteur }}>
+              {fenetre.map((i) => {
+                const p = pages[i];
+                if (!p) return null;
+                const hauteur = hauteurs[i] || 0;
+                return (
+                  <img
+                    key={p.token}
+                    ref={(el) => {
+                      stripImages.current[i] = el;
+                    }}
+                    src={pageSrc(p.token)}
+                    alt={`Page ${i + 1}`}
+                    loading="lazy"
+                    decoding="async"
+                    data-index={i}
+                    style={{
+                      width: `${zoom}%`,
+                      position: 'absolute',
+                      top: offsets[i] ?? 0,
+                      height: hauteur ? `${hauteur}px` : undefined,
+                    }}
+                    onDoubleClick={() => changeZoom(zoom >= 200 ? 100 : 200)}
+                  />
+                );
+              })}
+            </div>
           </div>
         ) : (
           <>
@@ -2691,7 +2904,7 @@ if (reader) {
     const summary = plainText(info?.description);
     return (
       <main>
-        <AppBar tab={tab} onTab={goTab} />
+        <AppBar tab={tab} onTab={goTab} />{renderVerif()}
         <button className="crumb" onClick={backToSource}>
           {'←'} {selected?.name}
         </button>
@@ -2893,7 +3106,7 @@ if (reader) {
   if (selected) {
     return (
       <main>
-        <AppBar tab={tab} onTab={goTab} />
+        <AppBar tab={tab} onTab={goTab} />{renderVerif()}
         <button className="crumb" onClick={backToCatalog}>
           {'←'} Catalogues
         </button>
@@ -3184,7 +3397,7 @@ if (reader) {
   if (tab === 'home' && !reader) {
     return (
       <main>
-        <AppBar tab={tab} onTab={goTab} />
+        <AppBar tab={tab} onTab={goTab} />{renderVerif()}
         <header className="page-head">
           <h1>{t('nav.accueil')}</h1>
           <span className="sub">
@@ -3460,7 +3673,7 @@ if (reader) {
   // ---------- Vue : catalogue ----------
   return (
     <main>
-      <AppBar tab={tab} onTab={goTab} />
+      <AppBar tab={tab} onTab={goTab} />{renderVerif()}
 
       <header className="page-head">
         <h1>{t('nav.catalogues')}</h1>

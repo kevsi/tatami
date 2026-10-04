@@ -282,6 +282,22 @@ Le chapitre reste **absent** du disque, donc la règle « ne jamais retéléchar
 
 Mesuré : quand la source ne renvoie **pas** de titre de chapitre (`title: null`, cas de MANGADEX ici), `chapterLabel` retombe sur l'URL et le fichier s'appelle `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz`. Le `.cbz` est valide et lisible par Tatami, mais **inutilisable** dans un lecteur externe, ce qui contredit l'intention de l'exigence permanente (« un `.cbz` par chapitre »). Nouvelle tâche 0.18.
 
+### 2026-10-04 — Tâches 1.9, 2.3 (suite), et les trois défauts que j'avais laissés
+
+**1.9 — bande webtoon virtualisée.** Rust lit désormais la **taille réelle** de chaque page dans l'en-tête (`image::dimensions` : JPEG par parcours des marqueurs SOF, PNG via IHDR, WebP VP8/VP8L/VP8X), en ne lisant que **512 octets** par entrée — lire les images entières aurait relu ~90 Mo pour rien. L'interface en déduit la hauteur affichée, la position de chaque page, et ne monte qu'une **fenêtre glissante**. `flex: none` sur `.webtoon-inner` était indispensable : sans lui, le `height: 657 485px` posé en style inline était réduit par `flex-shrink` à 540 px, la barre de défilement mentait et la position sautait.
+
+Preuves sur Killer Peter (303 pages dans un seul `.cbz`) : bande **657 485 px exacte**, **3 nœuds à l'ouverture et 6 en défilement au lieu de 303**, chaque cible atteinte au pixel près (50 000 → page 23, 200 000 → 92, 450 000 → 207, 650 000 → 299), position monotone, aucun trou blanc, compteur de page suit. Mode pagé non régressé (647 px dans un cadre de 691). 7/7.
+
+Limite assumée : un chapitre lu **en ligne** n'a pas de dimensions (le moteur ne les renvoie pas encore), donc la virtualisation ne s'y applique pas et l'interface rend toutes les pages. Aucune estimation n'est faite dans ce cas — measured : une estimation fait perdre la position de lecture.
+
+**2.3 — sélecteur de chapitre** dans la vue Téléchargements. Le bouton « Lire » ouvrait toujours le premier chapitre, ce qui est inutilisable sur une série de 137. Mesuré : Petite Rebelle affiche « Choisir un chapitre (37) », le dialogue liste 37 chapitres et tient dans l'écran (liste bornée à 52vh).
+
+**Défaut d'interface corrigé** : le panneau de vérification n'existait que dans la vue Téléchargements, alors qu'un téléchargement peut être lancé depuis n'importe quelle vue — c'est exactement le « rien ne se passe »  experienced par l'utilisateur. Il est désormais rendu après la barre de navigation dans les **six** points d'entrée de vue.
+
+**0.18 — nom de fichier lisible.** Un chapitre sans titre produisait `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz` : valide, mais inutilisable dans un lecteur externe. Le nom retient maintenant le **numéro** de chapitre trouvé dans l'URL (`Chapitre 12.cbz`), et un UUID est **détecté explicitement** (`segments_uuid`, 8-4-4-4-12) avant tout repli. Ce n'était pas suffisant de filtrer les groupes de chiffres : l'UUID en contient, et le premier essai produisait `Chapitre 48.cbz` — échec révélé par le test.
+
+Portes : `pnpm typecheck` / `lint` / `build` = 0 · `cargo test` **43 passés** · clippy 0 · fmt 0 · `gradle test` 9/9.
+
 ### 2026-10-04 — Tâche 2.3 : lecture hors ligne (le trou le plus visible de la v1)
 
 L'application écrivait des `.cbz` qu'elle ne savait pas **lire**. Le lecteur passait toujours par le moteur, donc le seul moyen de lire un téléchargement était d'ouvrir un autre logiciel — exactement ce que l'utilisateur a fait.

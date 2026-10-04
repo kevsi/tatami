@@ -1799,3 +1799,33 @@ button:disabled {
   border-radius: 4px;
   padding: 2px 6px;
 }
+/* Bande webtoon virtualisee (tache 1.9).
+   `.webtoon` reste le conteneur defilant ; `.webtoon-inner` porte la hauteur
+   totale exacte et positionne les images, qui sont en `position: absolute` avec
+   leur `top` calcule. Sans `position: relative` ici, chaque image se
+   positionnerait par rapport a la fenetre et la bande s'effondrerait. */
+.webtoon-inner {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Indispensable : `.webtoon` est une colonne flex de hauteur bornée. Sans
+     `flex: none`, le `height: 580134px` posé en style inline est traité comme
+     une base flexible et **réduit** pour tenir dans le cadre — mesuré : hauteur
+     calculée 540 px au lieu de 580 134. La barre de défilement mentait donc,
+     et la position de lecture était recalculée à chaque image chargée. */
+  flex: none;
+}
+/* Selecteur de chapitre d'un webtoon telecharge (tache 2.3). Liste scrollable :
+   une serie peut avoir plusieurs centaines de chapitres, la fenetre doit donc
+   etre bornee en hauteur, sinon le dialogue sort de l'ecran. */
+.chap-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: var(--s2);
+  margin-bottom: var(--s3);
+}

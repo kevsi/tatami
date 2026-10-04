@@ -83,15 +83,57 @@ fn chapter_dir(root: &Path, source: &str, manga_title: &str) -> PathBuf {
 fn chapter_file_name(chapter_title: &str, chapter_url: &str) -> String {
     let base = sanitize(chapter_title);
     if base.is_empty() || base == "sans-titre" {
-        let from_url = chapter_url
-            .rsplit('/')
-            .next()
-            .map(sanitize)
-            .unwrap_or_else(|| "chapitre".to_string());
-        format!("{from_url}.cbz")
+        let dernier = chapter_url.rsplit('/').next().unwrap_or("").trim();
+        // Un UUID ne dit rien de lisible : mesuré sur MANGADEX, le chapitre
+        // s'appelait `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz`. Valide, mais
+        // inutilisable dans un lecteur externe — donc inutile, ce qui vide
+        // l'exigence permanente « un .cbz par chapitre ».
+        let est_uuid = segments_uuid(dernier);
+        // Sinon, on cherche un **numéro** de chapitre dans l'URL : lisible et
+        // stable. Le filtre exclut les groupes de plus de 4 chiffres, sinon un
+        // identifiant long produit « Chapitre 4831 ».
+        let numero = if est_uuid {
+            None
+        } else {
+            chapter_url
+                .split(|c: char| !c.is_ascii_digit())
+                .filter(|s| !s.is_empty() && s.len() <= 4)
+                .max_by_key(|s| s.len())
+        };
+        match numero {
+            Some(n) => format!("Chapitre {n}.cbz"),
+            None => {
+                // Repli : le segment d'URL, sauf s'il est un UUID — auquel cas
+                // un nom fixe vaut mieux qu'un identifiant illisible.
+                let from_url = if est_uuid {
+                    String::new()
+                } else {
+                    sanitize(dernier)
+                };
+                if from_url.is_empty() {
+                    "Chapitre.cbz".to_string()
+                } else {
+                    format!("{from_url}.cbz")
+                }
+            }
+        }
     } else {
         format!("{base}.cbz")
     }
+}
+
+/// `8-4-4-4-12` en hexadécimaux : la forme que prennent les URL de chapitre
+/// quand la source n'a pas de titre lisible.
+fn segments_uuid(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('-').collect();
+    if parts.len() != 5 {
+        return false;
+    }
+    let attendus = [8usize, 4, 4, 4, 12];
+    parts
+        .iter()
+        .zip(attendus.iter())
+        .all(|(p, n)| p.len() == *n && p.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 /// Chapitres réellement absents du dossier d'un webtoon — c'est ce qui permet
@@ -208,18 +250,35 @@ pub async fn local_file_pages(
 }
 
 /// Transcription commune aux deux commandes de lecture locale.
+///
+/// Chaque page emporte ses **dimensions réelles**, lues dans l'en-tête de
+/// l'image. C'est ce qui permet au mode webtoon (tâche 1.9) de connaître la
+/// hauteur de la bande dès le premier rendu, donc de ne monter qu'une fenêtre
+/// de pages au lieu des 303 (mesuré : Killer Peter, 303 pages dans un `.cbz`).
+/// Sans elles, l'interface ne peut qu'estimer — et une estimation fausse fait
+/// perdre la position de lecture.
 fn entries_to_pages(
     pages: &[(usize, String)],
     fichier: &Path,
     cache: &super::pagecache::PageCache,
 ) -> Vec<serde_json::Value> {
+    let entrees = crate::zipread::lire_entrees(fichier).unwrap_or_default();
+    let mut lecture = std::fs::File::open(fichier).ok();
     pages
         .iter()
         .map(|(rang, nom)| {
+            let (largeur, hauteur) = lecture
+                .as_mut()
+                .zip(entrees.iter().find(|e| e.index == *rang))
+                .and_then(|(f, e)| crate::zipread::dimensions_entree(f, e))
+                .map(|(l, h)| (l as usize, h as usize))
+                .unwrap_or((0, 0));
             serde_json::json!({
                 "index": rang,
                 "token": cache.register_local(fichier, *rang),
                 "name": nom,
+                "width": largeur,
+                "height": hauteur,
             })
         })
         .collect()
@@ -502,6 +561,31 @@ async fn run_download(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn le_nom_de_fichier_reste_lisible_sans_titre_de_chapitre() {
+        // Le cas mesure sur MANGADEX : `title` vaut null, le dernier segment de
+        // l'URL est un UUID. Le fichier etait valide mais inutilisable dans un
+        // lecteur externe.
+        let nom = chapter_file_name("", "/chapter/22d20970-38d1-48aa-bbd3-9ca9afbbb3dc");
+        assert_eq!(nom, "Chapitre.cbz");
+        assert!(
+            !nom.contains("22d20970"),
+            "un UUID ne doit pas finir dans le nom : {nom}"
+        );
+        // Un UUID contient des groupes de chiffres : sans détection explicite,
+        // le filename retenait « 48 » et produisait « Chapitre 48.cbz ».
+        assert!(segments_uuid("22d20970-38d1-48aa-bbd3-9ca9afbbb3dc"));
+        assert!(!segments_uuid("12"));
+        assert!(!segments_uuid("chapitre-2"));
+
+        // Un numéro de chapitre dans l'URL est utilisé : lisible et stable.
+        assert_eq!(
+            chapter_file_name("", "/manga/x/chapter/12/"),
+            "Chapitre 12.cbz"
+        );
+        // Un titre normal prime toujours.
+        assert_eq!(chapter_file_name("Chapitre 3", "/ch/9/"), "Chapitre 3.cbz");
+    }
 
     #[test]
     fn reprise_ne_retelecharge_pas_les_chapitres_deja_la() {

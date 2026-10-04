@@ -29,6 +29,8 @@ const TAILLE_EOCD: usize = 22;
 const TAILLE_MAX_EOCD: usize = TAILLE_EOCD + 0xFFFF;
 const TAILLE_CENTRAL_FIXE: usize = 46;
 const TAILLE_LOCAL_FIXE: usize = 30;
+/// Octets lus pour connaître la taille d'une image sans la charger.
+const EN_TETE_MAX: usize = 512;
 
 /// Une entrée d'image du `.cbz`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -261,6 +263,40 @@ pub fn lire_entree(f: &mut File, e: &Entree) -> Result<Vec<u8>, ErreurZip> {
         });
     }
     Ok(donnees)
+}
+
+/// Lit **le début** d'une entrée, sans la décompresser ni la CRC-vérifier.
+///
+/// Sert à lire l'en-tête d'une image (dimensions) sans payer le prix de l'image
+/// entière : mesuré, 303 pages × ~300 ko = ~90 Mo relus pour rien. 512 octets
+/// suffisent largement pour un en-tête JPEG (le segment APP0 fait 16 octets, le
+/// SOF arrive donc vers l'offset 20-40) comme pour PNG et WebP.
+pub fn lire_entree_partielle(f: &mut File, e: &Entree, max: usize) -> Result<Vec<u8>, ErreurZip> {
+    if e.methode != 0 {
+        return Err(ErreurZip::MethodeNonSupporte(e.methode));
+    }
+    f.seek(SeekFrom::Start(e.offset_local)).map_err(io)?;
+    let mut entete = [0u8; TAILLE_LOCAL_FIXE];
+    f.read_exact(&mut entete).map_err(io)?;
+    if lire_u32(&entete, 0) != SIG_LOCAL {
+        return Err(ErreurZip::PasUnZip);
+    }
+    let len_nom = lire_u16(&entete, 26) as u64;
+    let len_extra = lire_u16(&entete, 28) as u64;
+    let debut = e.offset_local + TAILLE_LOCAL_FIXE as u64 + len_nom + len_extra;
+    f.seek(SeekFrom::Start(debut)).map_err(io)?;
+
+    let a_lire = (e.taille_compressee as usize).min(max);
+    let mut donnees = vec![0u8; a_lire];
+    f.read_exact(&mut donnees).map_err(io)?;
+    Ok(donnees)
+}
+
+/// Dimensions d'une entrée, lues dans son en-tête. `None` si l'image est
+/// illisible ou d'un format dont on ne lit pas l'en-tête.
+pub fn dimensions_entree(f: &mut File, e: &Entree) -> Option<(u32, u32)> {
+    let debut = lire_entree_partielle(f, e, EN_TETE_MAX).ok()?;
+    super::image::dimensions(&debut)
 }
 
 /// Liste les pages d'un `.cbz` : `(index d'entrée, nom)`.

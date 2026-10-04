@@ -1784,3 +1784,18 @@ button:disabled {
     background-position: -200% 0;
   }
 }
+/* Mention « Hors ligne » dans la barre du lecteur.
+   Classe dediee et non `.badge` : ce dernier porte `margin-left: auto`, qui
+   pousserait la mention a l'extremite opposee de la barre. */
+.reader-offline {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 6px;
+}

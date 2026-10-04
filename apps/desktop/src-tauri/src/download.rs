@@ -134,6 +134,97 @@ fn missing_in_dir(dir: &Path, urls: &[String], titles: &[String]) -> Vec<String>
         .collect()
 }
 
+/// Chemin du `.cbz` d'un chapitre, calculé **exactement** comme le fait
+/// `download_chapter`.
+///
+/// C'est délibéré : plutôt que de redemander le chemin à l'interface (qui
+/// pourrait mentir ou diverger), on le recalcule avec la même fonction. Si les
+/// deux règles changeaient un jour, la lecture locale cesserait de trouver les
+/// fichiers — un décalage silencieux.
+pub fn chapter_file_for(
+    source: &str,
+    manga_title: &str,
+    chapter_title: &str,
+    chapter_url: &str,
+) -> PathBuf {
+    let root = downloads_root();
+    let dir = chapter_dir(&root, source, manga_title);
+    dir.join(chapter_file_name(chapter_title, chapter_url))
+}
+
+/// Liste les pages d'un chapitre **déjà téléchargé**, sans moteur ni réseau.
+///
+/// Tâche 2.3. Renvoie une liste vide si le fichier est absent : à l'appelant de
+/// décider s'il faut passer par le moteur. Ne jamais faire erreur ici, sinon un
+/// chapitre téléchargé mais mal nommé deviendrait illisible au lieu de retomber
+/// sur la source.
+#[tauri::command]
+pub async fn local_chapter_pages(
+    cache: tauri::State<'_, std::sync::Arc<super::pagecache::PageCache>>,
+    source: String,
+    manga_title: String,
+    chapter_title: String,
+    chapter_url: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let fichier = chapter_file_for(&source, &manga_title, &chapter_title, &chapter_url);
+    if !fichier.is_file() {
+        return Ok(Vec::new());
+    }
+    let pages =
+        crate::zipread::pages_de(&fichier).map_err(|e| format!("{} : {e}", fichier.display()))?;
+    Ok(entries_to_pages(&pages, &fichier, &cache))
+}
+
+/// Pages d'un `.cbz` désigné par son chemin, pour la vue Téléchargements.
+///
+/// **Contrôle de confinement obligatoire.** La bibliothèque fournit un chemin
+/// venant de l'interface : sans vérification, l'interface pourrait faire lire
+/// n'importe quel fichier du disque à travers le protocole d'URI. Le chemin doit
+/// être canonisé **et** rester sous le dossier de téléchargement (AGENTS.md §7 :
+/// le protocole n'accepte que des identifiants connus).
+#[tauri::command]
+pub async fn local_file_pages(
+    cache: tauri::State<'_, std::sync::Arc<super::pagecache::PageCache>>,
+    dir: String,
+    name: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let racine = downloads_root()
+        .canonicalize()
+        .unwrap_or_else(|_| downloads_root());
+    // Le chemin est assemblé ici, pas dans l'interface : c'est le chemin
+    // **assemblé** qui est contrôlé, pas la pièce reçue.
+    let chemin = PathBuf::from(&dir).join(&name);
+    let canonique = chemin
+        .canonicalize()
+        .map_err(|_| "chapitre introuvable".to_string())?;
+    if !canonique.starts_with(&racine) {
+        return Err("chemin hors du dossier de téléchargement".to_string());
+    }
+    if !canonique.is_file() {
+        return Ok(Vec::new());
+    }
+    let pages = crate::zipread::pages_de(&canonique).map_err(|e| format!("{e}"))?;
+    Ok(entries_to_pages(&pages, &canonique, &cache))
+}
+
+/// Transcription commune aux deux commandes de lecture locale.
+fn entries_to_pages(
+    pages: &[(usize, String)],
+    fichier: &Path,
+    cache: &super::pagecache::PageCache,
+) -> Vec<serde_json::Value> {
+    pages
+        .iter()
+        .map(|(rang, nom)| {
+            serde_json::json!({
+                "index": rang,
+                "token": cache.register_local(fichier, *rang),
+                "name": nom,
+            })
+        })
+        .collect()
+}
+
 /// Supprime les `.part` laissés par un téléchargement interrompu (le chapitre
 /// sera retéléchargé en entier).
 #[tauri::command]

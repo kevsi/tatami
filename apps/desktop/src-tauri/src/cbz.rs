@@ -132,6 +132,15 @@ impl CbzWriter<std::io::BufWriter<std::fs::File>> {
     }
 }
 
+/// CRC32 (IEEE) — la même valeur que celle écrite dans chaque en-tête local.
+///
+/// Public pour `zipread`, qui **vérifie** ce CRC en relisant une entrée : c'est
+/// ce contrôle qui fait qu'un `.cbz` corrompu est refusé au lieu d'être
+/// affiché en bordel.
+pub fn crc32_public(data: &[u8]) -> u32 {
+    crc32(data)
+}
+
 fn crc32(data: &[u8]) -> u32 {
     let mut table = [0u32; 256];
     for (i, slot) in table.iter_mut().enumerate() {

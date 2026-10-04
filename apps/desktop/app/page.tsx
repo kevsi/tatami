@@ -24,6 +24,8 @@ type Manga = {
 // fournit pas) : Rust fait du pass-through, seul le type le ignorait.
 type Chapter = { url: string; title?: string | null; number?: number; uploadDate?: number | null };
 type Page = { index: number; url: string; previewUrl?: string | null; token: string };
+/** Page d'un `.cbz` déjà téléchargé : servie par Rust, sans moteur ni réseau. */
+type LocalPage = { index: number; token: string; name: string };
 /** Lecteur paginé (tâche 0.10) : les images viennent du protocole `tatami://`,
  *  jamais d'un appel direct aux hôtes distants. */
 /** Un favori enregistré par l'utilisateur (table `favorites`). */
@@ -71,7 +73,15 @@ type HistoryItem = {
   read_at: number;
 };
 
-type Reader = { chapter: Chapter; pages: Page[]; index: number; source: string };
+type Reader = {
+  chapter: Chapter;
+  pages: Page[];
+  index: number;
+  source: string;
+  /** Le chapitre vient du disque : aucune requête ne part vers le site. */
+  horsLigne?: boolean;
+  mangaTitre?: string;
+};
 type Tag = { key: string; title: string };
 type LibraryItem = {
   title: string;
@@ -1621,18 +1631,40 @@ async function openReader(c: Chapter) {
 }
 
 /** Ouvre un chapitre à une page donnée. `sourceName` permet la reprise depuis
- *  l'accueil, où aucune source n'est sélectionnée. */
+ *  l'accueil, où aucune source n'est sélectionnée.
+ *
+ *  **Un chapitre téléchargé se lit DANS son fichier, sans le moteur et sans
+ *  réseau** (tâche 2.3). Avant, le lecteur passait toujours par le moteur : un
+ *  `.cbz` écrit par Tatami était donc illisible par Tatami, et le seul moyen de
+ *  le lire était d'ouvrir un autre logiciel. On demande donc le local d'abord,
+ *  et on ne retombe sur la source que si le fichier est absent.
+ */
 async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string) {
   const src = sourceName ?? selected?.name;
   if (!src) return;
+  const mangaTitre = openManga?.title ?? '';
   setReaderLoading(true);
   setError(null);
   try {
-    const r = await invoke<{ pages: Page[] }>('pages', {
+    const locales = await invoke<LocalPage[]>('local_chapter_pages', {
       source: src,
+      mangaTitle: mangaTitre,
+      chapterTitle: chapterLabel(c),
       chapterUrl: c.url,
-    });
-    const pages = r.pages ?? [];
+    }).catch(() => [] as LocalPage[]);
+
+    let pages: Page[];
+    let horsLigne = false;
+    if (locales.length > 0) {
+      pages = locales.map((p) => ({ index: p.index, url: '', token: p.token }));
+      horsLigne = true;
+    } else {
+      const r = await invoke<{ pages: Page[] }>('pages', {
+        source: src,
+        chapterUrl: c.url,
+      });
+      pages = r.pages ?? [];
+    }
     if (pages.length === 0) {
       setError('Ce chapitre n’a aucune page lisible.');
       return;
@@ -1641,7 +1673,36 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string)
     // La position mémorisée peut dépasser le chapitre si celui-ci a été
     // raccourci depuis : on retombe sur sa dernière page.
     const index = Math.max(0, Math.min(pages.length - 1, startIndex));
-    setReader({ chapter: c, pages, index, source: src });
+    setReader({ chapter: c, pages, index, source: src, horsLigne, mangaTitre });
+  } catch (e) {
+    setError(t('erreur.lecture', { raison: String(e) }));
+  } finally {
+    setReaderLoading(false);
+  }
+}
+
+/** Ouvre un chapitre téléchargé directement depuis la vue Téléchargements. */
+async function openLocalChapter(item: LibraryItem, chapter: LibraryItem['chapters'][number]) {
+  setReaderLoading(true);
+  setError(null);
+  try {
+    const pages = await invoke<LocalPage[]>('local_file_pages', {
+      dir: item.dir,
+      name: chapter.file,
+    });
+    if (pages.length === 0) {
+      setError(t('telechargements.lecture.VIDE', { chapitre: chapter.title }));
+      return;
+    }
+    setPageJump('');
+    setReader({
+      chapter: { url: chapter.url, title: chapter.title, number: 0, uploadDate: 0 },
+      pages: pages.map((p) => ({ index: p.index, url: '', token: p.token })),
+      index: 0,
+      source: item.source,
+      horsLigne: true,
+      mangaTitre: item.title,
+    });
   } catch (e) {
     setError(t('erreur.lecture', { raison: String(e) }));
   } finally {
@@ -1883,7 +1944,12 @@ useEffect(() => {
 }, [reader, readerMode, spread]);
 
   // ---------- Vue : Réglages ----------
-  if (tab === 'settings') {
+  // Chaque vue s'affiche par un `return` conditionnel. Le lecteur doit donc
+  // **gagner contre toutes** : sans ce `!reader`, `if (reader)` plus bas
+  // n'est jamais atteint depuis une vue qui a déjà rendu son `return`, et le
+  // clic « Lire » sur un webtoon téléchargé ne fait strictement rien
+  // (mesuré : aucun message, aucune erreur, lecteur absent).
+  if (tab === 'settings' && !reader) {
     return (
       <main>
         <AppBar tab={tab} onTab={goTab} />
@@ -2135,7 +2201,7 @@ useEffect(() => {
   }
 
   // ---------- Vue : Téléchargements ----------
-  if (tab === 'downloads') {
+  if (tab === 'downloads' && !reader) {
     const running = queue.find((q) => q.state === 'téléchargement');
     const savedQueue = loadSavedQueue();
     const totalChapters = library.reduce((n, i) => n + i.downloaded, 0);
@@ -2296,6 +2362,17 @@ useEffect(() => {
                         {item.complete ? 'Terminé' : 'Partiel'}
                       </span>
                       <div className="dl-actions">
+                        {/* Tâche 2.3 : un `.cbz` téléchargé doit se lire DANS
+                            l'application. Avant, il fallait l'ouvrir dans un autre
+                            logiciel — le lecteur passait toujours par le moteur. */}
+                        {item.chapters.length > 0 && (
+                          <button
+                            className="btn btn-primary"
+                            onClick={() => void openLocalChapter(item, item.chapters[0])}
+                          >
+                            {t('telechargements.lecture.lancer')}
+                          </button>
+                        )}
                         {!item.complete && item.downloaded > 0 && (
                           <button
                             className="btn"
@@ -2376,8 +2453,17 @@ if (reader) {
             {'←'} Chapitres
           </button>
           <span className="reader-title">
-            {openManga?.title} · {chapterLabel(chapter)}
+            {reader.mangaTitre || openManga?.title} · {chapterLabel(chapter)}
           </span>
+
+          {/* Sans cette mention, impossible de savoir si l'affichage vient du
+              disque ou du site — donc si une coupure réseau cassera la lecture.
+              Cette information change tout pour l'utilisateur. */}
+          {reader.horsLigne && (
+            <span className="reader-offline" title={t('telechargements.lecture.horsligne')}>
+              {t('lecteur.horsligne')}
+            </span>
+          )}
 
           <div className="reader-tools">
             <button
@@ -3095,7 +3181,7 @@ if (reader) {
 
 // ---------- Vue : accueil ----------
   // Reprise de lecture, favoris, mode incognito.
-  if (tab === 'home') {
+  if (tab === 'home' && !reader) {
     return (
       <main>
         <AppBar tab={tab} onTab={goTab} />

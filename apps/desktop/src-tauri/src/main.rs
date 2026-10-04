@@ -10,6 +10,7 @@ mod pagecache;
 mod shelf;
 mod store;
 mod supervisor;
+mod zipread;
 
 use std::sync::Arc;
 
@@ -100,6 +101,8 @@ fn main() {
             download::download_chapter,
             download::missing_chapters,
             download::clean_partials,
+            download::local_chapter_pages,
+            download::local_file_pages,
             library::list_library,
             library::existing_chapters,
             library::remove_download,

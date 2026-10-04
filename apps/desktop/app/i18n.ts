@@ -151,6 +151,11 @@ const FR = {
   'telechargements.verification.cookies':
     '{n} cookie(s) transmis à {source}. Relancez le téléchargement.',
   'telechargements.verification.erreur': 'Vérification non appliquée : {detail}',
+  'telechargements.lecture.VIDE':
+    'Le fichier de « {chapitre} » ne contient aucune page lisible. Lance le téléchargement de nouveau, ou ouvre le .cbz dans un autre lecteur.',
+  'telechargements.lecture.horsligne': 'Hors ligne — lu dans le fichier téléchargé',
+  'telechargements.lecture.lancer': 'Lire',
+  'lecteur.horsligne': 'Hors ligne',
   'telechargements.aucun': 'Aucun webtoon téléchargé pour l’instant.',
   'telechargements.recap': 'Récapitulatif des téléchargements',
   'telechargements.stat.webtoons': 'webtoon{s}',
@@ -360,6 +365,11 @@ const EN: Record<Cle, string> = {
   'telechargements.verification.cookies':
     '{n} cookie(s) sent to {source}. Retry the download.',
   'telechargements.verification.erreur': 'Verification not applied: {detail}',
+  'telechargements.lecture.VIDE':
+    'The file for “{chapitre}” contains no readable page. Download it again, or open the .cbz in another reader.',
+  'telechargements.lecture.horsligne': 'Offline — read from the downloaded file',
+  'telechargements.lecture.lancer': 'Read',
+  'lecteur.horsligne': 'Offline',
   'telechargements.aucun': 'No webtoon downloaded yet.',
   'telechargements.recap': 'Downloads summary',
   'telechargements.stat.webtoons': 'webtoon{s}',

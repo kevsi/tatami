@@ -155,7 +155,9 @@ button:disabled {
   background: var(--surface-2);
 }
 
-.tab[aria-pressed='true'] {
+/* La navigation porte `role="tab"` : c'est `aria-selected` qui l'active,
+   pas `aria-pressed` (signalé par jsx-a11y/role-supports-aria-props). */
+.tab[aria-selected='true'] {
   background: var(--surface-3);
   color: var(--text);
 }
@@ -1119,6 +1121,17 @@ button:disabled {
   object-fit: cover;
   background: var(--surface-2);
   flex: none;
+}
+
+/* Couverture absente : une initiale sur un aplat, pas un trou gris. */
+.thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 600;
+  color: var(--text-3);
+  background: var(--surface-3);
 }
 
 .dl-body {

@@ -129,7 +129,6 @@ function AppBar({
             className="tab"
             role="tab"
             aria-selected={tab === t.id}
-            aria-pressed={tab === t.id}
             onClick={() => onTab(t.id)}
           >
             {t.label}
@@ -428,6 +427,14 @@ export default function Home() {
   const [queueRunning, setQueueRunning] = useState(false);
   const cancelQueue = useRef(false);
 
+  /*
+   * Préférences et santé des sources lues APRÈS l'hydratation : en export
+   * statique le HTML est produit au build, il ne peut pas contenir ce qui est
+   * stocké sur la machine de l'utilisateur. Les poser dans un initialiseur
+   * paresseux créerait un écart serveur/client. `set-state-in-effect` est donc
+   * désactivé pour ce seul effet, et uniquement lui.
+   */
+/* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const prefs = loadPrefs();
     setPageSize(prefs.pageSize);
@@ -435,6 +442,10 @@ export default function Home() {
     setRating(prefs.rating);
     setListTimeout(prefs.listTimeout);
     setHealth(loadHealth());
+    // Lecture des préférences après l'hydratation : en export statique le HTML
+    // est produit au build, il ne peut donc pas contenir la valeur stockée sur
+    // la machine de l'utilisateur. Les poser dans un initialiseur paresseux
+    // créerait un écart serveur/client ; l'effet est ici le bon moment.
     if (typeof window !== 'undefined') {
       setReaderMode((window.localStorage.getItem(READER_MODE_KEY) as ReaderMode) || 'page');
       setZoom(Number(window.localStorage.getItem(READER_ZOOM_KEY)) || 100);
@@ -452,8 +463,11 @@ export default function Home() {
     return () => {
       unlisten.then((off) => off()).catch(() => {});
     };
+    // Montage uniquement : rejouer cet effet à chaque changement de
+    // `refreshDownloads` réabonnerait l'écouteur d'événements.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const refreshDownloads = useCallback(() => {
     invoke<LibraryItem[]>('list_library', { root: '' })
@@ -691,7 +705,6 @@ export default function Home() {
     void Promise.all(
       Array.from({ length: Math.min(RECENT_CONCURRENCY, todo.length) }, () => run()),
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latest, showRecent, selected?.name]);
 
   async function loadChapters(m: Manga) {
@@ -806,7 +819,6 @@ export default function Home() {
   async function downloadSelected() {
     const targets = chapters.filter((c) => checked.has(c.url));
     for (const c of targets) {
-      // eslint-disable-next-line no-await-in-loop
       await downloadChapter(c);
     }
   }
@@ -910,7 +922,6 @@ export default function Home() {
           break;
         }
         try {
-          // eslint-disable-next-line no-await-in-loop
           await fetchOneChapter(m.source, m, c, list.length);
           done += 1;
         } catch {
@@ -1160,6 +1171,9 @@ useEffect(() => {
   );
   for (const el of stripImages.current) if (el) observer.observe(el);
   return () => observer.disconnect();
+  // L'observateur dépend du chapitre, du mode et du nombre de pages — pas de
+  // l'objet `reader` complet, qui est recréé à chaque changement de page et
+  // rejouerait l'observation sans raison.
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [reader?.chapter.url, readerMode, reader?.pages.length]);
 
@@ -1204,6 +1218,8 @@ useEffect(() => {
   };
   window.addEventListener('keydown', onKey);
   return () => window.removeEventListener('keydown', onKey);
+  // `scrollToPage` et `step` sont redéfinies à chaque rendu ; les inclure
+  // rebouclerait l'écouteur sur chaque changement d'état du lecteur.
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [reader, readerMode, spread]);
 
@@ -1294,7 +1310,7 @@ useEffect(() => {
 
         {Object.keys(health).length > 0 && (
           <p className="muted">
-            {Object.keys(health).length} source(s) signalée(s) hors service lors d'une
+            {Object.keys(health).length} source(s) signalée(s) hors service lors d&apos;une
             visite.{' '}
             <button
               className="btn btn-ghost"
@@ -1464,7 +1480,13 @@ useEffect(() => {
                     {item.coverUrl ? (
                       <img className="thumb" src={item.coverUrl} alt="" loading="lazy" />
                     ) : (
-                      <span className="thumb" />
+                      // Pas de couverture enregistrée (téléchargements
+                      // antérieurs à la colonne `coverUrl` de meta.json) : une
+                      // pastille d'initiale vaut mieux qu'un rectangle vide, qui
+                      // se lit comme une image cassée.
+                      <span className="thumb thumb-empty" aria-hidden="true">
+                        {(item.title.trim()[0] ?? '?').toUpperCase()}
+                      </span>
                     )}
                     <div className="dl-body">
                       <h3 className="dl-title">{item.title}</h3>
@@ -2141,7 +2163,9 @@ if (reader) {
                     {m.coverUrl ? (
                       <img className="thumb" src={m.coverUrl} alt="" loading="lazy" />
                     ) : (
-                      <span className="thumb" />
+                      <span className="thumb thumb-empty" aria-hidden="true">
+                        {(m.title.trim()[0] ?? '?').toUpperCase()}
+                      </span>
                     )}
                     {cardTotal[key] > 0 && (
                       <span className="card-count" title={`${cardTotal[key]} chapitres`}>

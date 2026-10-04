@@ -60,14 +60,19 @@ tatami/
 
 | Phase | Titre | Taille | Statut |
 |---|---|---|---|
-| 0 | Fondations et spike des risques | M | À faire |
-| 1 | Bibliothèque et lecteur | L | À faire |
-| 2 | Hors ligne | M | À faire |
-| 3 | Tâches de fond et notifications | M | À faire |
-| 4 | Comptes et synchronisation | L | À faire |
-| 5 | Durcissement et distribution | M | À faire |
+| 0 | Fondations et spike des risques | M | **En cours** — 0.1 à 0.11 faits, 0.12 partiel, 0.13 à 0.17 à faire |
+| 1 | Bibliothèque et lecteur | L | **Presque finie** — 1.1 à 1.7 faits, 1.8 à 1.10 à faire |
+| 2 | Hors ligne | M | **Pas commencée** |
+| 3 | Tâches de fond et notifications | M | **Pas commencée** |
+| 4 | Comptes et synchronisation | L | **Pas commencée** |
+| 5 | Durcissement et distribution | M | **Pas commencée** |
 
-Phase en cours : **0**. Prochaine tâche : **0.9**.
+Phase en cours : **1**, avec les correctifs de fin de phase 0 tirés de la mesure.
+Prochaine tâche : **1.9** (mode webtoon virtualisé).
+
+Comptage au 2026-10-04 : **23 tâches faites, 33 à faire.** La phase 2 est
+celle qui manque le plus : c'est elle qui porte l'exigence permanente de la
+section 3 (téléchargements repris, jamais retélécharger).
 
 ---
 

@@ -377,6 +377,11 @@ export default function Home() {
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [chapterLimit, setChapterLimit] = useState(CHAPTER_PAGE);
   const [chapterQuery, setChapterQuery] = useState('');
+  // Nombre de chapitres à cocher d'un clic dans la barre de sélection.
+  const [pickCount, setPickCount] = useState(10);
+  // Incrémenté pour demander un défilement vers la sélection (voir
+  // `pickChapters`) : un `scrollIntoView` direct serait exécuté avant le rendu.
+  const [reveal, setReveal] = useState(0);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -475,6 +480,25 @@ export default function Home() {
   const byLang = lang === 'all' ? visibleSources : visibleSources.filter((s) => s.lang === lang);
   const filtered = byLang.filter((s) => s.name.toLowerCase().includes(nameFilter.toLowerCase()));
 
+  /* 1 370 noms à plat ne se parcourent pas : deux états.
+     - Sans recherche et sans langue choisie, on montre les LANGUES (19 tuiles
+       avec leur volume) : c'est le point d'entrée, comme les genres du site.
+     - Dès qu'une langue est choisie ou qu'on cherche un nom, on montre la liste
+       des sources de cette langue sous un bandeau. */
+  const NOMS_LANGUE: Record<string, string> = {
+    en: 'Anglais', ja: 'Japonais', fr: 'Français', pt: 'Portugais', es: 'Espagnol',
+    it: 'Italien', de: 'Allemand', ru: 'Russe', ko: 'Coréen', zh: 'Chinois',
+    ar: 'Arabe', pl: 'Polonais', tr: 'Turc', id: 'Indonésien', th: 'Thaï',
+    vi: 'Vietnamien', nl: 'Néerlandais', uk: 'Ukrainien', hi: 'Hindi', int: 'International',
+  };
+  const langCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    visibleSources.forEach((s) => map.set(s.lang, (map.get(s.lang) ?? 0) + 1));
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  }, [visibleSources]);
+
+  const enTiles = lang === 'all' && nameFilter.trim().length === 0;
+
   // Tâche 0.15 : filtre de la grille de chapitres. Un terme numérique compare
   // aussi les numéros, « 1180 » trouve donc le chapitre 1180 même quand son
   // titre ne contient que des lettres.
@@ -488,6 +512,13 @@ export default function Home() {
         (c.number != null && Number.isFinite(n) && Math.round(n) === Math.round(c.number)),
     );
   }, [chapters, chapterQuery]);
+
+  // Défile vers la première case cochée quand la sélection en masse le demande.
+  useEffect(() => {
+    if (reveal === 0) return;
+    const el = document.querySelector('.chapter-cell.on');
+    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [reveal, checked]);
 
   async function loadSource(s: Source, offset = 0, opts?: { tags?: string[]; query?: string }) {
     const useTags = opts?.tags ?? activeTags;
@@ -622,7 +653,17 @@ export default function Home() {
             mangaTitle: m.title,
           });
           const list = r.chapters ?? [];
-          const labels = list
+          // Les DERNIERS chapitres, pas les premiers : sur la fiche du site,
+          // ces lignes servent à voir si une série est vivante. Les parsers
+          // rendent la liste dans l'ordre croissant, mais pas toujours (ni
+          // toujours avec une date), donc on trie explicitement.
+          const labels = [...list]
+            .sort((a, b) => {
+              const da = a.uploadDate ?? 0;
+              const db = b.uploadDate ?? 0;
+              if (da !== db) return db - da;
+              return (b.number ?? 0) - (a.number ?? 0);
+            })
             .slice(0, 3)
             .map(
               (c) =>
@@ -690,6 +731,39 @@ export default function Home() {
       const next = new Set(prev);
       if (next.has(url)) next.delete(url);
       else next.add(url);
+      return next;
+    });
+  }
+
+  /** Sélection en masse. Cocher 286 chapitres un par un n'est pas tenable :
+   *  on propose « les N derniers », « les N premiers », « tout » et « aucun ».
+   *  `pool` = les chapitres correspondant au filtre, donc « Tout » ne prend que
+   *  ce que la recherche a gardé.
+   *  « N derniers » sur une série de 286 alors que 100 cellules sont affichées
+   *  cocherait des chapitres invisibles (constaté) : on déplie alors la grille
+   *  jusqu'à la fin pour que la sélection soit visible. */
+  function pickChapters(howMany: 'last' | 'first' | 'all' | 'none') {
+    const pool = filteredChapters;
+    const n = Math.min(pool.length, Math.max(1, Math.round(Number(pickCount) || 1)));
+    if (howMany === 'last') {
+      if (pool.length > chapterLimit) setChapterLimit(pool.length);
+      // Amène la sélection dans le champ de vision : sans ça, on clique
+      // « N derniers » et la grille affichée reste le début de la série,
+      // les cases cochées sont 250 lignes plus bas.
+      setReveal((v) => v + 1);
+    }
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (howMany === 'none') {
+        pool.forEach((c) => next.delete(c.url));
+        return next;
+      }
+      if (howMany === 'all') {
+        pool.forEach((c) => next.add(c.url));
+        return next;
+      }
+      const slice = howMany === 'last' ? pool.slice(-n) : pool.slice(0, n);
+      slice.forEach((c) => next.add(c.url));
       return next;
     });
   }
@@ -1281,14 +1355,14 @@ useEffect(() => {
   if (tab === 'downloads') {
     const running = queue.find((q) => q.state === 'téléchargement');
     const savedQueue = loadSavedQueue();
+    const totalChapters = library.reduce((n, i) => n + i.downloaded, 0);
+    const totalBytes = library.reduce((n, i) => n + i.sizeBytes, 0);
+    const partiels = library.filter((i) => !i.complete).length;
     return (
       <main>
         <AppBar tab={tab} onTab={goTab} />
         <header className="page-head">
           <h1>Téléchargements</h1>
-          <span className="sub">
-            {library.length} webtoon · {library.reduce((n, i) => n + i.downloaded, 0)} chapitres
-          </span>
         </header>
 
         {error && <p className="error">{error}</p>}
@@ -1357,51 +1431,76 @@ useEffect(() => {
         {library.length === 0 ? (
           <p className="muted">Aucun webtoon téléchargé pour l&apos;instant.</p>
         ) : (
-          <div className="dl-grid">
-            {library.map((item) => {
-              const pct =
-                item.totalChapters > 0
-                  ? Math.round((item.downloaded / item.totalChapters) * 100)
-                  : 100;
-              return (
-                <article className="dl-card" key={item.dir}>
-                  {item.coverUrl ? (
-                    <img className="thumb" src={item.coverUrl} alt="" loading="lazy" />
-                  ) : (
-                    <span className="thumb" />
-                  )}
-                  <div className="dl-body">
-                    <h3 className="dl-title">{item.title}</h3>
-                    <span className="muted dl-meta">
-                      {item.source} · {item.downloaded}/
-                      {item.totalChapters > 0 ? item.totalChapters : '?'} chapitres ·{' '}
-                      {formatBytes(item.sizeBytes)}
-                    </span>
-                    <div className="progress">
-                      <div className="progress-bar" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className={`badge ${item.complete ? 'state-termine' : 'state-attente'}`}>
-                      {item.complete ? 'Terminé' : 'Partiel'}
-                    </span>
-                    <div className="dl-actions">
-                      {!item.complete && item.downloaded > 0 && (
-                        <button
-                          className="btn"
-                          disabled={queueRunning}
-                          onClick={() => void resumeManga(item)}
-                        >
-                          Reprendre
+          <>
+            <section className="dl-stats" aria-label="Récapitulatif des téléchargements">
+              <div className="dl-stat">
+                <b>{library.length}</b>
+                <span>webtoon{library.length > 1 ? 's' : ''}</span>
+              </div>
+              <div className="dl-stat">
+                <b>{totalChapters}</b>
+                <span>chapitres</span>
+              </div>
+              <div className="dl-stat">
+                <b>{formatBytes(totalBytes)}</b>
+                <span>sur le disque</span>
+              </div>
+              <div className="dl-stat">
+                <b>{partiels}</b>
+                <span>à compléter</span>
+              </div>
+            </section>
+
+            <div className="band">Vos webtoons</div>
+
+            <div className="dl-grid">
+              {library.map((item) => {
+                const pct =
+                  item.totalChapters > 0
+                    ? Math.round((item.downloaded / item.totalChapters) * 100)
+                    : 100;
+                return (
+                  <article className="dl-card" key={item.dir}>
+                    {item.coverUrl ? (
+                      <img className="thumb" src={item.coverUrl} alt="" loading="lazy" />
+                    ) : (
+                      <span className="thumb" />
+                    )}
+                    <div className="dl-body">
+                      <h3 className="dl-title">{item.title}</h3>
+                      <span className="muted dl-meta">
+                        {item.source} ·{' '}
+                        {item.totalChapters > 0
+                          ? `${item.downloaded}/${item.totalChapters} chapitres`
+                          : `${item.downloaded} chapitre${item.downloaded > 1 ? 's' : ''}`}{' '}
+                        · {formatBytes(item.sizeBytes)}
+                      </span>
+                      <div className="progress">
+                        <div className="progress-bar" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className={`badge ${item.complete ? 'state-termine' : 'state-attente'}`}>
+                        {item.complete ? 'Terminé' : 'Partiel'}
+                      </span>
+                      <div className="dl-actions">
+                        {!item.complete && item.downloaded > 0 && (
+                          <button
+                            className="btn"
+                            disabled={queueRunning}
+                            onClick={() => void resumeManga(item)}
+                          >
+                            Reprendre
+                          </button>
+                        )}
+                        <button className="btn btn-ghost" onClick={() => setDeleteTarget(item)}>
+                          Supprimer
                         </button>
-                      )}
-                      <button className="btn btn-ghost" onClick={() => setDeleteTarget(item)}>
-                        Supprimer
-                      </button>
+                      </div>
                     </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+                  </article>
+                );
+              })}
+            </div>
+          </>
         )}
 
         {deleteTarget && (
@@ -1729,6 +1828,31 @@ if (reader) {
           >
             {downloading ? 'Téléchargement…' : `Télécharger la sélection (${checked.size})`}
           </button>
+          <div className="pick-bar" role="group" aria-label="Sélection rapide des chapitres">
+            <span className="pick-label">
+              {chapterQuery ? 'Sur les chapitres filtrés' : 'Choisir'}
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={Math.max(1, filteredChapters.length)}
+              value={pickCount}
+              onChange={(e) => setPickCount(Number(e.target.value))}
+              aria-label={`Nombre de chapitres à sélectionner (${pickCount})`}
+            />
+            <button className="btn btn-ghost" onClick={() => pickChapters('last')}>
+              N derniers
+            </button>
+            <button className="btn btn-ghost" onClick={() => pickChapters('first')}>
+              N premiers
+            </button>
+            <button className="btn btn-ghost" onClick={() => pickChapters('all')}>
+              Tout
+            </button>
+            <button className="btn btn-ghost" onClick={() => pickChapters('none')}>
+              Aucun
+            </button>
+          </div>
           <input
             className="search chapter-search"
             type="search"
@@ -2109,34 +2233,69 @@ if (reader) {
 
       {error && <p className="error">{error}</p>}
 
-      <p className="count">
-        {filtered.length} source{filtered.length > 1 ? 's' : ''}
-        {nameFilter ? ` pour « ${nameFilter} »` : ''}
-      </p>
+      {enTiles ? (
+        <>
+          <p className="count">
+            {visibleSources.length} sources réparties en {langCounts.length} langues. Choisissez
+            une langue pour parcourir ses sources.
+          </p>
+          <div className="lang-grid">
+            {langCounts.map(([code, n]) => (
+              <button
+                key={code}
+                className="lang-tile"
+                onClick={() => {
+                  setLang(code);
+                  setShownSources(48);
+                }}
+              >
+                <b>{code.toUpperCase()}</b>
+                <span className="lang-nom">{NOMS_LANGUE[code] ?? code.toUpperCase()}</span>
+                <span className="muted">
+                  {n} source{n > 1 ? 's' : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="count">
+            {filtered.length} source{filtered.length > 1 ? 's' : ''}
+            {nameFilter ? ` pour « ${nameFilter} »` : ''}
+            {lang !== 'all' ? ` · langue ${lang.toUpperCase()}` : ''}
+          </p>
 
-      <div className="grid">
-        {filtered.slice(0, shownSources).map((s) => {
-          const dead = health[s.name];
-          return (
-            <button
-              key={s.name + '-' + s.lang}
-              className={`card${dead ? ' dead' : ''}`}
-              onClick={() => openSource(s)}
-              title={dead ? `Dernier échec : ${dead.message}` : undefined}
-            >
-              <span className="name">{s.name}</span>
-              {dead ? <span className="badge dead-badge">hors service</span> : null}
-              <span className="badge">{s.lang}</span>
+          <div className="band">
+            {lang === 'all' ? 'Toutes les langues' : `${lang.toUpperCase()} — ${NOMS_LANGUE[lang] ?? ''}`}
+            <span className="muted">{filtered.length} source{filtered.length > 1 ? 's' : ''}</span>
+          </div>
+
+          <div className="grid">
+            {filtered.slice(0, shownSources).map((s) => {
+              const dead = health[s.name];
+              return (
+                <button
+                  key={s.name + '-' + s.lang}
+                  className={`card${dead ? ' dead' : ''}`}
+                  onClick={() => openSource(s)}
+                  title={dead ? `Dernier échec : ${dead.message}` : undefined}
+                >
+                  <span className="name">{s.name}</span>
+                  {dead ? <span className="badge dead-badge">hors service</span> : null}
+                  {lang === 'all' && <span className="badge">{s.lang}</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {filtered.length > shownSources && (
+            <button className="btn btn-more" onClick={() => setShownSources((n) => n + 48)}>
+              Voir plus ({filtered.length - shownSources} restantes)
             </button>
-          );
-        })}
-      </div>
-
-      {filtered.length > shownSources && (
-          <button className="btn btn-more" onClick={() => setShownSources((n) => n + 48)}>
-            Voir plus ({filtered.length - shownSources} restantes)
-          </button>
-        )}
+          )}
+        </>
+      )}
     </main>
   );
 }

@@ -1,38 +1,56 @@
-/* Tatami — thème « cinéma sombre »
-   fond quasi noir, surfaces très basses, un seul accent (indigo),
-   hiérarchie par la lumière et le poids plutôt que par la couleur. */
+/* Tatami — thème « cinéma sombre », aligné sur sushiscan.net
+   ------------------------------------------------------------------
+   Tokens relevés dans la feuille de style du site de référence :
+     fonds      #000 (accueil) · #16151d (lecteur) · #1a1a1a · #222 · #333
+     textes     #fff · #ddd · #ccc · #999 · #555
+     bordures   #333 · #323232 · #383838 · #312f40
+     accent     #366ad3 (46 fonds, 22 textes, 5 bordures dans le CSS du site)
+     danger     #f13e3e
+     police     Roboto 14 px · titre 32 px/600
+     contrôles  bg #111 · bordure 2px #444 · rayon 20 px · 13 px/600
+     couverture rayon 6 px, sans bordure, ratio 2:3
+   L'accent reste celui de Tatami sur les surfaces, mais la palette, les
+   rayons et les contrastes viennent du site. */
 
 :root {
-  --bg: #08090d;
-  --bg-elev: #0d0f15;
-  --surface: #13161e;
-  --surface-2: #1a1e28;
-  --surface-3: #212636;
-  --line: #262b38;
-  --line-soft: #191d27;
+  /* Surfaces */
+  --bg: #000000;
+  --bg-elev: #16151d;
+  --surface: #1a1a1a;
+  --surface-2: #222222;
+  --surface-3: #333333;
+  --line: #333333;
+  --line-soft: #262626;
+  --field: #111111;
 
-  --text: #eef1f7;
-  --text-2: #98a1b6;
-  --text-3: #69707f;
+  /* Textes */
+  --text: #ffffff;
+  --text-2: #dddddd;
+  --text-3: #999999;
 
-  --accent: #6d8cff;
-  --accent-dim: rgba(109, 140, 255, 0.14);
-  --accent-ink: #070910;
-  --ok: #35c07a;
-  --danger: #ff5d6b;
+  /* Accents */
+  --accent: #366ad3;
+  --accent-dim: rgba(54, 106, 211, 0.16);
+  --accent-ink: #ffffff;
+  --danger: #f13e3e;
 
-  --r-sm: 7px;
-  --r: 11px;
-  --r-lg: 16px;
+  /* Rayons : 6 px sur les cartes et couvertures, pilules sur les contrôles,
+     5 px 5 px 0 0 sur les bandeaux de section. */
+  --r-sm: 6px;
+  --r: 8px;
+  --r-lg: 12px;
+  --r-pill: 20px;
 
-  --s1: 4px;
-  --s2: 8px;
-  --s3: 12px;
-  --s4: 16px;
-  --s5: 22px;
+  /* Espacements : l'échelle d'origine était trop serrée pour ce thème,
+     on a grossi d'un cran partout (demande : « pas assez aérée »). */
+  --s1: 6px;
+  --s2: 10px;
+  --s3: 16px;
+  --s4: 22px;
+  --s5: 30px;
 
-  --shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
-  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -45,15 +63,17 @@ body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Roboto d'abord comme sur le site ; Segoe UI en repli, l'app reste
+     utilisable hors ligne sans télécharger une police. */
+  font-family: Roboto, 'Segoe UI', system-ui, -apple-system, sans-serif;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
   background: var(--accent);
-  color: var(--accent-ink);
+  color: #fff;
 }
 
 button {
@@ -81,7 +101,7 @@ button:disabled {
 .app {
   max-width: 1440px;
   margin: 0 auto;
-  padding: 0 var(--s5) 56px;
+  padding: 0 var(--s5) 64px;
 }
 
 /* ---------------- Barre supérieure ---------------- */
@@ -92,11 +112,9 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: var(--s4);
-  /* étalée sur toute la largeur : les marges négatives compensent le padding
-     de .app, sinon la barre collante laisse voir le contenu dans les gouttières */
   margin: 0 calc(-1 * var(--s5)) var(--s5);
-  padding: 10px var(--s5);
-  background: rgba(8, 9, 13, 0.86);
+  padding: 14px var(--s5);
+  background: rgba(0, 0, 0, 0.9);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line-soft);
 }
@@ -105,32 +123,28 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  font-weight: 650;
+  font-size: 17px;
+  font-weight: 600;
   letter-spacing: -0.2px;
 }
 
 .brand .logo {
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
   background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 .tabs {
   display: flex;
-  gap: 2px;
+  gap: var(--s2);
   margin-left: auto;
-  background: var(--bg-elev);
-  border: 1px solid var(--line-soft);
-  border-radius: 999px;
-  padding: 3px;
 }
 
 .tab {
-  border-radius: 999px;
-  padding: 5px 13px;
-  font-size: 12.5px;
+  border-radius: var(--r-pill);
+  padding: 7px 18px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-2);
   transition: color 0.12s ease, background 0.12s ease;
@@ -138,40 +152,57 @@ button:disabled {
 
 .tab:hover {
   color: var(--text);
+  background: var(--surface-2);
 }
 
 .tab[aria-pressed='true'] {
   background: var(--surface-3);
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 /* ---------------- Titres ----------------
-   Tâche 0.17 : bandeau de section. Le motif est emprunté aux sites de scan
-   (un bloc posé sur le contenu, arrondi seulement en haut) — il sert ici de
-   repère stable entre les écrans. */
+   32 px/600 comme le h1 du site ; le bandeau de section (`.band`) reprend le
+   motif du site : bloc posé sur le contenu, arrondi seulement en haut. */
 .page-head {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--s3);
   margin-bottom: var(--s4);
 }
 
 .page-head h1 {
-  font-size: 21px;
-  font-weight: 680;
-  letter-spacing: -0.4px;
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.2;
   margin: 0;
-  padding: 6px 18px;
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-bottom: 0;
-  border-radius: var(--r-sm) var(--r-sm) 0 0;
 }
 
 .page-head .sub {
   color: var(--text-3);
-  font-size: 12.5px;
+  font-size: 13px;
+}
+
+.band {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin: var(--s5) 0 var(--s3);
+  padding: 7px 20px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.band:first-of-type {
+  margin-top: 0;
+}
+
+.band .muted {
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .crumb {
@@ -179,44 +210,59 @@ button:disabled {
   align-items: center;
   gap: 6px;
   color: var(--text-2);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   margin-bottom: var(--s3);
-  padding: 4px 11px 4px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--line-soft);
-  background: var(--bg-elev);
+  padding: 6px 16px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .crumb:hover {
   color: var(--text);
-  border-color: var(--line);
+  border-color: var(--surface-3);
 }
 
-/* ---------------- Champs ---------------- */
+/* ---------------- Champs ----------------
+   Pilules : bg #111, bordure 2 px #444 — valeurs relevées sur les `<select>`
+   du lecteur du site. */
+.search,
+.field select,
+.chapter-select,
+.page-jump input {
+  background: var(--field);
+  color: var(--text-2);
+  border: 2px solid #444444;
+  border-radius: var(--r-pill);
+  padding: 8px 16px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .search {
   width: 100%;
-  padding: 10px 13px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--line);
-  background: var(--bg-elev);
-  color: var(--text);
   margin-bottom: var(--s3);
-  font-size: 13.5px;
 }
 
 .search::placeholder {
   color: var(--text-3);
+  font-weight: 400;
 }
 
-.search:hover {
+.search:hover,
+.field select:hover,
+.chapter-select:hover {
   border-color: var(--surface-3);
 }
 
-.search:focus {
+.search:focus,
+.field select:focus,
+.chapter-select:focus,
+.page-jump input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 .source-search {
@@ -234,66 +280,60 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--s1);
   margin-bottom: var(--s4);
 }
 
 .chip {
-  border: 1px solid var(--line);
-  background: var(--bg-elev);
+  border: 2px solid var(--line);
+  background: var(--field);
   color: var(--text-2);
-  border-radius: 999px;
-  padding: 4px 11px;
-  font-size: 12px;
+  border-radius: var(--r-pill);
+  padding: 5px 14px;
+  font-size: 12.5px;
   font-weight: 600;
   transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 
 .chip:hover {
   color: var(--text);
-  background: var(--surface);
-  border-color: var(--surface-3);
+  background: var(--surface-2);
 }
 
 .chip[aria-pressed='true'] {
   background: var(--accent-dim);
   border-color: var(--accent);
-  color: #cdd8ff;
+  color: #fff;
 }
 
 .chip-clear {
   color: #ffb0b6;
-  border-color: rgba(255, 93, 107, 0.35);
-}
-
-.chip-clear:hover {
-  color: #fff;
-  background: rgba(255, 93, 107, 0.16);
-  border-color: var(--danger);
+  border-color: rgba(241, 62, 62, 0.4);
 }
 
 .chips-note {
   color: var(--text-3);
-  font-size: 11.5px;
+  font-size: 12px;
   padding-left: var(--s1);
 }
 
 /* ---------------- Boutons ---------------- */
 .btn {
-  border-radius: var(--r-sm);
-  padding: 9px 16px;
+  border-radius: var(--r-pill);
+  padding: 9px 20px;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
   border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow-sm);
-  transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+  background: var(--surface-3);
+  color: var(--text-2);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease,
+    transform 0.06s ease;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--surface-2);
-  border-color: var(--surface-3);
+  background: #3d3d3d;
+  border-color: #383838;
+  color: var(--text);
 }
 
 .btn:active:not(:disabled) {
@@ -301,34 +341,32 @@ button:disabled {
 }
 
 .btn:disabled {
-  opacity: 0.4;
-  box-shadow: none;
+  opacity: 0.35;
 }
 
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent-ink);
+  color: #fff;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #8199ff;
-  border-color: #8199ff;
+  background: #4278e0;
+  border-color: #4278e0;
+  color: #fff;
 }
 
 .btn-ghost {
   background: transparent;
   border-color: transparent;
-  box-shadow: none;
   color: var(--text-2);
-  padding: 6px 10px;
+  padding: 6px 12px;
   font-size: 12.5px;
 }
 
 .btn-ghost:hover:not(:disabled) {
   color: var(--text);
   background: var(--surface-2);
-  border-color: var(--line);
 }
 
 .btn-more {
@@ -336,11 +374,63 @@ button:disabled {
   margin: var(--s5) auto 0;
 }
 
-/* ---------------- Grille des catalogues ---------------- */
+.btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #ff5f5f;
+  border-color: #ff5f5f;
+}
+
+/* ---------------- Liste des sources ----------------
+   Point d'entrée par langue : 19 tuiles cliquables plutôt que 1 370 noms
+   d'un bloc. La liste n'apparaît qu'une fois une langue choisie. */
+.lang-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--s3);
+}
+
+.lang-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  align-items: flex-start;
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  text-align: left;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.lang-tile:hover {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+
+.lang-tile b {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.lang-nom {
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+
+.lang-tile .muted {
+  font-size: 12px;
+}
+
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--s2);
 }
 
 .card {
@@ -348,21 +438,21 @@ button:disabled {
   align-items: center;
   gap: var(--s2);
   text-align: left;
-  background: var(--bg-elev);
-  border: 1px solid transparent;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
   border-radius: var(--r-sm);
-  padding: 8px 10px;
+  padding: 10px 14px;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 
 .card:hover {
-  background: var(--surface);
-  border-color: var(--line);
+  background: var(--surface-2);
+  border-color: var(--surface-3);
 }
 
 .card .name {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 13.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -371,20 +461,20 @@ button:disabled {
 .badge {
   margin-left: auto;
   flex: none;
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--text-3);
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: 4px;
-  padding: 1px 5px;
+  padding: 2px 6px;
 }
 
 .card.dead {
-  opacity: 0.55;
-  border-color: rgba(255, 93, 107, 0.25);
+  opacity: 0.5;
+  border-color: rgba(241, 62, 62, 0.3);
 }
 
 .card.dead:hover {
@@ -393,18 +483,17 @@ button:disabled {
 
 .dead-badge {
   color: var(--danger);
-  border-color: rgba(255, 93, 107, 0.4);
-  margin-left: auto;
+  border-color: rgba(241, 62, 62, 0.45);
 }
 
 .card.dead .badge:last-child {
   margin-left: 4px;
 }
 
-/* ---------------- Grille des webtoons ---------------- */
+/* ---------------- Cartes de webtoons ---------------- */
 .manga-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: var(--s4) var(--s3);
 }
 
@@ -414,26 +503,24 @@ button:disabled {
   height: 100%;
   background: var(--surface);
   border: 1px solid var(--line-soft);
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   overflow: hidden;
   padding: 0;
   text-align: left;
-  transition: border-color 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
+  transition: border-color 0.14s ease, background 0.14s ease;
 }
 
 .manga:hover {
   border-color: var(--accent);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow);
+  background: var(--surface-2);
 }
 
-/* La couverture porte le compteur de chapitres : il faut un conteneur pour le
-   placer en surimpression, d'où `.cover`. */
 .manga .cover {
   position: relative;
   display: block;
 }
 
+/* Rayon 6 px et ratio 2:3 : les deux valeurs relevées sur le site. */
 .manga .thumb {
   display: block;
   width: 100%;
@@ -446,12 +533,11 @@ button:disabled {
   position: absolute;
   right: 0;
   bottom: 0;
-  padding: 2px 6px;
-  font-size: 10px;
+  padding: 3px 8px;
+  font-size: 10.5px;
   font-weight: 700;
   color: var(--text);
-  background: rgba(8, 9, 13, 0.82);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.82);
   border-top-left-radius: var(--r-sm);
 }
 
@@ -461,35 +547,84 @@ button:disabled {
   -webkit-line-clamp: 2;
   line-clamp: 2;
   overflow: hidden;
-  /* 2 lignes reserves, pas une de plus : sans ce max-height la 3e ligne se
-     peint dans le padding bas (overflow clippe sur la padding-box). */
+  /* 2 lignes réservées : sans ce max-height la 3e ligne se peint dans le
+     padding bas (overflow clippe sur la padding-box). */
   min-height: calc(2 * 1.4em);
   max-height: calc(2 * 1.4em + var(--s2));
   margin-top: auto;
-  padding: var(--s2) 10px 0;
-  font-size: 12.5px;
-  font-weight: 550;
+  padding: var(--s2) 12px 0;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1.4;
   color: var(--text);
   text-align: left;
 }
 
-/* Tâche 0.16 : les 3 derniers chapitres, comme sur un site de scan. */
 .manga .recent {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 10px 9px;
+  gap: 3px;
+  padding: var(--s2) 12px 12px;
   margin-top: var(--s1);
   border-top: 1px solid var(--line-soft);
 }
 
 .recent-line {
-  font-size: 11px;
-  color: var(--text-2);
+  font-size: 11.5px;
+  color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.manga.pickable {
+  position: relative;
+}
+
+.manga.picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.manga .pick {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.manga.picked .pick {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---------------- Barre de sélection ---------------- */
+.select-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.select-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-left: auto;
 }
 
 .recent-toggle {
@@ -503,8 +638,8 @@ button:disabled {
 }
 
 .recent-toggle input {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   accent-color: var(--accent);
 }
 
@@ -512,16 +647,228 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------------- Fiche série ---------------- */
+.sheet {
+  display: flex;
+  gap: var(--s4);
+  padding: var(--s4);
+  margin-bottom: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.sheet-cover {
+  width: 148px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  flex: none;
+}
+
+.sheet-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.sheet-desc {
+  margin: 0 0 var(--s3);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.info-table {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.info-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: var(--s3);
+  background: var(--surface-2);
+  padding: 9px 14px;
+}
+
+.info-row dt {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+
+.info-row dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* ---------------- Chapitres ---------------- */
+.chapter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--s2);
+}
+
+.chapter-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  padding: 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.chapter-cell:hover {
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+
+.chapter-cell.on {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.chapter-check {
+  display: flex;
+  flex: none;
+  cursor: pointer;
+}
+
+.chapter-cell input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+.chapter-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 0;
+}
+
+.chapter-num {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter-sub {
+  font-size: 12px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Le bouton reste dans le DOM et dans l'ordre de tabulation (donc
+   atteignable au clavier) ; il n'apparaît qu'au survol ou au focus. */
+.chapter-dl {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.chapter-cell:hover .chapter-dl,
+.chapter-cell:focus-within .chapter-dl,
+.chapter-dl:focus-visible {
+  opacity: 1;
+}
+
+.chapter-dl:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.chapter-check input:focus-visible,
+.chapter-open:focus-visible,
+.chapter-dl:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.dl-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s4);
+  padding: var(--s3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.chapter-search {
+  margin-bottom: 0;
+  max-width: 280px;
+}
+
+/* Sélection en masse : évite de cocher 286 chapitres un par un. */
+.pick-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.pick-bar .pick-label {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.pick-bar input[type='number'] {
+  width: 68px;
+  background: var(--field);
+  color: var(--text-2);
+  border: 2px solid #444444;
+  border-radius: var(--r-pill);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.pick-bar input[type='number']:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* ---------------- Lecteur ---------------- */
 .reader {
   display: flex;
   flex-direction: column;
   height: calc(100vh - var(--s5) * 2);
-  /* Plein écran : on annule le padding latéral de .app, sinon la hauteur
-     dépasse la fenêtre et une barre de défilement apparaît. */
   margin: 0 calc(-1 * var(--s5));
   padding: 0 var(--s5);
-  background: #05060a;
+  /* Fond du lecteur sur le site : #16151d, pas du noir. */
+  background: #16151d;
 }
 
 .reader-bar {
@@ -529,16 +876,15 @@ button:disabled {
   align-items: center;
   gap: var(--s3);
   /* Les contrôles se multiplient (mode, double page, ajustement, sens, zoom,
-     saut de page) : sur une fenêtre étroite ils passent à la ligne plutôt que
-     de déborder ou de sortir de l'écran. */
+     saut de page) : sur une fenêtre étroite ils passent à la ligne. */
   flex-wrap: wrap;
-  padding: 10px var(--s5);
+  padding: 12px var(--s5);
   border-bottom: 1px solid var(--line-soft);
-  background: var(--bg);
+  background: #000000;
 }
 
 .reader-title {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -549,76 +895,25 @@ button:disabled {
 .reader-tools {
   display: flex;
   align-items: center;
-  gap: var(--s3);
+  gap: var(--s2);
   margin-left: auto;
-}
-
-.seg-btn.solo {
-  border: 1px solid var(--line-soft);
-  background: var(--bg-elev);
-}
-
-.chapter-select {
-  max-width: 200px;
-  background: var(--surface);
-  color: var(--text-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 5px 8px;
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.chapter-select:hover {
-  color: var(--text);
-  border-color: var(--surface-3);
-}
-
-.page-jump {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.page-jump-label {
-  color: var(--text-3);
-  font-size: 12px;
-}
-
-.page-jump input {
-  width: 52px;
-  padding: 4px 6px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--line);
-  background: var(--bg-elev);
-  color: var(--text);
-  font: inherit;
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
-.page-jump input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-dim);
+  flex-wrap: wrap;
 }
 
 .seg {
   display: flex;
   gap: 2px;
-  background: var(--bg-elev);
-  border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  background: var(--field);
+  border: 2px solid #444444;
+  border-radius: var(--r-pill);
   padding: 2px;
 }
 
 .seg-btn {
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 12px;
-  font-weight: 650;
+  border-radius: var(--r-pill);
+  padding: 5px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
   color: var(--text-2);
 }
 
@@ -628,7 +923,34 @@ button:disabled {
 
 .seg-btn[aria-pressed='true'] {
   background: var(--surface-3);
-  color: var(--text);
+  color: #fff;
+}
+
+.seg-btn.solo {
+  border: 2px solid #444444;
+  background: var(--field);
+}
+
+.chapter-select {
+  max-width: 210px;
+}
+
+.page-jump {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.page-jump-label {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.page-jump input {
+  width: 58px;
+  padding: 6px 8px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .zoom {
@@ -643,13 +965,12 @@ button:disabled {
   accent-color: var(--accent);
 }
 
-/* Bande webtoon : défilement vertical continu. */
 .webtoon {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: #05060a;
+  background: #16151d;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -660,7 +981,7 @@ button:disabled {
   display: block;
   height: auto;
   max-width: none;
-  border-bottom: 1px solid #0b0d13;
+  border-bottom: 1px solid #0e0d13;
 }
 
 .webtoon img:hover {
@@ -677,9 +998,8 @@ button:disabled {
   overflow: hidden;
 }
 
-/* Ajustement à la largeur (défaut) : la page occupe toute la largeur du cadre et
-   défile verticalement si elle est plus haute que la fenêtre — c'est le mode le
-   plus lisible pour une case trop longue. */
+/* Ajustement à la largeur : la page occupe toute la largeur du cadre et
+   défile verticalement si elle est plus haute que la fenêtre. */
 .reader-stage.fit-width {
   align-items: flex-start;
   overflow-y: auto;
@@ -739,216 +1059,62 @@ button:disabled {
   pointer-events: none;
 }
 
-/* ---------------- Chapitres ----------------
-   Tâche 0.15 : grille multi-colonnes (numéro + date) au lieu de la liste
-   verticale — une série de 1 000 chapitres tient alors en un écran. */
-.chapter-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 6px;
-}
-
-.chapter-cell {
+/* ---------------- Téléchargements ----------------
+   Page trop vide et trop serrée : bandeau de chiffres, cartes plus grandes,
+   colonnes plus larges, plus d'air entre les blocs. */
+.dl-stats {
   display: flex;
-  align-items: center;
-  gap: var(--s2);
-  min-width: 0;
-  padding: 7px 9px;
-  background: var(--bg-elev);
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-
-.chapter-cell:hover {
+  flex-wrap: wrap;
+  gap: var(--s5);
+  padding: var(--s4) var(--s5);
+  margin-bottom: var(--s4);
   background: var(--surface);
-  border-color: var(--line-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
 }
 
-/* Sélectionné : le fond change, sinon on ne sait pas ce que le bouton
-   « Télécharger la sélection » va prendre. */
-.chapter-cell.on {
-  background: var(--accent-dim);
-  border-color: var(--accent);
-}
-
-.chapter-check {
-  display: flex;
-  flex: none;
-  cursor: pointer;
-}
-
-.chapter-cell input[type='checkbox'] {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--accent);
-}
-
-.chapter-open {
-  flex: 1;
-  min-width: 0;
+.dl-stat {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  text-align: left;
-  padding: 0;
+  gap: 2px;
 }
 
-.chapter-num {
-  font-size: 13px;
-  font-weight: 620;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.dl-stat b {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.1;
 }
 
-.chapter-sub {
-  font-size: 11.5px;
-  color: var(--text-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Le bouton de téléchargement reste dans le DOM et dans l'ordre de tabulation
-   (donc atteignable au clavier) ; il n'apparaît qu'au survol ou au focus. */
-.chapter-dl {
-  flex: none;
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  color: var(--text-3);
-  opacity: 0;
-  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
-}
-
-.chapter-cell:hover .chapter-dl,
-.chapter-cell:focus-within .chapter-dl,
-.chapter-dl:focus-visible {
-  opacity: 1;
-}
-
-.chapter-dl:hover:not(:disabled) {
-  color: var(--text);
-  background: var(--surface-3);
-}
-
-.chapter-dl:disabled {
-  cursor: default;
-}
-
-.chapter-check input:focus-visible,
-.chapter-open:focus-visible,
-.chapter-dl:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.dl-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  margin-bottom: var(--s3);
-}
-
-.chapter-search {
-  margin-bottom: 0;
-  max-width: 260px;
-}
-
-/* ---------------- Fiche série (tâche 0.17) ---------------- */
-.sheet {
-  display: flex;
-  gap: var(--s4);
-  padding: var(--s4);
-  margin-bottom: var(--s4);
-  background: var(--bg-elev);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--r);
-}
-
-.sheet-cover {
-  width: 132px;
-  aspect-ratio: 2 / 3;
-  object-fit: cover;
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-  flex: none;
-}
-
-.sheet-body {
-  min-width: 0;
-  flex: 1;
-}
-
-.sheet-desc {
-  margin: 0 0 var(--s3);
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--text-2);
-}
-
-/* Table 2 colonnes : le libellé a une colonne fixe pour que les valeurs
-   s'alignent, sans avoir à deviner où elles commencent. */
-.info-table {
-  display: grid;
-  gap: 1px;
-  margin: 0;
-  background: var(--line-soft);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--r-sm);
-  overflow: hidden;
-}
-
-.info-row {
-  display: grid;
-  grid-template-columns: 148px minmax(0, 1fr);
-  gap: var(--s3);
-  background: var(--surface);
-  padding: 6px 11px;
-}
-
-.info-row dt {
+.dl-stat span {
   font-size: 12px;
-  font-weight: 650;
   color: var(--text-3);
 }
 
-.info-row dd {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--text);
-  overflow-wrap: anywhere;
-}
-
-/* ---------------- Téléchargements ---------------- */
 .dl-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: var(--s3);
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--s4);
 }
 
 .dl-card {
   display: flex;
-  gap: var(--s3);
-  background: var(--bg-elev);
+  gap: var(--s4);
+  padding: var(--s4);
+  background: var(--surface);
   border: 1px solid var(--line-soft);
-  border-radius: var(--r);
-  padding: var(--s3);
-  transition: border-color 0.12s ease;
+  border-radius: var(--r-sm);
+  transition: border-color 0.12s ease, background 0.12s ease;
 }
 
 .dl-card:hover {
   border-color: var(--line);
+  background: var(--surface-2);
 }
 
 .dl-card .thumb {
-  width: 56px;
-  height: 82px;
+  width: 84px;
+  aspect-ratio: 2 / 3;
+  height: auto;
   border-radius: var(--r-sm);
   object-fit: cover;
   background: var(--surface-2);
@@ -958,16 +1124,16 @@ button:disabled {
 .dl-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--s2);
   min-width: 0;
   flex: 1;
 }
 
 .dl-title {
   margin: 0;
-  font-size: 13.5px;
-  font-weight: 620;
-  line-height: 1.3;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -976,7 +1142,7 @@ button:disabled {
 }
 
 .dl-meta {
-  font-size: 11.5px;
+  font-size: 12.5px;
 }
 
 .dl-body .progress {
@@ -986,28 +1152,18 @@ button:disabled {
 .dl-body .badge {
   margin: 0;
   align-self: flex-start;
-  margin-left: 0;
 }
 
 .dl-actions {
+  display: flex;
+  gap: var(--s2);
   margin-top: auto;
-  padding-top: 2px;
+  padding-top: var(--s2);
 }
 
 .dl-actions .btn {
-  padding: 4px 8px;
-  font-size: 11.5px;
-}
-
-.btn-danger {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #14060a;
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: #ff7b86;
-  border-color: #ff7b86;
+  padding: 6px 14px;
+  font-size: 12px;
 }
 
 .confirm {
@@ -1018,24 +1174,25 @@ button:disabled {
   padding: var(--s5);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--text);
   box-shadow: var(--shadow);
 }
 
 .confirm::backdrop {
-  background: rgba(4, 5, 8, 0.66);
+  background: rgba(0, 0, 0, 0.72);
 }
 
 .confirm h3 {
   margin: 0 0 var(--s2);
-  font-size: 16px;
-  font-weight: 650;
+  font-size: 17px;
+  font-weight: 600;
 }
 
 .confirm p {
   margin: 0 0 var(--s4);
-  font-size: 13px;
+  font-size: 13.5px;
+  color: var(--text-2);
 }
 
 .resume .alert-actions {
@@ -1043,8 +1200,8 @@ button:disabled {
 }
 
 .state-termine {
-  color: var(--ok);
-  border-color: rgba(53, 192, 122, 0.4);
+  color: #5bd68d;
+  border-color: rgba(91, 214, 141, 0.4);
 }
 
 .state-attente {
@@ -1052,12 +1209,12 @@ button:disabled {
 }
 
 .state-erreur {
-  color: var(--danger);
-  border-color: rgba(255, 93, 107, 0.4);
+  color: #ff8080;
+  border-color: rgba(241, 62, 62, 0.4);
 }
 
 .state-telechargement {
-  color: var(--accent);
+  color: #7ba4f0;
   border-color: var(--accent);
 }
 
@@ -1074,7 +1231,7 @@ button:disabled {
 .queue-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--s1);
 }
 
 .queue-head {
@@ -1084,7 +1241,7 @@ button:disabled {
 }
 
 .queue-title {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1100,76 +1257,25 @@ button:disabled {
 }
 
 .queue-detail {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* ---------------- Sélection multiple ---------------- */
-.select-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  margin-bottom: var(--s4);
-  padding: var(--s2) var(--s3);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--r-sm);
-  background: var(--bg-elev);
-}
-
-.select-actions {
-  display: flex;
-  gap: var(--s2);
-  margin-left: auto;
-}
-
-.manga.pickable {
-  position: relative;
-  cursor: pointer;
-}
-
-.manga.picked {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
-}
-
-.manga .pick {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: rgba(8, 9, 13, 0.72);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.manga.picked .pick {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
-
 /* ---------------- Panneaux / messages ---------------- */
 .panel {
-  background: var(--bg-elev);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--r);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
   padding: var(--s4);
-  margin-bottom: var(--s3);
+  margin-bottom: var(--s4);
 }
 
 .panel h2 {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   letter-spacing: 0.8px;
   text-transform: uppercase;
   color: var(--text-3);
@@ -1180,16 +1286,8 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: var(--s3);
+  margin-bottom: var(--s2);
   font-size: 13.5px;
-}
-
-.field select {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 6px 9px;
-  font: inherit;
 }
 
 .switch-row {
@@ -1201,8 +1299,8 @@ button:disabled {
 }
 
 .switch-row input {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   accent-color: var(--accent);
   flex: none;
 }
@@ -1218,7 +1316,7 @@ button:disabled {
 }
 
 .note {
-  font-size: 12.5px;
+  font-size: 13px;
   border-left: 2px solid var(--line);
   padding-left: var(--s3);
   margin: 0 0 var(--s3);
@@ -1226,28 +1324,34 @@ button:disabled {
 
 .count {
   color: var(--text-3);
-  font-size: 12.5px;
+  font-size: 13px;
   margin: 0 0 var(--s3);
 }
 
 .error,
 .notice {
   border-radius: var(--r-sm);
-  padding: 9px 13px;
+  padding: 11px 16px;
   margin-bottom: var(--s3);
-  font-size: 13px;
+  font-size: 13.5px;
 }
 
 .error {
-  background: rgba(255, 93, 107, 0.1);
-  border: 1px solid rgba(255, 93, 107, 0.3);
-  color: #ffb3b9;
+  background: rgba(241, 62, 62, 0.12);
+  border: 1px solid rgba(241, 62, 62, 0.35);
+  color: #ffb0b0;
+}
+
+.notice {
+  background: rgba(91, 214, 141, 0.12);
+  border: 1px solid rgba(91, 214, 141, 0.35);
+  color: #a9e9c4;
 }
 
 .alert {
-  background: rgba(255, 93, 107, 0.08);
-  border: 1px solid rgba(255, 93, 107, 0.28);
-  border-radius: var(--r);
+  background: rgba(241, 62, 62, 0.1);
+  border: 1px solid rgba(241, 62, 62, 0.3);
+  border-radius: var(--r-sm);
   padding: var(--s4);
   margin-bottom: var(--s4);
 }
@@ -1255,7 +1359,7 @@ button:disabled {
 .alert p {
   margin: 0 0 var(--s3);
   font-size: 14px;
-  color: #ffc4c9;
+  color: #ffc4c4;
 }
 
 .alert-actions {
@@ -1263,15 +1367,9 @@ button:disabled {
   gap: var(--s2);
 }
 
-.notice {
-  background: rgba(53, 192, 122, 0.1);
-  border: 1px solid rgba(53, 192, 122, 0.3);
-  color: #9fe6c1;
-}
-
 /* ---------------- Progression ---------------- */
 .progress {
-  background: var(--bg-elev);
+  background: var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: var(--r-sm);
   overflow: hidden;
@@ -1286,31 +1384,15 @@ button:disabled {
 
 .progress span {
   display: block;
-  padding: 7px 11px;
+  padding: 9px 14px;
   font-size: 12.5px;
-  color: var(--text-2);
-}
-
-/* ---------------- Téléchargements ---------------- */
-.dl-files {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.file {
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: 5px;
-  padding: 3px 8px;
-  font-size: 11.5px;
   color: var(--text-2);
 }
 
 .chip-wrap {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: var(--s1);
   max-height: 260px;
   overflow-y: auto;
   padding-right: var(--s2);
@@ -1323,9 +1405,24 @@ button:disabled {
   margin-bottom: var(--s3);
 }
 
+.dl-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.file {
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  padding: 3px 9px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
 /* ---------------- Chargement ---------------- */
 .skeleton {
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   aspect-ratio: 2 / 3;
   background: linear-gradient(100deg, var(--surface) 30%, var(--surface-2) 50%, var(--surface) 70%);
   background-size: 200% 100%;
@@ -1333,8 +1430,9 @@ button:disabled {
 }
 
 .skeleton-row {
-  height: 32px;
-  background: linear-gradient(100deg, var(--bg-elev) 30%, var(--surface) 50%, var(--bg-elev) 70%);
+  height: 44px;
+  border-radius: var(--r-sm);
+  background: linear-gradient(100deg, var(--surface) 30%, var(--surface-2) 50%, var(--surface) 70%);
   background-size: 200% 100%;
   animation: shimmer 1.5s linear infinite;
 }

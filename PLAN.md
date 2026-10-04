@@ -62,17 +62,20 @@ tatami/
 |---|---|---|---|
 | 0 | Fondations et spike des risques | M | **En cours** — 0.1 à 0.11 faits, 0.12 partiel, 0.13 à 0.17 à faire |
 | 1 | Bibliothèque et lecteur | L | **Presque finie** — 1.1 à 1.7 faits, 1.8 à 1.10 à faire |
-| 2 | Hors ligne | M | **Pas commencée** |
+| 2 | Hors ligne | M | **≈ 60 % faite** — file, reprise, CBZ, assainissement et stats existent ; **il manque la lecture hors ligne** |
 | 3 | Tâches de fond et notifications | M | **Pas commencée** |
 | 4 | Comptes et synchronisation | L | **Pas commencée** |
 | 5 | Durcissement et distribution | M | **Pas commencée** |
 
-Phase en cours : **1**, avec les correctifs de fin de phase 0 tirés de la mesure.
-Prochaine tâche : **1.9** (mode webtoon virtualisé).
+Phase en cours : **1 et 2 en parallèle**, la phase 2 ayant un manque bloquant.
+Prochaine tâche : **2.3** (lecture hors ligne).
 
-Comptage au 2026-10-04 : **23 tâches faites, 33 à faire.** La phase 2 est
-celle qui manque le plus : c'est elle qui porte l'exigence permanente de la
-section 3 (téléchargements repris, jamais retélécharger).
+**Correction du 2026-10-04** : le tableau disait « phase 2 pas commencée ». C'était
+faux, et c'est vérifiable dans le code — `download.rs` (file séquentielle,
+`missing_chapters` pour la reprise, `clean_partials`, `sanitize`), `cbz.rs`
+(écriture ZIP sans dépendance), `library.rs` (`existing_chapters`,
+`remove_download`, tailles, `meta.json`). Un inventaire doit être **lu dans le
+code**, jamais déduit de l'absence de cases cochées.
 
 ---
 
@@ -131,11 +134,11 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
 ### Phase 2 — Hors ligne (M)
 
-- [ ] **2.1** Gestionnaire de téléchargements : file d'attente, reprise après interruption, concurrence limitée, débit limité par source.
-- [ ] **2.2** Stockage CBZ ou dossier, chemin en base, noms de fichiers assainis.
-- [ ] **2.3** Lecture hors ligne des chapitres téléchargés.
+- [x] **2.1** Gestionnaire de téléchargements : file d'attente, reprise après interruption, concurrence limitée. *(fait sauf « débit limité par source » : la file est séquentielle globalement, ce qui est plus strict qu'un débit mais pas équivalent)*
+- [x] **2.2** Stockage CBZ, noms de fichiers assainis. *(fait sauf « chemin en base » : le chemin est dérivé de `downloads_root` + source + titre et un `meta.json` fait foi — cf. dérogation signalée au journal, à trancher)*
+- [ ] **2.3** Lecture hors ligne des chapitres téléchargés. **Bloquant** : `cbz.rs` sait écrire un ZIP mais rien ne sait le lire, le lecteur passe toujours par le moteur.
 - [ ] **2.4** Import de CBZ tiers et lecture locale ; export d'un chapitre en CBZ.
-- [ ] **2.5** Gestion de l'espace : taille utilisée, suppression, emplacement configurable.
+- [x] **2.5** Gestion de l'espace : taille utilisée, suppression. *(emplacement configurable pas fait)*
 
 **Critère de sortie** : télécharger un chapitre, couper le réseau, le lire ; reprendre un téléchargement interrompu ; importer un CBZ externe.
 

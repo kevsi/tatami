@@ -1,0 +1,539 @@
+# Smoke test manuel — Tatami
+
+Exigé par `AGENTS.md` §8 (niveau 4 de la pyramide de tests). **À exécuter sur l'application
+réelle avant chaque jalon**, et avant de déclarer une tâche terminée (`AGENTS.md` §8).
+
+Ce document ne décrit que des écrans et des commandes **qui existent dans le code au
+2026-10-04**. Chaque étape cite le fichier et la ligne qui prouvent que l'écran, le libellé ou
+la commande existent. Si une étape ne correspond plus au code, c'est le code qui a changé :
+corriger ce document dans le même jalon (AGENTS.md §8, « la documentation concernée est à jour »).
+
+Durée : 15 à 25 min sur une machine avec le moteur déjà construit. RAM limitée : ne pas lancer
+`pnpm dev`, Gradle et `cargo build` en même temps (`AGENTS.md` §3).
+
+---
+
+## 0. Préparation
+
+### 0.1 Variables d'environnement du shell
+
+| Ce qui manque souvent | Correction | Preuve |
+|---|---|---|
+| Shims Scoop absents du PATH | préfixer `$env:USERPROFILE\scoop\shims` | journal `PLAN.md` 2026-10-02, tâche 0.2 |
+| `link.exe` introuvable | charger `vcvars64.bat` avant tout `cargo` | journal `PLAN.md` 2026-10-02, tâche 0.2 |
+
+Vérification :
+
+```powershell
+java -version; rustc --version; node -v; pnpm -v
+```
+
+### 0.2 Dépendances JS
+
+```powershell
+pnpm install
+```
+
+### 0.3 Moteur compilé (OBLIGATOIRE avant de lancer l'app)
+
+```powershell
+pnpm engine
+```
+
+Ce script lance `gradle installDist`, puis `jlink`, puis écrit
+`engine/dist/tatami-engine/tatami-engine.bat` — c'est exactement le chemin que le superviseur
+Rust résout au démarrage (`supervisor.rs:356-366`, `apps/desktop/src-tauri/src/supervisor.rs`).
+Sans ce dossier, l'application démarre sans moteur et toutes les sources paraissent hors service.
+
+Preuve attendue : la dernière ligne du script est `OK: <chemin> (<taille> MB)`
+(`scripts/build-engine.ps1:69`).
+
+> Si l'application est ouverte pendant le build, l'échange du dossier `dist` échoue : le script
+> le dit explicitement (`scripts/build-engine.ps1:64`). Fermer l'app avant `pnpm engine`.
+
+### 0.4 Contrôle du moteur sans l'application (optionnel, ~30 s)
+
+```powershell
+engine\dist\tatami-engine\tatami-engine.bat list-sources
+engine\dist\tatami-engine\tatami-engine.bat search MANGADEX naruto
+```
+
+Preuve attendue : `sources: 1370` puis `results: N` (`N` > 0) et cinq titres
+`Titre | url`. Commandes définies en `engine/src/main/kotlin/org/tatami/engine/Main.kt:29-45`.
+Si cette étape échoue, ne perdez pas de temps sur l'interface : le problème est dans le moteur.
+
+### 0.5 Lancer l'application
+
+```powershell
+pnpm tauri dev
+```
+
+`tauri dev` démarre le serveur Next sur le port 3000 puis la fenêtre (tauri.conf.json:7,9).
+Fenêtre attendue : 1280 × 800, titre « Tatami » (`tauri.conf.json:15-17`).
+
+---
+
+## 1. Démarrage et moteur (T01)
+
+**Quoi faire** : lancer l'app, ne rien cliquer, attendre 10 s.
+
+| Vérifier | Attendu | Preuve |
+|---|---|---|
+| Le bandeau d'application | 4 onglets : Accueil, Catalogues, Téléchargements, Paramètres | `apps/desktop/app/page.tsx:152-157` |
+| L'onglet actif | un seul onglet.selected, fond `rgb(51,51,51)` | `page.tsx:181` + journal 2026-10-04 « lint/couvertures » |
+| La vue par défaut | titre `Accueil`, section « Continuer la lecture », section « Vos favoris » | `page.tsx:2735,2746,2881` |
+| Les logs du sidecar | `sidecar java=… (dev)` puis `hello OK` | `supervisor.rs:6,212-224` |
+| Un source morte déjà visitée | pastille « hors service » sur sa tuile, ou message en Paramètres | `page.tsx:3086,1765-1779` |
+
+**Preuve** : capture d'écran de la fenêtre au démarrage + les 3 lignes de log ci-dessus.
+
+**Échec typique** : fenêtre ouverte mais Catalogues vide → le dossier
+`engine/dist/tatami-engine` est absent ou le runtime `jlink` n'a pas été reconstruit (§ 0.3).
+
+---
+
+## 2. Catalogues (T02)
+
+Onglet **Catalogues**.
+
+### T02.1 — Navigation par langue
+
+**Clic** : sur une tuile de langue (par exemple `FR`), puis sur une source de la liste.
+**Attendu** : le titre devient le nom de la source et le sous-titre sa langue en majuscules
+(`page.tsx:2447-2448`). Le fil d'Ariane `← Catalogues` ramène à la liste (`page.tsx:2444`).
+**Preuve** : 2 captures (liste des langues, liste des sources de la langue choisie).
+
+### T02.2 — Recherche de catalogue
+
+**Clic** : champ « Rechercher un catalogue… » (`page.tsx:2961-2965`), saisir `MANGA`.
+**Attendu** : le compteur de la page passe à « n sources pour « MANGA » · langue … »
+(`page.tsx:3037-3041`).
+**Preuve** : capture du compteur. **Négatif attendu** : un terme qui ne matche rien affiche
+l'état vide « Aucune source à afficher » (`page.tsx:3045`), pas une grille vide.
+
+### T02.3 — Désactivation d'une source
+
+**Clic** : l'interrupteur à droite d'une tuile de source (`page.tsx:3089-3102`).
+**Attendu** : la tuile disparaît de la liste ; la barre affiche « Afficher les 1 source
+désactivée » et « Tout réactiver » (`page.tsx:3002-3006`) ; le compteur d'en-tête indique
+« · 1 désactivée » (`page.tsx:2957`).
+**Preuve** : capture avant / après, puis rechargement complet de la fenêtre (F5) et
+nouvelle capture : la source doit rester désactivée (table `sources_state`, `store.rs:205-208`).
+**Nettoyage obligatoire** : cliquer « Tout réactiver » avant la suite, sinon les étapes
+suivantes peuvent tomber sur un catalogue en moins.
+
+---
+
+## 3. Recherche dans une source (T03)
+
+Vue source, après T02.1. **Utiliser une source ouverte** (MANGADEX ou WAMANGA) : ce sont les
+seules où images et chapitres ont été vérifiés (journal 2026-10-03, tâche 0.13-0.17).
+
+### T03.1 — Liste et recherche
+
+**Clic** : champ « Rechercher un webtoon… » + bouton **Rechercher**, ou touche Entrée
+(`page.tsx:2453-2467`).
+**Attendu** : `n webtoons` dans le compteur (`page.tsx:2613-2616`).
+**Preuve** : capture avec **au moins 3 cartes visibles** — une mesure sur une liste vide ne
+prouve rien (`AGENTS.md` §14).
+
+### T03.2 — Tri des titres
+
+**Clic** : `A → Z`, puis `Z → A`, puis `Ordre du site` (`page.tsx:2617-2627`).
+**Attendu** : « Ordre du site » est actif par défaut ; `A → Z` trie réellement la liste
+chargée ; `Z → A` est l'inverse exact d'`A → Z` ; le tri survit au changement de source.
+**Preuve** : capture des 5 premiers titres dans chaque ordre + la liste exacte recopiée dans
+le rapport de jalon. **Attention** : le tri s'applique à **tout ce qui est chargé**, pas à la
+seule page courante (journal 2026-10-04, tâche 1.3).
+
+### T03.3 — Genres
+
+**Clic** : une pastille de genre, puis « Effacer (n) » (`page.tsx:2473-2485`).
+**Attendu** : la liste change ; « Effacer » restaure la liste d'avant.
+**Preuve** : capture des deux listes. **Piège mesuré** : choisir un genre qui ne change rien
+ne prouve rien — noter le nombre de cartes avant/après.
+
+### T03.4 — Chapitres récents sur les cartes
+
+**Clic** : case « Chapitres récents » (`page.tsx:2523-2535`).
+**Attendu** : chaque carte affiche ses **derniers** chapitres, décroissants, avec ancienneté
+(`page.tsx:2671-2679`) ; le compteur `x/y` monte vers `y` ; un sélecteur
+`286 ch.` apparaît sur la couverture (`page.tsx:2664-2668`).
+**Preuve** : capture d'une carte avec ≥ 3 lignes décroissantes + le compteur atteint.
+**Négatif attendu** : sur une source lente, 1 requête `chapters` par carte affichée est
+limité à 4 en parallèle et mis en cache 30 min (journal 2026-10-03) — le compteur peut
+ rester en dessous de `y` sans que ce soit un défaut.
+
+---
+
+## 4. Fiche série (T04)
+
+**Clic** : une carte de la liste (`page.tsx:2651-2655`).
+
+### T04.1 — Informations
+
+**Attendu** : couverture, résumé **sans balises HTML** (`plainText`, journal 2026-10-04),
+table d'informations `.info-table` à 2 colonnes avec ≥ 1 ligne
+(`page.tsx:2293-2302`), bouton `♡ Ajouter aux favoris` (`page.tsx:2282`).
+**Preuve** : capture de la fiche entière. **Piège mesuré** : un résumé qui affiche
+`<p>…</p>` est un défaut de strippage, pas un bug d'affichage.
+
+### T04.2 — Grille de chapitres et dates
+
+**Attendu** : `.chapter-grid` en ≥ 5 colonnes à 1440 px (`page.tsx:2380`), 100 cellules
+visibles puis « Afficher plus (n restants) » (`page.tsx:2426-2432`), **une date par cellule**
+(lournal 2026-10-03 : `uploadDate` non nul sur 121/121 chapitres MANGABUFF).
+**Preuve** : capture de la grille + compteur « n chapitres · n sélectionnés » (`page.tsx:2312`).
+
+### T04.3 — Filtre par numéro
+
+**Clic** : champ « Filtrer un chapitre… » (`page.tsx:2350-2357`), saisir un **numéro rare**
+(calculé depuis la grille affichée, pas `2` : `AGENTS.md` §14).
+**Attendu** : une seule cellule reste.
+**Preuve** : capture avant (compte de cellules) / après (la cellule restante).
+
+### T04.4 — Sélection rapide
+
+**Clic** : champ nombre + `N derniers`, puis `Aucun` (`page.tsx:2329-2348`).
+**Attendu** : les N cases cochées sont **visibles à l'écran** (la grille se déplie et défile
+jusqu'à elles, journal 2026-10-04 « retours humains »), le compteur de sélection monte à N,
+le bouton devient `Télécharger la sélection (N)` (`page.tsx:2323`).
+**Preuve** : capture avec les cases cochées **et** le compteur. Un test qui coche hors écran
+et ne regarde que le compteur est un faux positif.
+
+### T04.5 — Favori
+
+**Clic** : `♡ Ajouter aux favoris`.
+**Attendu** : le libellé bascule en `♥ Dans vos favoris` et `aria-pressed` passe à vrai
+(`page.tsx:2278-2283`).
+**Preuve** : capture + la valeur de `aria-pressed` relevée dans le rapport.
+
+---
+
+## 5. Lecteur (T05)
+
+**Clic** : bouton `Lire <chapitre>` sur une cellule (`page.tsx:2394-2399`).
+Barre du lecteur : titre `webtoon · chapitre`, bouton `Signet`, groupes `Pagé`/`Webtoon`,
+`Simple`/`Double`, `Largeur`/`Hauteur`, `RTL`/`LTR`, zoom, sélecteur de chapitre, saut de page
+(`page.tsx:2036-2186`).
+
+### T05.1 — L'image s'affiche vraiment
+
+**Attendu** : **une** image dans `.reader-stage`, de taille naturelle non nulle.
+**Preuve** : `src` = `http://tatami.localhost/page/<token>` (`page.tsx:1411`) et
+`naturalWidth > 0`. **Règle** (`AGENTS.md` §14) : une `<img>` cassée est déjà « visible » pour
+l'automatisation — attendre `img.complete && img.naturalWidth > 0` avant de conclure.
+
+### T05.2 — Pagination
+
+**Clic** : `Page suivante`, `Page précédente` (`page.tsx:2225-2234`).
+**Attendu** : le compteur `Page / N` avance ; l'image affichée change.
+**Preuve** : capture du compteur + relevés de `src` avant/après (2 jetons différents).
+**À utiliser en priorité** : les flèches clavier ont un sens qui dépend du mode de lecture
+(mesuré en RTL, `AGENTS.md` §14).
+
+### T05.3 — Modes et ajustements
+
+| Action | Attendu | Preuve |
+|---|---|---|
+| `Simple` | 1 image, `getComputedStyle(img).width/height` = valeur « largeur » | `page.tsx:2076` |
+| `Double` | **2** images dans `.reader-stage`, un cran = 2 pages | `page.tsx:2084,2021` |
+| `Hauteur` | hauteur d'image **différente** de « Largeur », tenant dans le cadre | `page.tsx:2104` |
+| `RTL` (bouton visible seulement en double page) | la page courante passe à droite | `page.tsx:2111-2123,2029` |
+
+**Preuve** : 4 mesures chiffrées (`width`/`height` en px) + 4 captures.
+**Régression à surveiller** : en `Double` + `Hauteur`, une image qui déborde du cadre
+(mesuré : 6 300 px dans un cadre de 685) signifie que `grid-template-rows: minmax(0, 1fr)` a
+été perdu (`AGENTS.md` §14).
+
+### T05.4 — Webtoon
+
+**Clic** : `Webtoon` (`page.tsx:2064`).
+**Attendu** : une bande continue d'images ; `↑ Page précédente` / `Page suivante ↓` font défiler
+(`page.tsx:2239-2251`) ; le double-clic bascule le zoom 100 % ↔ 200 % (`page.tsx:2202`).
+**Preuve** : capture d'une bande de ≥ 3 images + mesure de la hauteur du conteneur.
+
+### T05.5 — Saut de page et changement de chapitre
+
+**Clic** : champ `Aller à la page` (`aria-label`, `page.tsx:2182`) → saisir `3` → Entrée ;
+puis le sélecteur `Changer de chapitre` (`page.tsx:2148`).
+**Attendu** : la page 3 s'affiche ; le changement de chapitre recharge les images du nouveau
+chapitre et le compteur `N` change.
+**Preuve** : captures avant/après avec les compteurs.
+
+### T05.6 — Clavier
+
+**Clic** : `Echap` pour fermer, `Début`, `Fin`, `Espace` (`page.tsx:1643-1670`).
+**Attendu** : `Echap` ramène à la fiche ; `Début` → 1re page ; `Fin` → dernière page ;
+`Espace` avance d'un cran.
+**Preuve** : relevé du compteur à chaque touche.
+
+### T05.7 — Signet
+
+**Clic** : `Signet` (`page.tsx:2045-2052`), changer de page, recliquer.
+**Attendu** : le libellé devient `Signet ✓` et `aria-pressed` passe à vrai ; la page marquée
+est celle affichée au moment du clic.
+**Preuve** : capture du libellé + section « Vos signets » de l'accueil (T07.3).
+
+---
+
+## 6. Téléchargement (T06)
+
+Onglet **Téléchargements** et retour à la fiche (T04).
+
+### T06.1 — Un chapitre
+
+**Clic** : bouton `↓` sur une cellule de chapitre (`page.tsx:2403-2411`) ou
+`Télécharger la sélection (N)` (`page.tsx:2323`).
+**Attendu** : une barre de progression avec `chapitre — page i/N (x %)` (`page.tsx:2360-2371`)
+puis `Terminé` ; l'app bascule sur l'onglet Téléchargements en fin de file (`page.tsx:1296`).
+**Preuve** : capture de la progression + du fichier `.cbz` dans
+`%APPDATA%\Tatami\downloads\<source>\<webtoon>\` (`download.rs:68-81`).
+
+### T06.2 — Vue Téléchargements
+
+**Attendu** : bandeau de 4 chiffres (webtoons / chapitres / sur le disque / à compléter)
+(`page.tsx:1905-1922`), bandeau « Vos webtoons », cartes avec `SOURCE · x/y chapitres · poids`
+et badge `Terminé` ou `Partiel` (`page.tsx:1945-1959`).
+**Preuve** : capture de la vue entière.
+**Cas limite attendu** : une carte sans couverture enregistrée affiche une **pastille
+d'initiale** de 84 px, pas un rectangle vide (journal 2026-10-04 « lint/couvertures »).
+
+### T06.3 — Reprise après interruption (EXIGENCE PERMANENTE)
+
+`PLAN.md` §3 : tout téléchargement doit être reprenable.
+
+1. **Clic** : sur la fiche, mettre `N derniers` avec N = 3, puis **Télécharger la sélection (3)**.
+2. **Action** : fermer l'application (croix) **pendant** le 2ᵉ chapitre.
+3. **Clic** : relancer, onglet Téléchargements.
+4. **Attendu** : le bandeau **« File interrompue »** apparaît avec le bouton **Reprendre**
+   (`page.tsx:1841-1856`) ; ou, sans file, la carte affiche `Partiel` + bouton **Reprendre**
+   (`page.tsx:1961-1968`).
+5. **Preuve** : capture du bandeau « File interrompue » + le dossier **`Get-ChildItem`** :
+   les chapitres 1 et 2 sont en `.cbz`, un éventuel chapitre interrompu est en `.cbz.part`
+   (`download.rs:247`).
+
+**Règle** : un `.cbz.part` compte comme **absent** (`download.rs:116,122`) → il doit être
+retéléchargé, pas compté comme acquis. Un `.cbz` déjà présent ne doit **jamais** être
+retéléchargé. Si un chapitre déjà téléchargé est re-téléchargé, c'est un défaut.
+
+### T06.4 — Suppression
+
+**Clic** : `Supprimer` sur une carte (`page.tsx:1970-1972`).
+**Attendu** : dialogue « Supprimer <titre> ? » avec le nombre de chapitres et le poids, puis
+`Supprimer définitivement` ou `Annuler` (`page.tsx:1989-2007`).
+**Preuve** : capture du dialogue ; après `Supprimer définitivement`, `Get-ChildItem` montre que
+le dossier du webtoon a disparu et **que le dossier `downloads` racine existe encore**
+(`library.rs:202-205` : la suppression reste confinée à `%APPDATA%\Tatami\downloads`).
+
+### T06.5 — Annulation de file
+
+**Clic** : pendant une file, `Arrêter après le chapitre en cours` (`page.tsx:1863-1865`).
+**Attendu** : la file s'arrête **proprement**, le chapitre en cours est terminé ou laissé en
+`.part`, aucun processus `java.exe` orphelin ne reste (T01.3 ci-dessous).
+**Preuve** : `Get-Process java` ne liste plus de processus `tatami-engine` après fermeture de
+l'app (`main.rs:131-139` : `ExitRequested` tue le sidecar).
+
+---
+
+## 7. Accueil, historique, favoris, signets (T07)
+
+Onglet **Accueil**.
+
+### T07.1 — Reprise de lecture
+
+**Attendu** : section « Continuer la lecture » avec une carte par titre lu, indication
+`page i/N` et ancienneté (`page.tsx:2762-2817`).
+**Clic** : **Reprendre**.
+**Attendu** : le lecteur s'ouvre **au même chapitre et à la même page** que la reprise depuis
+la source ; le bouton affiche `Ouverture…` pendant le chargement (`page.tsx:2796`).
+**Preuve** : capture du lecteur avec le compteur `i/N` **egal à** celui de la carte.
+**Piège mesuré** : ouvert depuis l'accueil, le lecteur ne s'ouvre que si le nom de source est
+passé explicitement (`openReaderAt`, journal 2026-10-04, tâche 1.7). Si « Reprendre » ne fait
+rien, c'est ce chemin.
+
+### T07.2 — Incognito
+
+**Clic** : case `Incognito` dans le bandeau « Continuer la lecture » (`page.tsx:2747-2759`).
+**Attendu** : les titres classés adultes disparaissent de « Continuer la lecture » ; **les
+favoris restent visibles** ; un titre jamais lu et jamais mis en favori reste visible (il est
+`UNKNOWN`, choix documenté, journal 2026-10-04, tâches 1.1/1.4/1.6).
+**Preuve** : capture avant/après + le nombre de favoris lu dans le sous-titre
+`n lus récemment · n favoris` (`page.tsx:2737-2738`).
+
+### T07.3 — Signets
+
+**Attendu** : section « Vos signets » listant titre, source, chapitre, `page i/N`, ancienneté,
+avec `Rouvrir` et `Retirer` (`page.tsx:2819-2876`).
+**Clic** : `Rouvrir` sur le signet marqué en T05.7.
+**Attendu** : la fiche se recharge, puis le lecteur s'ouvre **à la page exacte marquée**.
+**Preuve** : capture du lecteur avec `i/N` == page du signet.
+**Nettoyage obligatoire** : `Retirer` tous les signets, sinon les sessions suivantes
+héritent d'un état non vierge (journal 2026-10-03 : « un walk qui modifie un état persistant
+doit le remettre à zéro au démarrage »).
+
+### T07.4 — Favoris et historique
+
+**Attendu** : « Vos favoris » en grille ; `♥` pour retirer un favori (`page.tsx:2932-2938`) ;
+`Oublier` sur une carte de lecture (`page.tsx:2798-2811`) ; `Vider l'historique` dans le
+bandeau « Vos favoris » (`page.tsx:2883-2892`).
+**Preuve** : capture après chaque action. **Rappel** : retirer un signet ou un favori ne doit
+pas toucher l'historique (tests `un_signet_ne_touche_pas_l_historique`,
+`desactiver_une_source_ne_touche_pas_les_favoris`).
+
+---
+
+## 8. Paramètres (T08)
+
+Onglet **Paramètres** (`page.tsx:1681-1821`). Quatre panneaux : Contenu, Réseau, Téléchargement,
+Catalogues affichés.
+
+### T08.1 — Classification de contenu
+
+**Clic** : `Contenu affiché` (`aria-label="Classification de contenu maximale affichée"`,
+`page.tsx:1702`) → `Toutes`.
+**Attendu** : les sources adultes renvoient alors des résultats ; le réglage survit au
+redémarrage (`localStorage`, `page.tsx:1700`).
+**Preuve** : capture du sélecteur + le nombre de résultats d'une source adulte, avant/après.
+**Régression à surveiller** : le réglage ne doit jamais être interprété comme `SAFE` quand il
+vaut « Toutes » (`AGENTS.md` §14 ; test `une_chaine_vide_ne_signifie_pas_safe`,
+`commands.rs:257-265`). Si une source adulte renvoie 0 résultat en « Toutes », c'est ça.
+
+### T08.2 — Délai avant abandon
+
+**Clic** : `Délai avant abandon` → `30 secondes` (`page.tsx:1721-1735`).
+**Attendu** : une source lente est signalée hors service au lieu de faire attendre.
+**Preuve** : capture + le message d'erreur court (`page.tsx:402` :
+« n'a pas répondu à temps. Site mort ou trop lent. »).
+
+### T08.3 — Taille de page
+
+**Clic** : `Nombre de webtoons par page` → `48` (`page.tsx:1748-1758`).
+**Attendu** : la page source charge 48 cartes au lieu de 24 ; le réglage persiste.
+**Preuve** : compteur `48 webtoons` en capture.
+
+### T08.4 — Catalogues affichés
+
+**Clic** : `Tout désactiver` puis `Tout activer` (`page.tsx:1784-1794`), ou une pastille de
+catalogue (`page.tsx:1805-1813`).
+**Attendu** : le compteur `x / y catalogues` se met à jour ; au-delà de 200 catalogues, le
+message « 200 premiers catalogues sur n » apparaît (`page.tsx:1816-1818`).
+**Preuve** : capture du compteur dans les deux états.
+
+### T08.5 — Bouton « Tout réessayer »
+
+**Condition** : au moins une source hors service a été visitée.
+**Clic** : `Tout réessayer` (`page.tsx:1769-1777`).
+**Attendu** : le bandeau disparaît ; la prochaine visite de la source retentera la requête.
+**Preuve** : capture du bandeau avant/après.
+**Nettoyage obligatoire** : revenir sur Paramètres après le test.
+
+---
+
+## 9. Source protégée (T09) — CONDITIONNEL
+
+`PLAN.md` §6 : **aucune source de l'échantillon ne renvoie réellement `CHALLENGE_REQUIRED`**
+(MANGALIB et BAOZIMH renvoient un 403 classique). Ce test est donc à **skipper avec la mention
+« non déclenchable »** tant qu'aucun site protégé n'est identifié — c'est un résultat
+acceptable, pas un échec.
+
+**Si** un jour une source renvoie `CHALLENGE_REQUIRED` :
+
+1. **Clic** : **Résoudre la vérification** (`page.tsx:2576-2582`).
+2. **Attendu** : une fenêtre « Vérification — <source> » s'ouvre sur l'URL du challenge
+   (`challenge.rs:70-71`), avec le **user-agent du moteur** (`challenge.rs:75-78`).
+3. **Action humaine** : résoudre le challenge dans cette fenêtre.
+4. **Clic** : **C'est fait, réessayer** (`page.tsx:2583-2589`).
+5. **Attendu** : les cookies (y compris `HttpOnly`) sont transmis au moteur via `setCookies`
+   (`challenge.rs:106-141`), la fenêtre se ferme, la requête est rejouée et la liste s'affiche.
+6. **Preuve** : capture de la fenêtre de vérification ; dans le rapport, le **nombre de cookies
+   transmis** renvoyé par `solve_challenge` (mesuré : 4 le 2026-10-03) ; capture de la liste
+   rejouée.
+7. `Annuler` (`page.tsx:2590-2592`) doit fermer la fenêtre **sans** appliquer les cookies.
+
+**Limites à consigner** (`challenge.rs:9-15`) : la clearance est liée à l'IP et expire ;
+l'empreinte TLS de WebView2 diffère de celle d'OkHttp, donc certains sites peuvent refuser la
+clearance même après résolution.
+
+---
+
+## 10. Persistance après vrai redémarrage (T10)
+
+**Action** : fermer la fenêtre, puis relancer `pnpm tauri dev`.
+**Attendu** :
+
+| Élément | Attendu |
+|---|---|
+| Favori | présent, **avec sa classification** (`content_rating`) |
+| Historique | présent, avec `page i/N` exact |
+| Incognito | état conservé (`page.tsx:2754`) |
+| Sources désactivées | toujours désactivées (T02.3) |
+| Signets | présents, au même ordre (plus récent d'abord) |
+| Réglages (classification, délai, taille de page) | conservés |
+
+**Preuve** : capture de l'accueil après redémarrage + `Get-ChildItem %APPDATA%\Tatami` montrant
+`tatami.db`, `cache\`, `downloads\`.
+**Attention** : si une migration a eu lieu, un fichier `tatami-v<N>-<horodatage>.db` doit
+apparaître à côté de `tatami.db` (`store.rs:284-295`) — c'est la sauvegarde avant migration,
+**pas** une erreur.
+
+---
+
+## 11. Console et réseau (T11)
+
+**Attendu sur tous les écrans** : **0 erreur console**.
+
+| Symptôme console | Cause probable |
+|---|---|
+| `<img>` cassée en boucle | source qui refuse `fetchImage` (voir §13) ou token périmé |
+| `Failed to load resource` sur `tatami.localhost` | page mise en cache disque vide (`pagecache.rs:94-99`) |
+| `localStorage` en boucle | preferência relue au montage uniquement (`AGENTS.md` §14) |
+
+**Preuve** : console complète copiée dans le rapport de jalon (vide = conforme).
+
+---
+
+## 12. Récapitulatif à coller dans le rapport de jalon
+
+```text
+Smoke test — Tatami — <date> — <agent / personne>
+Environnement : Windows <version>, <RAM>, JDK <version>, Rust <version>, Node <version>, pnpm <version>
+Source de référence utilisée : <NOM_SOURCE>
+Étapes jouées : T01 … T11 (+ T09 : non déclenchable)
+Résultat : <n> réussites / <n> échecs
+Chaque échec : n° d'étape, clic exact, attendu, obtenu, capture
+Nettoyage effectué : favoris / historique / signets / file / sources désactivées / réglages
+Écarts known limits rencontrés : …
+```
+
+---
+
+## 13. Limites attendues (ne pas les reporter comme des bugs)
+
+Toutes mesurées, donc à vérifier avant de conclure qu'une étape échoue.
+
+| Limite | Détail | Origine |
+|---|---|---|
+| **Images refusées sur REMANGA / SEIMANGA** | `pages` répond mais `fetchImage` renvoie 403 : le CDN refuse l'user-agent du moteur. Le lecteur reste vide. | journal 2026-10-03, tâche 0.13-0.17 |
+| **MANGABUFF demande une authentification** dès `pages` | message d'erreur translated, bouton « Changer de catalogue » | journal 2026-10-02 |
+| **Sources mortes** | COMX, MINTMANGA en 404, NUDEMOON en domaine inexistant, MANGALIB/BAOZIMH en 403 | journal 2026-10-02, sondage de 24 sources |
+| **SELFMANGA renvoie 0 résultat en `SAFE`** | d'où le défaut `SUGGESTIVE` | journal 2026-10-02 |
+| **EXHENTAI ne pagine pas** | offset ignoré, 35,7 s pour une page ; « Voir plus » disparaît avec une explication | journal 2026-10-02 |
+| **Covered-to-date = 30 min, 4 requêtes simultanées** | les chapitres récents d'une carte peuvent mettre ~14 s à venir sur une source lente | journal 2026-10-03 |
+| **Pas de lecture hors ligne** | la vue Téléchargements n'a que `Reprendre` et `Supprimer` ; lire un `.cbz` n'est pas implémenté (`PLAN.md` 2.3 non coché) | `page.tsx:1960-1972` |
+| **Pas de catégories de favoris** | `PLAN.md` 1.5 non coché : les favoris sont une liste plate | `page.tsx:2901-2942` |
+| **Message `CHALLENGE_REQUIRED` encore affiché « pas encore gérée »** | `describeError` (`page.tsx:403`) n'a pas été mis à jour après 0.11 ; le bloc de résolution existe pourtant (`page.tsx:2566-2592`). À signaler, pas à contourner. | `page.tsx:403` |
+| **Titres sans date de publication** | certaines sources ne renvoient pas `uploadDate` : la cellule affiche alors le libellé du chapitre (`page.tsx:2401`) | `page.tsx:2401` |
+
+---
+
+## 14. Ce que ce test ne couvre pas
+
+- **Linux / macOS** : hors v1 (`PLAN.md` §3).
+- **Suivi AniList / MAL / Shikimori / Kitsu, synchronisation** : phases 4.1–4.6 non commencées.
+- **Notifications système, planificateur** : phase 3 non commencée.
+- **Mise à jour du moteur signée** : phase 5.1 non commencée ; le sidecar est toujours résolu
+  depuis `engine/dist` en dev (`supervisor.rs:356-366`), le packaging en `resources` n'est pas
+  fait.
+- **Tests de contrat** : phase 5.3 non commencée. Les tests unitaires Rust, le lint et le
+  typecheck ne sont pas remplacés par ce document : ils sont listés dans `AGENTS.md` §8.

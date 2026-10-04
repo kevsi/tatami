@@ -10,6 +10,7 @@
     "tauri": "pnpm -C apps/desktop tauri",
     "typecheck": "pnpm -C apps/desktop typecheck",
     "lint": "pnpm -C apps/desktop lint",
+    "i18n:check": "pnpm -C apps/desktop i18n:check",
     "build": "pnpm -C apps/desktop build",
     "engine": "powershell -ExecutionPolicy Bypass -File scripts/build-engine.ps1"
   }

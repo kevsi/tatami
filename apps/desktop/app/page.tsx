@@ -2390,7 +2390,7 @@ useEffect(() => {
         </section>
 
         <section className="panel">
-          <h2>Téléchargement</h2>
+          <h2>{t('reglages.telechargement')}</h2>
           <label className="field">
             Nombre de webtoons par page
             <select
@@ -2427,7 +2427,7 @@ useEffect(() => {
         )}
 
         <section className="panel">
-          <h2>Catalogues affichés</h2>
+          <h2>{t('reglages.catalogues')}</h2>
           <div className="setting-bar">
             <button
               className="btn"
@@ -2697,10 +2697,14 @@ useEffect(() => {
             aria-labelledby="confirm-titre"
             onCancel={() => setDeleteTarget(null)}
           >
-            <h3 id="confirm-titre">Supprimer {deleteTarget.title} ?</h3>
+            <h3 id="confirm-titre">
+              {t('telechargements.supprimer.titre', { nom: deleteTarget.title })}
+            </h3>
             <p className="muted">
-              {deleteTarget.downloaded} chapitre(s), {formatBytes(deleteTarget.sizeBytes)} seront
-              supprimés du dossier de téléchargements. Le webtoon reste téléchargeable ensuite.
+              {t('telechargements.supprimer.note', {
+                n: deleteTarget.downloaded,
+                poids: formatBytes(deleteTarget.sizeBytes),
+              })}
             </p>
             <div className="alert-actions">
               <button
@@ -2711,10 +2715,10 @@ useEffect(() => {
                   void removeDownload(target);
                 }}
               >
-                Supprimer définitivement
+                {t('telechargements.supprimer.definitif')}
               </button>
               <button className="btn btn-ghost" onClick={() => setDeleteTarget(null)}>
-                Annuler
+                {t('telechargements.annuler')}
               </button>
             </div>
           </dialog>
@@ -2992,7 +2996,7 @@ if (reader) {
                   );
                 })
               ) : (
-                <p className="muted">Page introuvable.</p>
+                <p className="muted">{t('erreur.page')}</p>
               )}
             </div>
             <div className="reader-nav">
@@ -3209,7 +3213,7 @@ if (reader) {
         )}
 
         {!loading && chapters.length === 0 && !error && (
-          <p className="muted">Aucun chapitre disponible sur cette source.</p>
+          <p className="muted">{t('fiche.chapitres.vide')}</p>
         )}
 
         {filteredChapters.length > chapterLimit && (
@@ -3307,7 +3311,7 @@ if (reader) {
             </>
           ) : (
             <>
-              <span className="muted">Clique un webtoon pour voir ses chapitres.</span>
+              <span className="muted">{t('source.chapitres.vide')}</span>
               <div className="select-actions">
                 <label className="recent-toggle">
                   <input
@@ -3315,7 +3319,7 @@ if (reader) {
                     checked={showRecent}
                     onChange={(e) => setShowRecent(e.target.checked)}
                   />
-                  <span>Chapitres récents</span>
+                  <span>{t('source.chapitres.recents')}</span>
                   <span className="muted">
                     {recentBusy > 0
                       ? `${recentBusy} en cours…`
@@ -3492,7 +3496,7 @@ if (reader) {
         )}
 
         {latest.length === 0 && !loading && !error && (
-          <p className="muted">Aucun résultat sur cette source.</p>
+          <p className="muted">{t('source.vide')}</p>
         )}
 
         {onePageOnly && (

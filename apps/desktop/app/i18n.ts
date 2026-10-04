@@ -2,14 +2,20 @@
 
 // i18n minimal, sans dépendance.
 //
-// Deux garanties, et c'est tout le but de ce fichier :
+// Trois garanties, et c'est tout le but de ce fichier :
 //  1. **Exhaustivité vérifiée par le compilateur.** `EN` est typé
 //     `Record<CleFr, string>` : si une clé française n'a pas de traduction
 //     anglaise, `pnpm typecheck` échoue. Impossible d'oublier une clé en
 //     prod, contrairement à un dictionnaire `JSON` que rien ne vérifie.
-//  2. **Conversion possible par écrans.** `t()` retombe sur le français quand
-//     une clé manque, donc convertir l'interface écran par écran ne casse
-//     jamais l'application : le reste reste en français.
+//  2. **Aucune clé morte.** Une clé que rien n'affiche est un mensonge : elle
+//     compte dans ledictionnaire, ne se voit nulle part, et donne l'impression
+//     que l'écran est traduit. `pnpm i18n:check` échoue si une clé n'est
+//     référencée par aucun `t()` dans `page.tsx`. Le type des arguments de `t()`
+//     est volontairement `string` : une clé absente devient un **erreur de
+//     compilation**, pas un repli silencieux sur une chaîne vide.
+//  3. **Conversion possible par écrans.** `t()` retombe sur le français quand
+//     une clé manque dans la langue active, donc convertir l'interface écran
+//     par écran ne casse jamais l'application : le reste reste en français.
 //
 // La langue est une simple préférence d'affichage : elle vit dans
 // `localStorage` (AGENTS.md §6, qui réserve SQLite aux données métier).
@@ -28,14 +34,21 @@ const FR = {
   'nav.parametres': 'Paramètres',
   'app.nom': 'Tatami',
 
+  // --- Tri des titres d'une source
+  'tri.source': 'Ordre du site',
+  'tri.az': 'A → Z',
+  'tri.za': 'Z → A',
+
   // --- Réglages : contenu
+  'reglages.telechargement': 'Téléchargement',
+  'reglages.catalogues': 'Catalogues affichés',
+  'reglages.rating.suggestive': 'Suggestive — défaut, exclut le contenu adulte',
+  'reglages.rating.safe': 'Safe — plusieurs sources renvoient alors zéro résultat',
+  'reglages.rating.all': 'Toutes — aucun filtre',
   'reglages.contenu': 'Contenu',
   'reglages.contenu.affiche': 'Contenu affiché',
   'reglages.contenu.note':
     'Une seule classification à la fois : les sources n’en acceptent pas plusieurs. Les sources qui n’exposent pas de classification ne sont pas filtrées.',
-  'reglages.rating.suggestive': 'Suggestive — défaut, exclut le contenu adulte',
-  'reglages.rating.safe': 'Safe — plusieurs sources renvoient alors zéro résultat',
-  'reglages.rating.all': 'Toutes — aucun filtre',
 
   // --- Réglages : catégories
   'reglages.categories': 'Catégories de favoris',
@@ -49,8 +62,6 @@ const FR = {
   'reglages.categories.descendre': 'Descendre la catégorie {nom}',
   'reglages.categories.nom': 'Nom de la catégorie {nom}',
   'reglages.categories.couleur': 'Couleur de {nom}',
-  'reglages.categories.couleur.n': 'Couleur {n}',
-  'reglages.categories.attente': 'Créez vos catégories dans Réglages pour ranger vos favoris.',
 
   // --- Réglages : réseau
   'reglages.reseau': 'Réseau',
@@ -77,32 +88,16 @@ const FR = {
     'Les sources désactivées restent enregistrées, elles sont juste masquées.',
   'catalogue.vide.titre': 'Aucune source à afficher',
   'catalogue.vide.texte': 'Aucune source ne correspond à « {nom} ».',
+  'catalogue.ouvrir': 'Ouvrir la source {nom}',
   'catalogue.desactiver': 'Désactiver la source {nom}',
   'catalogue.reactiver': 'Réactiver la source {nom}',
-  'catalogue.ouvrir': 'Ouvrir la source {nom}',
-  'catalogue.voir.plus': 'Voir plus ({n} restantes)',
 
   // --- Liste des titres
-  'source.rechercher': 'Rechercher un webtoon…',
-  'source.rechercher.bouton': 'Rechercher',
-  'source.choisir.un': 'Cliquez sur un webtoon pour voir ses chapitres.',
-  'source.webtoons': '{n} webtoon{s}',
-  'source.chargement': 'chargement…',
-  'tri.libelle': 'Tri des titres',
-  'tri.source': 'Ordre du site',
-  'tri.az': 'A → Z',
-  'tri.za': 'Z → A',
-  'source.genres': '{n} genres au total',
-  'source.effacer': 'Effacer ({n})',
-  'source.chapitres.recents': 'Chapitres récents',
-  'source.selectionner': 'Sélectionner',
 
   // --- Fiche
   'fiche.ajouter.favori': '♡ Ajouter aux favoris',
   'fiche.dans.favoris': '♥ Dans vos favoris',
-  'fiche.categorie': 'Catégorie',
   'fiche.sans.categorie': 'Sans catégorie',
-  'fiche.selectionner.chapitres': 'Sélectionner des chapitres',
 
   // --- Accueil
   'accueil.continuer': 'Continuer la lecture',
@@ -115,7 +110,6 @@ const FR = {
   'accueil.oublier': 'Oublier',
   'accueil.vos.signets': 'Vos signets',
   'accueil.pages.marquees': '{n} page{s} marquée{s}',
-  'accueil.page': 'page {p}/{n}',
   'accueil.rouvrir': 'Rouvrir',
   'accueil.retirer': 'Retirer',
   'accueil.vos.favoris': 'Vos favoris',
@@ -129,16 +123,10 @@ const FR = {
   'accueil.oublier.titre': 'Oublier {titre} dans l’historique',
   'accueil.ouverture': 'Ouverture…',
   'accueil.page.sur': 'page {p}/{n} · {quand}',
-  'accueil.deuxiemes.titres': 'Titres dupliqués sur {source}',
-  'accueil.trier.doublons': 'Doublons',
-  'accueil.favori.retirer': 'Retirer {titre} des favoris',
-  'accueil.favori.ajouter': 'Ajouter aux favoris',
   'catalogue.bandeau.langues': 'Toutes les langues',
   'catalogue.compte.langues':
     '{n} sources réparties en {langs} langues. Choisissez une langue pour parcourir ses sources.',
   'catalogue.vide.langue': 'Toutes les sources de cette langue sont désactivées.',
-  'selection.compteur': '{n}/{total} sélectionnés',
-  'telechargements.section': 'Téléchargement',
   'telechargements.verification.ouverte':
     '{source} demande une vérification : une fenêtre va s’ouvrir, confirmez-y vous-même puis relancez le téléchargement.',
   'telechargements.verification.titre': 'Vérification — {source}',
@@ -176,86 +164,34 @@ const FR = {
   'telechargements.file.reprendre': 'Reprendre la file',
   'telechargements.file.abandonner': 'Abandonner la file',
   'telechargements.arreter.apres': 'Arrêter après le chapitre en cours',
-  'telechargements.lancer': 'Lancer la file',
-  'telechargements.supprimer.webtoon': 'Supprimer {titre} ?',
-  'telechargements.chapitre.erreur': 'Échec sur {titre}',
-  'telechargements.emplacement': 'Dossier de téléchargement',
-  'selection.chapitres': 'Sélectionner des chapitres',
-  'selection.n.debut': 'N derniers',
-  'selection.n.debut.legende': 'Marquer les {n} derniers chapitres',
-  'selection.n.premiers': 'N premiers',
-  'selection.n.premiers.legende': 'Marquer les {n} premiers chapitres',
-  'selection.tout': 'Tout',
-  'selection.aucun': 'Aucun',
-  'selection.tout.legende': 'Tout sélectionner',
-  'selection.aucun.legende': 'Tout désélectionner',
-  'selection.lancer': 'Télécharger la sélection',
-  'selection.vide': 'Aucun chapitre sélectionné.',
-  'chapitres.filtre': 'Filtrer les chapitres',
-  'chapitres.resultats': '{n} chapitre{s}',
-  'chapitres.selectionnes': '{n} sélectionné{s}',
-  'chapitres.pastille': '{n} chapitres récents',
-  'chapitres.recent': 'Ch. {num}',
-  'chapitre.sauter': 'Changer de chapitre',
-  'chapitre.recent.pastille': 'Chapitres récents',
-  'chapitre.selection.legende': 'Sélectionner ce chapitre',
-  'selectionner.tout': 'Tout sélectionner',
-  'chapitres.trier': 'Trier les chapitres',
-  'chapitres.effacer.filtre': 'Effacer',
-  'fiche.infos': 'Informations',
-  'fiche.genres': 'Genres',
-  'chapitre.selectionner.picker': 'Sélectionner ce chapitre',
-  'accueil.selectionner.tout': 'Tout sélectionner',
-  'accueil.deselectionner.tout': 'Tout désélectionner',
-  'accueil.selection.partielle': '{n}/{total} sélectionnés',
 
   // --- Téléchargements
-  'telechargements.vide': 'Aucun téléchargement.',
-  'telechargements.chapitres': '{n} chapitre{s}',
-  'telechargements.poids': '{poids}',
-  'telechargements.en.cours': 'Téléchargement en cours…',
-  'telechargement.echec': 'Échec du téléchargement',
-  'telechargements.supprimer': 'Supprimer {titre} ?',
+    'erreur.page': 'Page introuvable.',
+  'fiche.chapitres.vide': 'Aucun chapitre disponible sur cette source.',
+  'source.chapitres.vide': 'Clique un webtoon pour voir ses chapitres.',
+  'source.chapitres.recents': 'Chapitres récents',
+  'source.vide': 'Aucun résultat sur cette source.',
+  'telechargements.supprimer.titre': 'Supprimer {nom} ?',
   'telechargements.supprimer.note':
     '{n} chapitre(s), {poids} seront supprimés du dossier de téléchargements. Le webtoon reste téléchargeable ensuite.',
   'telechargements.supprimer.definitif': 'Supprimer définitivement',
   'telechargements.annuler': 'Annuler',
 
   // --- Lecteur
-  'lecteur.retour': '← Chapitres',
   'lecteur.signet': 'Signet',
   'lecteur.signet.actif': 'Signet ✓',
-  'lecteur.signet.note': 'Marquer cette page pour la retrouver plus tard',
-  'lecteur.mode': 'Mode de lecture',
-  'lecteur.mode.page': 'Pagé',
-  'lecteur.mode.webtoon': 'Webtoon',
-  'lecteur.pages.ecran': 'Pages par écran',
-  'lecteur.simple': 'Simple',
-  'lecteur.double': 'Double',
-  'lecteur.zoom': 'Zoom',
-  'lecteur.sauter': 'Aller à la page',
-  'lecteur.page.precedente': 'Page précédente',
-  'lecteur.page.suivante': 'Page suivante',
-  'lecteur.chargement': 'Chargement du chapitre…',
 
   // --- Erreurs
   'erreur.lecture': 'Lecture impossible : {raison}',
   'erreur.chapitres': 'Chapitres indisponibles : {raison}',
-  'erreur.pages': 'Ce chapitre n’a aucune page lisible.',
-  'erreur.chapitre.absent': 'Ce chapitre n’est plus disponible dans cette source.',
-  'erreur.webtoon.absent': 'Ce webtoon n’a plus aucun chapitre lisible.',
   'erreur.signet': 'Signet : {raison}',
   'erreur.categorie': 'Catégorie : {raison}',
   'erreur.favori': 'Favori : {raison}',
   'erreur.source': 'Activation de la source impossible : {raison}',
   'erreur.reactivation': 'Réactivation impossible : {raison}',
   'erreur.purge': 'Purge impossible : {raison}',
-  'erreur.categories.doublon': 'La catégorie « {nom} » existe déjà.',
-  'erreur.categories.absente': 'Cette catégorie n’existe plus.',
   'erreur.categories.ordre': 'Ordre des catégories : {raison}',
   'erreur.suppression': 'Suppression impossible : {raison}',
-  'erreur.verification': 'Fenêtre de vérification impossible : {raison}',
-  'erreur.verification.non.appliquee': 'Vérification non appliquée : {detail}',
   'erreur.telechargement': 'Téléchargement : {raison}',
 } as const;
 
@@ -273,13 +209,18 @@ const EN: Record<Cle, string> = {
   'nav.parametres': 'Settings',
   'app.nom': 'Tatami',
 
+  'tri.source': 'Site order',
+  'tri.az': 'A → Z',
+  'tri.za': 'Z → A',
+  'reglages.telechargement': 'Download',
+  'reglages.catalogues': 'Catalogues shown',
+  'reglages.rating.suggestive': 'Suggestive — default, excludes adult content',
+  'reglages.rating.safe': 'Safe — several sources then return zero results',
+  'reglages.rating.all': 'All — no filter',
   'reglages.contenu': 'Content',
   'reglages.contenu.affiche': 'Content shown',
   'reglages.contenu.note':
     'One rating at a time: sources do not accept several. Sources that expose no rating are not filtered.',
-  'reglages.rating.suggestive': 'Suggestive — default, excludes adult content',
-  'reglages.rating.safe': 'Safe — several sources then return no results',
-  'reglages.rating.all': 'All — no filter',
 
   'reglages.categories': 'Favourite categories',
   'reglages.categories.note':
@@ -292,8 +233,6 @@ const EN: Record<Cle, string> = {
   'reglages.categories.descendre': 'Move {nom} down',
   'reglages.categories.nom': 'Name of category {nom}',
   'reglages.categories.couleur': 'Colour of {nom}',
-  'reglages.categories.couleur.n': 'Colour {n}',
-  'reglages.categories.attente': 'Create your categories in Settings to sort your favourites.',
 
   'reglages.reseau': 'Network',
   'reglages.reseau.delai': 'Timeout',
@@ -318,46 +257,24 @@ const EN: Record<Cle, string> = {
     'Disabled sources stay recorded, they are only hidden.',
   'catalogue.vide.titre': 'No source to show',
   'catalogue.vide.texte': 'No source matches “{nom}”.',
+  'catalogue.ouvrir': 'Open source {nom}',
   'catalogue.desactiver': 'Disable source {nom}',
   'catalogue.reactiver': 'Enable source {nom}',
-  'catalogue.ouvrir': 'Open source {nom}',
-  'catalogue.voir.plus': 'Show more ({n} remaining)',
 
-  'source.rechercher': 'Search a webtoon…',
-  'source.rechercher.bouton': 'Search',
-  'source.choisir.un': 'Click a webtoon to see its chapters.',
-  'source.webtoons': '{n} webtoon{s}',
-  'source.chargement': 'loading…',
-  'tri.libelle': 'Title order',
-  'tri.source': 'Site order',
-  'tri.az': 'A → Z',
-  'tri.za': 'Z → A',
-  'source.genres': '{n} genres in total',
-  'source.effacer': 'Clear ({n})',
-  'source.chapitres.recents': 'Recent chapters',
-  'source.selectionner': 'Select',
 
   'fiche.ajouter.favori': '♡ Add to favourites',
   'fiche.dans.favoris': '♥ In your favourites',
-  'fiche.categorie': 'Category',
   'fiche.sans.categorie': 'No category',
-  'fiche.selectionner.chapitres': 'Select chapters',
 
   'accueil.rien.a.reprendre':
     'Nothing to resume. Start reading from a catalogue and it will show up here.',
   'accueil.oublier.titre': 'Forget {titre} in the history',
   'accueil.ouverture': 'Opening…',
   'accueil.page.sur': 'page {p}/{n} · {quand}',
-  'accueil.deuxiemes.titres': 'Duplicate titles on {source}',
-  'accueil.trier.doublons': 'Duplicates',
-  'accueil.favori.retirer': 'Remove {titre} from favourites',
-  'accueil.favori.ajouter': 'Add to favourites',
   'catalogue.bandeau.langues': 'All languages',
   'catalogue.compte.langues':
     '{n} sources across {langs} languages. Pick a language to browse its sources.',
   'catalogue.vide.langue': 'Every source in this language is disabled.',
-  'selection.compteur': '{n}/{total} selected',
-  'telechargements.section': 'Download',
   'telechargements.verification.ouverte':
     '{source} asks for a verification: a window will open, confirm there yourself then retry the download.',
   'telechargements.verification.titre': 'Verification — {source}',
@@ -395,35 +312,6 @@ const EN: Record<Cle, string> = {
   'telechargements.file.reprendre': 'Resume the queue',
   'telechargements.file.abandonner': 'Abandon the queue',
   'telechargements.arreter.apres': 'Stop after the current chapter',
-  'telechargements.lancer': 'Start the queue',
-  'telechargements.supprimer.webtoon': 'Delete {titre}?',
-  'telechargements.chapitre.erreur': 'Failed on {titre}',
-  'telechargements.emplacement': 'Download folder',
-  'selection.chapitres': 'Select chapters',
-  'selection.n.debut': 'Last N',
-  'selection.n.debut.legende': 'Mark the last {n} chapters',
-  'selection.n.premiers': 'First N',
-  'selection.n.premiers.legende': 'Mark the first {n} chapters',
-  'selection.tout': 'All',
-  'selection.aucun': 'None',
-  'selection.tout.legende': 'Select all',
-  'selection.aucun.legende': 'Deselect all',
-  'selection.lancer': 'Download selection',
-  'selection.vide': 'No chapter selected.',
-  'chapitres.filtre': 'Filter chapters',
-  'chapitres.resultats': '{n} chapter{s}',
-  'chapitres.selectionnes': '{n} selected',
-  'chapitres.pastille': '{n} recent chapters',
-  'chapitres.recent': 'Ch. {num}',
-  'chapitre.sauter': 'Switch chapter',
-  'chapitre.recent.pastille': 'Recent chapters',
-  'chapitre.selection.legende': 'Select this chapter',
-  'selectionner.tout': 'Select all',
-  'chapitres.trier': 'Order chapters',
-  'chapitres.effacer.filtre': 'Clear',
-  'fiche.infos': 'Information',
-  'fiche.genres': 'Genres',
-  'chapitre.selectionner.picker': 'Select this chapter',
   'accueil.continuer': 'Continue reading',
   'accueil.incognito': 'Incognito',
   'accueil.incognito.note':
@@ -434,7 +322,6 @@ const EN: Record<Cle, string> = {
   'accueil.oublier': 'Forget',
   'accueil.vos.signets': 'Your bookmarks',
   'accueil.pages.marquees': '{n} page{s} marked',
-  'accueil.page': 'page {p}/{n}',
   'accueil.rouvrir': 'Open',
   'accueil.retirer': 'Remove',
   'accueil.vos.favoris': 'Your favourites',
@@ -443,54 +330,31 @@ const EN: Record<Cle, string> = {
   'accueil.favoris.filtre.vide': 'No favourite in this category.',
   'accueil.filtre.toutes': 'All',
   'accueil.filtre.sans': 'No category ({n})',
-  'accueil.selectionner.tout': 'Select all',
-  'accueil.deselectionner.tout': 'Deselect all',
-  'accueil.selection.partielle': '{n}/{total} selected',
 
-  'telechargements.vide': 'No download yet.',
-  'telechargements.chapitres': '{n} chapter{s}',
-  'telechargements.poids': '{poids}',
-  'telechargements.en.cours': 'Downloading…',
-  'telechargement.echec': 'Download failed',
-  'telechargements.supprimer': 'Delete {titre}?',
+    'erreur.page': 'Page not found.',
+  'fiche.chapitres.vide': 'No chapter available on this source.',
+  'source.chapitres.vide': 'Click a webtoon to see its chapters.',
+  'source.chapitres.recents': 'Recent chapters',
+  'source.vide': 'No result on this source.',
+  'telechargements.supprimer.titre': 'Delete {nom}?',
   'telechargements.supprimer.note':
     '{n} chapter(s), {poids} will be deleted from the downloads folder. The webtoon stays downloadable.',
-  'telechargements.supprimer.definitif': 'Delete for good',
+  'telechargements.supprimer.definitif': 'Delete permanently',
   'telechargements.annuler': 'Cancel',
 
-  'lecteur.retour': '← Chapters',
   'lecteur.signet': 'Bookmark',
   'lecteur.signet.actif': 'Bookmark ✓',
-  'lecteur.signet.note': 'Mark this page to find it later',
-  'lecteur.mode': 'Reading mode',
-  'lecteur.mode.page': 'Paged',
-  'lecteur.mode.webtoon': 'Webtoon',
-  'lecteur.pages.ecran': 'Pages per screen',
-  'lecteur.simple': 'Single',
-  'lecteur.double': 'Double',
-  'lecteur.zoom': 'Zoom',
-  'lecteur.sauter': 'Go to page',
-  'lecteur.page.precedente': 'Previous page',
-  'lecteur.page.suivante': 'Next page',
-  'lecteur.chargement': 'Loading chapter…',
 
   'erreur.lecture': 'Cannot read: {raison}',
   'erreur.chapitres': 'Chapters unavailable: {raison}',
-  'erreur.pages': 'This chapter has no readable page.',
-  'erreur.chapitre.absent': 'This chapter is no longer available in this source.',
-  'erreur.webtoon.absent': 'This webtoon no longer has any readable chapter.',
   'erreur.signet': 'Bookmark: {raison}',
   'erreur.categorie': 'Category: {raison}',
   'erreur.favori': 'Favourite: {raison}',
   'erreur.source': 'Cannot enable source: {raison}',
   'erreur.reactivation': 'Cannot re-enable: {raison}',
   'erreur.purge': 'Cannot clear: {raison}',
-  'erreur.categories.doublon': 'Category “{nom}” already exists.',
-  'erreur.categories.absente': 'This category no longer exists.',
   'erreur.categories.ordre': 'Category order: {raison}',
   'erreur.suppression': 'Cannot delete: {raison}',
-  'erreur.verification': 'Cannot open the verification window: {raison}',
-  'erreur.verification.non.appliquee': 'Verification not applied: {detail}',
   'erreur.telechargement': 'Download: {raison}',
 };
 

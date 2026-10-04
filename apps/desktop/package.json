@@ -10,6 +10,7 @@
     "build": "next build",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "i18n:check": "node scripts/check-i18n.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -347,7 +347,7 @@ mod tests {
             for (i, (_nom, octets)) in batons.iter().enumerate() {
                 w.add_image_kind(i + 1, ImageKind::Jpeg, octets).unwrap();
             }
-            w.finish().unwrap();
+            w.finish_vec().unwrap();
         }
         p
     }

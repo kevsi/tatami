@@ -12,7 +12,6 @@ use base64::Engine;
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
-use tokio::sync::Mutex;
 
 use super::cbz::CbzWriter;
 use super::supervisor::Supervisor;
@@ -30,11 +29,22 @@ pub struct Progress {
 }
 
 /// Un seul téléchargement à la fois : le moteur est séquentiel (cf. Server.kt).
+///
+/// `std::sync::Mutex` et non `tokio` : le drapeau n'est jamais tenu à travers un
+/// `await`, et c'est ce qui permet à `VerrouTelechargement` de le relâcher dans
+/// `Drop` (y compris sur une panique).
 #[derive(Default)]
 pub struct DownloadState {
-    running: Mutex<bool>,
+    running: Arc<std::sync::Mutex<bool>>,
 }
 
+/// Assainit un nom de fichier Windows.
+///
+/// Au-delà des caractères interdits et des points de fin (que `Path` refuse),
+/// Windows **réserve** certains noms, avec ou sans extension : écrire un fichier
+/// nommé `CON` ou `NUL.cbz` échoue, et `create_dir_all` sur un dossier `CON`
+/// échoue aussi. Comme le titre du webtoon vient du site, un titre `CON`
+/// rendait un téléchargement impossible à mener à son terme.
 pub fn sanitize(name: &str) -> String {
     let cleaned: String = name
         .chars()
@@ -46,23 +56,28 @@ pub fn sanitize(name: &str) -> String {
         .collect();
     let trimmed = cleaned.trim().trim_matches('.').trim().to_string();
     if trimmed.is_empty() {
-        "sans-titre".to_string()
+        return "sans-titre".to_string();
+    }
+    let plafonne: String = trimmed.chars().take(80).collect();
+    if est_nom_reserve(&plafonne) {
+        // On préfixe plutôt que de suffixe : `CON (2)` serait encore réservé,
+        // alors que `_CON` ne l'est pas.
+        format!("_{plafonne}")
     } else {
-        trimmed.chars().take(80).collect()
+        plafonne
     }
 }
 
-#[allow(dead_code)]
-fn extension_for(content_type: &str) -> &'static str {
-    if content_type.contains("png") {
-        "png"
-    } else if content_type.contains("webp") {
-        "webp"
-    } else if content_type.contains("gif") {
-        "gif"
-    } else {
-        "jpg"
-    }
+/// Noms réservés par Windows (CON, PRN, AUX, NUL, COM1-9, LPT1-9), insensibles
+/// à la casse, **avec ou sans extension** : `NUL` et `NUL.cbz` sont tous deux
+/// refusés par le système de fichiers.
+fn est_nom_reserve(nom: &str) -> bool {
+    let base = nom.split('.').next().unwrap_or("").trim_end();
+    let base = base.to_ascii_uppercase();
+    matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (base.len() == 4
+            && (base.starts_with("COM") || base.starts_with("LPT"))
+            && matches!(base.as_bytes()[3], b'1'..=b'9'))
 }
 
 pub fn downloads_root() -> PathBuf {
@@ -157,23 +172,74 @@ pub async fn missing_chapters(
 /// Logique de reprise : renvoie les chapitres dont le `.cbz` est absent.
 /// Un `.part` compte comme absent (téléchargement interrompu).
 fn missing_in_dir(dir: &Path, urls: &[String], titles: &[String]) -> Vec<String> {
-    let mut present: Vec<String> = Vec::new();
-    if let Ok(files) = std::fs::read_dir(dir) {
-        for entry in files.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if !name.ends_with(".part") {
-                present.push(name);
-            }
+    // Même résolution de noms, dans le même ordre, que `run_download` : c'est ce
+    // qui garantit qu'un chapitre absent ici ET absent après téléchargement
+    // sont le même chapitre. Résoudre différemment des deux côtés ferait
+    // retélécharger un `.cbz` déjà présent, ce que l'exigence permanente
+    // interdit.
+    let presents = noms_presents(dir);
+    let mut attribues: Vec<String> = Vec::new();
+    let mut manquants = Vec::new();
+    for (i, url) in urls.iter().enumerate() {
+        let label = titles.get(i).map_or("", String::as_str);
+        let nom = resoudre_nom(chapter_file_name(label, url), &mut attribues);
+        if !presents.contains(&nom) {
+            manquants.push(url.clone());
         }
     }
-    urls.iter()
-        .enumerate()
-        .filter(|(i, url)| {
-            let label = titles.get(*i).map_or("", String::as_str);
-            !present.contains(&chapter_file_name(label, url))
+    manquants
+}
+
+/// Fichiers déjà écrits dans le dossier. Un `.part` en est exclu : il compte
+/// comme absent, donc le chapitre sera retéléchargé.
+fn noms_presents(dir: &Path) -> Vec<String> {
+    std::fs::read_dir(dir)
+        .map(|iter| {
+            iter.flatten()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .filter(|n| !n.ends_with(".part"))
+                .collect()
         })
-        .map(|(_, url)| url.clone())
-        .collect()
+        .unwrap_or_default()
+}
+
+/// Attribue un nom de fichier à un chapitre, sans jamais collisionner avec un
+/// nom déjà attribué.
+///
+/// `chapter_file_name` dérive le nom du titre, donc deux chapitres de même
+/// titre (« Chapitre 1 » en volume original et en édition corrigée), ou
+/// partageant leurs 80 premiers caractères, tombaient sur le **même** `.cbz` :
+/// le second écrasait le premier, qui devenissait invisible à la bibliothèque
+/// et à la reprise. L'exigence « un `.cbz` par chapitre » n'était pas tenue.
+///
+/// La règle est volontairement symétrique, pour que les deux appelants
+/// s'accordent. Appelé avec les noms présents sur le disque, comme le fait le
+/// téléchargement, ou avec une liste vide, comme le fait la reprise, le
+/// PREMIER chapitre homonyme prend toujours le nom de base et le suivant le
+/// premier nom suffixé libre. Ce qui compte n'est pas le contexte fourni, mais
+/// que les deux appels voisinent le même chapitre dans le même état du dossier :
+/// c'est le cas, les chapitres étant téléchargés dans l'ordre de la liste.
+fn resoudre_nom(base: String, attribues: &mut Vec<String>) -> String {
+    if !attribues.contains(&base) {
+        attribues.push(base.clone());
+        return base;
+    }
+    // « Ch. 1.cbz » -> stem « Ch. 1 », extension « .cbz ».
+    let (stem, ext) = match base.rsplit_once('.') {
+        Some((s, e)) => (s.to_string(), format!(".{e}")),
+        None => (base.clone(), String::new()),
+    };
+    for n in 2..1000 {
+        let candidat = format!("{stem} ({n}){ext}");
+        if !attribues.contains(&candidat) {
+            attribues.push(candidat.clone());
+            return candidat;
+        }
+    }
+    // 999 chapitres homonymes : on sort de la boucle plutôt que de boucler.
+    let candidat = format!("{stem} ({}){ext}", attribues.len() + 1);
+    attribues.push(candidat.clone());
+    candidat
 }
 
 /// Chemin du `.cbz` d'un chapitre, calculé **exactement** comme le fait
@@ -302,6 +368,35 @@ pub async fn clean_partials(source: String, title: String) -> Result<usize, Stri
     Ok(removed)
 }
 
+/// Verrou d'unicité, libéré même en cas de panique ou de sortie anticipée.
+///
+/// La version précédente posait `*running = true`, appelait `run_download`, puis
+/// reposait `false` **après** l'appel : une panique entre les deux laissait
+/// `running` à `true` pour le reste de la vie du processus, et tout
+/// téléchargement futur était refusé avec « un téléchargement est déjà en
+/// cours » alors qu'aucun n'était en cours. `Drop` rend la libération
+/// inconditionnelle — c'est tout l'intérêt d'un garde-fou RAII.
+struct VerrouTelechargement(Arc<std::sync::Mutex<bool>>);
+
+impl VerrouTelechargement {
+    fn prendre(etat: &Arc<std::sync::Mutex<bool>>) -> Result<Self, String> {
+        let mut running = etat.lock().unwrap_or_else(|e| e.into_inner());
+        if *running {
+            return Err("un téléchargement est déjà en cours".to_string());
+        }
+        *running = true;
+        Ok(Self(etat.clone()))
+    }
+}
+
+impl Drop for VerrouTelechargement {
+    fn drop(&mut self) {
+        if let Ok(mut running) = self.0.lock() {
+            *running = false;
+        }
+    }
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn download_chapter(
@@ -316,14 +411,8 @@ pub async fn download_chapter(
     cover_url: Option<String>,
     total_chapters: Option<usize>,
 ) -> Result<String, String> {
-    {
-        let mut running = state.running.lock().await;
-        if *running {
-            return Err("un téléchargement est déjà en cours".to_string());
-        }
-        *running = true;
-    }
-    let result = run_download(
+    let _verrou = VerrouTelechargement::prendre(&state.running)?;
+    run_download(
         &app,
         &sup,
         &source,
@@ -334,9 +423,7 @@ pub async fn download_chapter(
         cover_url.as_deref(),
         total_chapters.unwrap_or(0),
     )
-    .await;
-    *state.running.lock().await = false;
-    result
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -353,10 +440,18 @@ async fn run_download(
 ) -> Result<String, String> {
     let root = downloads_root();
     let dir = chapter_dir(&root, source, manga_title);
-    let file = dir.join(chapter_file_name(chapter_title, chapter_url));
+    // Le nom est résolu APRÈS `create_dir_all` : la désambiguïsation teste
+    // l'existence sur le disque, donc le dossier doit déjà exister pour que le
+    // dossier vide ne soit pas pris pour un dossier plein.
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(|e| format!("création dossier: {e}"))?;
+    // Les noms déjà écrits sont « attribués » : un chapitre homonyme ne peut pas
+    // les reprendre, sinon il écraserait un `.cbz` valide.
+    let file = dir.join(resoudre_nom(
+        chapter_file_name(chapter_title, chapter_url),
+        &mut noms_presents(&dir),
+    ));
 
     // 1. chapitres -> details (le cache moteur a le manga de la source)
     let details = sup
@@ -524,14 +619,25 @@ async fn run_download(
     }
 
     let written = total;
-    cbz.finish().map_err(|e| format!("finalisation: {e}"))?;
+    // `finish` vide le tampon ET synchronise le fichier. Sans `sync_all`, une
+    // coupure juste après le `rename` laissait un `.cbz` tronqué portant un nom
+    // définitif : `missing_in_dir` teste la présence du nom, donc le chapitre
+    // était compté téléchargé alors que le fichier ne s'ouvrait pas.
+    cbz.sync_and_finish()
+        .map_err(|e| format!("finalisation: {e}"))?;
     tokio::fs::rename(&partial, &file)
         .await
         .map_err(|e| format!("renommage {}: {e}", file.display()))?;
 
     // État d'avancement du webtoon (library.rs) : c'est ce que lit la vue
     // Téléchargements pour afficher « 12/40 chapitres ».
-    let _ = super::library::note_chapter(
+    //
+    // L'erreur n'est plus avalée. Le `.cbz` est bon sur le disque, mais un
+    // `meta.json` faux rend le chapitre invisible dans la bibliothèque et fausse
+    // `total_chapters` : l'utilisateur voit « 11/40 » pour un chapitre
+    // téléchargé, et la reprise le retéléchargera. C'est un défaut à part
+    // entière, pas un détail à masquer — on renvoie l'erreur, le fichier reste.
+    super::library::note_chapter(
         &dir,
         source,
         manga_title,
@@ -542,7 +648,10 @@ async fn run_download(
         chapter_title,
         &file.file_name().unwrap_or_default().to_string_lossy(),
     )
-    .await;
+    .await
+    .map_err(|e| {
+        format!("chapitre écrit sur le disque mais invisible dans la bibliothèque : {e}")
+    })?;
 
     let _ = app.emit(
         "download://progress",
@@ -585,6 +694,105 @@ mod tests {
         );
         // Un titre normal prime toujours.
         assert_eq!(chapter_file_name("Chapitre 3", "/ch/9/"), "Chapitre 3.cbz");
+    }
+
+    #[test]
+    fn les_noms_reserves_par_windows_sont_evites() {
+        // Windows refuse `CON`, `NUL`, `COM1`… avec ou sans extension. Un titre
+        // de webtoon `CON` produisait un dossier que `create_dir_all` refuse :
+        // le téléchargement ne pouvait pas aboutir.
+        for nom in ["CON", "con", "NUL", "AUX", "COM1", "LPT9", "PRN"] {
+            let assaini = sanitize(nom);
+            assert!(
+                !est_nom_reserve(&assaini),
+                "`{nom}` est resté un nom réservé après assainissement : `{assaini}`"
+            );
+            assert!(!assaini.is_empty(), "`{nom}` a produit un nom vide");
+        }
+        // Un nom normal ne doit surtout pas être prefixé.
+        assert_eq!(sanitize("Conan"), "Conan");
+        assert_eq!(sanitize("Nulitta"), "Nulitta");
+    }
+
+    #[test]
+    fn deux_chapitres_de_meme_titre_obtiennent_deux_fichiers() {
+        // Exigence permanente : « un .cbz par chapitre ». Deux chapitres
+        // homonymes s'écrasaient mutuellement.
+        let mut attribues: Vec<String> = Vec::new();
+        let a = resoudre_nom("Chapitre 1.cbz".to_string(), &mut attribues);
+        let b = resoudre_nom("Chapitre 1.cbz".to_string(), &mut attribues);
+        assert_eq!(a, "Chapitre 1.cbz");
+        assert_ne!(
+            a, b,
+            "deux chapitres homonymes ont reçu le même nom de fichier"
+        );
+        let c = resoudre_nom("Chapitre 1.cbz".to_string(), &mut attribues);
+        assert_ne!(b, c);
+        assert_eq!(attribues.len(), 3, "chaque chapitre doit être attribué");
+    }
+
+    #[test]
+    fn la_reprise_voit_les_deux_chapitres_homonnes_comme_absents() {
+        let dir = dossier_de_test("homonymes");
+        std::fs::create_dir_all(&dir).unwrap();
+        let urls = vec!["c/1".to_string(), "c/1bis".to_string()];
+        let titles = vec!["Chapitre 1".to_string(), "Chapitre 1".to_string()];
+        // Les deux doivent être signalés absents, pas « l'un des deux ».
+        assert_eq!(missing_in_dir(&dir, &urls, &titles), urls);
+        // Une fois l'un écrit, seul l'autre reste à télécharger.
+        std::fs::write(dir.join("Chapitre 1.cbz"), b"x").unwrap();
+        assert_eq!(
+            missing_in_dir(&dir, &urls, &titles),
+            vec!["c/1bis".to_string()]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn le_verrou_de_telechargement_se_libere_sur_panique() {
+        let etat = Arc::new(std::sync::Mutex::new(false));
+        // Le cas réel : une panique entre `running = true` et `running = false`
+        // laissait tous les téléchargements futurs refusés jusqu'au redémarrage.
+        let resultat = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _verrou = VerrouTelechargement::prendre(&etat).expect("premier verrou");
+            panic!("panique simulée au milieu du téléchargement");
+        }));
+        assert!(resultat.is_err(), "la panique doit se propager");
+        assert!(
+            !*etat.lock().unwrap(),
+            "le verrou doit être libéré même après une panique, sinon \
+             « un téléchargement est déjà en cours » pour toujours"
+        );
+        // Et un second téléchargement doit pouvoir repartir.
+        assert!(
+            VerrouTelechargement::prendre(&etat).is_ok(),
+            "un nouveau téléchargement doit être accepté"
+        );
+    }
+
+    #[test]
+    fn le_verrou_refuse_deux_telechargements_simultanes() {
+        let etat = Arc::new(std::sync::Mutex::new(false));
+        let _premier = VerrouTelechargement::prendre(&etat).expect("premier");
+        let deuxieme = VerrouTelechargement::prendre(&etat);
+        assert!(deuxieme.is_err(), "le deuxième doit être refusé");
+        // Le refus ne doit pas relâcher le verrou du premier.
+        assert!(
+            *etat.lock().unwrap(),
+            "un refus ne doit pas ouvrir le verrou"
+        );
+    }
+
+    /// Dossier de fixture sous la vraie racine des téléchargements, comme le
+    /// fait `library.rs` : `%TEMP%` n'est pas expansé sur cette machine.
+    fn dossier_de_test(tag: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static COMPTEUR: AtomicUsize = AtomicUsize::new(0);
+        let n = COMPTEUR.fetch_add(1, Ordering::SeqCst);
+        let dir = downloads_root().join(format!("tatami-test-{tag}-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dossier de test");
+        dir
     }
 
     #[test]

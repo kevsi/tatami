@@ -14,9 +14,18 @@ use std::path::Path;
 pub struct CbzWriter<W: Write> {
     out: W,
     /// (nom, offset local, crc32, taille)
-    entries: Vec<(String, u32, u32, u32)>,
-    offset: u32,
+    ///
+    /// `offset` est un `u64` et non un `u32` : le format ZIP32 impose des
+    /// offsets 32 bits, mais un chapitre de plus de 4 Gio dépassait la capacité
+    /// et **`as u32` tronquait en silence** — un `.cbz` produit, de la bonne
+    /// taille, illisible. On suit donc la position réelle en `u64` et on refuse
+    /// explicitement de dépasser la limite, au lieu d'écrire un fichier corrompu.
+    entries: Vec<(String, u64, u32, u64)>,
+    offset: u64,
 }
+
+/// Plus Offset32 bits : au-delà, ce n'est plus du ZIP lisible.
+const LIMITE_ZIP32: u64 = u32::MAX as u64;
 
 impl<W: Write> CbzWriter<W> {
     pub fn new(out: W) -> Self {
@@ -47,8 +56,19 @@ impl<W: Write> CbzWriter<W> {
         let name = format!("{:03}.{ext}", index);
         let name_bytes = name.as_bytes();
         let crc = crc32(bytes);
-        let size = bytes.len() as u32;
+        let size = bytes.len() as u64;
         let local_offset = self.offset;
+        // Refus explicite plutôt qu'un fichier silencieusement corrompu : un
+        // chapitre de plus de 4 Gio n'est pas lisible dans un lecteur externe.
+        let taille_entree = 30u64 + name_bytes.len() as u64 + size;
+        if local_offset + taille_entree > LIMITE_ZIP32 {
+            return Err(io::Error::other(format!(
+                "chapitre trop volumineux pour un .cbz (ZIP32) : page {index}, \
+                 {}.{} Go déjà écrits",
+                local_offset / 1_000_000_000,
+                (local_offset % 1_000_000_000) / 1_000_000
+            )));
+        }
 
         let mut header = [0u8; 30];
         header[0..4].copy_from_slice(&0x0403_4b50u32.to_le_bytes());
@@ -58,8 +78,8 @@ impl<W: Write> CbzWriter<W> {
         header[10..12].copy_from_slice(&0u16.to_le_bytes()); // mod time
         header[12..14].copy_from_slice(&0x21u16.to_le_bytes()); // date 1980-01-01
         header[14..18].copy_from_slice(&crc.to_le_bytes());
-        header[18..22].copy_from_slice(&size.to_le_bytes());
-        header[22..26].copy_from_slice(&size.to_le_bytes());
+        header[18..22].copy_from_slice(&(size as u32).to_le_bytes());
+        header[22..26].copy_from_slice(&(size as u32).to_le_bytes());
         header[26..28].copy_from_slice(&(name_bytes.len() as u16).to_le_bytes());
         header[28..30].copy_from_slice(&0u16.to_le_bytes()); // extra field len
 
@@ -67,14 +87,19 @@ impl<W: Write> CbzWriter<W> {
         self.out.write_all(name_bytes)?;
         self.out.write_all(bytes)?;
 
-        let name_len = name_bytes.len() as u32;
         self.entries.push((name, local_offset, crc, size));
-        self.offset += 30 + name_len + size;
+        self.offset += taille_entree;
         Ok(())
     }
 
     /// Repertoire central + EOCD, puis vide le tampon. Renvoie la taille écrite.
-    pub fn finish(&mut self) -> io::Result<u64> {
+    /// Écrit le répertoire central + l'EOCD et rend la **taille totale du fichier**.
+    ///
+    /// La taille inclut le répertoire central et les 22 octets de l'EOCD : c'est
+    /// elle que le téléchargeur compare au fichier réel. Omettre l'un des deux
+    /// donnerait un compte faux — un test l'aattrapé avant qu'il n'aille en
+    /// production.
+    fn ecrire_repertoire_central(&mut self) -> io::Result<u64> {
         let cd_offset = self.offset;
         let mut cd = Vec::with_capacity(46 * self.entries.len());
         for (name, local_offset, crc, size) in &self.entries {
@@ -87,15 +112,15 @@ impl<W: Write> CbzWriter<W> {
             cd.extend_from_slice(&0u16.to_le_bytes()); // mod time
             cd.extend_from_slice(&0x21u16.to_le_bytes()); // date
             cd.extend_from_slice(&crc.to_le_bytes());
-            cd.extend_from_slice(&size.to_le_bytes());
-            cd.extend_from_slice(&size.to_le_bytes());
+            cd.extend_from_slice(&(*size as u32).to_le_bytes());
+            cd.extend_from_slice(&(*size as u32).to_le_bytes());
             cd.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
             cd.extend_from_slice(&0u16.to_le_bytes()); // extra len
             cd.extend_from_slice(&0u16.to_le_bytes()); // comment len
             cd.extend_from_slice(&0u16.to_le_bytes()); // disk number
             cd.extend_from_slice(&0u16.to_le_bytes()); // internal attrs
             cd.extend_from_slice(&0u32.to_le_bytes()); // external attrs
-            cd.extend_from_slice(&local_offset.to_le_bytes());
+            cd.extend_from_slice(&(*local_offset as u32).to_le_bytes());
             cd.extend_from_slice(name_bytes);
         }
         let cd_size = cd.len() as u32;
@@ -108,16 +133,30 @@ impl<W: Write> CbzWriter<W> {
         self.out
             .write_all(&(self.entries.len() as u16).to_le_bytes())?;
         self.out.write_all(&cd_size.to_le_bytes())?;
-        self.out.write_all(&cd_offset.to_le_bytes())?;
+        self.out.write_all(&(cd_offset as u32).to_le_bytes())?;
         self.out.write_all(&0u16.to_le_bytes())?; // comment len
         self.out.flush()?;
-        Ok(u64::from(cd_offset) + u64::from(cd_size) + 22)
+        Ok(cd_offset + u64::from(cd_size) + 22)
     }
 
     /// Rend la main à l'écrivain sous-jacent (utilisé par les tests).
     #[cfg(test)]
     pub fn into_inner(self) -> W {
         self.out
+    }
+
+    /// Fin sans synchronisation — **tests uniquement**.
+    ///
+    /// Le chemin de production est `sync_and_finish`. Ce wrapper existe parce
+    /// que le nom `finish` seul ne doit plus être atteignable : un `.cbz`
+    /// non synchronisé puis renommé est exactement le fichier tronqué que
+    /// `sync_all` sert à empêcher, et le nom ne rappelait pas ce risque.
+    ///
+    /// Les tests de `cbz` écrivent dans un `Vec<u8>` : il n'y a pas de disque,
+    /// donc rien à synchroniser.
+    #[cfg(test)]
+    pub fn finish_vec(&mut self) -> io::Result<u64> {
+        self.ecrire_repertoire_central()
     }
 }
 
@@ -129,6 +168,23 @@ impl CbzWriter<std::io::BufWriter<std::fs::File>> {
             256 * 1024,
             file,
         )))
+    }
+
+    /// Vide le tampon ET force l'écriture sur le support.
+    ///
+    /// `flush` seul ne protège de rien : c'est le `rename` suivant qui rend le
+    /// nom définitif, et une coupure entre les deux laissait un `.cbz` tronqué
+    /// portant le bon nom. Or `missing_in_dir` ne teste que la présence du nom :
+    /// le chapitre comptait « téléchargé » alors que le fichier ne s'ouvrait
+    /// pas — l'irréparable, et invisible jusqu'au jour où l'utilisateur
+    /// l'ouvre.
+    pub fn sync_and_finish(&mut self) -> io::Result<u64> {
+        let total = self.ecrire_repertoire_central()?;
+        self.out
+            .get_ref()
+            .sync_all()
+            .map_err(|e| io::Error::other(format!("synchronisation du .cbz impossible : {e}")))?;
+        Ok(total)
     }
 }
 
@@ -171,7 +227,7 @@ mod tests {
             w.add_image_kind(i + 1, *kind, kind.content_type().as_bytes())
                 .unwrap();
         }
-        w.finish().unwrap();
+        w.finish_vec().unwrap();
         w.into_inner()
     }
 
@@ -193,7 +249,7 @@ mod tests {
         let payload = vec![7u8; 4096];
         w.add_image_kind(1, crate::image::ImageKind::Jpeg, &payload)
             .unwrap();
-        w.finish().unwrap();
+        w.finish_vec().unwrap();
         let bytes = w.into_inner();
         assert_eq!(&bytes[0..4], &[0x50, 0x4b, 0x03, 0x04]);
         // methode = 0 (stored) dans l'en-tete local
@@ -214,7 +270,8 @@ mod tests {
                 .unwrap();
             w.add_image_kind(2, crate::image::ImageKind::Png, b"de")
                 .unwrap();
-            w.finish().unwrap()
+            // Le chemin de production, celui qui synchronise.
+            w.sync_and_finish().unwrap()
         };
         let on_disk = std::fs::read(&path).unwrap();
         assert_eq!(on_disk.len() as u64, written);

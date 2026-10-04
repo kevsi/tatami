@@ -29,6 +29,11 @@ const val PARSERS_VERSION = "b3c0000"
 
 private const val DEFAULT_TIMEOUT_MS = 120_000L
 
+// Combien de temps on laisse les requêtes déjà acceptées se terminer après la
+// fermeture de stdin. `DEFAULT_TIMEOUT_MS` est le pire cas ; on ne veut pas
+// bloquer l'arrêt jusque-là, juste ne pas tronquer une réponse en cours d'écriture.
+private const val DELAI_VIDE_EOF_MS = 5_000L
+
 private class ParamException(message: String) : IllegalArgumentException(message)
 
 // Cache jetable de session (AGENTS.md §4 : pas d'état persistant côté moteur).
@@ -249,6 +254,10 @@ fun serve() {
         Thread(r, "tatami-worker").apply { isDaemon = true }
     }
     val stdout = System.out
+    // Compteur des requêtes en vol : `shutdownNow()` interromp les threads, et
+    // une réponse est parfois déjà partie (voir plus bas). Sans ce compteur, on
+    // ne sait plus quand il est honnête de mourir.
+    val enVol = java.util.concurrent.atomic.AtomicInteger(0)
     while (true) {
         val line = stdin.readLine() ?: break // EOF = arrêt demandé par Rust
         val req = try {
@@ -265,6 +274,7 @@ fun serve() {
         val params = if (req.has("params")) req.getJSONObject("params") else JSONObject()
         val timeoutMs = req.optLong("timeoutMs", DEFAULT_TIMEOUT_MS)
         workers.execute {
+            enVol.incrementAndGet()
             val response = try {
                 val result = runBlocking {
                     withTimeout(timeoutMs) { dispatch(context, cache, method, params) }
@@ -288,13 +298,36 @@ fun serve() {
                 stdout.println(response)
                 stdout.flush()
             }
+            enVol.decrementAndGet()
             if (method == "shutdown") {
+                // Un `shutdown` explicite : on répond, on coupe, on sort. Les
+                // requêtes concurrentes sont abandonnées sans réponse, ce qui est
+                // correct : Rust vient de demander l'arrêt et purge `pending`.
                 workers.shutdownNow()
                 exitProcess(0)
             }
         }
     }
-    workers.shutdownNow()
+    // EOF sur stdin : Rust a fermé le canal.
+    //
+    // On ne coupe pas immédiatement. `shutdownNow()` interromp les workers, et
+    // une réponse peut être **déjà écrite** quand le thread est interrompu à la
+    // ligne suivante : stdout se termine alors par une ligne tronquée, que le
+    // lecteur JSON de Rust rejette — et le superviseur prend ce rejet pour le
+    // signe d'un moteur cassé.
+    //
+    // On laisse donc les requêtes en vol se terminer. `workers.shutdown()` n'interrompt
+    // rien : les requêtes déjà acceptées rendent leur réponse normalement, et
+    // l'arrêt n'a lieu qu'une fois le compteur revenu à zéro.
+    workers.shutdown()
+    val fin = System.currentTimeMillis() + DELAI_VIDE_EOF_MS
+    while (enVol.get() > 0 && System.currentTimeMillis() < fin) {
+        Thread.sleep(20)
+    }
+    if (enVol.get() > 0) {
+        System.err.println("tatami-engine: ${enVol.get()} requete(s) en vol a la fermeture de stdin, abandon")
+        workers.shutdownNow()
+    }
 }
 
 private suspend fun dispatch(

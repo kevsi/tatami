@@ -1309,7 +1309,13 @@ button:disabled {
   display: block;
   height: auto;
   max-width: none;
-  border-bottom: 1px solid #0e0d13;
+  /* `border-box` est indispensable, pas un détail de style : la virtualisation
+     calcule la position de chaque page à partir d'une hauteur, et en
+     `content-box` (le défaut) toute bordure ou marge s'y ajoute. Mesuré : une
+     bordure basse de 1 px sur chaque image décalait la bande de 1 px par page,
+     soit 303 px de dérive sur Killer Peter — la fenêtre affichée finissait par
+     ne plus correspondre à son contenu. */
+  box-sizing: border-box;
 }
 
 .webtoon img:hover {

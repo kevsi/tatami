@@ -282,6 +282,18 @@ Le chapitre reste **absent** du disque, donc la règle « ne jamais retéléchar
 
 Mesuré : quand la source ne renvoie **pas** de titre de chapitre (`title: null`, cas de MANGADEX ici), `chapterLabel` retombe sur l'URL et le fichier s'appelle `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz`. Le `.cbz` est valide et lisible par Tatami, mais **inutilisable** dans un lecteur externe, ce qui contredit l'intention de l'exigence permanente (« un `.cbz` par chapitre »). Nouvelle tâche 0.18.
 
+### 2026-10-04 — Trait horizontal entre les pages du webtoon
+
+Signalé par l'utilisateur : « il y a des espèces de trait horizontal quand je lis le webtoon ».
+
+Cause : `.webtoon img` portait `border-bottom: 1px solid #0e0d13`, un liseré sombre ajouté en bas de chaque page.
+
+**Cette bordure cassait aussi ma virtualisation, et c'est le plus important.** La virtualisation calcule la position de chaque page à partir d'une hauteur ; en `box-sizing: content-box` (le défaut CSS), toute bordure s'ajoute à cette hauteur. Mesuré : **1 px de dérive par page**, soit **303 px** sur Killer Peter — la fenêtre affichée finissait par ne plus correspondre à son contenu. Le correctif est `box-sizing: border-box` sur `.webtoon img`, plus la suppression du liseré que l'utilisateur ne veut pas.
+
+Mesuré après correction (5/5) : `box-sizing` = `border-box`, 0 bordure, **écart entre hauteur rendue et hauteur calculée = 0** sur chaque image, **écart entre position rendue et offset calculé = 0**, et **aucun espace ni chevauchement aux jointures** entre pages.
+
+L'écran ne peut pas confirmer visuellement : la capture CDP rend la bande noire dès qu'on descend dans le chapitre (au sommet elle fonctionne). C'est l'artefact déjà documenté, et il grandit avec la distance de défilement. Les mesures ci-dessus valent la preuve ; un coup d'œil de l'utilisateur confirmera.
+
 ### 2026-10-04 — Navigation dans la barre du lecteur + mode plein écran
 
 **Demande de l'utilisateur** : « en haut, à côté de Signet, dans le même header ». La navigation webtoon occupait une **ligne séparée sous la barre**. Elle est désormais dans `.reader-bar`, juste après le bouton Signet, sous forme de deux flèches `←` `→` discretes. La ligne dédiée disparaît, ce qui rend aussi de la hauteur à l'image. Mesuré : Signet en x = 728, navigation en x = 802, plein écran en x = 900, tous dans la barre de 62 px ; la flèche `→` avance la bande (page 3, `scrollTop` 6 808) ; plus aucune navigation en bas.

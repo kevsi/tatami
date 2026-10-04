@@ -107,8 +107,8 @@ Origine : analyse de structure et de style de `sushiscan.net` (WordPress + thèm
 Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
 - [x] **1.1** SQLite côté Rust, système de migrations forward-only, sauvegarde avant migration, tests de migration.
-- [ ] **1.2** Catalogue de sources : liste, activation/désactivation, langue, état (alimenté par `health`).
-- [ ] **1.3** Recherche et filtres (nom, genres, tri) avec pagination.
+- [x] **1.2** Catalogue de sources : liste, activation/désactivation, langue, état (alimenté par `health`).
+- [ ] **1.3** Recherche et filtres (nom, genres, pagination faits ; **tri à faire**).
 - [x] **1.4** Page détail d'un manga : infos, liste des chapitres, ajout aux favoris.
 - [ ] **1.5** Favoris organisés en catégories définies par l'utilisateur (favori simple fait, catégories à faire).
 - [x] **1.6** Historique de lecture, reprise au bon chapitre et à la bonne page, mode incognito.
@@ -200,6 +200,18 @@ _Format d'une entrée :_
 - Preuve : commande + résumé de la sortie
 - Points ouverts :
 ```
+
+### 2026-10-04 — Tâche 1.2 : activation/désactivation des sources
+- Plan : (1) auditer 1.2 et 1.3 avant d'ajouter 1.7, dans l'ordre du plan ; (2) combler le seul manque de 1.2 (activation/désactivation) ; (3) le prouver sur l'app réelle, persistance comprise.
+- Fait : table `sources_state` (schéma **v4**, sauvegarde avant migration vérifiée dans le journal : `tatami-v3-1791099395803.db`). Seules les sources **désactivées** sont écrites : l'absence de ligne signifie « active », donc pas de `DEFAULT` à maintenir. Commandes `list_disabled_sources`, `set_source_enabled`, `enable_all_sources`. Côté interface : interrupteur sur chaque tuile de source, compteur « n désactivée(s) », « Afficher les n sources désactivées », « Tout réactiver », et un **état vide** explicite quand la recherche ne donne rien (avant : une grille vide sous un bandeau vide, capturé à l'écran).
+- Choix d'implémentation : la tuile est passée de `<button>` à `<div class="slot">` contenant le bouton d'ouverture et, en **frère**, l'interrupteur — un `<button>` dans un `<button>` est du HTML invalide (cf. AGENTS.md §14). Le CSS de `.card` est resté intact, la grille garde la même largeur (266 px mesurés avant/après).
+- Preuve :
+  - `cargo test` → **20 passés, 0 échec** (dont `les_sources_desactivees_sont_memorisees` et `desactiver_une_source_ne_touche_pas_les_favoris` — écarter une source ne perd ni l'historique ni les favoris).
+  - `cargo clippy -D warnings` → 0 · `pnpm typecheck` / `pnpm lint` / `pnpm build` → 0.
+  - Parcours sur l'app réelle via CDP (`walk-sources.js`) : **16 mesures, 0 échec** — désactivation, disparition de la liste, compteur, survie au rechargement complet, réapparition atténuée à la demande, « Tout réactiver », base vide à la fin.
+  - Audit d'accessibilité : 48 interrupteurs sur 48 tuiles, tous `role="switch"` et nommés (« Désactiver la source MANGABUFF »).
+  - Captures : `audit/tatami4/14-source-desactivee.png`, `15-sources-actives.png`, `16-grille-sources.png`.
+- Points ouverts : **le tri de 1.3 reste à faire** — quel tri ? (ordre du site / alphabétique / dernière mise à jour) : choix à confirmer avant de coder, le moteur n'exposant pas de tri « dernière mise à jour » sans requête supplémentaire par source.
 
 ### 2026-10-04 — Tâches 1.1, 1.4, 1.6 : favoris, accueil, incognito, reprise
 - Plan : (1) prouver que favori + historique survivent à un vrai redémarrage de l'application ; (2) corriger ce qui casse l'incognito ; (3) ne déclarer 1.1/1.4/1.6 fait qu'avec une preuve exécutée.

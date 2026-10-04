@@ -426,6 +426,10 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [pageSize, setPageSize] = useState(PAGE);
   const [enabled, setEnabled] = useState<string[] | null>(null);
+  // Tâche 1.2 : sources écartées par l'utilisateur (donnée métier, pas une
+  // préférence d'affichage : elle vit en base, cf. AGENTS.md §6).
+  const [sourcesOff, setSourcesOff] = useState<string[]>([]);
+  const [voirDesactives, setVoirDesactives] = useState(false);
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagsTotal, setTagsTotal] = useState(0);
   const [activeTags, setActiveTags] = useState<string[]>([]);
@@ -568,8 +572,40 @@ export default function Home() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshShelf();
+    invoke<string[]>('list_disabled_sources')
+      .then((r) => setSourcesOff(r ?? []))
+      .catch(() => setSourcesOff([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function estDesactivee(nom: string): boolean {
+    return sourcesOff.includes(nom);
+  }
+
+  async function basculerSource(nom: string, actif: boolean) {
+    // Mise à jour optimiste comme pour les favoris, avec retour arrière si la
+    // base refuse : l'interface ne doit jamais montrer un état qu'elle ne tient
+    // pas (mesuré sur les favoris, même principe).
+    const avant = sourcesOff;
+    setSourcesOff((prev) => (actif ? prev.filter((n) => n !== nom) : [...prev, nom]));
+    try {
+      await invoke('set_source_enabled', { source: nom, enabled: actif });
+    } catch (e) {
+      setSourcesOff(avant);
+      setError(`Activation de la source impossible : ${e}`);
+    }
+  }
+
+  async function reactiverToutes() {
+    const avant = sourcesOff;
+    setSourcesOff([]);
+    try {
+      await invoke('enable_all_sources');
+    } catch (e) {
+      setSourcesOff(avant);
+      setError(`Réactivation impossible : ${e}`);
+    }
+  }
 
   async function toggleFavorite(m: Manga) {
     const target = !isFavorite(m);
@@ -610,10 +646,13 @@ export default function Home() {
     () => ['all', ...Array.from(new Set(sources.map((s) => s.lang))).sort()],
     [sources],
   );
-  const visibleSources = useMemo(
-    () => (enabled === null ? sources : sources.filter((s) => enabled.includes(s.name))),
-    [sources, enabled],
-  );
+  const visibleSources = useMemo(() => {
+    const base = enabled === null ? sources : sources.filter((s) => enabled.includes(s.name));
+    // Les sources désactivées sont retirées du parcours par défaut : elles
+    // restent enregistrées et réapparaissent d'un clic (« Afficher les n
+    // sources désactivées »).
+    return voirDesactives ? base : base.filter((s) => !sourcesOff.includes(s.name));
+  }, [sources, enabled, sourcesOff, voirDesactives]);
   const byLang = lang === 'all' ? visibleSources : visibleSources.filter((s) => s.lang === lang);
   const filtered = byLang.filter((s) => s.name.toLowerCase().includes(nameFilter.toLowerCase()));
 
@@ -2662,7 +2701,10 @@ if (reader) {
 
       <header className="page-head">
         <h1>Catalogues</h1>
-        <span className="sub">{visibleSources.length} sources disponibles</span>
+        <span className="sub">
+          {visibleSources.length} sources disponibles
+          {sourcesOff.length > 0 ? ` · ${sourcesOff.length} désactivée${sourcesOff.length > 1 ? 's' : ''}` : ''}
+        </span>
       </header>
 
       <input
@@ -2694,6 +2736,25 @@ if (reader) {
       </div>
 
       {error && <p className="error">{error}</p>}
+
+      {sourcesOff.length > 0 && (
+        <div className="row-actions">
+          <label className="recent-toggle" title="Les sources désactivées restent enregistrées, elles sont juste masquées.">
+            <input
+              type="checkbox"
+              checked={voirDesactives}
+              onChange={(e) => {
+                setVoirDesactives(e.target.checked);
+                setShownSources(48);
+              }}
+            />
+            <span>Afficher les {sourcesOff.length} source{sourcesOff.length > 1 ? 's' : ''} désactivée{sourcesOff.length > 1 ? 's' : ''}</span>
+          </label>
+          <button className="btn btn-ghost" onClick={() => void reactiverToutes()}>
+            Tout réactiver
+          </button>
+        </div>
+      )}
 
       {enTiles ? (
         <>
@@ -2728,33 +2789,77 @@ if (reader) {
             {lang !== 'all' ? ` · langue ${lang.toUpperCase()}` : ''}
           </p>
 
-          <div className="band">
-            {lang === 'all' ? 'Toutes les langues' : `${lang.toUpperCase()} — ${NOMS_LANGUE[lang] ?? ''}`}
-            <span className="muted">{filtered.length} source{filtered.length > 1 ? 's' : ''}</span>
-          </div>
+          {filtered.length === 0 ? (
+            <div className="empty">
+              <p className="empty-title">Aucune source à afficher</p>
+              <p className="muted">
+                {nameFilter
+                  ? `Aucune source ne correspond à « ${nameFilter} ».`
+                  : 'Toutes les sources de cette langue sont désactivées.'}{' '}
+                {sourcesOff.length > 0 && (
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      setVoirDesactives(true);
+                      setShownSources(48);
+                    }}
+                  >
+                    Afficher les sources désactivées
+                  </button>
+                )}
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="band">
+                {lang === 'all' ? 'Toutes les langues' : `${lang.toUpperCase()} — ${NOMS_LANGUE[lang] ?? ''}`}
+                <span className="muted">{filtered.length} source{filtered.length > 1 ? 's' : ''}</span>
+              </div>
 
-          <div className="grid">
+              <div className="grid">
             {filtered.slice(0, shownSources).map((s) => {
               const dead = health[s.name];
+              const off = estDesactivee(s.name);
+              // Deux boutons ne peuvent pas s'imbriquer (HTML invalide, cf.
+              // AGENTS.md §14) : la tuile est un `<div>` qui contient le bouton
+              // d'ouverture et, à côté, l'interrupteur d'activation.
               return (
-                <button
-                  key={s.name + '-' + s.lang}
-                  className={`card${dead ? ' dead' : ''}`}
-                  onClick={() => openSource(s)}
-                  title={dead ? `Dernier échec : ${dead.message}` : undefined}
-                >
-                  <span className="name">{s.name}</span>
-                  {dead ? <span className="badge dead-badge">hors service</span> : null}
-                  {lang === 'all' && <span className="badge">{s.lang}</span>}
-                </button>
+                <div key={s.name + '-' + s.lang} className={`slot${off ? ' off' : ''}`}>
+                  <button
+                    className={`card${dead ? ' dead' : ''}`}
+                    onClick={() => openSource(s)}
+                    title={dead ? `Dernier échec : ${dead.message}` : undefined}
+                    aria-label={`Ouvrir la source ${s.name}`}
+                  >
+                    <span className="name">{s.name}</span>
+                    {dead ? <span className="badge dead-badge">hors service</span> : null}
+                    {lang === 'all' && <span className="badge">{s.lang}</span>}
+                  </button>
+                  <button
+                    className="slot-switch"
+                    role="switch"
+                    aria-checked={!off}
+                    aria-label={`${off ? 'Réactiver' : 'Désactiver'} la source ${s.name}`}
+                    title={
+                      off
+                        ? 'Source désactivée : elle n’apparaît plus dans le catalogue'
+                        : 'Désactiver cette source'
+                    }
+                    onClick={() => void basculerSource(s.name, off)}
+                  >
+                    <span className="slot-knob" />
+                  </button>
+                </div>
               );
             })}
-          </div>
+              </div>
 
-          {filtered.length > shownSources && (
-            <button className="btn btn-more" onClick={() => setShownSources((n) => n + 48)}>
-              Voir plus ({filtered.length - shownSources} restantes)
-            </button>
+              {filtered.length > shownSources && (
+                <button className="btn btn-more" onClick={() => setShownSources((n) => n + 48)}>
+                  Voir plus ({filtered.length - shownSources} restantes)
+                </button>
+              )}
+            </>
           )}
         </>
       )}

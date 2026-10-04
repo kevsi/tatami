@@ -24,6 +24,31 @@ fn requis(source: &str, manga_url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Sources que l'utilisateur a écartées. Liste vide = toutes actives.
+#[tauri::command]
+pub async fn list_disabled_sources(store: State<'_, Arc<Store>>) -> Result<Vec<String>, String> {
+    store.disabled_sources()
+}
+
+/// Active ou désactive une source. Une source jamais touchée est active.
+#[tauri::command]
+pub async fn set_source_enabled(
+    store: State<'_, Arc<Store>>,
+    source: String,
+    enabled: bool,
+) -> Result<(), String> {
+    if vide(&source) {
+        return Err("PARSE_ERROR: source vide".to_string());
+    }
+    store.set_source_enabled(source.trim(), enabled)
+}
+
+/// Réactive toutes les sources d'un coup.
+#[tauri::command]
+pub async fn enable_all_sources(store: State<'_, Arc<Store>>) -> Result<(), String> {
+    store.enable_all_sources()
+}
+
 #[derive(Serialize)]
 pub struct FavoriteState {
     pub source: String,

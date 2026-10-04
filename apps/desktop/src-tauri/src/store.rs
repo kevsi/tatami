@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Version du schéma attendue par ce binaire.
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 #[derive(Serialize)]
 pub struct Favorite {
@@ -167,6 +167,18 @@ impl Store {
         // l'accueil n'a plus aucun contexte de liste, donc sans cette colonne
         // l'incognito ne pouvait plus rien masquer.
         Self::ensure_column(&tx, "favorites", "content_rating", "TEXT")?;
+        // v4 : activation/désactivation des sources. Sans cela, les 1370
+        // catalogues sont proposals à equalité et l'utilisateur ne peut pas
+        // écarter ceux qui l'intéressent pas. Seules les sources DÉSACTIVÉES
+        // sont écrites : la table reste minuscule et l'absence de ligne signifie
+        // « active », sans jamais dépendre d'un DEFAULT manquant.
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS sources_state (
+                 source  TEXT    NOT NULL PRIMARY KEY,
+                 enabled INTEGER NOT NULL
+             );",
+        )
+        .map_err(|e| format!("migration v4 : {e}"))?;
         if current < 2 {
             tx.execute_batch("CREATE INDEX IF NOT EXISTS history_title ON history (title);")
                 .map_err(|e| format!("migration : index history_title : {e}"))?;
@@ -293,6 +305,59 @@ impl Store {
             .map_err(|e| format!("favoris : {e}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("favoris : {e}"))
+    }
+
+    // ---------- Sources activées ----------
+
+    /// Sources désactivées par l'utilisateur. Une liste vide signifie « toutes
+    /// les sources sont actives », ce qui est l'état d'une installation neuve.
+    pub fn disabled_sources(&self) -> Result<Vec<String>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let mut req = conn
+            .prepare("SELECT source FROM sources_state WHERE enabled = 0 ORDER BY source")
+            .map_err(|e| format!("sources désactivées : {e}"))?;
+        let rows = req
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| format!("sources désactivées : {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("sources désactivées : {e}"))
+    }
+
+    /// Active ou désactive une source. Réactiver supprime la ligne : on ne
+    /// garde que ce qui a été écarté.
+    pub fn set_source_enabled(&self, source: &str, enabled: bool) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        if enabled {
+            conn.execute(
+                "DELETE FROM sources_state WHERE source = ?1",
+                params![source],
+            )
+        } else {
+            conn.execute(
+                "INSERT INTO sources_state (source, enabled) VALUES (?1, 0)
+                 ON CONFLICT(source) DO UPDATE SET enabled = 0",
+                params![source],
+            )
+        }
+        .map_err(|e| format!("activation de la source : {e}"))?;
+        Ok(())
+    }
+
+    /// Réactive toutes les sources d'un coup : la table redevient vide.
+    pub fn enable_all_sources(&self) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute("DELETE FROM sources_state", [])
+            .map_err(|e| format!("réactivation des sources : {e}"))?;
+        Ok(())
     }
 
     // ---------- Historique ----------
@@ -644,6 +709,55 @@ mod tests {
             s.list_favorites().unwrap()[0].content_rating.as_deref(),
             Some("ADULT")
         );
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn les_sources_desactivees_sont_memorisees() {
+        let (s, path) = store_vierge();
+        // Installation neuve : aucune source désactivée.
+        assert!(s.disabled_sources().unwrap().is_empty());
+        s.set_source_enabled("WAMANGA", false).unwrap();
+        s.set_source_enabled("REMANGA", false).unwrap();
+        assert_eq!(
+            s.disabled_sources().unwrap(),
+            vec!["REMANGA".to_string(), "WAMANGA".to_string()],
+            "les sources écartées sont renvoyées dans l'ordre du moteur"
+        );
+        // Désactiver deux fois ne duplique pas.
+        s.set_source_enabled("WAMANGA", false).unwrap();
+        assert_eq!(s.disabled_sources().unwrap().len(), 2);
+        // Réactiver une source la retire de la liste.
+        s.set_source_enabled("WAMANGA", true).unwrap();
+        assert_eq!(s.disabled_sources().unwrap(), vec!["REMANGA".to_string()]);
+        // Et le bouton « tout réactiver » vide la table.
+        s.enable_all_sources().unwrap();
+        assert!(s.disabled_sources().unwrap().is_empty());
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn desactiver_une_source_ne_touche_pas_les_favoris() {
+        let (s, path) = store_vierge();
+        s.set_favorite("WAMANGA", "/m/1", "Titre", None, Some("ADULT"), true)
+            .unwrap();
+        s.save_progress(
+            "WAMANGA",
+            "/m/1",
+            "Titre",
+            None,
+            Some("ADULT"),
+            Some("/c/1"),
+            None,
+            0,
+            0,
+            10,
+        )
+        .unwrap();
+        s.set_source_enabled("WAMANGA", false).unwrap();
+        // Écarter une source ne doit pas perdre ce qu'on a lu ni mis en favori.
+        assert_eq!(s.list_favorites().unwrap().len(), 1);
+        assert_eq!(s.list_recent(10, false).unwrap().len(), 1);
         nettoyer(&path);
     }
 

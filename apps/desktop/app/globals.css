@@ -452,6 +452,90 @@ button:disabled {
   border-color: var(--surface-3);
 }
 
+/* Emplacement d'une source : la tuile et son interrupteur d'activation sont
+   deux boutons FRÈRES (un bouton dans un bouton est du HTML invalide). */
+.slot {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.slot > .card {
+  flex: 1;
+  min-width: 0;
+  /* Laisse la place à l'interrupteur posé en haut à droite. */
+  padding-right: 44px;
+}
+
+.slot-switch {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  translate: 0 -50%;
+  flex: none;
+  width: 28px;
+  height: 16px;
+  padding: 0;
+  cursor: pointer;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  transition: background 0.12s ease;
+}
+
+.slot-switch[aria-checked='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.slot-knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  background: var(--text-1);
+  border-radius: 999px;
+  transition: translate 0.12s ease;
+}
+
+.slot-switch[aria-checked='true'] .slot-knob {
+  translate: 12px 0;
+}
+
+/* Source désactivée : elle reste consultable mais ne se fait pas passer pour
+   un catalogue actif. */
+.slot.off > .card {
+  opacity: 0.5;
+}
+
+.slot.off > .card:hover {
+  opacity: 0.75;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s3);
+}
+
+/* État vide : une grille vide avec un bandeau vide donne l'impression que
+   l'écran est cassé. On dit ce qui s'est passé et on propose la sortie. */
+.empty {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  padding: var(--s4) var(--s5);
+}
+
+.empty-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
 .card .name {
   font-weight: 600;
   font-size: 13.5px;

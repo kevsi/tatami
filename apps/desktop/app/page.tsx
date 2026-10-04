@@ -1938,6 +1938,38 @@ function scrollToPage(i: number) {
   }
 }
 
+// ---------- Plein écran du lecteur ----------
+// Le plein écran porte sur l'élément `.reader`, pas sur `document` : la fenêtre
+// de l'application reste visible si l'utilisateur en sort, et surtout les
+// raccourcis et la barre de navigation de Tatami ne disparaissent pas
+// définitivement. `:fullscreen` est une pseudo-classe CSS, donc l'état est
+// lu depuis le DOM — c'est la seule source fiable, since `Échap` et le bouton
+// du système peuvent sortir du plein écran sans passer par notre handler.
+const [pleinEcran, setPleinEcran] = useState(false);
+useEffect(() => {
+  const surChangement = () => {
+    setPleinEcran(!!document.querySelector('.reader:fullscreen'));
+  };
+  document.addEventListener('fullscreenchange', surChangement);
+  return () => document.removeEventListener('fullscreenchange', surChangement);
+}, []);
+
+async function basculerPleinEcran() {
+  try {
+    const cible = document.querySelector('.reader') as HTMLElement | null;
+    if (!cible) return;
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else {
+      await cible.requestFullscreen();
+    }
+  } catch (e) {
+    // Refusé par la webview : on le dit plutôt que de ne rien faire, sinon le
+    // bouton semble cassé (leçon AGENTS.md : une garde silencieuse est un piège).
+    setError(t('lecteur.plein.ecran.erreur', { raison: String(e) }));
+  }
+}
+
 // ---------- Bande webtoon virtualisée (tâche 1.9) ----------
 // Rust renvoie la **taille réelle** de chaque page (lue dans l'en-tête de
 // l'image). On en déduit la hauteur affichée, puis la position de chaque page.
@@ -2080,6 +2112,14 @@ useEffect(() => {
     // au milieu d'un couple de pages.
     const by = step();
     if (e.key === 'Escape') {
+      // En plein écran, `Échap` doit d'abord sortir du plein écran : fermer le
+      // lecteur d'un coup est exactement ce que l'utilisateur ne cherche pas,
+      // et il perdrait sa page. Mesuré avant correction : un seul `Échap`
+      // fermait les deux.
+      if (document.fullscreenElement) {
+        void document.exitFullscreen().catch(() => {});
+        return;
+      }
       closeReader();
       return;
     }
@@ -2621,6 +2661,7 @@ useEffect(() => {
   // ---------- Vue : lecteur ----------
 if (reader) {
     const { pages, index, chapter } = reader;
+  const webtoon = readerMode === 'webtoon';
     const page = pages[index];
     // Signet présent sur la page affichée : l'état du bouton du lecteur.
     const marque = pageMarquee();
@@ -2664,6 +2705,37 @@ if (reader) {
               title="Marquer cette page pour la retrouver plus tard"
             >
               {marque ? t('lecteur.signet.actif') : t('lecteur.signet')}
+            </button>
+
+            {/* Navigation du bandeau, dans la barre du lecteur (demande
+                explicite). En mode webtoon, la navigation vivait sous la
+                barre : changer de page imposait de remonter en haut de
+                l'écran, soit parcourir 650 000 px sur un chapitre de 303
+                pages. */}
+            <div className="seg" role="group" aria-label={t('lecteur.navigation')}>
+              <button
+                className="seg-btn"
+                disabled={index === 0}
+                onClick={() => (webtoon ? scrollToPage(index - 1) : turn(-1))}
+              >
+                {'←'}
+              </button>
+              <button
+                className="seg-btn"
+                disabled={index >= pages.length - 1}
+                onClick={() => (webtoon ? scrollToPage(index + 1) : turn(1))}
+              >
+                {'→'}
+              </button>
+            </div>
+
+            <button
+              className={`seg-btn solo${pleinEcran ? ' on' : ''}`}
+              aria-pressed={pleinEcran}
+              onClick={() => void basculerPleinEcran()}
+              title={t('lecteur.plein.ecran')}
+            >
+              {pleinEcran ? '⤡' : '⤢'}
             </button>
 
             <div className="seg" role="group" aria-label="Mode de lecture">
@@ -2800,25 +2872,6 @@ if (reader) {
             </form>
           </div>
         </header>
-
-        {/* Navigation en HAUT (demande explicite de l'utilisateur). En mode
-            webtoon, la bande est un défilement continu : une navigation en bas
-            obligerait à revenir en haut de la page à chaque changement — et
-            sur un chapitre de 303 pages, c'est 650 000 px de défilement. */}
-        {readerMode === 'webtoon' && (
-          <div className="reader-nav haut">
-            <button className="btn" disabled={index === 0} onClick={() => scrollToPage(index - 1)}>
-              {'↑'} Page précédente
-            </button>
-            <button
-              className="btn btn-primary"
-              disabled={index >= pages.length - 1}
-              onClick={() => scrollToPage(index + 1)}
-            >
-              Page suivante {'↓'}
-            </button>
-          </div>
-        )}
 
         {readerMode === 'webtoon' ? (
           <div className="webtoon" ref={stripRef} onScroll={onScrollBande}>

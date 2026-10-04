@@ -1852,3 +1852,20 @@ button:disabled {
   padding: var(--s3) var(--s5);
   border-bottom: 1px solid var(--line);
 }
+/* Plein ecran du lecteur.
+   Sans cet ecart, `.reader` garde `height: calc(100vh - s5*2)` et `margin:
+   -s5` : en plein ecran il resterait une bande vide en bas et un debordement
+   lateral. Le fond et la couleur de texte sont repris, sinon le mode clair
+   s'afficherait sur fond noir. */
+.reader:fullscreen {
+  height: 100vh;
+  height: 100dvh;
+  margin: 0;
+  width: 100vw;
+}
+
+/* La barre de navigation du lecteur : deux fleches discretes, a cote du
+   signet (demande de l'utilisateur). */
+.reader-bar .seg[aria-label] {
+  flex: none;
+}

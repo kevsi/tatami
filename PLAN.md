@@ -282,6 +282,18 @@ Le chapitre reste **absent** du disque, donc la règle « ne jamais retéléchar
 
 Mesuré : quand la source ne renvoie **pas** de titre de chapitre (`title: null`, cas de MANGADEX ici), `chapterLabel` retombe sur l'URL et le fichier s'appelle `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz`. Le `.cbz` est valide et lisible par Tatami, mais **inutilisable** dans un lecteur externe, ce qui contredit l'intention de l'exigence permanente (« un `.cbz` par chapitre »). Nouvelle tâche 0.18.
 
+### 2026-10-04 — Navigation dans la barre du lecteur + mode plein écran
+
+**Demande de l'utilisateur** : « en haut, à côté de Signet, dans le même header ». La navigation webtoon occupait une **ligne séparée sous la barre**. Elle est désormais dans `.reader-bar`, juste après le bouton Signet, sous forme de deux flèches `←` `→` discretes. La ligne dédiée disparaît, ce qui rend aussi de la hauteur à l'image. Mesuré : Signet en x = 728, navigation en x = 802, plein écran en x = 900, tous dans la barre de 62 px ; la flèche `→` avance la bande (page 3, `scrollTop` 6 808) ; plus aucune navigation en bas.
+
+**Plein écran.** Le plein écran porte sur l'élément `.reader`, pas sur `document` : la fenêtre de l'application reste visible si l'utilisateur en sort, et la navigation de Tatami ne disparaît pas définitivement. `:fullscreen` est une pseudo-classe CSS, donc l'état est lu **depuis le DOM** au lieu d'être deviné — c'est la seule source fiable, `Échap` et le bouton système pouvant sortir du plein écran sans passer par notre handler. Deux règles CSS étaient nécessaires : sans elles, `.reader` gardait `height: calc(100vh - s5*2)` et `margin: -s5`, ce qui laissait une bande vide en bas et un débordement latéral. Mesuré : hauteur 900 px pour une fenêtre de 900 px, bouton à `aria-pressed="true"`.
+
+**Un vrai défaut trouvé par le walk : `Échap` fermait le lecteur ET le plein écran d'un coup.** Le handler faisait `closeReader()` inconditionnellement. En plein écran, `Échap` doit d'abord sortir du plein écran, sinon l'utilisateur perd sa page sans l'avoir voulu. Corrigé : si `document.fullscreenElement` est présent, on sort du plein écran et on s'arrête là. Mesuré : après `Échap`, plus de plein écran, lecteur **toujours ouvert**, bouton resynchronisé à `aria-pressed="false"`.
+
+**Zone d'ombre de la tache 1.9 — tranchee.** Les captures de la bande webtoon revenaient noires depuis la tâche 1.9 ; tout indiquait un artefact (géométrie exacte, images décodées, pointage correct, fond rouge non peint, même jetons corrects en mode pagé). **Confirmé par l'œil** : la capture en plein écran montre l'image pleine largeur, correctement peinte. C'était bien la capture CDP au-dessus d'un conteneur de 686 000 px. Aucune correction de code n'était nécessaire — l'écart était dans la mesure, pas dans l'application. Leçon : devant une contradiction entre mesure et doute, chercher un troisième témoin (ici la capture plein écran, qui change le mode de rendu) avant de casser du code.
+
+Portes : `pnpm typecheck` / `lint` / `build` = 0. Walk 11/11.
+
 ### 2026-10-04 — Demande utilisateur : bande webtoon pleine largeur, navigation en haut
 
 **Pleine largeur.** Mesuré avant : 1 200 px de bande dans une fenêtre de 1 440, donc 120 px de marge de chaque côté — le lecteur était encadré. `.reader.pleine-largeur` retire le padding horizontal en mode webtoon ; les barres (titre, navigation) gardent leur marge, sinon leurs boutons colleraient aux bords. Après : bande à **1 420 px** (les 20 px restants sont la gouttière de la barre de défilement, `scrollbar-gutter: stable`) et image à 1 420 px.

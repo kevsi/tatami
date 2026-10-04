@@ -15,6 +15,7 @@ type Manga = {
   description?: string | null;
   state?: string | null;
   rating?: number;
+  contentRating?: string | null;
   tags?: Tag[];
 };
 // `uploadDate` est déjà émis par le moteur (epoch ms, 0 si la source ne le
@@ -23,7 +24,32 @@ type Chapter = { url: string; title?: string | null; number?: number; uploadDate
 type Page = { index: number; url: string; previewUrl?: string | null; token: string };
 /** Lecteur paginé (tâche 0.10) : les images viennent du protocole `tatami://`,
  *  jamais d'un appel direct aux hôtes distants. */
-type Reader = { chapter: Chapter; pages: Page[]; index: number };
+/** Un favori enregistré par l'utilisateur (table `favorites`). */
+type Favorite = {
+  source: string;
+  manga_url: string;
+  title: string;
+  cover_url: string | null;
+  content_rating: string | null;
+  added_at: number;
+};
+
+/** Une entrée de l'historique de lecture (table `history`). */
+type HistoryItem = {
+  source: string;
+  manga_url: string;
+  title: string;
+  cover_url: string | null;
+  content_rating: string | null;
+  chapter_url: string | null;
+  chapter_title: string | null;
+  chapter_index: number;
+  page_index: number;
+  page_count: number;
+  read_at: number;
+};
+
+type Reader = { chapter: Chapter; pages: Page[]; index: number; source: string };
 type Tag = { key: string; title: string };
 type LibraryItem = {
   title: string;
@@ -79,6 +105,9 @@ const RATINGS = [
 
 const TIMEOUTS = [30, 60, 120] as const;
 
+const INCOGNITO_KEY = 'tatami.incognito';
+const RECENT_LIMIT = 24;
+
 function loadPrefs(): {
   pageSize: number;
   enabled: string[] | null;
@@ -101,6 +130,7 @@ function loadPrefs(): {
 }
 
 const TABS = [
+  { id: 'home', label: 'Accueil' },
   { id: 'catalog', label: 'Catalogues' },
   { id: 'downloads', label: 'Téléchargements' },
   { id: 'settings', label: 'Paramètres' },
@@ -384,7 +414,13 @@ export default function Home() {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
-  const [tab, setTab] = useState<string>('catalog');
+  const [tab, setTab] = useState<string>('home');
+  // Bibliothèque personnelle : favoris, historique, reprise (table SQLite).
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [recent, setRecent] = useState<HistoryItem[]>([]);
+  // Mode incognito : les titres classés adultes disparaissent de l'accueil.
+  // Préférence d'affichage, donc `localStorage` est le bon endroit (cf. §6).
+  const [incognito, setIncognito] = useState(true);
   const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -442,6 +478,8 @@ export default function Home() {
     setRating(prefs.rating);
     setListTimeout(prefs.listTimeout);
     setHealth(loadHealth());
+    const modeIncognito = window.localStorage.getItem(INCOGNITO_KEY);
+    if (modeIncognito != null) setIncognito(modeIncognito === '1');
     // Lecture des préférences après l'hydratation : en export statique le HTML
     // est produit au build, il ne peut donc pas contenir la valeur stockée sur
     // la machine de l'utilisateur. Les poser dans un initialiseur paresseux
@@ -475,13 +513,98 @@ export default function Home() {
       .catch(() => setLibrary([]));
   }, []);
 
+  /** Recharge favoris et historique. `hideAdult` explicite parce que l'appel
+   *  déclenché par l'interrupteur arrive AVANT que l'état change : sans
+   *  paramètre, la closure renverrait l'ancienne valeur et l'historique
+   *  resterait filtré (mesuré : la liste restait vide après désactivation).
+   */
+  const refreshShelf = useCallback(
+    async (hideAdult?: boolean) => {
+      const hide = hideAdult ?? incognito;
+      // Pas d'indicateur « chargement » : la lecture est un SQLite local,
+      // elle dure moins d'une image. Un état pour ça ne servirait qu'à
+      // scintiller et à forcer un rendu en cascade.
+      try {
+        const [fav, hist] = await Promise.all([
+          invoke<Favorite[]>('list_favorites'),
+          invoke<HistoryItem[]>('list_recent', { limit: RECENT_LIMIT, hideAdult: hide }),
+        ]);
+        setFavorites(fav ?? []);
+        setRecent(hist ?? []);
+      } catch (e) {
+        // Ne rien afficher ici : l'accueil affiche déjà l'erreur si l'action
+        // l'a déclenchée. On trace pour pouvoir diagnostiquer.
+        console.error('lecture de la bibliothèque impossible', e);
+        setFavorites([]);
+        setRecent([]);
+      }
+    },
+    [incognito],
+  );
+
   const goTab = useCallback(
     (id: string) => {
       if (id === 'downloads') refreshDownloads();
+      if (id === 'home') void refreshShelf();
+      // Changer d'onglet quitte la vue en cours (source, fiche) : sinon
+      // l'ancien écran, rendu avant l'accueil, resterait affiché par-dessus.
+      setOpenManga(null);
+      if (id !== 'catalog') setSelected(null);
       setTab(id);
     },
-    [refreshDownloads],
+    [refreshDownloads, refreshShelf],
   );
+
+  function isFavorite(m: Manga): boolean {
+    return favorites.some((f) => f.source === m.source && f.manga_url === m.url);
+  }
+
+  // Charge la bibliothèque au démarrage. Indispensable : `tab` vaut « home »
+  // dès le premier rendu SANS passer par `goTab`, donc rien ne déclencherait
+  // le rechargement sinon (mesuré : l'accueil affichait « 0 favori » après un
+  // redémarrage alors que la base contenait bien la ligne).
+  // `refreshShelf` ne touche l'état qu'APRÈS son `await` : aucun setState
+  // synchrone ici. La règle n'analyse pas la suspension et le signale à tort.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshShelf();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function toggleFavorite(m: Manga) {
+    const target = !isFavorite(m);
+    // Mise à jour optimiste : l'interface ne doit pas attendre la base.
+    setFavorites((prev) =>
+      target
+        ? [
+            {
+              source: m.source,
+              manga_url: m.url,
+              title: m.title,
+              cover_url: m.coverUrl ?? null,
+              content_rating: m.contentRating ?? null,
+              added_at: Date.now(),
+            },
+            ...prev,
+          ]
+        : prev.filter((f) => !(f.source === m.source && f.manga_url === m.url)),
+    );
+    try {
+      await invoke('set_favorite', {
+        source: m.source,
+        mangaUrl: m.url,
+        title: m.title,
+        coverUrl: m.coverUrl ?? null,
+        contentRating: m.contentRating ?? null,
+        favorite: target,
+      });
+      if (target) setNotice(`${m.title} ajouté à vos favoris.`);
+    } catch (e) {
+      // On annule l'optimisme si la base refuse : l'interface ne ment pas.
+      await refreshShelf();
+      setError(`Favori non enregistré : ${e}`);
+    }
+  }
 
   const langs = useMemo(
     () => ['all', ...Array.from(new Set(sources.map((s) => s.lang))).sort()],
@@ -723,7 +846,24 @@ export default function Home() {
       mangaUrl: m.url,
       mangaTitle: m.title,
     })
-      .then((r) => setInfo(r.manga ?? null))
+      .then((r) => {
+        setInfo(r.manga ?? null);
+        // Les deux sources de classification se contredisent : mesuré,
+        // WAMANGA classe `ADULT` dans la liste mais `UNKNOWN` sur la fiche,
+        // MANGABUFF fait l'inverse. On prend donc la PREMIÈRE valeur connue,
+        // sans jamais écraser celle déjà enregistrée.
+        const depuisFiche = r.manga?.contentRating;
+        const depuisListe = m.contentRating;
+        const connu = [depuisListe, depuisFiche].find((c) => c && c !== 'UNKNOWN');
+        if (connu) {
+          void invoke('note_content_rating', {
+            source: m.source,
+            mangaUrl: m.url,
+            contentRating: connu,
+          }).catch(() => {});
+        }
+        return r;
+      })
       .catch(() => setInfo(null));
     try {
       const r = await invoke<{ chapters: Chapter[] }>('chapters', {
@@ -1068,12 +1208,19 @@ function pageSrc(token: string) {
 }
 
 async function openReader(c: Chapter) {
-  if (!selected) return;
+  return openReaderAt(c, 0);
+}
+
+/** Ouvre un chapitre à une page donnée. `sourceName` permet la reprise depuis
+ *  l'accueil, où aucune source n'est sélectionnée. */
+async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string) {
+  const src = sourceName ?? selected?.name;
+  if (!src) return;
   setReaderLoading(true);
   setError(null);
   try {
     const r = await invoke<{ pages: Page[] }>('pages', {
-      source: selected.name,
+      source: src,
       chapterUrl: c.url,
     });
     const pages = r.pages ?? [];
@@ -1082,7 +1229,10 @@ async function openReader(c: Chapter) {
       return;
     }
     setPageJump('');
-    setReader({ chapter: c, pages, index: 0 });
+    // La position mémorisée peut dépasser le chapitre si celui-ci a été
+    // raccourci depuis : on retombe sur sa dernière page.
+    const index = Math.max(0, Math.min(pages.length - 1, startIndex));
+    setReader({ chapter: c, pages, index, source: src });
   } catch (e) {
     setError(`Lecture impossible : ${e}`);
   } finally {
@@ -1090,8 +1240,108 @@ async function openReader(c: Chapter) {
   }
 }
 
+/** Reprise de lecture : rouvre le dernier chapitre à la dernière page.
+ *
+ *  Point non évident : le moteur ne reconnaît un chapitre que si les chapitres
+ *  de la fiche ont été listés PENDANT CETTE SESSION (son cache est en mémoire).
+ *  Sans cet appel préalable, `pages` répond « unknown chapter url » et le
+ *  lecteur ne s'ouvre pas — c'est exactement ce que renvoie l'enveloppe de
+ *  539 octets observée dans les journaux.
+ */
+async function resumeReading(h: HistoryItem) {
+  const manga: Manga = {
+    url: h.manga_url,
+    title: h.title,
+    source: h.source,
+    coverUrl: h.cover_url,
+    contentRating: h.content_rating,
+  };
+  if (!h.chapter_url) {
+    await loadChapters(manga);
+    return;
+  }
+  setOpenManga(manga);
+  setError(null);
+  // Les deux appels partent ensemble : `details` sert au classement (incognito)
+  // et à la couverture, `chapters` ré-enregistre les chapitres pour le moteur.
+  const [ficheRes, chapitresRes] = await Promise.allSettled([
+    invoke<{ manga: Manga }>('details', {
+      source: h.source,
+      mangaUrl: h.manga_url,
+      mangaTitle: h.title,
+    }),
+    invoke<{ chapters: Chapter[] }>('chapters', {
+      source: h.source,
+      mangaUrl: h.manga_url,
+      mangaTitle: h.title,
+    }),
+  ]);
+  if (ficheRes.status === 'fulfilled' && ficheRes.value.manga) {
+    setInfo(ficheRes.value.manga);
+    // Même règle qu'à l'ouverture d'une fiche : première valeur connue.
+    const connu = [ficheRes.value.manga.contentRating, h.content_rating].find(
+      (c) => c && c !== 'UNKNOWN',
+    );
+    if (connu) {
+      void invoke('note_content_rating', {
+        source: h.source,
+        mangaUrl: h.manga_url,
+        contentRating: connu,
+      }).catch(() => {});
+    }
+  }
+  if (chapitresRes.status === 'rejected') {
+    setError(`Chapitres indisponibles : ${chapitresRes.reason}`);
+    return;
+  }
+  const list: Chapter[] = chapitresRes.value.chapters ?? [];
+  setChapters(list);
+  // Le chapitre mémorisé a pu disparaître (source modifiée) : on retombe sur
+  // le même rang, sinon sur le premier disponible.
+  const chapter =
+    list.find((c) => c.url === h.chapter_url) ??
+    list[h.chapter_index] ??
+    list[0];
+  if (!chapter) {
+    setError('Ce webtoon n’a plus aucun chapitre lisible.');
+    return;
+  }
+  await openReaderAt(chapter, h.page_index, h.source);
+}
+
+// Mémorise la position de lecture à chaque changement de chapitre ou de page.
+// Un `INSERT ... ON CONFLICT` par page tournée, sans conséquence visible. Le
+// classement vient de la FICHE (`details`) quand elle est connue : mesuré, la
+// liste renvoie souvent `UNKNOWN` là où la fiche donne `ADULT`, et c'est
+// cette valeur que l'incognito filtre.
+useEffect(() => {
+  if (!reader || !openManga) return;
+  const manga = info ?? openManga;
+  const chapterIndex = chapters.findIndex((c) => c.url === reader.chapter.url);
+  void invoke('save_progress', {
+    source: reader.source,
+    mangaUrl: openManga.url,
+    title: openManga.title,
+    coverUrl: openManga.coverUrl ?? manga.coverUrl ?? null,
+    contentRating: manga.contentRating ?? null,
+    chapterUrl: reader.chapter.url,
+    chapterTitle: chapterLabel(reader.chapter),
+    chapterIndex,
+    pageIndex: reader.index,
+    pageCount: reader.pages.length,
+  }).catch(() => {
+    /* la reprise est un confort : une écriture ratée ne doit pas bruiter */
+  });
+}, [reader, openManga, info, chapters]);
+
 function closeReader() {
   setReader(null);
+  // Reprise depuis l'accueil : aucune source n'est sélectionnée, on rend donc
+  // l'accueil plutôt qu'une fiche de chapitre orpheline.
+  if (!selected) {
+    setTab('home');
+    setOpenManga(null);
+  }
 }
 
 function switchMode(mode: ReaderMode) {
@@ -1223,7 +1473,7 @@ useEffect(() => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [reader, readerMode, spread]);
 
-// ---------- Vue : Réglages ----------
+  // ---------- Vue : Réglages ----------
   if (tab === 'settings') {
     return (
       <main>
@@ -1809,6 +2059,13 @@ if (reader) {
         <header className="page-head">
           <h1>{openManga.title}</h1>
           <span className="sub">{selected?.name}</span>
+          <button
+            className={`btn fav-toggle${isFavorite(fiche) ? ' on' : ''}`}
+            aria-pressed={isFavorite(fiche)}
+            onClick={() => void toggleFavorite(fiche)}
+          >
+            {isFavorite(fiche) ? '♥ Dans vos favoris' : '♡ Ajouter aux favoris'}
+          </button>
         </header>
 
         {(summary || rows.length > 0 || fiche.coverUrl) && (
@@ -1975,6 +2232,8 @@ if (reader) {
           <h1>{selected.name}</h1>
           <span className="sub">{selected.lang.toUpperCase()}</span>
         </header>
+
+        {notice && <p className="notice">{notice}</p>}
 
         <div className="source-search">
           <input
@@ -2153,42 +2412,62 @@ if (reader) {
               const key = mangaKey(m);
               const isPicked = picked.has(key);
               return (
-                <button
+                <div
                   key={key}
                   className={`manga${selectMode ? ' pickable' : ''}${isPicked ? ' picked' : ''}`}
-                  aria-pressed={selectMode ? isPicked : undefined}
-                  onClick={() => (selectMode ? togglePick(m) : loadChapters(m))}
                 >
-                  <span className="cover">
-                    {m.coverUrl ? (
-                      <img className="thumb" src={m.coverUrl} alt="" loading="lazy" />
-                    ) : (
-                      <span className="thumb thumb-empty" aria-hidden="true">
-                        {(m.title.trim()[0] ?? '?').toUpperCase()}
-                      </span>
-                    )}
-                    {cardTotal[key] > 0 && (
-                      <span className="card-count" title={`${cardTotal[key]} chapitres`}>
-                        {cardTotal[key]} ch.
-                      </span>
-                    )}
-                  </span>
-                  <span className="label">{m.title}</span>
-                  {showRecent && cardRecent[key] && cardRecent[key].length > 0 && (
-                    <span className="recent">
-                      {cardRecent[key].map((line) => (
-                        <span className="recent-line" key={line}>
-                          {line}
+                  {/* La carte est un `div` et non un `button` : le bouton favori
+                      est un frère, pas un enfant (un bouton dans un bouton est
+                      du HTML invalide et casse l'hydratation). */}
+                  <button
+                    className="manga-open"
+                    aria-pressed={selectMode ? isPicked : undefined}
+                    onClick={() => (selectMode ? togglePick(m) : loadChapters(m))}
+                  >
+                    <span className="cover">
+                      {m.coverUrl ? (
+                        <img className="thumb" src={m.coverUrl} alt="" loading="lazy" />
+                      ) : (
+                        <span className="thumb thumb-empty" aria-hidden="true">
+                          {(m.title.trim()[0] ?? '?').toUpperCase()}
                         </span>
-                      ))}
+                      )}
+                      {cardTotal[key] > 0 && (
+                        <span className="card-count" title={`${cardTotal[key]} chapitres`}>
+                          {cardTotal[key]} ch.
+                        </span>
+                      )}
                     </span>
-                  )}
+                    <span className="label">{m.title}</span>
+                    {showRecent && cardRecent[key] && cardRecent[key].length > 0 && (
+                      <span className="recent">
+                        {cardRecent[key].map((line) => (
+                          <span className="recent-line" key={line}>
+                            {line}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    className={`fav-btn${isFavorite(m) ? ' on' : ''}`}
+                    aria-pressed={isFavorite(m)}
+                    aria-label={
+                      isFavorite(m)
+                        ? `Retirer ${m.title} des favoris`
+                        : `Ajouter ${m.title} aux favoris`
+                    }
+                    title={isFavorite(m) ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+                    onClick={() => void toggleFavorite(m)}
+                  >
+                    ♥
+                  </button>
                   {selectMode && (
                     <span className="pick" aria-hidden="true">
                       {isPicked ? '✓' : ''}
                     </span>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>
@@ -2212,6 +2491,165 @@ if (reader) {
           >
             Voir plus ({latest.length} chargés)
           </button>
+        )}
+      </main>
+    );
+  }
+
+// ---------- Vue : accueil ----------
+  // Reprise de lecture, favoris, mode incognito.
+  if (tab === 'home') {
+    return (
+      <main>
+        <AppBar tab={tab} onTab={goTab} />
+        <header className="page-head">
+          <h1>Accueil</h1>
+          <span className="sub">
+            {recent.length} lu{recent.length > 1 ? 's' : ''} récemment ·{' '}
+            {favorites.length} favori{favorites.length > 1 ? 's' : ''}
+          </span>
+        </header>
+
+        {error && <p className="error">{error}</p>}
+        {notice && <p className="notice">{notice}</p>}
+
+        <div className="band">
+          Continuer la lecture
+          <label className="recent-toggle" title="Masque de l'accueil les titres classés adultes par leur source. Ils restent accessibles en recherche.">
+            <input
+              type="checkbox"
+              checked={incognito}
+              onChange={(e) => {
+                const hide = e.target.checked;
+                setIncognito(hide);
+                window.localStorage.setItem(INCOGNITO_KEY, hide ? '1' : '0');
+                void refreshShelf(hide);
+              }}
+            />
+            <span>Incognito</span>
+          </label>
+        </div>
+
+        {recent.length === 0 ? (
+          <p className="muted">
+            Rien à reprendre. Lancez une lecture depuis un catalogue, elle apparaîtra ici
+            {incognito
+              ? ' — les titres classés adultes restent masqués tant que l’incognito est actif.'
+              : '.'}
+          </p>
+        ) : (
+          <div className="dl-grid">
+            {recent.map((h) => (
+              <article className="dl-card" key={`${h.source}|${h.manga_url}`}>
+                {h.cover_url ? (
+                  <img className="thumb" src={h.cover_url} alt="" loading="lazy" />
+                ) : (
+                  <span className="thumb thumb-empty" aria-hidden="true">
+                    {(h.title.trim()[0] ?? '?').toUpperCase()}
+                  </span>
+                )}
+                <div className="dl-body">
+                  <h3 className="dl-title">{h.title}</h3>
+                  <span className="muted dl-meta">
+                    {h.source}
+                    {h.chapter_title ? ` · ${h.chapter_title}` : ''}
+                  </span>
+                  <span className="muted dl-meta">
+                    page {h.page_index + 1}/{h.page_count || '?'} ·{' '}
+                    {sinceFr(h.read_at)}
+                  </span>
+                  <div className="dl-actions">
+                    <button
+                      className="btn btn-primary"
+                      disabled={readerLoading}
+                      onClick={() => void resumeReading(h)}
+                    >
+                      {readerLoading ? 'Ouverture…' : 'Reprendre'}
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      aria-label={`Oublier ${h.title} dans l'historique`}
+                      onClick={() => {
+                        void invoke('forget_history', {
+                          source: h.source,
+                          mangaUrl: h.manga_url,
+                        })
+                          .then(() => refreshShelf())
+                          .catch((e) => setError(`Suppression impossible : ${e}`));
+                      }}
+                    >
+                      Oublier
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+
+        <div className="band">
+          Vos favoris
+          {favorites.length > 0 && (
+            <button
+              className="btn btn-ghost"
+              onClick={() => {
+                void invoke('clear_history')
+                  .then(() => refreshShelf())
+                  .catch((e) => setError(`Purge impossible : ${e}`));
+              }}
+            >
+              Vider l&apos;historique
+            </button>
+          )}
+        </div>
+
+        {favorites.length === 0 ? (
+          <p className="muted">
+            Aucun favori. Ouvrez un webtoon puis cliquez sur l&apos;icône ♥.
+          </p>
+        ) : (
+          <div className="manga-grid">
+            {favorites.map((f) => {
+              const m: Manga = {
+                url: f.manga_url,
+                title: f.title,
+                source: f.source,
+                coverUrl: f.cover_url,
+                // Le classement voyage avec le favori : sans lui, ouvrir depuis
+                // l'accueil n'aurait aucun contexte et l'incognito ne pourrait
+                // rien masquer.
+                contentRating: f.content_rating,
+              };
+              return (
+                <div className="manga" key={`${f.source}|${f.manga_url}`}>
+                  <button
+                    className="manga-open"
+                    onClick={() => void loadChapters(m)}
+                    aria-label={`Ouvrir ${f.title}`}
+                  >
+                    <span className="cover">
+                      {f.cover_url ? (
+                        <img className="thumb" src={f.cover_url} alt="" loading="lazy" />
+                      ) : (
+                        <span className="thumb thumb-empty" aria-hidden="true">
+                          {(f.title.trim()[0] ?? '?').toUpperCase()}
+                        </span>
+                      )}
+                    </span>
+                    <span className="label">{f.title}</span>
+                    <span className="recent-line fav-src">{f.source}</span>
+                  </button>
+                  <button
+                    className="fav-remove"
+                    aria-label={`Retirer ${f.title} des favoris`}
+                    onClick={() => void toggleFavorite(m)}
+                  >
+                    ♥
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         )}
       </main>
     );

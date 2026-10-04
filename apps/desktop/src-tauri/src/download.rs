@@ -351,7 +351,11 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
 
         let urls = vec!["c/1".to_string(), "c/2".to_string(), "c/3".to_string()];
-        let titles = vec!["Chapitre 1".to_string(), "Chapitre 2".to_string(), "Chapitre 3".to_string()];
+        let titles = vec![
+            "Chapitre 1".to_string(),
+            "Chapitre 2".to_string(),
+            "Chapitre 3".to_string(),
+        ];
         // Le chapitre 2 est déjà là, le 3 est interrompu (.part).
         std::fs::write(dir.join("Chapitre 2.cbz"), b"x").unwrap();
         std::fs::write(dir.join("Chapitre 3.cbz.part"), b"x").unwrap();

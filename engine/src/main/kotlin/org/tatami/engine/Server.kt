@@ -78,6 +78,9 @@ private fun mangaToJson(m: Manga, source: String): JSONObject = JSONObject()
 .put("altTitle", m.altTitles.firstOrNull() ?: JSONObject.NULL)
     .put("state", m.state?.name ?: "UNKNOWN")
     .put("rating", m.rating.toDouble())
+    // L'interface s'en sert pour le mode incognito de l'accueil : un titre
+    // sans classification reste visible, c'est le plus prudent.
+    .put("contentRating", m.contentRating?.name ?: "UNKNOWN")
     .put("description", m.description ?: JSONObject.NULL)
     .put(
         "tags",

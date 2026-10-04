@@ -57,6 +57,19 @@ pub async fn list_sources(sup: State<'_, Arc<Supervisor>>) -> Result<serde_json:
     Ok(r)
 }
 
+/// Classification demandée pour une liste de titres.
+///
+/// `None` = **aucun filtre** (option « Toutes » des réglages). Une chaîne vide
+/// ou blanche ne doit surtout pas être confondue avec `SAFE` : mesuré, le
+/// réglage « Toutes » envoyait `SAFE` et les sources adultes renvoyaient zéro
+/// résultat alors que l'utilisateur avait explicitement demandé l'inverse.
+fn requested_rating(content_rating: Option<&str>) -> Option<String> {
+    content_rating
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .map(str::to_ascii_uppercase)
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn latest(
@@ -72,24 +85,29 @@ pub async fn latest(
     let timeout = list_timeout(timeout_secs);
     // Une seule classification à la fois : plusieurs lèvent « Multiple Content
     // ratings are not supported by this source » côté parser (mesuré sur MangaDex).
-    let rating = match content_rating.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
-        Some(r) => r.to_ascii_uppercase(),
-        None => "SAFE".to_string(),
-    };
+    let rating = requested_rating(content_rating.as_deref());
     tracing::info!(
-        "latest source={source} offset={:?} query={:?} tags={} rating={rating}",
+        "latest source={source} offset={:?} query={:?} tags={} rating={}",
         offset,
         query.as_deref().unwrap_or(""),
         tags.as_ref().map_or(0, Vec::len),
+        rating.as_deref().unwrap_or("AUCUN"),
     );
-    let params = serde_json::json!({
+    let mut params = serde_json::json!({
         "source": source.trim(),
         "offset": offset.unwrap_or(0),
         "limit": limit.unwrap_or(24).min(100),
         "query": query.unwrap_or_default(),
         "tags": tags.unwrap_or_default(),
-        "contentRating": rating,
+        // Le moteur retombe sur SAFE quand `contentRating` est vide ET
+        // `safeOnly` est vrai. Le choix est déjà fait en amont (réglages), donc
+        // on désactive ce repli : sinon l'option « Toutes » renvoyait SAFE et
+        // les sources adultes ne donnaient rien (mesuré sur WAMANGA).
+        "safeOnly": false,
     });
+    if let Some(r) = &rating {
+        params["contentRating"] = serde_json::json!(r);
+    }
     let r = into_result(sup.request_with_retry("latest", params, timeout).await?)?;
     tracing::info!(
         "latest ok: {} items",
@@ -100,7 +118,6 @@ pub async fn latest(
     );
     Ok(r)
 }
-
 
 fn into_result(envelope: serde_json::Value) -> Result<serde_json::Value, String> {
     if envelope.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
@@ -137,7 +154,11 @@ pub async fn search(
     if query.is_empty() {
         return Err("PARSE_ERROR: query vide".to_string());
     }
-    let rating = match content_rating.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
+    let rating = match content_rating
+        .as_deref()
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+    {
         Some(r) => r.to_ascii_uppercase(),
         None => "SAFE".to_string(),
     };
@@ -147,7 +168,10 @@ pub async fn search(
         "limit": limit.unwrap_or(20).min(50),
         "contentRating": rating,
     });
-    into_result(sup.request_with_retry("search", params, LIST_TIMEOUT).await?)
+    into_result(
+        sup.request_with_retry("search", params, LIST_TIMEOUT)
+            .await?,
+    )
 }
 
 /// Tâche 0.17 : fiche détaillée (résumé, état, genres). Distinct de
@@ -168,7 +192,10 @@ pub async fn details(
         "url": manga_url,
         "mangaTitle": manga_title.unwrap_or_default(),
     });
-    into_result(sup.request_with_retry("details", params, DEEP_TIMEOUT).await?)
+    into_result(
+        sup.request_with_retry("details", params, DEEP_TIMEOUT)
+            .await?,
+    )
 }
 
 #[tauri::command]
@@ -189,7 +216,10 @@ pub async fn chapters(
         "mangaUrl": manga_url,
         "mangaTitle": manga_title.unwrap_or_default(),
     });
-    into_result(sup.request_with_retry("chapters", params, DEEP_TIMEOUT).await?)
+    into_result(
+        sup.request_with_retry("chapters", params, DEEP_TIMEOUT)
+            .await?,
+    )
 }
 
 #[tauri::command]
@@ -203,7 +233,10 @@ pub async fn pages(
         return Err("PARSE_ERROR: chapter_url vide".to_string());
     }
     let params = serde_json::json!({ "source": source.trim(), "chapterUrl": chapter_url });
-    let mut result = into_result(sup.request_with_retry("pages", params, DEEP_TIMEOUT).await?)?;
+    let mut result = into_result(
+        sup.request_with_retry("pages", params, DEEP_TIMEOUT)
+            .await?,
+    )?;
     if let Some(arr) = result.get_mut("pages").and_then(|v| v.as_array_mut()) {
         for p in arr.iter_mut() {
             if let Some(url) = p.get("url").and_then(|v| v.as_str()) {
@@ -214,4 +247,20 @@ pub async fn pages(
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::requested_rating;
+
+    #[test]
+    fn une_chaine_vide_ne_signifie_pas_safe() {
+        // Régression mesurée : l'option « Toutes » des réglages envoyait SAFE,
+        // les sources adultes renvoyaient alors zéro manga.
+        assert_eq!(requested_rating(Some("")), None);
+        assert_eq!(requested_rating(Some("   ")), None);
+        assert_eq!(requested_rating(None), None);
+        assert_eq!(requested_rating(Some("adult")), Some(String::from("ADULT")));
+        assert_eq!(requested_rating(Some(" safe ")), Some(String::from("SAFE")));
+    }
 }

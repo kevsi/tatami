@@ -310,13 +310,37 @@ mod tests {
         // Organisation réelle : <downloads>/<source>/<webtoon>/
         let dir = root.join("MANGADEX").join("Test");
         std::fs::create_dir_all(&dir).unwrap();
-        note_chapter(&dir, "MANGADEX", "Test", "manga/1", Some("http://c.jpg"), 12,
-            "ch/1", "Chapitre 1", "Chapitre 1.cbz").await.unwrap();
+        note_chapter(
+            &dir,
+            "MANGADEX",
+            "Test",
+            "manga/1",
+            Some("http://c.jpg"),
+            12,
+            "ch/1",
+            "Chapitre 1",
+            "Chapitre 1.cbz",
+        )
+        .await
+        .unwrap();
         // Rappel : ne doit pas dupliquer.
-        note_chapter(&dir, "MANGADEX", "Test", "manga/1", Some("http://c.jpg"), 12,
-            "ch/1", "Chapitre 1", "Chapitre 1.cbz").await.unwrap();
+        note_chapter(
+            &dir,
+            "MANGADEX",
+            "Test",
+            "manga/1",
+            Some("http://c.jpg"),
+            12,
+            "ch/1",
+            "Chapitre 1",
+            "Chapitre 1.cbz",
+        )
+        .await
+        .unwrap();
 
-        let items = list_library(root.to_string_lossy().to_string()).await.unwrap();
+        let items = list_library(root.to_string_lossy().to_string())
+            .await
+            .unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "Test");
         assert_eq!(items[0].source, "MANGADEX");
@@ -334,7 +358,9 @@ mod tests {
         std::fs::write(manga.join("Chapitre 1.cbz"), b"x").unwrap();
         std::fs::write(manga.join("Chapitre 2.cbz"), b"x").unwrap();
 
-        let items = list_library(dir.to_string_lossy().to_string()).await.unwrap();
+        let items = list_library(dir.to_string_lossy().to_string())
+            .await
+            .unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "Sans Meta");
         assert_eq!(items[0].source, "MANGABUFF");

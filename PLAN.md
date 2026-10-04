@@ -106,12 +106,12 @@ Origine : analyse de structure et de style de `sushiscan.net` (WordPress + thèm
 
 Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
-- [ ] **1.1** SQLite côté Rust, système de migrations forward-only, sauvegarde avant migration, tests de migration.
+- [x] **1.1** SQLite côté Rust, système de migrations forward-only, sauvegarde avant migration, tests de migration.
 - [ ] **1.2** Catalogue de sources : liste, activation/désactivation, langue, état (alimenté par `health`).
 - [ ] **1.3** Recherche et filtres (nom, genres, tri) avec pagination.
-- [ ] **1.4** Page détail d'un manga : infos, liste des chapitres, ajout aux favoris.
-- [ ] **1.5** Favoris organisés en catégories définies par l'utilisateur.
-- [ ] **1.6** Historique de lecture, reprise au bon chapitre et à la bonne page, mode incognito.
+- [x] **1.4** Page détail d'un manga : infos, liste des chapitres, ajout aux favoris.
+- [ ] **1.5** Favoris organisés en catégories définies par l'utilisateur (favori simple fait, catégories à faire).
+- [x] **1.6** Historique de lecture, reprise au bon chapitre et à la bonne page, mode incognito.
 - [ ] **1.7** Signets.
 - [ ] **1.8** Lecteur paginé : sens de lecture, zoom, préchargement via le cache Rust, raccourcis clavier et souris.
 - [ ] **1.9** Mode webtoon (défilement continu, liste virtualisée).
@@ -200,6 +200,23 @@ _Format d'une entrée :_
 - Preuve : commande + résumé de la sortie
 - Points ouverts :
 ```
+
+### 2026-10-04 — Tâches 1.1, 1.4, 1.6 : favoris, accueil, incognito, reprise
+- Plan : (1) prouver que favori + historique survivent à un vrai redémarrage de l'application ; (2) corriger ce qui casse l'incognito ; (3) ne déclarer 1.1/1.4/1.6 fait qu'avec une preuve exécutée.
+- Fait : base SQLite (schéma v3) avec `favorites` et `history` ; accueil par défaut avec « Continuer la lecture », « Vos favoris », interrupteur Incognito et « Vider l'historique » ; `resumeReading` rouvre le dernier chapitre à la dernière page ; `note_content_rating` apprend le classement d'un titre déjà connu (historique **et** favori) sans jamais créer de ligne.
+- **5 défauts trouvés en mesurant, tous corrigés :**
+  1. l'accueil ne chargeait rien au démarrage (`tab` vaut « home » sans passer par `goTab`) ;
+  2. la reprise écrasait le classement connu par `NULL` → `COALESCE(NULLIF(?5,'UNKNOWN'), …)` ;
+  3. les deux sources de classification se contredisent (WAMANGA : `ADULT` dans la liste, `UNKNOWN` sur la fiche ; MANGABUFF l'inverse) → on prend la première valeur connue, quel que soit l'endroit ;
+  4. le réglage « Toutes » envoyait `SAFE` (chaîne vide interprétée comme SAFE côté Rust) : WAMANGA renvoyait 0 manga. Corrigé par `safeOnly: false` + `requested_rating` ;
+  5. `user_version` estampillée sans la colonne : un binaire intermédiaire (version poussée dans une édition, migration dans l'édition suivante) a laissé la base réelle cassée définitivement. Les colonnes sont désormais ajoutées par **présence** (`PRAGMA table_info`), pas seulement par version.
+- Preuve :
+  - `cargo test --manifest-path apps\desktop\src-tauri\Cargo.toml` → **18 passés, 0 échec** (dont `une_version_stampillee_sans_la_colonne_est_reparee`, `la_migration_idempotente_ne_casse_rien`, `une_chaine_vide_ne_signifie_pas_safe`), stable sur 2 exécutions.
+  - `cargo clippy --all-targets -- -D warnings` → 0 · `cargo fmt --check` → 0 · `pnpm typecheck` / `pnpm lint` / `pnpm build` → 0.
+  - Parcours complet sur l'app réelle via CDP (`walk-final.js`) : catalogue → fiche → lecture → favori → retour accueil → **19 mesures, 0 échec**. Dont `l'incognito retire exactement les titres adultes = 1`.
+  - **Redémarrage réel** (`redemarrage.js`, processus tué puis relancé) : **9 mesures, 0 échec** — le favori revient avec son classement `ADULT`, l'historique revient avec `3/3` et `1/9`, l'incognito reste actif, le titre adulte reste masqué de « Continuer » et le favori reste visible.
+  - Captures : `audit/tatami4/11-accueil-incognito.png`, `audit/tatami4/13-redemarrage.png`.
+- Points ouverts : 1.5 reste à faire pour les **catégories** (le favori simple est en place) ; le classement d'un titre jamais ouvert et jamais mis en favori reste `UNKNOWN` et donc visible sous incognito — choix prudent assumé, documenté dans l'interface.
 
 ### 2026-10-03 — Analyse de sushiscan.net (site de référence, aucune source ajoutée)
 - Plan : (1) ne PAS toucher aux sources malgré la présence de `SushiScan` dans le JAR ; (2) analyser l'architecture, les écrans et le style pour adapter l'interface de Tatami.

@@ -1,0 +1,829 @@
+//! Magasin de données de l'utilisateur (favoris, historique, position de lecture).
+//!
+//! Tâche 1.1 du `PLAN.md`. SQLite est choisi parce que ces données sont métier
+//! et doivent survivre aux redémarrages et aux mises à jour de l'application
+//! (cf. `AGENTS.md` §6 : `localStorage` est réservé aux préférences
+//! d'affichage).
+//!
+//! Les migrations sont **forward-only** et versionnées par `PRAGMA user_version`.
+//! Le fichier de base est sauvegardé avant toute migration appliquée.
+
+use rusqlite::{params, Connection};
+use serde::Serialize;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Version du schéma attendue par ce binaire.
+const SCHEMA_VERSION: i64 = 3;
+
+#[derive(Serialize)]
+pub struct Favorite {
+    pub source: String,
+    pub manga_url: String,
+    pub title: String,
+    pub cover_url: Option<String>,
+    pub content_rating: Option<String>,
+    pub added_at: i64,
+}
+
+#[derive(Serialize)]
+pub struct HistoryEntry {
+    pub source: String,
+    pub manga_url: String,
+    pub title: String,
+    pub cover_url: Option<String>,
+    pub content_rating: Option<String>,
+    pub chapter_url: Option<String>,
+    pub chapter_title: Option<String>,
+    /// Rang du chapitre dans la liste de la source au moment de la lecture.
+    /// Permet de reprendre même si la source réordonne sa liste ensuite.
+    pub chapter_index: i64,
+    pub page_index: i64,
+    pub page_count: i64,
+    pub read_at: i64,
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+pub struct Store {
+    conn: Mutex<Connection>,
+    path: PathBuf,
+}
+
+impl Store {
+    /// Ouvre (ou crée) la base et applique les migrations en attente.
+    pub fn open(path: PathBuf) -> Result<Self, String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("création du dossier de base impossible : {e}"))?;
+        }
+        let conn = Connection::open(&path)
+            .map_err(|e| format!("ouverture de la base impossible : {e}"))?;
+        // WAL : lectures concurrentes pendant l'écriture d'un point de lecture.
+        let _ = conn.pragma_update(None, "journal_mode", "WAL");
+        conn.pragma_update(None, "foreign_keys", "ON")
+            .map_err(|e| format!("pragma foreign_keys : {e}"))?;
+        let store = Store {
+            conn: Mutex::new(conn),
+            path,
+        };
+        store.migrate()?;
+        Ok(store)
+    }
+
+    /// Repli : base en mémoire. L'application reste utilisable, mais rien ne
+    /// survit à la fermeture (utile quand le dossier de données est verrouillé).
+    pub fn open_in_memory() -> Result<Self, String> {
+        let conn = Connection::open_in_memory().map_err(|e| format!("base en mémoire : {e}"))?;
+        let store = Store {
+            conn: Mutex::new(conn),
+            path: PathBuf::from(":memory:"),
+        };
+        store.migrate()?;
+        Ok(store)
+    }
+
+    fn version(&self) -> Result<i64, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let v: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .map_err(|e| format!("lecture du schéma impossible : {e}"))?;
+        Ok(v)
+    }
+
+    fn migrate(&self) -> Result<(), String> {
+        let current = self.version()?;
+        // Pas de sortie rapide quand la version est à jour : la réparation des
+        // colonnes (plus bas) doit tourner à CHAQUE démarrage, sinon une
+        // version estampillée par un binaire qui n'avait pas encore la
+        // migration laisserait la base cassée pour toujours (mesuré).
+        // Sauvegarde avant migration : une migration ratée ne doit pas
+        // exploser les données existantes.
+        if current > 0 && current < SCHEMA_VERSION {
+            self.backup(current)?;
+        }
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let mut conn = conn;
+        let tx = conn.transaction().map_err(|e| format!("migration : {e}"))?;
+        if current < 1 {
+            tx.execute_batch(
+                r#"
+                CREATE TABLE favorites (
+                    source     TEXT    NOT NULL,
+                    manga_url  TEXT    NOT NULL,
+                    title      TEXT    NOT NULL,
+                    cover_url  TEXT,
+                    added_at   INTEGER NOT NULL,
+                    PRIMARY KEY (source, manga_url)
+                );
+
+                CREATE TABLE history (
+                    source          TEXT    NOT NULL,
+                    manga_url       TEXT    NOT NULL,
+                    title           TEXT    NOT NULL,
+                    cover_url       TEXT,
+                    content_rating  TEXT,
+                    chapter_url     TEXT,
+                    chapter_title   TEXT,
+                    page_index      INTEGER NOT NULL DEFAULT 0,
+                    page_count      INTEGER NOT NULL DEFAULT 0,
+                    read_at         INTEGER NOT NULL,
+                    PRIMARY KEY (source, manga_url)
+                );
+                CREATE INDEX history_read_at ON history (read_at DESC);
+                "#,
+            )
+            .map_err(|e| format!("migration v1 : {e}"))?;
+        }
+        // Les colonnes sont ajoutées par PRÉSENCE, pas seulement par version.
+        // Mesuré : un binaire intermédiaire (version poussée à 3 dans une
+        // édition, bloc de migration dans l'édition suivante) a estampillé
+        // `user_version = 3` sans ajouter `favorites.content_rating`. La base
+        // réelle est alors restée cassée pour toujours, le code croyant la
+        // migration faite. Se fier à `PRAGMA table_info` répare ce cas.
+        //
+        // v2 : la position de lecture doit survivre à un changement de source
+        // qui renvoie ses chapitres dans un ordre différent.
+        Self::ensure_column(
+            &tx,
+            "history",
+            "chapter_index",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        // v3 : le favori retient la classification. Ouvrir un favori depuis
+        // l'accueil n'a plus aucun contexte de liste, donc sans cette colonne
+        // l'incognito ne pouvait plus rien masquer.
+        Self::ensure_column(&tx, "favorites", "content_rating", "TEXT")?;
+        if current < 2 {
+            tx.execute_batch("CREATE INDEX IF NOT EXISTS history_title ON history (title);")
+                .map_err(|e| format!("migration : index history_title : {e}"))?;
+        }
+        // `user_version` ne peut pas être parametré : la valeur est un entier
+        // de constante, jamais une entrée utilisateur. Réécrire la même valeur
+        // est sans effet ; on ne l'écrit que si elle change pour éviter de
+        // toucher au fichier à chaque démarrage.
+        if current < SCHEMA_VERSION {
+            tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
+                .map_err(|e| format!("migration : écriture de la version : {e}"))?;
+        }
+        tx.commit()
+            .map_err(|e| format!("migration : validation : {e}"))?;
+        Ok(())
+    }
+
+    /// Ajoute `table`.`colonne` si elle n'existe pas déjà.
+    ///
+    /// `table` et `colonne` ne viennent jamais d'une entrée utilisateur : ce sont
+    /// des constantes écrites ici, d'où le formatage direct.
+    fn ensure_column(
+        tx: &rusqlite::Transaction<'_>,
+        table: &str,
+        colonne: &str,
+        declaration: &str,
+    ) -> Result<(), String> {
+        let existe = {
+            let mut req = tx
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .map_err(|e| format!("table_info({table}) : {e}"))?;
+            let mut lignes = req
+                .query([])
+                .map_err(|e| format!("table_info({table}) : {e}"))?;
+            let mut trouve = false;
+            while let Some(l) = lignes
+                .next()
+                .map_err(|e| format!("table_info({table}) : {e}"))?
+            {
+                if l.get::<_, String>(1).map(|n| n == colonne).unwrap_or(false) {
+                    trouve = true;
+                }
+            }
+            trouve
+        };
+        if !existe {
+            tx.execute_batch(&format!(
+                "ALTER TABLE {table} ADD COLUMN {colonne} {declaration};"
+            ))
+            .map_err(|e| format!("ajout de {table}.{colonne} : {e}"))?;
+        }
+        Ok(())
+    }
+
+    fn backup(&self, from_version: i64) -> Result<(), String> {
+        let name = format!("tatami-v{from_version}-{}.db", now_ms());
+        let dest: PathBuf = self
+            .path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(name);
+        std::fs::copy(&self.path, &dest)
+            .map_err(|e| format!("sauvegarde avant migration impossible : {e}"))?;
+        tracing::info!("sauvegarde de la base : {}", dest.display());
+        Ok(())
+    }
+
+    // ---------- Favoris ----------
+
+    pub fn set_favorite(
+        &self,
+        source: &str,
+        manga_url: &str,
+        title: &str,
+        cover_url: Option<&str>,
+        content_rating: Option<&str>,
+        favorite: bool,
+    ) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        if favorite {
+            conn.execute(
+                "INSERT INTO favorites (source, manga_url, title, cover_url, content_rating, added_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(source, manga_url) DO UPDATE SET
+                   title = ?3, cover_url = ?4,
+                   content_rating = COALESCE(NULLIF(?5, 'UNKNOWN'), content_rating)",
+                params![source, manga_url, title, cover_url, content_rating, now_ms()],
+            )
+        } else {
+            conn.execute(
+                "DELETE FROM favorites WHERE source = ?1 AND manga_url = ?2",
+                params![source, manga_url],
+            )
+        }
+        .map_err(|e| format!("favori : {e}"))?;
+        Ok(())
+    }
+
+    pub fn list_favorites(&self) -> Result<Vec<Favorite>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT source, manga_url, title, cover_url, content_rating, added_at
+                 FROM favorites ORDER BY added_at DESC, title ASC",
+            )
+            .map_err(|e| format!("favoris : {e}"))?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(Favorite {
+                    source: r.get(0)?,
+                    manga_url: r.get(1)?,
+                    title: r.get(2)?,
+                    cover_url: r.get(3)?,
+                    content_rating: r.get(4)?,
+                    added_at: r.get(5)?,
+                })
+            })
+            .map_err(|e| format!("favoris : {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("favoris : {e}"))
+    }
+
+    // ---------- Historique ----------
+
+    /// Note la classification d'un titre **déjà connu** (lu ou mis en favori).
+    /// Deux `UPDATE` et aucun `INSERT` : ouvrir une fiche ne doit ni fabriquer
+    /// une entrée « lus récemment », ni créer un favori pour un titre que
+    /// l'utilisateur n'a jamais choisi. Le favori compte aussi parce qu'il
+    /// s'ouvre depuis l'accueil, où rien d'autre ne donne son classement.
+    pub fn note_content_rating(
+        &self,
+        source: &str,
+        manga_url: &str,
+        rating: &str,
+    ) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        // `table` vient de la liste ci-dessus, jamais d'une entrée utilisateur.
+        for table in ["history", "favorites"] {
+            conn.execute(
+                &format!(
+                    "UPDATE {table} SET content_rating = ?3
+                     WHERE source = ?1 AND manga_url = ?2 AND content_rating IS NULL"
+                ),
+                params![source, manga_url, rating],
+            )
+            .map_err(|e| format!("{table} : {e}"))?;
+        }
+        Ok(())
+    }
+
+    /// Enregistre la position de lecture. `chapter_index` permet de retrouver
+    /// le chapitre même si la source réordonne sa liste au fil du temps.
+    #[allow(clippy::too_many_arguments)]
+    pub fn save_progress(
+        &self,
+        source: &str,
+        manga_url: &str,
+        title: &str,
+        cover_url: Option<&str>,
+        content_rating: Option<&str>,
+        chapter_url: Option<&str>,
+        chapter_title: Option<&str>,
+        chapter_index: i64,
+        page_index: i64,
+        page_count: i64,
+    ) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute(
+            "INSERT INTO history
+               (source, manga_url, title, cover_url, content_rating, chapter_url,
+                chapter_title, chapter_index, page_index, page_count, read_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(source, manga_url) DO UPDATE SET
+               title = ?3, cover_url = ?4,
+               -- `COALESCE` : une lecture qui n'a pas chargé la fiche transmet
+               -- NULL et ne doit donc pas effacer une classification déjà
+               -- connue (mesuré : la reprise depuis l'accueil faisait perdre
+               -- le classement `ADULT`, et l'incognito ne pouvait plus masquer).
+               content_rating = COALESCE(NULLIF(?5, 'UNKNOWN'), content_rating),
+               chapter_url = ?6, chapter_title = ?7, chapter_index = ?8,
+               page_index = ?9, page_count = ?10, read_at = ?11",
+            params![
+                source,
+                manga_url,
+                title,
+                cover_url,
+                content_rating,
+                chapter_url,
+                chapter_title,
+                chapter_index,
+                page_index,
+                page_count,
+                now_ms()
+            ],
+        )
+        .map_err(|e| format!("historique : {e}"))?;
+        Ok(())
+    }
+
+    /// Lus récemment, du plus récent au plus ancien. `hide_adult` applique le
+    /// mode incognito : les titres dont la classification est adulte ne sont
+    /// pas listés (ils restent accessibles en recherche, cf. `PLAN.md`).
+    pub fn list_recent(&self, limit: i64, hide_adult: bool) -> Result<Vec<HistoryEntry>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let sql = if hide_adult {
+            "SELECT source, manga_url, title, cover_url, content_rating, chapter_url,
+                    chapter_title, chapter_index, page_index, page_count, read_at
+             FROM history
+             WHERE content_rating IS NULL
+                OR content_rating NOT IN ('ADULT', 'ERATIC_AO', 'PORNOGRAPHIC')
+             ORDER BY read_at DESC LIMIT ?1"
+        } else {
+            "SELECT source, manga_url, title, cover_url, content_rating, chapter_url,
+                    chapter_title, chapter_index, page_index, page_count, read_at
+             FROM history ORDER BY read_at DESC LIMIT ?1"
+        };
+        let mut stmt = conn.prepare(sql).map_err(|e| format!("historique : {e}"))?;
+        let rows = stmt
+            .query_map(params![limit.clamp(1, 200)], |r| {
+                Ok(HistoryEntry {
+                    source: r.get(0)?,
+                    manga_url: r.get(1)?,
+                    title: r.get(2)?,
+                    cover_url: r.get(3)?,
+                    content_rating: r.get(4)?,
+                    chapter_url: r.get(5)?,
+                    chapter_title: r.get(6)?,
+                    chapter_index: r.get(7)?,
+                    page_index: r.get(8)?,
+                    page_count: r.get(9)?,
+                    read_at: r.get(10)?,
+                })
+            })
+            .map_err(|e| format!("historique : {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("historique : {e}"))
+    }
+
+    pub fn forget(&self, source: &str, manga_url: &str) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute(
+            "DELETE FROM history WHERE source = ?1 AND manga_url = ?2",
+            params![source, manga_url],
+        )
+        .map_err(|e| format!("historique : {e}"))?;
+        Ok(())
+    }
+
+    pub fn forget_all(&self) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute("DELETE FROM history", [])
+            .map_err(|e| format!("historique : {e}"))?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Dossier unique par appel. `now_ms()` seul ne suffit pas : les tests tournent
+    /// en parallèle et deux d'entre eux démarrant dans la même milliseconde se
+    /// partageaient le même fichier (mesuré : deux tests en échec « au hasard »).
+    fn store_vierge() -> (Store, PathBuf) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COMPTEUR: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "tatami-test-{}-{}",
+            std::process::id(),
+            COMPTEUR.fetch_add(1, Ordering::Relaxed)
+        ));
+        let path = dir.join("tatami.db");
+        (Store::open(path.clone()).expect("ouverture"), path)
+    }
+
+    fn nettoyer(path: &Path) {
+        if let Some(p) = path.parent() {
+            let _ = std::fs::remove_dir_all(p);
+        }
+    }
+
+    #[test]
+    fn favori_ajoute_puis_retire() {
+        let (s, path) = store_vierge();
+        s.set_favorite("SRC", "/m/1", "Titre", Some("http://c"), Some("SAFE"), true)
+            .unwrap();
+        let list = s.list_favorites().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].title, "Titre");
+        s.set_favorite("SRC", "/m/1", "Titre", None, None, false)
+            .unwrap();
+        assert!(s.list_favorites().unwrap().is_empty());
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn favori_mise_a_jour_sans_doublon() {
+        let (s, path) = store_vierge();
+        s.set_favorite("SRC", "/m/1", "Ancien", None, Some("SAFE"), true)
+            .unwrap();
+        s.set_favorite("SRC", "/m/1", "Nouveau", None, Some("ADULT"), true)
+            .unwrap();
+        let list = s.list_favorites().unwrap();
+        assert_eq!(list.len(), 1, "un favori ne doit pas être dupliqué");
+        assert_eq!(list[0].title, "Nouveau");
+        assert_eq!(
+            list[0].content_rating.as_deref(),
+            Some("ADULT"),
+            "le favori doit retenir le classement"
+        );
+        // Un classement inconnu ne doit pas écraser celui qu'on connaît.
+        s.set_favorite("SRC", "/m/1", "Nouveau", None, Some("UNKNOWN"), true)
+            .unwrap();
+        assert_eq!(
+            s.list_favorites().unwrap()[0].content_rating.as_deref(),
+            Some("ADULT")
+        );
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn une_classification_connue_n_est_jamais_ecrasee_par_null() {
+        let (s, path) = store_vierge();
+        // Première lecture : la fiche est chargée, le classement est connu.
+        s.save_progress(
+            "SRC",
+            "/m/a",
+            "A",
+            None,
+            Some("ADULT"),
+            Some("/c/1"),
+            None,
+            0,
+            0,
+            10,
+        )
+        .unwrap();
+        // Reprise : la fiche n'est pas rechargée, on transmet None.
+        s.save_progress("SRC", "/m/a", "A", None, None, Some("/c/2"), None, 1, 1, 10)
+            .unwrap();
+        let e = &s.list_recent(10, false).unwrap()[0];
+        assert_eq!(
+            e.content_rating.as_deref(),
+            Some("ADULT"),
+            "le classement appris doit survivre a une ecriture sans fiche"
+        );
+        assert_eq!(e.chapter_index, 1, "la position, elle, doit bien avancer");
+        // Et l'incognito doit donc pouvoir le masquer.
+        assert!(s.list_recent(10, true).unwrap().is_empty());
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn le_classissement_note_ne_cree_pas_dentree() {
+        let (s, path) = store_vierge();
+        // Titre jamais lu : l'ouvrir sa fiche ne doit rien créer.
+        s.note_content_rating("SRC", "/m/inconnu", "ADULT").unwrap();
+        assert!(
+            s.list_recent(10, false).unwrap().is_empty(),
+            "ouvrir une fiche ne doit pas fabriquer un historique"
+        );
+        // Titre déjà lu sans classification : il est mis à jour.
+        s.save_progress(
+            "SRC",
+            "/m/lu",
+            "Lu",
+            None,
+            None,
+            Some("/c/1"),
+            None,
+            0,
+            0,
+            10,
+        )
+        .unwrap();
+        s.note_content_rating("SRC", "/m/lu", "ADULT").unwrap();
+        assert!(
+            s.list_recent(10, true).unwrap().is_empty(),
+            "masqué par incognito"
+        );
+        // Une classification connue n'est pas écrasée par une autre.
+        s.note_content_rating("SRC", "/m/lu", "SAFE").unwrap();
+        assert!(s.list_recent(10, true).unwrap().is_empty());
+
+        // Un favori apprend son classement de la même façon : il s'ouvre depuis
+        // l'accueil, où aucun contexte de liste ne peut le fournir.
+        s.set_favorite("SRC", "/m/fav", "Favori", None, None, true)
+            .unwrap();
+        assert_eq!(s.list_favorites().unwrap()[0].content_rating, None);
+        s.note_content_rating("SRC", "/m/fav", "ADULT").unwrap();
+        assert_eq!(
+            s.list_favorites().unwrap()[0].content_rating.as_deref(),
+            Some("ADULT"),
+            "ouvrir la fiche d'un favori doit lui apprendre son classement"
+        );
+        assert_eq!(
+            s.list_favorites().unwrap().len(),
+            1,
+            "et toujours aucun favori fabriqué"
+        );
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn une_version_stampillee_sans_la_colonne_est_reparee() {
+        // Cas mesuré : un binaire intermédiaire écrit `user_version = 3` sans
+        // appliquer la v3. La base reste alors cassée pour toujours, puisque le
+        // code suivant saute la migration en croyant l'avoir faite.
+        let (s, path) = store_vierge();
+        s.set_favorite("SRC", "/m/1", "Titre", None, None, true)
+            .unwrap();
+        {
+            let conn = s.conn.lock().unwrap();
+            conn.execute_batch("ALTER TABLE favorites DROP COLUMN content_rating")
+                .unwrap();
+            // La version ment : elle annonce la v3 pourtant appliquée.
+            conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
+                .unwrap();
+        }
+        s.migrate().unwrap();
+        let colonnes: Vec<String> = {
+            let conn = s.conn.lock().unwrap();
+            let mut req = conn
+                .prepare("SELECT name FROM pragma_table_info('favorites')")
+                .unwrap();
+            req.query_map([], |r| r.get::<_, String>(0))
+                .unwrap()
+                .map(|x| x.unwrap())
+                .collect()
+        };
+        assert!(
+            colonnes.iter().any(|c| c == "content_rating"),
+            "la colonne manquante doit etre retablie, obtenu {colonnes:?}"
+        );
+        assert_eq!(
+            s.list_favorites().unwrap()[0].title,
+            "Titre",
+            "et les donnees doivent survivre"
+        );
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn la_migration_idempotente_ne_casse_rien() {
+        let (s, path) = store_vierge();
+        s.set_favorite("SRC", "/m/1", "Titre", None, Some("ADULT"), true)
+            .unwrap();
+        // Relancer une migration sur une base deja a jour ne doit rien changer.
+        for _ in 0..3 {
+            s.migrate().unwrap();
+        }
+        assert_eq!(s.version().unwrap(), SCHEMA_VERSION);
+        assert_eq!(
+            s.list_favorites().unwrap()[0].content_rating.as_deref(),
+            Some("ADULT")
+        );
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn historique_tri_par_lecture_descendante() {
+        let (s, path) = store_vierge();
+        s.save_progress(
+            "SRC",
+            "/m/a",
+            "A",
+            None,
+            Some("SAFE"),
+            Some("/c/1"),
+            Some("Ch. 1"),
+            0,
+            0,
+            10,
+        )
+        .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        s.save_progress(
+            "SRC",
+            "/m/b",
+            "B",
+            None,
+            Some("SAFE"),
+            Some("/c/2"),
+            Some("Ch. 2"),
+            0,
+            0,
+            10,
+        )
+        .unwrap();
+        let recent = s.list_recent(10, false).unwrap();
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].title, "B", "le plus lu doit venir en premier");
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn position_de_relecture_mise_a_jour_sans_doublon() {
+        let (s, path) = store_vierge();
+        s.save_progress(
+            "SRC",
+            "/m/a",
+            "A",
+            None,
+            Some("SAFE"),
+            Some("/c/1"),
+            Some("Ch. 1"),
+            0,
+            4,
+            20,
+        )
+        .unwrap();
+        s.save_progress(
+            "SRC",
+            "/m/a",
+            "A",
+            None,
+            Some("SAFE"),
+            Some("/c/7"),
+            Some("Ch. 7"),
+            7,
+            2,
+            15,
+        )
+        .unwrap();
+        let e = &s.list_recent(10, false).unwrap()[0];
+        assert_eq!(e.chapter_index, 7);
+        assert_eq!(e.page_index, 2);
+        assert_eq!(e.page_count, 15);
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn incognito_masque_les_titres_adultes() {
+        let (s, path) = store_vierge();
+        s.save_progress(
+            "SRC",
+            "/m/safe",
+            "Safe",
+            None,
+            Some("SAFE"),
+            Some("/c/1"),
+            None,
+            0,
+            0,
+            10,
+        )
+        .unwrap();
+        s.save_progress(
+            "SRC",
+            "/m/adult",
+            "Adulte",
+            None,
+            Some("ADULT"),
+            Some("/c/2"),
+            None,
+            0,
+            0,
+            10,
+        )
+        .unwrap();
+        s.save_progress(
+            "SRC",
+            "/m/inconnu",
+            "Sans classe",
+            None,
+            None,
+            Some("/c/3"),
+            None,
+            0,
+            0,
+            10,
+        )
+        .unwrap();
+        let tout = s.list_recent(10, false).unwrap();
+        assert_eq!(tout.len(), 3);
+        let filtre = s.list_recent(10, true).unwrap();
+        assert_eq!(filtre.len(), 2, "le titre adulte doit être masque");
+        assert!(filtre
+            .iter()
+            .all(|e| !e.title.eq_ignore_ascii_case("Adulte")));
+        assert!(
+            filtre.iter().any(|e| e.title == "Sans classe"),
+            "un titre sans classification ne doit pas disparaitre"
+        );
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn migration_depuis_la_version_1_conserve_les_donnees() {
+        // On fabrique une base en version 1, puis on vérifie que la migration
+        // vers la version 2 ajoute la colonne sans perdre les lignes.
+        let (s, path) = store_vierge();
+        s.set_favorite("SRC", "/m/1", "Avant migration", None, Some("SAFE"), true)
+            .unwrap();
+        // On relève l'état AVANT de mutiler le schéma : `list_favorites` lit la
+        // colonne que la v3 va ajouter, il échouerait sur la base dégradée.
+        let avant = s.list_favorites().unwrap();
+        assert_eq!(avant.len(), 1);
+        {
+            let conn = s.conn.lock().unwrap();
+            conn.execute_batch("PRAGMA user_version = 1").unwrap();
+            // On retire la colonne ajoutée en v2 pour simuler l'ancien schéma.
+            conn.execute_batch("ALTER TABLE history DROP COLUMN chapter_index")
+                .unwrap();
+            conn.execute_batch("DROP INDEX IF EXISTS history_title")
+                .unwrap();
+            // La v3 a ajouté cette colonne : on la retire aussi, sinon la
+            // migration échoue sur un doublon de colonne.
+            conn.execute_batch("ALTER TABLE favorites DROP COLUMN content_rating")
+                .unwrap();
+            conn.execute_batch("PRAGMA user_version = 1").unwrap();
+        }
+        s.migrate().unwrap();
+        assert_eq!(s.version().unwrap(), SCHEMA_VERSION);
+        let apres = s.list_favorites().unwrap();
+        assert_eq!(
+            apres.len(),
+            1,
+            "les favoris doivent survivre a la migration"
+        );
+        assert_eq!(apres[0].title, "Avant migration");
+        // La colonne de la v2 doit exister et être utilisable.
+        s.save_progress(
+            "SRC",
+            "/m/1",
+            "Apres",
+            None,
+            Some("SAFE"),
+            Some("/c/1"),
+            None,
+            3,
+            1,
+            9,
+        )
+        .unwrap();
+        assert_eq!(s.list_recent(10, false).unwrap()[0].chapter_index, 3);
+        nettoyer(&path);
+    }
+}

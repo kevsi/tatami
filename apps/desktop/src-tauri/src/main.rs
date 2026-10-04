@@ -6,6 +6,8 @@ mod commands;
 mod download;
 mod library;
 mod pagecache;
+mod shelf;
+mod store;
 mod supervisor;
 
 use std::sync::Arc;
@@ -35,8 +37,29 @@ fn main() {
         .join("cache");
     let cache = pagecache::PageCache::new(cache_dir);
 
+    // Base de données de l'utilisateur (favoris, historique, reprise). Si le
+    // fichier est inaccessible (dossier verrouillé, disque plein, droits),
+    // on bascule sur une base en mémoire : l'application démarre quand même,
+    // seuls les favoris et l'historique ne survivront pas à la fermeture.
+    let data_dir = std::env::var("APPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("Tatami");
+    let db_path = data_dir.join("tatami.db");
+    let store = match store::Store::open(db_path.clone()) {
+        Ok(s) => {
+            tracing::info!("base ouverte : {}", db_path.display());
+            s
+        }
+        Err(e) => {
+            tracing::error!("base de donnees indisponible ({e}), repli en memoire");
+            store::Store::open_in_memory().expect("la base en memoire ne peut pas echouer")
+        }
+    };
+
     tauri::Builder::default()
         .manage(sup.clone())
+        .manage(Arc::new(store))
         .manage(cache.clone())
         .register_asynchronous_uri_scheme_protocol("tatami", move |_ctx, request, responder| {
             let sup = sup.clone();
@@ -79,6 +102,13 @@ fn main() {
             library::list_library,
             library::existing_chapters,
             library::remove_download,
+            shelf::list_favorites,
+            shelf::set_favorite,
+            shelf::save_progress,
+            shelf::note_content_rating,
+            shelf::list_recent,
+            shelf::forget_history,
+            shelf::clear_history,
             challenge::open_challenge,
             challenge::solve_challenge,
             challenge::cancel_challenge

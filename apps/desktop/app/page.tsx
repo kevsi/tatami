@@ -2638,7 +2638,7 @@ if (reader) {
       visible.push(page);
     }
     return (
-      <main className="reader">
+      <main className={`reader${readerMode === 'webtoon' ? ' pleine-largeur' : ''}`}>
         <header className="reader-bar">
           <button className="btn btn-ghost" onClick={closeReader}>
             {'←'} Chapitres
@@ -2801,6 +2801,25 @@ if (reader) {
           </div>
         </header>
 
+        {/* Navigation en HAUT (demande explicite de l'utilisateur). En mode
+            webtoon, la bande est un défilement continu : une navigation en bas
+            obligerait à revenir en haut de la page à chaque changement — et
+            sur un chapitre de 303 pages, c'est 650 000 px de défilement. */}
+        {readerMode === 'webtoon' && (
+          <div className="reader-nav haut">
+            <button className="btn" disabled={index === 0} onClick={() => scrollToPage(index - 1)}>
+              {'↑'} Page précédente
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={index >= pages.length - 1}
+              onClick={() => scrollToPage(index + 1)}
+            >
+              Page suivante {'↓'}
+            </button>
+          </div>
+        )}
+
         {readerMode === 'webtoon' ? (
           <div className="webtoon" ref={stripRef} onScroll={onScrollBande}>
             {/* Tâche 1.9 — virtualisation. Mesuré : Killer Peter = 303 pages
@@ -2871,21 +2890,6 @@ if (reader) {
               </button>
             </div>
           </>
-        )}
-
-        {readerMode === 'webtoon' && (
-          <div className="reader-nav">
-            <button className="btn" disabled={index === 0} onClick={() => scrollToPage(index - 1)}>
-              {'↑'} Page précédente
-            </button>
-            <button
-              className="btn btn-primary"
-              disabled={index >= pages.length - 1}
-              onClick={() => scrollToPage(index + 1)}
-            >
-              Page suivante {'↓'}
-            </button>
-          </div>
         )}
 
         {readerMode === 'page' && next && (

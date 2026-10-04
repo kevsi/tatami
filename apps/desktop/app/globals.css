@@ -1829,3 +1829,26 @@ button:disabled {
   padding-right: var(--s2);
   margin-bottom: var(--s3);
 }
+/* Bande webtoon pleine largeur (demande de l'utilisateur : « la page de lecture
+   d'un webtoon doit etre grande »).
+   Mesure avant : 1 200 px de bande dans une fenetre de 1 440, donc 120 px de
+   marge de chaque cote — le lecteur etait encadre. La bande passe bord a bord ;
+   les barres, elles, gardent leur marge, sinon leurs boutons collent aux bords. */
+.reader.pleine-largeur {
+  padding-left: 0;
+  padding-right: 0;
+}
+.reader.pleine-largeur .reader-bar,
+.reader.pleine-largeur .reader-nav {
+  padding-left: var(--s5);
+  padding-right: var(--s5);
+}
+
+/* Navigation du lecteur placee en haut : la meme raison que ci-dessus.
+   Pas de `order` ici : la barre de navigation est le premier enfant de `.reader`
+   (donc `order: 0`), et un `order: -1` aurait passe la navigation AU-DESSUS
+   d'elle. L'ordre du DOM suffit. */
+.reader-nav.haut {
+  padding: var(--s3) var(--s5);
+  border-bottom: 1px solid var(--line);
+}

@@ -282,6 +282,16 @@ Le chapitre reste **absent** du disque, donc la règle « ne jamais retéléchar
 
 Mesuré : quand la source ne renvoie **pas** de titre de chapitre (`title: null`, cas de MANGADEX ici), `chapterLabel` retombe sur l'URL et le fichier s'appelle `22d20970-38d1-48aa-bbd3-9ca9afbbb3dc.cbz`. Le `.cbz` est valide et lisible par Tatami, mais **inutilisable** dans un lecteur externe, ce qui contredit l'intention de l'exigence permanente (« un `.cbz` par chapitre »). Nouvelle tâche 0.18.
 
+### 2026-10-04 — Demande utilisateur : bande webtoon pleine largeur, navigation en haut
+
+**Pleine largeur.** Mesuré avant : 1 200 px de bande dans une fenêtre de 1 440, donc 120 px de marge de chaque côté — le lecteur était encadré. `.reader.pleine-largeur` retire le padding horizontal en mode webtoon ; les barres (titre, navigation) gardent leur marge, sinon leurs boutons colleraient aux bords. Après : bande à **1 420 px** (les 20 px restants sont la gouttière de la barre de défilement, `scrollbar-gutter: stable`) et image à 1 420 px.
+
+**Navigation en haut.** En mode webtoon, la navigation était rendue **après** la bande : revenir en haut de l'écran à chaque changement de page revenait à parcourir 650 000 px sur un chapitre de 303 pages. Elle est désormais rendue juste sous la barre de titre. Un `order: -1` a été retiré après coup : `.reader-bar` est le premier enfant de `.reader` (`order: 0`), donc un `order: -1` aurait placé la navigation **au-dessus** d'elle. L'ordre du DOM suffit.
+
+Mesuré : navigation à `top = 62 px`, sous la barre de titre (`top = 0`), les deux boutons présents, aucune navigation restante en bas, le bouton « suivante » avance bien la bande (page 3, `scrollTop` 6 808), et le **mode pagé garde sa navigation en bas** (non régressé). 9/9.
+
+**Zone d'ombre non tranchée, à l'œil humain.** Les captures de la bande webtoon reviennent **noires**, alors que tout le reste est correct : géométrie vérifiée (boîtes 1 420 × 2 272 aux offsets 0 / 2 272 / 4 544), images **décodées** (`naturalWidth 800 × 1280`), `elementFromPoint` renvoie bien l'`IMG`, et **le fond rouge posé sur l'image ne peint pas non plus** — même en `position: static`, donc pas un problème de positionnement. Aucun `content-visibility` résiduel dans le CSS servi. Les mêmes jetons locaux s'affichent correctement en mode pagé. Tout penche vers un artefact de capture CDP au-dessus d'un conteneur de 686 000 px, mais **ce n'est pas prouvé** : il faut l'œil de l'utilisateur.
+
 ### 2026-10-04 — Tâches 1.9, 2.3 (suite), et les trois défauts que j'avais laissés
 
 **1.9 — bande webtoon virtualisée.** Rust lit désormais la **taille réelle** de chaque page dans l'en-tête (`image::dimensions` : JPEG par parcours des marqueurs SOF, PNG via IHDR, WebP VP8/VP8L/VP8X), en ne lisant que **512 octets** par entrée — lire les images entières aurait relu ~90 Mo pour rien. L'interface en déduit la hauteur affichée, la position de chaque page, et ne monte qu'une **fenêtre glissante**. `flex: none` sur `.webtoon-inner` était indispensable : sans lui, le `height: 657 485px` posé en style inline était réduit par `flex-shrink` à 540 px, la barre de défilement mentait et la position sautait.

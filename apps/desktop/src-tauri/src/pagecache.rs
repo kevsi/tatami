@@ -94,7 +94,13 @@ pub async fn serve_page(
     if let Ok(meta) = std::fs::metadata(&path) {
         if meta.len() > 0 {
             let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-            let ct = guess_ct(&bytes);
+            // Une entrée de cache écrite avant la vérification peut contenir la
+            // page HTML d'un interstitiel : on la relit telle quelle pour ne pas
+            // casser ce qui est déjà bon, mais on ne la sert plus comme image.
+            let ct = match super::image::detect(&bytes) {
+                Some(kind) => kind.content_type().to_string(),
+                None => "application/octet-stream".to_string(),
+            };
             return Ok((bytes, ct));
         }
     }
@@ -121,20 +127,13 @@ pub async fn serve_page(
         .and_then(Value::as_str)
         .unwrap_or("application/octet-stream");
     let bytes = base64_decode(b64).map_err(|e| e.to_string())?;
+    // Même garantie que le téléchargement : on ne met **rien** en cache tant
+    // que les octets ne sont pas une image. Sinon le cache conserve la page
+    // HTML d'un interstitiel et la réessaie ensuite depuis le disque, à jamais.
+    let kind = crate::image::detect(&bytes)
+        .ok_or_else(|| crate::image::not_an_image_message("cette page", Some(ct)))?;
     let _ = std::fs::write(&path, &bytes);
-    Ok((bytes, ct.to_string()))
-}
-
-fn guess_ct(bytes: &[u8]) -> String {
-    if bytes.starts_with(b"\xff\xd8") {
-        "image/jpeg".to_string()
-    } else if bytes.starts_with(b"\x89PNG") {
-        "image/png".to_string()
-    } else if bytes.starts_with(b"RIFF") && bytes.len() > 12 && &bytes[8..12] == b"WEBP" {
-        "image/webp".to_string()
-    } else {
-        "application/octet-stream".to_string()
-    }
+    Ok((bytes, kind.content_type().to_string()))
 }
 
 fn base64_decode(s: &str) -> Result<Vec<u8>, base64::DecodeError> {

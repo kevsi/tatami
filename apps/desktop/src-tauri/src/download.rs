@@ -301,7 +301,28 @@ async fn run_download(
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| format!("décodage base64: {e}"))?;
-        cbz.add_image(i + 1, content_type, &bytes)
+        // Mesuré : une source répond 200 OK avec la page HTML de son
+        // interstitiel de vérification d'âge. Sans ce contrôle, ce HTML partait
+        // dans le `.cbz` sous le nom `001.jpg` et le lecteur n'affichait que du
+        // noir — 37 chapitres sur 44 dans un cas réel. Le type est donc déduit
+        // des OCTETS, jamais du `contentType` annoncé.
+        let kind = crate::image::detect(&bytes).ok_or_else(|| {
+            let message =
+                crate::image::not_an_image_message(&format!("page {}", i + 1), Some(content_type));
+            let _ = app.emit(
+                "download://progress",
+                Progress {
+                    source: source.to_string(),
+                    chapter: chapter_title.to_string(),
+                    page: i + 1,
+                    total,
+                    done: false,
+                    error: Some(message.clone()),
+                },
+            );
+            message
+        })?;
+        cbz.add_image_kind(i + 1, kind, &bytes)
             .map_err(|e| format!("écriture page {}: {e}", i + 1))?;
     }
 

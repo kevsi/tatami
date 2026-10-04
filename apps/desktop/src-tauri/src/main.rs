@@ -4,6 +4,7 @@ mod cbz;
 mod challenge;
 mod commands;
 mod download;
+mod image;
 mod library;
 mod pagecache;
 mod shelf;

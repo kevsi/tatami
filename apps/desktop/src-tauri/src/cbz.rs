@@ -27,9 +27,24 @@ impl<W: Write> CbzWriter<W> {
         }
     }
 
-    /// Ecrit une page : en-tete local puis octets, ecrits immediatement.
-    pub fn add_image(&mut self, index: usize, content_type: &str, bytes: &[u8]) -> io::Result<()> {
-        let name = format!("{:03}.{}", index, extension(content_type));
+    /// Ecrit une page dont le type a été **vérifié sur les octets**.
+    ///
+    /// C'est la seule voie d'écriture. Une version antérieure acceptait un
+    /// `contentType` et en déduisait l'extension : une source qui répond
+    /// `200 OK` avec la page HTML de son interstitiel de vérification d'âge
+    /// produisait alors un `.cbz` valide plein de `001.jpg` illisibles
+    /// (mesuré : 37 chapitres sur 44). L'extension dit maintenant la vérité.
+    pub fn add_image_kind(
+        &mut self,
+        index: usize,
+        kind: crate::image::ImageKind,
+        bytes: &[u8],
+    ) -> io::Result<()> {
+        self.add_named(index, kind.extension(), bytes)
+    }
+
+    fn add_named(&mut self, index: usize, ext: &str, bytes: &[u8]) -> io::Result<()> {
+        let name = format!("{:03}.{ext}", index);
         let name_bytes = name.as_bytes();
         let crc = crc32(bytes);
         let size = bytes.len() as u32;
@@ -117,18 +132,6 @@ impl CbzWriter<std::io::BufWriter<std::fs::File>> {
     }
 }
 
-fn extension(content_type: &str) -> &'static str {
-    if content_type.contains("png") {
-        "png"
-    } else if content_type.contains("webp") {
-        "webp"
-    } else if content_type.contains("gif") {
-        "gif"
-    } else {
-        "jpg"
-    }
-}
-
 fn crc32(data: &[u8]) -> u32 {
     let mut table = [0u32; 256];
     for (i, slot) in table.iter_mut().enumerate() {
@@ -153,10 +156,11 @@ fn crc32(data: &[u8]) -> u32 {
 mod tests {
     use super::*;
 
-    fn build(pages: &[(&str, &[u8])]) -> Vec<u8> {
+    fn build(pages: &[crate::image::ImageKind]) -> Vec<u8> {
         let mut w = CbzWriter::new(Vec::new());
-        for (i, (ct, bytes)) in pages.iter().enumerate() {
-            w.add_image(i + 1, ct, bytes).unwrap();
+        for (i, kind) in pages.iter().enumerate() {
+            w.add_image_kind(i + 1, *kind, kind.content_type().as_bytes())
+                .unwrap();
         }
         w.finish().unwrap();
         w.into_inner()
@@ -164,7 +168,7 @@ mod tests {
 
     #[test]
     fn cbz_has_local_header_and_central_directory() {
-        let bytes = build(&[("image/webp", b"page-one"), ("image/jpeg", b"page-two")]);
+        let bytes = build(&[crate::image::ImageKind::Webp, crate::image::ImageKind::Jpeg]);
         assert_eq!(&bytes[0..4], &[0x50, 0x4b, 0x03, 0x04]);
         assert_eq!(
             &bytes[bytes.len() - 22..bytes.len() - 18],
@@ -176,12 +180,16 @@ mod tests {
     fn entrees_en_mode_stored_sans_recompression() {
         // Un lecteur ZIP doit retrouver les octets exacts et une taille
         // compressee egale a la taille reelle (aucune compression appliquee).
+        let mut w = CbzWriter::new(Vec::new());
         let payload = vec![7u8; 4096];
-        let bytes = build(&[("image/jpeg", &payload)]);
+        w.add_image_kind(1, crate::image::ImageKind::Jpeg, &payload)
+            .unwrap();
+        w.finish().unwrap();
+        let bytes = w.into_inner();
         assert_eq!(&bytes[0..4], &[0x50, 0x4b, 0x03, 0x04]);
         // methode = 0 (stored) dans l'en-tete local
         assert_eq!(&bytes[8..10], &0u16.to_le_bytes());
-        assert!(bytes.windows(7).any(|w| w == b"001.jpg"));
+        assert!(bytes.windows(7).any(|f| f == b"001.jpg"));
         let expected = 30 + 7 + payload.len() + 46 + 7 + 22;
         assert_eq!(bytes.len(), expected, "taille inattendue");
     }
@@ -193,8 +201,10 @@ mod tests {
         let path = dir.join("test.cbz");
         let written = {
             let mut w = CbzWriter::create(&path).unwrap();
-            w.add_image(1, "image/png", b"abc").unwrap();
-            w.add_image(2, "image/png", b"de").unwrap();
+            w.add_image_kind(1, crate::image::ImageKind::Png, b"abc")
+                .unwrap();
+            w.add_image_kind(2, crate::image::ImageKind::Png, b"de")
+                .unwrap();
             w.finish().unwrap()
         };
         let on_disk = std::fs::read(&path).unwrap();

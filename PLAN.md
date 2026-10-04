@@ -248,6 +248,18 @@ _Format d'une entrée :_
 - Points ouverts :
 ```
 
+### 2026-10-04 — Correctif : des `.cbz` illisibles (signalé par l'utilisateur)
+- Symptôme : « j'ai téléchargé des webtoon, ouvert le `.cbz` avec un logiciel dédié, je ne voyais rien — tout noir ».
+- Diagnostic (mesuré, pas supposé) : les 44 `.cbz` du dossier de téléchargement ouverts avec un lecteur **strict** (`zipfile` de Python). **37 sont corrompus**, tous de HENTAIORIGINES. Les 7 autres (MANGADEX, MANGASORIGINES) sont des ZIP valides, intégrité vérifiée, vraies images JPEG (`ffd8ffe0`). Dans les 37, **toutes** les entrées contiennent la même chose : `202020200a3c21444f4f435459` = `"    \n<!DOC TY` — du **HTML**. Contenu lu : la page du site, avec `ori-age-verif`, son **interstitiel de vérification d'âge**.
+- Cause : trois défauts enchaînés.
+  1. `fetchImage` renvoie `200 OK` avec le HTML de l'interstitiel : aucune erreur, donc rien ne signale le problème.
+  2. `download.rs` écrivait les octets **sans jamais vérifier que c'est une image**.
+  3. `cbz.rs` déduisait l'extension du `contentType` annoncé, et `extension()` retombait sur `jpg` pour tout ce qui n'était pas png/webp/gif : le HTML partait donc sous le nom `001.jpg`.
+  Aggravant : la logique « ne jamais retélécharger ce qui est là » voyait ces fichiers comme téléchargés — **ces chapitres étaient irrécupérables** sans suppression.
+- Correctif : nouveau module `image.rs` avec `detect()` (signature sur les octets : JPEG, PNG, WebP, GIF, BMP) et un message d'erreur parlant. Appliqué aux **deux** sites d'écriture : le `.cbz` et le cache du lecteur (`pagecache.rs`, qui lui aussi écrivait sans vérifier). L'extension écrite vient désormais des **octets**, jamais du `contentType`. `add_image` (basé sur le `contentType`) est **supprimé** : c'était précisément l'API fautive, la garder aurait laissé le pied de gun. Le doublon `guess_ct` de `pagecache.rs` a disparu au profit du détecteur partagé.
+- Preuve : `cargo test` → **29 passés** (dont `une_page_web_nest_pas_une_image`, qui rejoue le cas réel : l'interstitiel mesuré) · `cargo clippy -D warnings` → 0 · `cargo fmt --check` → 0.
+- **En attente de décision humaine** : les 37 fichiers corrompus sont toujours sur le disque. Ils sont reconnus comme téléchargés, donc il faut les supprimer pour pouvoir retélécharger — mais HENTAIORIGINES est **derrière une vérification d'âge**, donc le retéléchargement échouera tant que la vérification n'est pas faite (l'interface doit le dire au lieu d'écrire du noir).
+
 ### 2026-10-04 — Tâche 1.10 (partiel) : i18n français / anglais
 - Plan : (1) construire la couche i18n avec une **garantie de compilation**, pas seulement un dictionnaire ; (2) convertir écran par écran ; (3) prouver sur l'app réelle que la bascule est immédiate, complète et persistante.
 - Fait : `app/i18n.ts`, sans dépendance. Deux propriétés voulues :

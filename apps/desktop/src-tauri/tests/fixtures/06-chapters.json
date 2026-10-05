@@ -1,0 +1,35 @@
+{
+  "_source": "réponse réelle du moteur, capturée le 2026-10-05, puis anonymisée. Voir tests/fixtures/README.md.",
+  "_methode": "chapters",
+  "id": "chapters-enregistre",
+  "ok": true,
+  "result": {
+    "_note": "222 chapitres mesurés ; 4 gardés. Les 3 premiers cas sont les 3 formes de chapitreToJson (Server.kt:107) : title renseigné, title null, nombre flottant. Le 4 reproduit le nombre flottant mesuré à l'écran (« Ch. 38.09999847… »).",
+    "chapters": [
+      {
+        "url": "00000000-0000-4000-8000-00000000b001",
+        "title": "Chapitre factice 1",
+        "number": 1,
+        "uploadDate": 1767629573000
+      },
+      {
+        "url": "00000000-0000-4000-8000-00000000b002",
+        "title": null,
+        "number": 2,
+        "uploadDate": 1786981654000
+      },
+      {
+        "url": "00000000-0000-4000-8000-00000000b003",
+        "title": "Chapitre factice 3 - fin",
+        "number": 3.5,
+        "uploadDate": 0
+      },
+      {
+        "url": "00000000-0000-4000-8000-00000000b004",
+        "title": null,
+        "number": 38.099998474121094,
+        "uploadDate": 0
+      }
+    ]
+  }
+}

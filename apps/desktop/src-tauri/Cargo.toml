@@ -3,6 +3,19 @@ name = "tatami-desktop"
 version = "0.1.0"
 edition = "2021"
 
+# Bibliothèque + binaire (tâche 5.3).
+# Le code est dans la bibliothèque pour que `tests/contrat_moteur.rs` puisse
+# rejouer les réponses enregistrées du moteur contre le code de production.
+# Sans cela, un test d'intégration ne voit que le schéma et ne prouve rien de la
+# façon dont Rust lit réellement une réponse. Cf. `src/lib.rs`.
+[lib]
+name = "tatami_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tatami-desktop"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

@@ -1,0 +1,56 @@
+{
+  "_source": "réponse réelle du moteur, capturée le 2026-10-05, puis anonymisée. Voir tests/fixtures/README.md.",
+  "_methode": "latest",
+  "id": "latest-enregistre",
+  "ok": true,
+  "result": {
+    "_note": "`limit: 3` demandé, 3 reçus. Les champs mesurés sont TOUT ce que Server.kt mangaToJson écrit (Server.kt:78-105) : un champ manquant ici est un champ que l'interface cesse de lire.",
+    "list": [
+      {
+        "url": "00000000-0000-4000-8000-00000000a001",
+        "title": "Manga Factice Un",
+        "source": "MANGADEX",
+        "coverUrl": "https://exemple.test/covers/a001/00000000-0000-4000-8000-00000000c001.jpg.256.jpg",
+        "publicUrl": "https://exemple.test/title/00000000-0000-4000-8000-00000000a001",
+        "authors": ["Auteur Factice Un"],
+        "altTitle": "Sous-titre factice un",
+        "state": "ONGOING",
+        "rating": -1,
+        "contentRating": "SUGGESTIVE",
+        "description": "<p>Résumé factice, avec une balise HTML comme le renvoie la source.</p>",
+        "tags": [
+          { "title": "Genre Factice Un", "key": "00000000-0000-4000-8000-000000000001" },
+          { "title": "Genre Factice Deux", "key": "00000000-0000-4000-8000-000000000002" }
+        ]
+      },
+      {
+        "url": "00000000-0000-4000-8000-00000000a002",
+        "title": "Manga Factice Deux",
+        "source": "MANGADEX",
+        "coverUrl": "https://exemple.test/covers/a002/00000000-0000-4000-8000-00000000c002.jpg.256.jpg",
+        "publicUrl": "https://exemple.test/title/00000000-0000-4000-8000-00000000a002",
+        "authors": [],
+        "altTitle": null,
+        "state": "FINISHED",
+        "rating": 4.25,
+        "contentRating": "SAFE",
+        "description": null,
+        "tags": []
+      },
+      {
+        "url": "00000000-0000-4000-8000-00000000a003",
+        "title": "Manga Factice Trois",
+        "source": "MANGADEX",
+        "coverUrl": null,
+        "publicUrl": "https://exemple.test/title/00000000-0000-4000-8000-00000000a003",
+        "authors": ["Auteur Factice Deux", "Auteur Factice Trois"],
+        "altTitle": null,
+        "state": "UNKNOWN",
+        "rating": 0,
+        "contentRating": "UNKNOWN",
+        "description": null,
+        "tags": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "_source": "réponse réelle du moteur, capturée le 2026-10-05, puis anonymisée. Voir tests/fixtures/README.md.",
+  "_methode": "listSources",
+  "id": "listSources-enregistre",
+  "ok": true,
+  "result": {
+    "_note": "1370 entrées mesurées. On en garde 4, de langues différentes : `lang` est DÉDUIT (Server.kt: inferLang), pas déclaré par la source, donc c'est le champ le plus facile à régresser.",
+    "sources": [
+      { "name": "NUDEMOON", "lang": "int" },
+      { "name": "MANGABUFF", "lang": "ru" },
+      { "name": "MANGAFR", "lang": "fr" },
+      { "name": "MANGADEX", "lang": "en" }
+    ]
+  }
+}

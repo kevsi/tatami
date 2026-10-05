@@ -1,0 +1,7 @@
+{
+  "_source": "réponse réelle du moteur, capturée le 2026-10-05. Voir tests/fixtures/README.md.",
+  "_methode": "health",
+  "id": "health-source-enregistre",
+  "ok": true,
+  "result": { "source": "MANGADEX", "reachable": true }
+}

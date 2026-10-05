@@ -1,0 +1,16 @@
+{
+  "_source": "réponse réelle du moteur, capturée le 2026-10-05, puis anonymisée (titres, auteurs, genres, UUID et URLs remplacés). Voir tests/fixtures/README.md.",
+  "_methode": "filterOptions",
+  "id": "filterOptions-enregistre",
+  "ok": true,
+  "result": {
+    "_note": "77 tags et 13 tris mesurés ; 4 tags gardés. `key` est un UUID : c'est ce que l'interface renvoie comme `tags` dans `latest`.",
+    "tags": [
+      { "title": "Genre Factice Un", "key": "00000000-0000-4000-8000-000000000001" },
+      { "title": "Genre Factice Deux", "key": "00000000-0000-4000-8000-000000000002" },
+      { "title": "Genre Factice Trois", "key": "00000000-0000-4000-8000-000000000003" },
+      { "title": "Genre Factice Quatre", "key": "00000000-0000-4000-8000-000000000004" }
+    ],
+    "sortOrders": ["AZ", "ZA", "DATE", "POPULARITE", "VUES", "TITRE", "NOTE", "PUBLICATION", "RELEVE", "COMMENTAIRES", "LANGUE", "TAILLE", "MANGA", "ARTISTE"]
+  }
+}

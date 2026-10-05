@@ -1,0 +1,25 @@
+{
+  "_source": "réponse réelle du moteur, capturée le 2026-10-05. Voir tests/fixtures/README.md.",
+  "_methode": "search",
+  "id": "search-enregistre",
+  "ok": true,
+  "result": {
+    "_note": "`search` n'est plus appelée par l'interface (elle passe par `latest` avec `query`), mais elle est toujours dans le contrat et toujours implémentée : c'est donc une réponse à tester.",
+    "list": [
+      {
+        "url": "00000000-0000-4000-8000-00000000a002",
+        "title": "Manga Factice Deux",
+        "source": "MANGADEX",
+        "coverUrl": "https://exemple.test/covers/a002/00000000-0000-4000-8000-00000000c002.jpg.256.jpg",
+        "publicUrl": "https://exemple.test/title/00000000-0000-4000-8000-00000000a002",
+        "authors": [],
+        "altTitle": null,
+        "state": "FINISHED",
+        "rating": 4.25,
+        "contentRating": "SAFE",
+        "description": null,
+        "tags": []
+      }
+    ]
+  }
+}

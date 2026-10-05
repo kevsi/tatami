@@ -1,0 +1,10 @@
+{
+  "_source": "réponse réelle du moteur, capturée le 2026-10-05 (source inexistante, mesurée : PARSE_ERROR « unknown source »). Voir tests/fixtures/README.md.",
+  "_methode": "latest",
+  "id": "erreur-source-inconnue-enregistre",
+  "ok": false,
+  "error": {
+    "code": "PARSE_ERROR",
+    "message": "unknown source: SOURCE_INEXISTANTE"
+  }
+}

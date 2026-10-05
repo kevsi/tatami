@@ -1,0 +1,21 @@
+{
+  "_source": "réponse réelle du moteur, capturée le 2026-10-05, puis anonymisée. Voir tests/fixtures/README.md.",
+  "_methode": "pages",
+  "id": "pages-enregistre",
+  "ok": true,
+  "result": {
+    "_note": "2 pages mesurées. `url` est la CLÉ de page, pas l'image : c'est ce qui est passé à `fetchImage`. `previewUrl` vaut null sur cette source — il ne faut donc pas le supposer présent.",
+    "pages": [
+      {
+        "index": 0,
+        "url": "https://exemple.test/data/0000000000000000000000000000000a/1-0000000000000000000000000000000000000000000000000000000000000001.png",
+        "previewUrl": null
+      },
+      {
+        "index": 1,
+        "url": "https://exemple.test/data/0000000000000000000000000000000a/2-0000000000000000000000000000000000000000000000000000000000000002.png",
+        "previewUrl": null
+      }
+    ]
+  }
+}

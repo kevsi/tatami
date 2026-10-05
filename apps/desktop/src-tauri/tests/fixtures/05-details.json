@@ -1,0 +1,23 @@
+{
+  "_source": "réponse réelle du moteur, capturée le 2026-10-05, puis anonymisée. Voir tests/fixtures/README.md.",
+  "_methode": "details",
+  "id": "details-enregistre",
+  "ok": true,
+  "result": {
+    "_note": "La fiche porte les MÊMES champs que `latest` (mangaToJson est commun, Server.kt:78) : c'est `result.manga`, pas `result.list`, qui la distingue.",
+    "manga": {
+      "url": "00000000-0000-4000-8000-00000000a001",
+      "title": "Manga Factice Un",
+      "source": "MANGADEX",
+      "coverUrl": "https://exemple.test/covers/a001/00000000-0000-4000-8000-00000000c001.jpg.256.jpg",
+      "publicUrl": "https://exemple.test/title/00000000-0000-4000-8000-00000000a001",
+      "authors": ["Auteur Factice Un"],
+      "altTitle": "Sous-titre factice un",
+      "state": "ONGOING",
+      "rating": -1,
+      "contentRating": "SUGGESTIVE",
+      "description": "<p>Résumé factice.</p>",
+      "tags": [{ "title": "Genre Factice Un", "key": "00000000-0000-4000-8000-000000000001" }]
+    }
+  }
+}

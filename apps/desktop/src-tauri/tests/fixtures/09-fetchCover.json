@@ -1,0 +1,13 @@
+{
+  "_source": "réponse réelle du moteur, capturée le 2026-10-05, PUIS ANONYMISÉE : les octets ont été remplacés par une image de synthèse 1x1 (AGENTS.md §2.7). Voir tests/fixtures/README.md.",
+  "_methode": "fetchCover",
+  "id": "fetchCover-enregistre",
+  "ok": true,
+  "result": {
+    "_note": "La vraie réponse mesurée : contentType \"image/jpeg\", 61 940 caractères base64, signature FF D8 FF E0. Le PNG synthétique ci-dessous ne correspond donc PAS au contentType annoncé : c'est voulu, et c'est exactement ce que Rust doit pardonner (image::detect lit les octets, jamais l'en-tête).",
+    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "contentType": "image/jpeg",
+    "_tailleBase64Mesuree": 61940,
+    "_octetsSubstitues": true
+  }
+}

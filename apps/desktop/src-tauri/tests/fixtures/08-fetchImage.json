@@ -1,0 +1,13 @@
+{
+  "_source": "réponse réelle du moteur, capturée le 2026-10-05, PUIS ANONYMISÉE : les octets ont été remplacés par une image de synthèse 1x1. AGENTS.md §2.7 interdit de committer une page de manga. Voir tests/fixtures/README.md.",
+  "_methode": "fetchImage",
+  "id": "fetchImage-enregistre",
+  "ok": true,
+  "result": {
+    "_note": "La vraie réponse mesurée : contentType \"image/png\", 807 504 caractères base64 (604 128 octets, signature 89 50 4E 47). Seule la longueur est conservée, avec un PNG 1x1 synthétique à la place des octets.",
+    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "contentType": "image/png",
+    "_tailleBase64Mesuree": 807504,
+    "_octetsSubstitues": true
+  }
+}

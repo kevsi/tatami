@@ -17,7 +17,11 @@ const LIST_TIMEOUT: Duration = Duration::from_secs(60);
 /// Plafond dur, même si l'utilisateur règle un délai absurde.
 const LIST_TIMEOUT_MAX: Duration = Duration::from_secs(180);
 /// Détails et chapitres : une source qui pose une page de plus est normale.
-const DEEP_TIMEOUT: Duration = Duration::from_secs(60);
+///
+/// `pub(crate)` : le planificateur (3.1) pose exactement la même question que
+/// l'interface et doit donc partager le MÊME délai. Deux constantes pour le même
+/// délai divergent dès que l'une des deux est retouchée.
+pub(crate) const DEEP_TIMEOUT: Duration = Duration::from_secs(60);
 /// `listSources` est un calcul local (index du JAR), pas un appel réseau.
 const LOCAL_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -33,7 +37,11 @@ fn list_timeout(seconds: Option<u32>) -> Duration {
 /// place, et l'échec serait silencieux (vignette vide, console propre). Le jeton
 /// est donc la seule chose que l'interface connaît ; `coverUrl` reste dans la
 /// charge utile parce que Rust s'en sert pour la résolution après redémarrage.
-fn ajouter_jetons_couverture(cache: &PageCache, source: &str, result: &mut serde_json::Value) {
+///
+/// `pub` pour le test de contrat : une régression ici **ne casse rien** à la
+/// compilation et ne se voit qu'à l'écran, sous la forme d'une vignette vide et
+/// d'une console propre. Cf. `lib.rs`.
+pub fn ajouter_jetons_couverture(cache: &PageCache, source: &str, result: &mut serde_json::Value) {
     let Some(listes) = result.get_mut("list").and_then(|v| v.as_array_mut()) else {
         return;
     };
@@ -180,7 +188,19 @@ pub async fn latest(
     Ok(r)
 }
 
-fn into_result(envelope: serde_json::Value) -> Result<serde_json::Value, String> {
+/// Déballe l'enveloppe `{ok, result|error}` du moteur en `result`, ou en
+/// `"CODE: message"`.
+///
+/// `pub` : le planificateur (3.1) appellera le moteur lui aussi, et il doit
+/// partager cet unique déballage. Le dupliquer créerait un second endroit où
+/// décider qu'une erreur est transitoire ou pas — exactement la divergence que
+/// la régression de `search` vs `latest` avait déjà coûtée une fois.
+///
+/// `pub` aussi pour le test de contrat : c'est la fonction que
+/// `tests/contrat_moteur.rs` rejoue sur **chaque** réponse enregistrée. Une
+/// régression ici ne casse rien à la compilation : elle vide un écran, ou
+/// transforme un challenge Cloudflare en « source morte ». Cf. `lib.rs`.
+pub fn into_result(envelope: serde_json::Value) -> Result<serde_json::Value, String> {
     if envelope.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
         Ok(envelope
             .get("result")

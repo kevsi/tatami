@@ -10,7 +10,12 @@ target/
 *.db-journal
 *.cbz
 downloads/
-*.tsbuildinfo# Scripts de mesure Playwright/CDP (sonde l'app ouverte sur le port 9223).
+# L'absence de retour a la ligne avant ce commentaire fusionnait le motif et le
+# commentaire : `*.tsbuildinfo# Scripts de mesure…` ne designait plus rien, et
+# le fichier apparait alors comme nouveau a chaque `git status`.
+*.tsbuildinfo
+
+# Scripts de mesure Playwright/CDP (sonde l'app ouverte sur le port 9223).
 # Regenables : aucune valeur pour le depot, et ils embarquent des chemins
 # propres a cette machine.
 .mesures/

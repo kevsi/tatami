@@ -18,7 +18,12 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex};
 
-const PROTOCOL_MAJOR: &str = "0";
+/// Version majeure du protocole que ce cœur accepte. Comparée au
+/// `protocolVersion` du `hello` (ADR 0001). `pub` pour que le test de contrat
+/// puisse vérifier que la réponse `hello` **enregistrée** est bien acceptée :
+/// une constante et une fixture qui divergent, ça ne se voit nulle part.
+/// Cf. `lib.rs`.
+pub const PROTOCOL_MAJOR: &str = "0";
 const HELLO_TIMEOUT: Duration = Duration::from_secs(30);
 /// Deux nouvelles tentatives : 1,5 s puis 3 s. Suffisant pour un DNS qui
 /// titille, sans faire attendre une source vraiment morte.
@@ -27,7 +32,11 @@ const RETRY_BASE: Duration = Duration::from_millis(1500);
 
 /// Un échec réseau qui se résorbera tout seul. Le message vient de
 /// `commands.rs::into_result` (« CODE: message ») ou du superviseur.
-fn is_transient(result: &Result<Value, String>) -> bool {
+///
+/// `pub` pour le test de contrat : c'est cette fonction qui décide si un échec
+/// est rejoué, et une réponse d'erreur rejouée comme transitoire ferait boucler
+/// une source morte. Cf. `lib.rs`.
+pub fn is_transient(result: &Result<Value, String>) -> bool {
     let Err(message) = result else {
         return false;
     };

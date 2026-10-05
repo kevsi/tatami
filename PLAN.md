@@ -96,7 +96,7 @@ Objectif : prouver que les trois risques majeurs sont maîtrisables avant de con
 - [x] **0.9** Commandes Tauri `search` / `chapters` / `pages` + page d'interface minimale qui affiche une liste de résultats.
 - [x] **0.10** Protocole d'URI personnalisé `tatami://page/...` : Rust demande `fetchImage` au moteur, met en cache sur disque, sert l'image à la webview (vérifier l'API Tauri v2 des protocoles asynchrones dans la doc). Afficher une page de chapitre dans l'interface.
 - [x] **0.11** Source protégée (Cloudflare/captcha) : si le moteur renvoie `CHALLENGE_REQUIRED`, ouvrir une fenêtre webview, laisser l'utilisateur résoudre, récupérer cookies et user-agent (vérifier ce que l'API de Tauri v2 permet pour les cookies), les transmettre via `setCookies`, rejouer la requête. Documenter les limites observées (liaison à l'IP, expiration).
-- [ ] **0.12** Écrire `docs/spike-phase0.md` : mesures (taille, démarrage, RAM), ce qui marche, ce qui bloque, décisions, ajustements proposés au plan. Créer `docs/smoke-test.md`. Figer et mettre à jour les commandes de vérification dans `AGENTS.md`. *( partially fait par la session docs : `docs/smoke-test.md` livré ; `docs/spike-phase0.md` reste à écrire )*
+- [x] **0.12** **Livré** le 2026-10-05. `docs/spike-phase0.md` écrit, `docs/smoke-test.md` déjà livré, commandes de vérification figées dans `AGENTS.md` §8. Première mesure sérieuse du moteur (jamais faite) : bannière 880 ms, `hello` 104 ms, `listSources` 180 ms pour 1 370 sources, arrêt propre 1 208 ms ; RAM 68 Mo au démarrage, 136 Mo après le premier appel réseau puis plate — `-Xmx256m` serré mais tenable. **Trouvé en passant** : `gradlew test` était une commande **fictive** (§2 le prohibait) — pas de `gradlew.bat` dans le dépôt ; et le cache d'images est borné en **nombre** d'entrées (2048) mais pas en **volume**, soit ~521 Mo possibles pour 260 Ko de moyenne sur une machine de 12 Go. Ce plafond rejoint la tâche 2.5.
 - [x] **0.13 (nouveau)** Contrat : ajouter un code d'erreur `AUTH_REQUIRED`. Mesuré : `AuthRequiredException` n'est levée que sur HTTP 401 par 16 parseurs, arrive aujourd'hui comme `INTERNAL`, et ne peut pas correspondre à `CHALLENGE_REQUIRED` (qui exige 403/503 + marqueur Cloudflare). **Livré** : `AUTH_REQUIRED` au contrat, déballage de l'exception dans le moteur, message i18n dédié, non transitoire côté superviseur.
 - [x] **0.14 (nouveau)** Moteur : ne pas perdre `CHALLENGE_REQUIRED` quand le parser emballe l'exception. Mesuré : MANGANATO et KAGANE renvoient `INTERNAL: IOException: canceled due to CloudFlareProtectionException` — un vrai challenge Cloudflare rapporté comme panne interne, donc la fenêtre de résolution de 0.11 ne s'ouvrirait pas. **Livré** : `Erreurs.kt` déballe la chaîne de causes *et* le message (OkHttp 5 KMP perd parfois la cause). Mesuré : les deux sources renvoient `CHALLENGE_REQUIRED` + URL.
 - [x] **0.15 (nouveau)** Superviseur : envoyer `shutdown` avant de fermer stdin. Mesuré : fermer stdin ne tue pas le moteur (process encore vivant 4 s plus tard) ; `shutdown` donne `exit 0` en 137 ms. Garder le `kill` en secours. **Livré** dans le correctif du 2026-10-04 : `workers.shutdown()` + compteur de requêtes en vol au lieu de `shutdownNow()`.
@@ -240,6 +240,38 @@ Règles données aux trois sessions :
    récupère ces fichiers dans un commit « docs » dédié.
 
 ## 9. Journal
+
+### 2026-10-05 — Spike phase 0 (0.12)
+
+- Plan : écrire `docs/spike-phase0.md` et figer les commandes de vérification.
+  Choisi pour cette période parce que c'est le seul travail **sans fichier
+  partagé** — les deux autres sessions écrivent dans `src-tauri`, et un doc ne
+  peut pas entrer en conflit avec elles.
+- **Commande fictive trouvée.** `AGENTS.md` §8 disait `./gradlew test`. Vérifié :
+  `Get-ChildItem gradlew*` ne renvoie rien — Gradle est installé globalement via
+  Scoop, il n'y a pas de `gradlew.bat` dans le dépôt. La commande n'avait **jamais
+  pu tourner**, et figurait dans le document de règles depuis le début. C'est
+  exactement ce que la règle d'or n° 2 interdit. Corrigée : `gradle test` depuis
+  `engine/`, et chaque commande porte maintenant son dossier.
+- **Moteur mesuré pour la première fois**, en le lançant exactement comme le
+  superviseur (mêmes options JVM — j'avais d'abord mis `-Xmx1g` et oublié
+  `serve`, le moteur sortait en 323 ms sans répondre et la mesure ne voulait rien
+  dire) : bannière 880 ms, `hello` 104 ms, `listSources` 180 ms pour 1 370
+  sources (47 417 octets), arrêt propre 1 208 ms, code de sortie 0. RAM 68,5 Mo au
+  démarrage → **136,5 Mo après le premier appel réseau**, puis plate.
+- **Ce que je n'ai pas mesuré, et dit comme tel** : la *cause* des 57 Mo ajoutés.
+  L'hypothèse (3 844 classes de parseurs) est plausible mais demanderait
+  `-verbose:class`. Et MANGAFR a renvoyé 0 octet, MANHWA 0,1 Ko : ces deux
+  appels ne disent rien sur un vrai parcours, donc je ne les cite pas comme
+  « source rapide ».
+- **Trouvé en passant** : le cache d'images est borné en nombre (`CAP_PAGE =
+  2048`, éviction qui supprime bien le fichier) mais **pas en volume**. Mesure :
+  260,5 Ko de moyenne, 6 121 Ko max → **~521 Mo possibles** pour une base de
+  64 Ko. Croissance non bornée et silencieuse ; rejoint 2.5.
+- Porte vérifiée réellement exécutée : `gradle test` = **24 tests, 0 échec**
+  (5 fichiers XML). Un `UP-TO-DATE` seul ne prouve rien.
+- `docs/spike-phase0.md` : 215 lignes, aucune mesure inventée, chaque limite
+  énoncée.
 
 ### 2026-10-05 — Lecteur paginé (1.8)
 

@@ -251,6 +251,32 @@ Sont concernées : protocole du sidecar, schéma de base de données, stockage d
 
 Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de sonde ou du CSS de lecteur.
 
+- **« Il nous manque une racine de confiance » est une théorie, pas une
+  observation.** C'est celle que j'ai écrite sur 0.16, et elle était fausse —
+  et elle se corrigeait par l'ajout d'une racine au magasin du système, donc
+  par un élargissement de la confiance. Ce qui l'a renversée : **un témoin**.
+  MANGADEX et SEIMANGA sont signés par `YE1`/`YE2`, exactement comme la source
+  qui échoue, et sont validés le même jour par le même code. Chaîne identique,
+  résultats opposés → la cause est ailleurs. Règle : devant une erreur de
+  certificat, trouver **une source qui marche** et comparer ; si elle a la même
+  chaîne, l'hypothèse tombe. Ne jamais proposer une action de sécurité avant.
+- **La documentation de l'autorité de certification tranche souvent mieux que
+  le message d'erreur.** `PKIX path building failed` invite à « ajouter la racine
+  manquante ». La page Let's Encrypt dit l'inverse : `Root YE` « is not yet
+  included in Root Program Trust Stores » et « not expected to work with any of
+  the major trust stores ». Donc **aucun JDK à jour ne l'aura** : la piste du
+  « JDK plus récent » était une impasse, et elle sonnait très raisonnable.
+- **`getPeerCertificate()` de Node n'est pas une chaîne.** Depuis Node 22,
+  `subject` et `issuer` sont des objets : `.match` n'existe pas, et `String()`
+  lève `Cannot convert object to primitive value`. Il faut les sérialiser avec
+  `Object.entries`. Trois tentatives avant de lire la sortie de la sonde —
+  exactement le piège de « deviner une API au lieu de la lire ».
+- **Un hôte qui ne résout pas en DNS masque tout le reste.** `mangalesen.com`
+  et `mangasoriginesunofficial.com` répondent `ENOTFOUND` : leur échec TLS
+  historique n'a plus de cause observable. Les compter comme « échecs de
+  certificat » est faux ; ils sont **injoignables**, ce qui est un statut
+  différent — et « compter 3 échecs TLS » devient « 1 échec et 2 morts ».
+
 - **Le `stdout` du moteur arrive en morceaux de 8 Ko.** Un script qui découpe sur `\n` sans buffer vorher jette les fragments et affiche « aucune réponse » alors que la réponse est arrivée. Bufferiser puis découper — une réponse `listSources` fait ~47 Ko.
 - **Une image `<img>` cassée est déjà « visible » pour Playwright.** Attendre `img.complete && img.naturalWidth > 0`, sinon on mesure une image de 21 px de haut et on conclut à tort que le CSS est fautif.
 - **`page.waitForFunction(fn, options)` n'existe pas.** La signature est `(fn, arg, options)` ; passer l'objet en 2ᵉ argument fait retomber silencieusement sur le délai par défaut de 30 s.

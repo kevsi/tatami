@@ -173,7 +173,7 @@ des octets illisibles, 18 n'en servent aucune.**
 | Cause | Nombre | Sources |
 |---|---|---|
 | Domaine disparu (`UnknownHostException`) | 2 | FRSCANSCOM, MANGANANQUIM |
-| **Chaîne TLS** (`PKIX path building failed`) | 3 | MANGAHAUS, MANGALESEN, MANGASORIGINESUNOFFICIAL |
+| **Chaîne TLS** (`PKIX path building failed`) | 3 | MANGAHAUS, MANGALESEN, MANGASORIGINESUNOFFICIAL — **requalifié le 2026-10-05, voir la note ci-dessous** |
 | 404 | 2 | COMX, MINTMANGA |
 | 403 « nu » | 3 | MANGADOOR, MANGALIB, BAOZIMH |
 | 522 | 1 | MANGAKISS |
@@ -183,11 +183,37 @@ des octets illisibles, 18 n'en servent aucune.**
 
 Deux enseignements :
 
-1. **Le runtime `jlink` échoue sur 3 sites en TLS** (`PKIX path building failed`).
-   Les 3 autres mesures de cette session sur d'autres hôtes passent, donc ce n'est pas
-   un `cacerts` absent : c'est, par hôte, une chaîne de certificats que le magasin de
-   confiance du runtime réduit ne reconstruit pas. **À ne pas résoudre en désactivant
-   la validation TLS** (AGENTS.md §10) — investigation à faire, non faite ici.
+1. ~~**Le runtime `jlink` échoue sur 3 sites en TLS** (`PKIX path building
+   failed**). ~~ **OBSOLÈTE — requalifié le 2026-10-05, voir §10.**
+
+   > **Note du 2026-10-05 (tâche 0.16).** Ce point était déjà faux sur sa
+   > conclusion — le runtime `jlink` n'était pas en cause, le JDK complet échouait
+   > identiquement. Un second diagnostic (« il nous manque la racine Let's Encrypt
+   > `Root YE` ») a lui aussi été écarté, et c'est lui qui comptait, parce que le
+   > corriger revenait à **ajouter une racine au magasin de confiance**.
+   >
+   > Ce qui a été mesuré, même jour, même code, même magasin :
+   >
+   > | site | chaîne | résultat |
+   > |---|---|---|
+   > | MANGADEX | `YE1` | **validé** |
+   > | SEIMANGA | `YE2` | **validé** |
+   > | MANGAHAUS | `YE2` | **refusé** (`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`) |
+   >
+   > Chaîne identique, résultats opposés : la cause est propre au serveur, pas à
+   > notre magasin. Et `Root YE` n'est dans **aucun** magasin — la documentation
+   > Let's Encrypt dit qu'elle « is not yet included in Root Program Trust Stores »
+   > et que les chaînes qui s'y terminent ne fonctionnent avec aucun magasin
+   > connu. **Aucun JDK à jour ne l'aurait.**
+   >
+   > Enfin, `mangalesen.com` et `mangasoriginesunofficial.com` répondent
+   > désormais `ENOTFOUND` : pour ces deux-là, l'échec TLS n'a plus de cause
+   > observable — ils sont **injoignables**, pas « en erreur de certificat ».
+   > Le décompte « 3 échecs de chaîne TLS » devient **1 échec + 2 injoignables**.
+   >
+   > Conséquence : **rien n'a été ajouté au magasin de confiance**, et la
+   > validation TLS n'a pas été désactivée (AGENTS.md §10). Le seul correctif
+   > côté client pour MANGAHAUS serait de ne pas vérifier — interdit.
 2. **`CHALLENGE_REQUIRED` se perd quand le parser emballe l'exception** :
    MANGANATO et KAGANE renvoient `INTERNAL: IOException: canceled due to
    CloudFlareProtectionException`. Un vrai challenge Cloudflare est donc rapporté

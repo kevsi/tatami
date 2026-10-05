@@ -225,6 +225,57 @@ const TABS = [
   { id: 'settings', cle: 'nav.parametres' },
 ] as const;
 
+// ---------- Notifications (toasts) ----------
+
+/** Durée d'affichage d'une notification, demande explicite de l'utilisateur. */
+const TOAST_DUREE_MS = 3000;
+
+/**
+ * Compteur d'identifiants pour les toasts.
+ *
+ * `Date.now()` ne suffit pas : deux notifications dans la même milliseconde
+ * partageraient le même identifiant, et la première ferait disparaître la
+ * seconde avec elle. Même famille que le dossier temporaire des tests Rust.
+ */
+let compteurToast = 0;
+
+type Toast = { id: number; texte: string };
+
+/**
+ * Pile de notifications, rendue hors du flux : elle survit au changement de vue
+ * et n'en décale aucune.
+ *
+ * La croix est un vrai `<button>` avec un nom accessible — sans lui, la seule
+ * façon de fermer une notification au clavier serait d'attendre les 3 secondes.
+ */
+function Toaster({
+  toasts,
+  onClose,
+}: {
+  toasts: Toast[];
+  onClose: (id: number) => void;
+}) {
+  const { t } = useI18n();
+  if (toasts.length === 0) return null;
+  return (
+    <div className="toaster" role="status" aria-live="polite">
+      {toasts.map((x) => (
+        <div className="toast" key={x.id}>
+          <span className="toast-texte">{x.texte}</span>
+          <button
+            className="toast-fermer"
+            aria-label={t('notification.fermer')}
+            title={t('notification.fermer')}
+            onClick={() => onClose(x.id)}
+          >
+            {'×'}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Barre d'application persistante : brand + onglets, visible dans toutes les vues.
 function AppBar({
   tab,
@@ -515,8 +566,25 @@ export default function Home() {
   // Préférence d'affichage, donc `localStorage` est le bon endroit (cf. §6).
   const [incognito, setIncognito] = useState(true);
   const [library, setLibrary] = useState<LibraryItem[]>([]);
-  const [notice, setNotice] = useState<string | null>(null);
+  // Notifications : une pile, pas un message unique. Un toast remplace le
+  // précédent, donc deux confirmations rapprochées (« dossier changé » puis
+  // « 13 webtoons ») s'effaçaient l'une l'autre — la seconde n'était jamais vue.
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  // `setNotice` garde son nom et sa signature : les ~8 appelants existants
+  // n'ont aucune raison de savoir qu'un toast est désormais affiché.
+  const setNotice = useCallback((texte: string) => {
+    const id = ++compteurToast;
+    setToasts((precedent) => [...precedent, { id, texte }]);
+    // Le minuteur est posé ici et non dans le composant `Toaster` : un toast
+    // déjà retiré ne doit pas pouvoir se retirer lui-même plus tard.
+    window.setTimeout(() => {
+      setToasts((precedent) => precedent.filter((x) => x.id !== id));
+    }, TOAST_DUREE_MS);
+  }, []);
   const [error, setError] = useState<string | null>(null);
+  const fermerToast = useCallback((id: number) => {
+    setToasts((precedent) => precedent.filter((x) => x.id !== id));
+  }, []);
   const [pageSize, setPageSize] = useState(PAGE);
   const [enabled, setEnabled] = useState<string[] | null>(null);
   // Tâche 1.2 : sources écartées par l'utilisateur (donnée métier, pas une
@@ -1740,6 +1808,24 @@ function coverSrc(token?: string | null): string | undefined {
   return token ? `http://tatami.localhost/cover/${token}` : undefined;
 }
 
+/**
+ * Transforme une entrée d'historique en `Manga` exploitable par `loadChapters`.
+ *
+ * Partagé par la reprise de lecture et par le clic sur la carte : les deux ont
+ * besoin des mêmes champs, et une reconstruction dans chaque sens divergenceait
+ * déjà par le passé.
+ */
+function mangaDepuisHistorique(h: HistoryItem): Manga {
+  return {
+    url: h.manga_url,
+    title: h.title,
+    source: h.source,
+    coverUrl: h.cover_url,
+    coverToken: h.cover_token,
+    contentRating: h.content_rating,
+  };
+}
+
 async function openReader(c: Chapter) {
   return openReaderAt(c, 0);
 }
@@ -1826,6 +1912,24 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
 }
 
 /**
+ * Les surcouches de l'application : panneau de vérification et notifications.
+ *
+ * Rendues **après la barre de navigation dans toutes les vues**, par un seul
+ * appel. Le panneau de vérification avait déjà ce point unique, et il l'avait
+ * mérité : rendu seulement dans une vue, il était invisible depuis les autres.
+ * Les toasts suivent la même règle — une vue qui oublierait le conteneur
+ * afficherait des notifications qui n'apparaissent jamais.
+ */
+function renderSuperpositions() {
+  return (
+    <>
+      {renderVerif()}
+      <Toaster toasts={toasts} onClose={fermerToast} />
+    </>
+  );
+}
+
+/**
  * Panneau de vérification d'une source, rendu **après la barre de navigation
  * dans toutes les vues**.
  *
@@ -1895,14 +1999,7 @@ async function openLocalChapter(item: LibraryItem, chapter: LibraryItem['chapter
  *  539 octets observée dans les journaux.
  */
 async function resumeReading(h: HistoryItem) {
-  const manga: Manga = {
-    url: h.manga_url,
-    title: h.title,
-    source: h.source,
-    coverUrl: h.cover_url,
-    coverToken: h.cover_token,
-    contentRating: h.content_rating,
-  };
+  const manga = mangaDepuisHistorique(h);
   if (!h.chapter_url) {
     await loadChapters(manga);
     return;
@@ -2364,7 +2461,7 @@ useEffect(() => {
   if (tab === 'settings' && !reader) {
     return (
       <main>
-        <AppBar tab={tab} onTab={goTab} />{renderVerif()}
+        <AppBar tab={tab} onTab={goTab} />{renderSuperpositions()}
         <button className="crumb" onClick={() => setTab('catalog')}>
           {'←'} Catalogues
         </button>
@@ -2637,13 +2734,12 @@ useEffect(() => {
     const partiels = library.filter((i) => !i.complete).length;
     return (
       <main>
-        <AppBar tab={tab} onTab={goTab} />{renderVerif()}
+        <AppBar tab={tab} onTab={goTab} />{renderSuperpositions()}
         <header className="page-head">
           <h1>{t('nav.telechargements')}</h1>
         </header>
 
         {error && <p className="error">{error}</p>}
-        {notice && <p className="notice">{notice}</p>}
 
         {chapitresVisibles && (
           <dialog
@@ -3210,7 +3306,7 @@ if (reader) {
     const summary = plainText(info?.description);
     return (
       <main>
-        <AppBar tab={tab} onTab={goTab} />{renderVerif()}
+        <AppBar tab={tab} onTab={goTab} />{renderSuperpositions()}
         <button className="crumb" onClick={backToSource}>
           {'←'} {selected?.name}
         </button>
@@ -3278,7 +3374,6 @@ if (reader) {
         )}
 
         {error && <p className="error">{error}</p>}
-        {notice && <p className="notice">{notice}</p>}
 
         {chapters.length > 0 && (
           <p className="count">
@@ -3412,7 +3507,7 @@ if (reader) {
   if (selected) {
     return (
       <main>
-        <AppBar tab={tab} onTab={goTab} />{renderVerif()}
+        <AppBar tab={tab} onTab={goTab} />{renderSuperpositions()}
         <button className="crumb" onClick={backToCatalog}>
           {'←'} Catalogues
         </button>
@@ -3420,8 +3515,6 @@ if (reader) {
           <h1>{selected.name}</h1>
           <span className="sub">{selected.lang.toUpperCase()}</span>
         </header>
-
-        {notice && <p className="notice">{notice}</p>}
 
         <div className="source-search">
           <input
@@ -3703,7 +3796,7 @@ if (reader) {
   if (tab === 'home' && !reader) {
     return (
       <main>
-        <AppBar tab={tab} onTab={goTab} />{renderVerif()}
+        <AppBar tab={tab} onTab={goTab} />{renderSuperpositions()}
         <header className="page-head">
           <h1>{t('nav.accueil')}</h1>
           <span className="sub">
@@ -3716,7 +3809,6 @@ if (reader) {
         </header>
 
         {error && <p className="error">{error}</p>}
-        {notice && <p className="notice">{notice}</p>}
 
         <div className="band">
           {t('accueil.continuer')}
@@ -3743,7 +3835,7 @@ if (reader) {
         ) : (
           <div className="dl-grid">
             {recent.map((h) => (
-              <article className="dl-card" key={`${h.source}|${h.manga_url}`}>
+              <article className="dl-card ouvrable" key={`${h.source}|${h.manga_url}`}>
                 {h.cover_token ? (
                   <img className="thumb" src={coverSrc(h.cover_token)} alt="" loading="lazy" />
                 ) : (
@@ -3789,6 +3881,16 @@ if (reader) {
                     </button>
                   </div>
                 </div>
+                {/* La carte ouvre la fiche. Ce bouton est un FRÈRE du contenu, en
+                    surimpression : un `<button>` dans un `<button>` serait du HTML
+                    invalide, et un lecteur d'écran n'y verrait qu'un seul nom. Les
+                    actions restent au-dessus (`.dl-actions`) et cliquables. */}
+                <button
+                  className="dl-open"
+                  aria-label={t('accueil.fiche.titre', { titre: h.title })}
+                  title={t('accueil.fiche.titre', { titre: h.title })}
+                  onClick={() => void loadChapters(mangaDepuisHistorique(h))}
+                />
               </article>
             ))}
           </div>
@@ -3980,7 +4082,7 @@ if (reader) {
   // ---------- Vue : catalogue ----------
   return (
     <main>
-      <AppBar tab={tab} onTab={goTab} />{renderVerif()}
+      <AppBar tab={tab} onTab={goTab} />{renderSuperpositions()}
 
       <header className="page-head">
         <h1>{t('nav.catalogues')}</h1>

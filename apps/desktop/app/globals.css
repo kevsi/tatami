@@ -1452,6 +1452,58 @@ button:disabled {
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 
+/* --- Carte entière cliquable ------------------------------------------------
+ *
+ * Le bouton qui ouvre la fiche est un **frère** du contenu, en surimpression :
+ * un `<button>` dans un `<button>` est du HTML invalide, et l'arbre
+ * d'accessibilité n'y verrait qu'un seul nom.
+ *
+ * Trois plans, du plus bas au plus haut :
+ *   1. le contenu  — transparent au pointeur, sinon il volerait le clic ;
+ *   2. `.dl-open`  — couvre la carte, reçoit le clic ;
+ *   3. `.dl-actions` — au-dessus, sinon « Reprendre » et « Oublier » ne
+ *      répondraient plus.
+ *
+ * Piège mesuré : ne **pas** mettre `position: relative; z-index` sur `.dl-body`.
+ * Il créerait un contexte d'empilement à z=1, et le `z-index: 2` des actions,
+ * à l'intérieur, resterait sous l'overlay à z=2 : « Reprendre » aurait alors
+ * ouvert la fiche au lieu de reprendre la lecture. Le contenu reste donc dans
+ * le flux normal, sans plan propre — les éléments positionnés se posent
+ * naturellement au-dessus.
+ */
+.dl-card.ouvrable {
+  position: relative;
+}
+
+.dl-card.ouvrable > *:not(.dl-open) {
+  pointer-events: none;
+}
+
+.dl-card.ouvrable .dl-actions {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.dl-open {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+/* Le focus clavier doit être visible : sans cela, rien ne dit que la carte est
+   atteignable au clavier (elle ne l'est qu'au clic). Même token que le reste du
+   projet (`globals.css:92`). */
+.dl-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .dl-card:hover {
   border-color: var(--line);
   background: var(--surface-2);
@@ -1685,8 +1737,7 @@ button:disabled {
   margin: 0 0 var(--s3);
 }
 
-.error,
-.notice {
+.error {
   border-radius: var(--r-sm);
   padding: 11px 16px;
   margin-bottom: var(--s3);
@@ -1703,6 +1754,98 @@ button:disabled {
   background: rgba(91, 214, 141, 0.12);
   border: 1px solid rgba(91, 214, 141, 0.35);
   color: #a9e9c4;
+}
+
+/* ---------- Notifications (toasts) ----------
+ *
+ * Le toast est `position: fixed` : il vit hors du flux, ne décale aucune vue et
+ * survit au changement d'onglet. `z-index` élevé parce qu'il doit passer au-
+ * dessus du lecteur, qui occupe toute la fenêtre.
+ *
+ * L'animation est volontairement minimale : une entrée depuis la droite et une
+ * sortie en fondu. Une animation « spectaculaire » sur un message qu'on lit une
+ * seconde serait surtout gênante. La prefers-reduced-motion est respectée —
+ * sans cela, le toast apparaît instantanément mais continue de clignoter pour
+ * qui a demandé explicitement l'inverse.
+ */
+.toaster {
+  position: fixed;
+  right: var(--s4);
+  bottom: var(--s4);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  max-width: min(420px, calc(100vw - 2 * var(--s4)));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: 11px var(--s3) 11px var(--s4);
+  border-radius: var(--r-sm);
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: #a9e9c4;
+  background: rgba(91, 214, 141, 0.14);
+  border: 1px solid rgba(91, 214, 141, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.32);
+  animation: toast-entree 0.18s ease-out;
+}
+
+.toast-texte {
+  flex: 1;
+  min-width: 0;
+  /* Un message très long ne doit pas debitler sur sept lignes. */
+  overflow-wrap: anywhere;
+}
+
+.toast-fermer {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.toast-fermer:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.toast-fermer:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@keyframes toast-entree {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
 }
 
 .alert {

@@ -35,6 +35,24 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform()
+    // **Chaque test dans son propre process.**
+    //
+    // Mesuré le 2026-10-05 : `FermetureStdinTest` lance un vrai moteur JVM et
+    // compte 0 réponse sur 5 dès qu'un autre test réseau (`ZENMANGA`,
+    // `ParserPoolPaginationTest`) tourne dans le même JVM. Le moteur enfant
+    // hérite du classpath complet du test, donc charge les 25 classes de test,
+    // démarre plus lentement, et la fermeture immédiate de stdin le coupe avant
+    // qu'il réponde.
+    //
+    // Le symptôme est trompeur : le test qui échoue n'a rien à voir avec le
+    // changement qui l'a déclenché. D'où `forkEvery = 1` — un JVM par test, ce
+    // que ferait de toute façon une CI.
+    forkEvery = 1
+    // `FermetureStdinTest` lance le moteur réel : il lui faut le classpath de
+    // `installDist`. On le construit ici plutôt que d'exiger un
+    // `gradle installDist` en amont, sinon un simple `gradle test` échoue sur une
+    // porte qui n'a rien à voir avec le code modifié.
+    dependsOn(tasks.named("installDist"))
     testLogging {
         events("passed", "failed", "skipped")
         showStandardStreams = false

@@ -7,6 +7,7 @@ import javax.script.ScriptEngineManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import okhttp3.CookieJar
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -16,6 +17,22 @@ import org.koitharu.kotatsu.parsers.bitmap.Bitmap
 import org.koitharu.kotatsu.parsers.config.MangaSourceConfig
 import org.koitharu.kotatsu.parsers.model.MangaSource
 import org.koitharu.kotatsu.parsers.network.UserAgents
+
+/**
+ * Delegue la reponse au parser de la requete en cours, s'il y en a un.
+ *
+ * C'est ce qui rend ZENMANGA lisible : le parser dechiffre les images. Sans
+ * delegation, les octets servis sont illisibles (mesure du 2026-10-05 : 832 513
+ * octets d'entete `AA A1 AC 8B` au lieu de `FF D8 FF E0`).
+ *
+ * Hors d'un `ParserPool.avec`, il n'y a aucun parser : on laisse alors passer la
+ * requete telle quelle. Un `ThreadLocal` non propage ne doit pas casser le
+ * moteur, seulement priver la source de son traitement.
+ */
+internal val intercepteurParser = Interceptor { chain ->
+    val parser = ParserActif.lire()
+    if (parser != null) parser.intercept(chain) else chain.proceed(chain.request())
+}
 
 // Adapté de kotatsu-dl MangaLoaderContextImpl (amont d'origine) aux signatures
 // du fork redo : evaluateJs à 3 args, mêmes timeouts, même Nashorn.
@@ -41,6 +58,11 @@ class EngineContext : MangaLoaderContext() {
                     .build(),
             )
         }
+        // **Dernier intercepteur ajouté = le plus proche du réseau.** Il doit l'être
+        // parce que c'est lui qui débrouille la réponse : ZENMANGA chiffre ses
+        // images et son `ImageCodec` (SEC / XOR) n'est décodé que là. Ajouté plus
+        // haut, CloudFlare et le lazy-load verraient les octets déjà transformés.
+        .addInterceptor(intercepteurParser)
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)

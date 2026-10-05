@@ -39,7 +39,11 @@ private class ParamException(message: String) : IllegalArgumentException(message
 // Cache jetable de session (AGENTS.md §4 : pas d'état persistant côté moteur).
 // Permet details/chapters/pages/fetchImage par URL sans reconstruire les objets :
 // search/details remplissent le cache, les appels suivants le consomment.
-private class SessionCache {
+// `internal` et non `private` : `requete`, exposee aux tests, prend ce cache en
+// parametre. Le cache est ce qui relie `chapters` -> `pages` -> `fetchImage`
+// (chaque etape refuse une entree inconnue), donc un test doit pouvoir le
+// partager entre plusieurs appels.
+internal class SessionCache {
     private val manga = ConcurrentHashMap<String, Manga>()
     private val chapters = ConcurrentHashMap<String, MangaChapter>()
     private val pages = ConcurrentHashMap<String, MangaPage>()
@@ -148,6 +152,40 @@ private fun inferLang(name: String, className: String): String {
 
 private fun ok(id: String, result: JSONObject): String =
     JSONObject().put("id", id).put("ok", true).put("result", result).toString()
+
+/**
+ * Une requête du contrat, exécutée **dans le même chemin que la vraie
+ * `serve()`** : mêmes commandes, même `ParserPool`, même gestionnaire d'erreur.
+ *
+ * `internal` et non `private` pour que les tests puissent emprunter ce chemin.
+ * Le test de la tâche 0.17 en a besoin : sa première version appelait le parser
+ * directement, passait au vert, et l'application servait toujours des images
+ * illisibles — parce que le téléchargement se faisait **en dehors** du bloc qui
+ * pose le parser. Un test qui n'emprunte pas le chemin de production ne prouve
+ * rien du chemin de production.
+ */
+internal suspend fun requete(
+    context: EngineContext,
+    pool: ParserPool,
+    method: String,
+    params: JSONObject,
+): JSONObject = requete(context, pool, SessionCache(), method, params)
+
+/**
+ * Idem, avec un cache fourni.
+ *
+ * Le cache est **indispensable** : `pages` refuse une URL de chapitre inconnue
+ * (« call chapters first »), et `fetchImage` refuse une page inconnue. Chaque
+ * étape alimente donc la suivante — un test qui recréerait le cache entre deux
+ * appels mesurerait un garde-fou, pas le déchiffrement.
+ */
+internal suspend fun requete(
+    context: EngineContext,
+    pool: ParserPool,
+    cache: SessionCache,
+    method: String,
+    params: JSONObject,
+): JSONObject = dispatch(context, pool, cache, method, params)
 
 private fun err(id: String, code: String, message: String, url: String? = null): String {
     val e = JSONObject().put("code", code).put("message", message)
@@ -491,7 +529,12 @@ private suspend fun dispatch(
             ?: p.optString("referer", "")
                 .takeIf { it.startsWith("http") }
             ?: coverUrl.substringBeforeLast('/', "https://" + coverUrl.substringAfter("//").substringBefore('/'))
-        val (bytes, contentType) = fetch_octets(context, coverUrl, referer)
+        // Dans `avec` pour la même raison que `fetchImage` : le parser fournit ses
+        // en-têtes (certains sites refusent une couverture sans Referer) et
+        // débrouille la réponse.
+        val (bytes, contentType) = pool.avec(parseSource(sourceName)) {
+            fetch_octets(context, coverUrl, referer)
+        }
         JSONObject()
             .put("data", Base64.getEncoder().encodeToString(bytes))
             .put("contentType", contentType)
@@ -514,12 +557,16 @@ private suspend fun dispatch(
                     "(page key '${p.optString("pageUrl", "")}')",
             )
         }
-        // Même chemin réseau que `fetchCover` : UA du moteur, cookie jar,
-        // intercepteurs Cloudflare / lazy-load.
-        val (bytes, contentType) = fetch_octets(context, imageUrl, imageUrl)
-        // Note 0.6 : pas de désembrouillage ici (redrawImageResponse sert dans les
-        // intercepteurs du parser). Les sources qui embrouillent auront un traitement
-        // délégué quand un cas réel l'exigera — MangaDex sert des images directes.
+        // **Le téléchargement doit rester dans `avec`.** C'est là que le parser
+        // est posé, et donc là que l'intercepteur peut débrouille la réponse.
+        // Mesuré le 2026-10-05 : en sortant de `avec`, ZENMANGA renvoyait 832 513
+        // octets d'entête `AA A1 AC 8B` — illisibles, `naturalWidth` = 0 à
+        // l'écran — alors que le même appel dans `avec` donnait `FF D8 FF E0`.
+        // Le test du moteur passait parce qu'il enveloppait tout le parcours ;
+        // l'application, elle, ne l'enveloppait qu'autour de `getPageUrl`.
+        val (bytes, contentType) = pool.avec(parseSource(sourceName)) {
+            fetch_octets(context, imageUrl, imageUrl)
+        }
         JSONObject()
             .put("data", Base64.getEncoder().encodeToString(bytes))
             .put("contentType", contentType)

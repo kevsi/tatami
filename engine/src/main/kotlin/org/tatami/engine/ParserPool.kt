@@ -2,10 +2,46 @@ package org.tatami.engine
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okhttp3.Interceptor
 import org.koitharu.kotatsu.parsers.MangaLoaderContext
 import org.koitharu.kotatsu.parsers.MangaParser
 import org.koitharu.kotatsu.parsers.model.MangaParserSource
 import java.util.LinkedHashMap
+
+/**
+ * Le parser de la requête en cours, pour le fil qui l'exécute.
+ *
+ * ## Pourquoi un `ThreadLocal`
+ *
+ * Un parser est un `okhttp3.Interceptor` : il porte ses propres en-têtes de
+ * requête **et** il débrouille les réponses (cf. `redrawImageResponse`). Sans
+ * lui dans la chaîne, ZENMANGA sert du chiffrement : mesuré le 2026-10-05,
+ * 832 513 octets dont les 16 premiers sont
+ * **identiques sur deux pages différentes**. En passant le parser dans la
+ * chaîne, les mêmes octets commencent par `FF D8 FF E0` — un JPEG valide.
+ *
+ * `httpClient` est construit une seule fois, avant qu'aucun parser n'existe :
+ * on ne peut donc pas y inscrire le parser d'une source. Le `ThreadLocal` fait
+ * le lien, et `ParserPool.avec` le pose autour de l'appel.
+ *
+ * **Si le fil ne correspond pas** (un `ThreadLocal` non propagé à travers une
+ * suspension), l'intercepteur laisse simplement passer la réponse : on retombe
+ * sur le comportement d'aujourd'hui, pas sur une panne. Mieux vaut une source
+ * qui manque d'images qu'un moteur qui ne répond plus.
+ */
+internal object ParserActif {
+    // Un `MangaParser` **est** un `okhttp3.Interceptor` (`MangaParser extends
+    // okhttp3.Interceptor`). On stocke donc l'intercepteur, pas le parser : c'est
+    // tout ce dont la chaîne a besoin, et un test peut fournir un simple
+    // intercepteur-espion sans fabriquer un faux parser complet.
+    private val local = ThreadLocal<Interceptor?>()
+
+    fun activer(intercepteur: Interceptor?) {
+        local.set(intercepteur)
+    }
+
+    fun lire(): Interceptor? = local.get()
+}
 
 /**
  * Instances de parser **conservées** d'une requête à l'autre.
@@ -62,12 +98,29 @@ internal class ParserPool(
     /**
      * Exécute [bloc] avec le parser de [source], en gardant l'instance pour les
      * requêtes suivantes.
+     *
+     * **Pas réentrant.** Un `Mutex` ne se reprend pas lui-même : appeler `avec`
+     * sur la même source depuis l'intérieur de [bloc] figerait le moteur sur un
+     * simple `getPageUrl` puis `lire`. C'est attrapé le jour où un test a
+     * TimeoutError au lieu d'échouer. Sortir d'abord, puis rentrer.
      */
     suspend fun <T> avec(source: MangaParserSource, bloc: suspend (MangaParser) -> T): T {
         val entry = entryPour(source)
         entry.enCours = true
         try {
-            return entry.mutex.withLock { bloc(entry.parser) }
+            return entry.mutex.withLock {
+                // Le parser doit etre visible depuis la chaine HTTP : sans cela
+                // ses en-tetes et son debrouillage d'image sont perdus.
+                // On restaure le précédent, sinon la requête suivante hériterait
+                // du parser de celle-la.
+                val precedent = ParserActif.lire()
+                ParserActif.activer(entry.parser)
+                try {
+                    bloc(entry.parser)
+                } finally {
+                    ParserActif.activer(precedent)
+                }
+            }
         } finally {
             entry.enCours = false
         }

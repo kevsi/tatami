@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { open } from '@tauri-apps/plugin-dialog';
 
 import { useI18n, type MessageKey } from './i18n';
 
@@ -133,7 +134,7 @@ type QueueItem = {
   done: number;
   skipped: number;
   failed: number;
-  state: 'attente' | 'téléchargement' | 'terminé' | 'erreur' | 'annulé';
+  state: 'attente' | 'téléchargement' | 'terminé' | 'erreur' | 'pause';
   current?: string;
 };
 type Progress = {
@@ -566,6 +567,16 @@ export default function Home() {
   const [readerDir, setReaderDir] = useState<ReaderDir>('rtl');
   // Tâche 0.14 : aller directement à un chapitre sans repasser par la fiche.
   const [pageJump, setPageJump] = useState('');
+  /** Dossier de téléchargement choisi par l'utilisateur (choix humain du 2026-10-05).
+   *
+   *  Il est lu et écrit par Rust, pas par `localStorage` : c'est une donnée que
+   *  Rust applique à chaque écriture de fichier, et une webview qui l'écrirait
+   *  pourrait diverger de l'état réel. `parDefaut` = l'utilisateur n'a rien
+   *  choisi, l'app utilise `%APPDATA%\Tatami\downloads`. */
+  const [dossierTelechargements, setDossierTelechargements] = useState({
+    chemin: '',
+    parDefaut: true,
+  });
   const stripRef = useRef<HTMLDivElement>(null);
   const stripImages = useRef<(HTMLImageElement | null)[]>([]);
   /** Page sur laquelle la bande doit se placer à la prochaine ouverture.
@@ -612,6 +623,13 @@ export default function Home() {
     setRating(prefs.rating);
     setListTimeout(prefs.listTimeout);
     setHealth(loadHealth());
+    // Dossier de téléchargement : lu au démarrage, car Rust l'a déjà appliqué
+    // avant même que la fenêtre s'affiche.
+    void invoke<{ chemin: string; parDefaut: boolean }>('get_downloads_dir')
+      .then(setDossierTelechargements)
+      .catch(() => {
+        /* l'affichage retombe sur le dossier par défaut */
+      });
     const modeIncognito = window.localStorage.getItem(INCOGNITO_KEY);
     if (modeIncognito != null) setIncognito(modeIncognito === '1');
     // Lecture des préférences après l'hydratation : en export statique le HTML
@@ -1451,7 +1469,7 @@ export default function Home() {
         setQueue((prev) => prev.map((q) => (q.key === key ? { ...q, ...changes } : q)));
 
       if (cancelQueue.current) {
-        patch({ state: 'annulé' });
+        patch({ state: 'pause' });
         continue;
       }
       patch({ state: 'téléchargement' });
@@ -1494,7 +1512,7 @@ export default function Home() {
       let failed = 0;
       for (const c of todo) {
         if (cancelQueue.current) {
-          patch({ done, failed, state: 'annulé' });
+          patch({ done, failed, state: 'pause' });
           break;
         }
         try {
@@ -1509,7 +1527,7 @@ export default function Home() {
         done,
         skipped,
         failed,
-        state: cancelQueue.current ? 'annulé' : failed > 0 ? 'erreur' : 'terminé',
+        state: cancelQueue.current ? 'pause' : failed > 0 ? 'erreur' : 'terminé',
       });
 
       // Ce webtoon est réglé : il sort de la file persistée (sauf annulation,
@@ -1552,7 +1570,47 @@ export default function Home() {
     setQueue([]);
   }
 
-  async function removeDownload(item: LibraryItem) {    try {
+  // ---------- Dossier de téléchargement ----------
+
+  async function refreshDossier() {
+    try {
+      setDossierTelechargements(await invoke('get_downloads_dir'));
+    } catch (e) {
+      setError(t('telechargements.dossier.erreur', { raison: String(e) }));
+    }
+  }
+
+  /** Ouvre le sélecteur natif, puis fait valider le dossier par Rust.
+   *
+   *  Le dialogue ne fait que choisir un chemin : c'est Rust qui décide s'il est
+   *  utilisable (existe, accessible en écriture) et qui l'enregistre. Un
+   *  dialogue qui accepte n'importe quoi serait une invitation à casser tous
+   *  les téléchargements. */
+  async function parcourirDossier() {
+    try {
+      const choisi = await open({ directory: true, multiple: false, title: t('telechargements.dossier.parcourir') });
+      if (typeof choisi !== 'string') return; // annulé
+      setDossierTelechargements(await invoke('set_downloads_dir', { chemin: choisi }));
+      setNotice(t('telechargements.dossier.change'));
+      await refreshDownloads();
+    } catch (e) {
+      setError(t('telechargements.dossier.erreur', { raison: String(e) }));
+    }
+  }
+
+  async function restaurerDossier() {
+    try {
+      const chemin = await invoke<string>('reset_downloads_dir');
+      await refreshDossier();
+      setNotice(t('telechargements.dossier.retour', { chemin }));
+      await refreshDownloads();
+    } catch (e) {
+      setError(t('telechargements.dossier.erreur', { raison: String(e) }));
+    }
+  }
+
+  async function removeDownload(item: LibraryItem) {
+    try {
       const n = await invoke<number>('remove_download', {
         source: item.source,
         title: item.title,
@@ -2452,6 +2510,21 @@ useEffect(() => {
         </section>
 
         <section className="panel">
+          <h2>{t('telechargements.dossier')}</h2>
+          <p className="muted">{t('telechargements.dossier.note')}</p>
+          <div className="row-actions">
+            <button className="btn btn-primary" onClick={parcourirDossier}>
+              {t('telechargements.dossier.parcourir')}
+            </button>
+            {!dossierTelechargements.parDefaut && (
+              <button className="btn btn-ghost" onClick={restaurerDossier}>
+                {t('telechargements.dossier.defaut')}
+              </button>
+            )}
+          </div>
+        </section>
+
+        <section className="panel">
           <h2>{t('reglages.reseau')}</h2>
           <label className="field">
             {t('reglages.reseau.delai')}
@@ -2491,7 +2564,8 @@ useEffect(() => {
             </select>
           </label>
           <p className="muted">
-            Dossier de téléchargement : <code>%APPDATA%\Tatami\downloads</code>
+            {t('telechargements.dossier.ligne')}
+            <code className="path">{dossierTelechargements.chemin}</code>
           </p>
         </section>
 
@@ -2630,12 +2704,12 @@ useEffect(() => {
           <section className="panel queue">
             <h2>{t('telechargements.file')}</h2>
             {queueRunning ? (
-              <button className="btn" onClick={cancelQueueNow}>
-                {t('telechargements.arreter.apres')}
+              <button className="btn" onClick={cancelQueueNow} title={t('telechargements.pause.note')}>
+                {t('telechargements.pause')}
               </button>
             ) : (
               <button className="btn btn-ghost" onClick={() => setQueue([])}>
-                Effacer la file
+                {t('telechargements.effacer.file')}
               </button>
             )}
             <div className="queue-list">
@@ -2645,7 +2719,11 @@ useEffect(() => {
                   <div className="queue-row" key={q.key}>
                     <div className="queue-head">
                       <span className="queue-title">{q.title}</span>
-                      <span className={`badge state-${q.state.replace('é', 'e')}`}>{q.state}</span>
+                      <span className={`badge state-${q.state.replace('é', 'e')}`}>
+                        {q.state === 'pause'
+                          ? t('telechargements.pause.etat')
+                          : q.state}
+                      </span>
                     </div>
                     <div className="progress">
                       <div className="progress-bar" style={{ width: `${pct}%` }} />

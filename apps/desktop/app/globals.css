@@ -521,6 +521,18 @@ button:disabled {
   margin-bottom: var(--s3);
 }
 
+/* Chemin de dossier : il peut être très long (`C:\Users\...\Documents\Manga`) et
+   ne doit pas pousser la mise en page de la ligne. Il se coupe donc n'importe où
+   (`anywhere`) plutôt que de déborder, et reste sélectionnable pour être copié. */
+.path {
+  display: block;
+  margin-top: var(--s1);
+  overflow-wrap: anywhere;
+  font-family: var(--mono, monospace);
+  color: var(--text-dim);
+  user-select: all;
+}
+
 /* État vide : une grille vide avec un bandeau vide donne l'impression que
    l'écran est cassé. On dit ce qui s'est passé et on propose la sortie. */
 .empty {

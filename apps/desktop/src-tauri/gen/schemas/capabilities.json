@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Capabilities for the main window: evenements (progression des telechargements) + invocation des commandes Rust.","local":true,"windows":["main"],"permissions":["core:event:default"]}}
+{"default":{"identifier":"default","description":"Capabilities for the main window: evenements (progression des telechargements) + invocation des commandes Rust + selecteur de dossier (choix humain du 2026-10-05).","local":true,"windows":["main"],"permissions":["core:event:default","dialog:allow-open"]}}

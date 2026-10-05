@@ -163,7 +163,6 @@ const FR = {
     '{n} webtoon{s} attendaient encore des chapitres. Les chapitres déjà téléchargés seront ignorés.',
   'telechargements.file.reprendre': 'Reprendre la file',
   'telechargements.file.abandonner': 'Abandonner la file',
-  'telechargements.arreter.apres': 'Arrêter après le chapitre en cours',
 
   // --- Téléchargements
     'erreur.page': 'Page introuvable.',
@@ -171,6 +170,21 @@ const FR = {
   'source.chapitres.vide': 'Clique un webtoon pour voir ses chapitres.',
   'source.chapitres.recents': 'Chapitres récents',
   'source.vide': 'Aucun résultat sur cette source.',
+  'telechargements.dossier': 'Dossier de téléchargement',
+  'telechargements.dossier.note':
+    'Les chapitres sont écrits dans ce dossier, un .cbz par chapitre. Changer de dossier ne déplace rien : les téléchargements déjà faits restent dans l’ancien, et la bibliothèque n’affichera plus que ceux du nouveau.',
+  'telechargements.dossier.parcourir': 'Choisir un dossier…',
+  'telechargements.dossier.defaut': 'Revenir au dossier par défaut',
+  'telechargements.dossier.ligne': 'Dossier de téléchargement :',
+  'telechargements.dossier.change':
+    'Dossier changé. Les prochains téléchargements iront là.',
+  'telechargements.dossier.retour': 'Retour au dossier {chemin}',
+  'telechargements.dossier.erreur': 'Dossier de téléchargement : {raison}',
+  'telechargements.pause': 'Mettre en pause',
+  'telechargements.pause.note':
+    'Le chapitre en cours est terminé, puis la file s’arrête. Reprendre la reprendra où elle s’est arrêtée.',
+  'telechargements.pause.etat': 'en pause',
+  'telechargements.effacer.file': 'Effacer la file',
   'telechargements.supprimer.titre': 'Supprimer {nom} ?',
   'telechargements.supprimer.note':
     '{n} chapitre(s), {poids} seront supprimés du dossier de téléchargements. Le webtoon reste téléchargeable ensuite.',
@@ -311,7 +325,6 @@ const EN: Record<Cle, string> = {
     '{n} webtoon{s} were still waiting for chapters. Already downloaded chapters will be skipped.',
   'telechargements.file.reprendre': 'Resume the queue',
   'telechargements.file.abandonner': 'Abandon the queue',
-  'telechargements.arreter.apres': 'Stop after the current chapter',
   'accueil.continuer': 'Continue reading',
   'accueil.incognito': 'Incognito',
   'accueil.incognito.note':
@@ -336,6 +349,20 @@ const EN: Record<Cle, string> = {
   'source.chapitres.vide': 'Click a webtoon to see its chapters.',
   'source.chapitres.recents': 'Recent chapters',
   'source.vide': 'No result on this source.',
+  'telechargements.dossier': 'Downloads folder',
+  'telechargements.dossier.note':
+    'Chapters are written to this folder, one .cbz per chapter. Changing it moves nothing: existing downloads stay where they are, and the library will only show the ones in the new folder.',
+  'telechargements.dossier.parcourir': 'Choose a folder…',
+  'telechargements.dossier.defaut': 'Back to the default folder',
+  'telechargements.dossier.ligne': 'Downloads folder:',
+  'telechargements.dossier.change': 'Folder changed. New downloads will go there.',
+  'telechargements.dossier.retour': 'Back to {chemin}',
+  'telechargements.dossier.erreur': 'Downloads folder: {raison}',
+  'telechargements.pause': 'Pause',
+  'telechargements.pause.note':
+    'The current chapter finishes, then the queue stops. Resuming continues where it left off.',
+  'telechargements.pause.etat': 'paused',
+  'telechargements.effacer.file': 'Clear the queue',
   'telechargements.supprimer.titre': 'Delete {nom}?',
   'telechargements.supprimer.note':
     '{n} chapter(s), {poids} will be deleted from the downloads folder. The webtoon stays downloadable.',

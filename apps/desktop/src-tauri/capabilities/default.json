@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Capabilities for the main window: evenements (progression des telechargements) + invocation des commandes Rust.",
+  "description": "Capabilities for the main window: evenements (progression des telechargements) + invocation des commandes Rust + selecteur de dossier (choix humain du 2026-10-05).",
   "windows": ["main"],
-  "permissions": ["core:event:default"]
+  "permissions": ["core:event:default", "dialog:allow-open"]
 }

@@ -15,3 +15,7 @@ base64 = "0.22"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
+# Choix humain du 2026-10-05 : selecteur natif de dossier pour les
+# téléchargements. Plugin officiel Tauri v2 ; permission declaree dans
+# `capabilities/default.json` (ADR 0004).
+tauri-plugin-dialog = "2"

@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Version du schéma attendue par ce binaire.
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 
 #[derive(Serialize)]
 pub struct Favorite {
@@ -277,6 +277,22 @@ impl Store {
             "category_id",
             "INTEGER REFERENCES categories(id) ON DELETE SET NULL",
         )?;
+        // v7 : réglages de l'application. Le dossier de téléchargements est
+        // choisi par l'utilisateur (choix humain du 2026-10-05) : il doit
+        // survivre au redémarrage, donc il vit en base et pas dans le
+        // `localStorage` de la webview, qui est le mauvais endroit pour une
+        // donnée que Rust doit appliquer à chaque écriture de fichier.
+        //
+        // `CREATE TABLE IF NOT EXISTS` et non `if current < 7` : une base
+        // estampillée par un binaire plus récent ne doit jamais être cassée
+        // par un binaire plus ancien qui rouvrirait le fichier.
+        tx.execute_batch(
+            "CREATE TABLE IF NOT EXISTS settings (
+                 key   TEXT PRIMARY KEY,
+                 value TEXT NOT NULL
+             );",
+        )
+        .map_err(|e| format!("migration v7 : {e}"))?;
         if current < 2 {
             tx.execute_batch("CREATE INDEX IF NOT EXISTS history_title ON history (title);")
                 .map_err(|e| format!("migration : index history_title : {e}"))?;
@@ -341,6 +357,46 @@ impl Store {
         std::fs::copy(&self.path, &dest)
             .map_err(|e| format!("sauvegarde avant migration impossible : {e}"))?;
         tracing::info!("sauvegarde de la base : {}", dest.display());
+        Ok(())
+    }
+
+    // ---------- Réglages ----------
+
+    /// Lit un réglage. `None` si la clé n'a jamais été écrite.
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT value FROM settings WHERE key = ?1")
+            .map_err(|e| format!("lecture réglage impossible : {e}"))?;
+        let mut rows = stmt
+            .query([key])
+            .map_err(|e| format!("lecture réglage impossible : {e}"))?;
+        match rows.next() {
+            Ok(Some(r)) => {
+                Ok(Some(r.get(0).map_err(|e| {
+                    format!("lecture réglage impossible : {e}")
+                })?))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(format!("lecture réglage impossible : {e}")),
+        }
+    }
+
+    /// Écrit un réglage (écrase l'éventuelle valeur précédente).
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )
+        .map_err(|e| format!("écriture réglage impossible : {e}"))?;
         Ok(())
     }
 
@@ -888,6 +944,30 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn un_reglage_ecrit_relu_apres_redemarrage() {
+        // Le dossier de téléchargements doit survivre à la fermeture : c'est
+        // une donnée que Rust applique à chaque écriture de fichier, pas une
+        // préférence d'affichage (qui, elle, vivrait dans `localStorage`).
+        let store = Store::open_in_memory().expect("base en mémoire");
+        assert_eq!(store.get_setting("dossier_telechargements").unwrap(), None);
+        store
+            .set_setting("dossier_telechargements", r"D:\Manga")
+            .unwrap();
+        assert_eq!(
+            store.get_setting("dossier_telechargements").unwrap(),
+            Some(r"D:\Manga".to_string())
+        );
+        store
+            .set_setting("dossier_telechargements", r"E:\Autre")
+            .unwrap();
+        assert_eq!(
+            store.get_setting("dossier_telechargements").unwrap(),
+            Some(r"E:\Autre".to_string()),
+            "un second réglage doit écraser le premier, pas s'empiler"
+        );
+    }
 
     /// Dossier unique par appel. `now_ms()` seul ne suffit pas : les tests tournent
     /// en parallèle et deux d'entre eux démarrant dans la même milliseconde se

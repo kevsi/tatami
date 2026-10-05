@@ -80,12 +80,59 @@ fn est_nom_reserve(nom: &str) -> bool {
             && matches!(base.as_bytes()[3], b'1'..=b'9'))
 }
 
-pub fn downloads_root() -> PathBuf {
+/// Dossier par défaut, avant tout choix de l'utilisateur :
+/// `%APPDATA%\Tatami\downloads`.
+pub fn downloads_root_par_defaut() -> PathBuf {
     std::env::var("APPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("Tatami")
         .join("downloads")
+}
+
+/// Dossier de téléchargements **effectif**, choisi par l'utilisateur.
+///
+/// Il est stocké dans un global plutôt que relu de la base à chaque appel :
+/// `downloads_root()` est appelé des dizaines de fois par téléchargement, et
+/// une lecture SQLite dans un chemin critique (dont des tests) n'apporte rien.
+/// La base reste la source de vérité au démarrage : `init_racine_telechargements`
+/// lit le réglage et initialise ce global une fois pour toutes.
+static RACINE: std::sync::OnceLock<std::sync::RwLock<PathBuf>> = std::sync::OnceLock::new();
+
+fn racine() -> &'static std::sync::RwLock<PathBuf> {
+    RACINE.get_or_init(|| std::sync::RwLock::new(downloads_root_par_defaut()))
+}
+
+/// Dossier de téléchargements en vigueur.
+pub fn downloads_root() -> PathBuf {
+    racine().read().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Change le dossier de téléchargements pour cette session.
+///
+/// Le dossier doit déjà exister et être accessible en écriture : c'est
+/// vérifié par `verifier_dossier_ecriture` avant d'appeler cette fonction, donc
+/// aucun téléchargement ne peut échouer plus tard sur un chemin invalide.
+pub fn definir_racine_telechargements(chemin: PathBuf) {
+    *racine().write().unwrap_or_else(|e| e.into_inner()) = chemin;
+}
+
+/// Vérifie qu'un dossier peut servir de racine de téléchargements.
+///
+/// On **essaie vraiment** d'y écrire un fichier : un dossier existe sans pour
+/// autant être accessible (droits, antivirus, disque plein). Vérifier l'existence
+/// ne suffirait pas, et l'échec n'apparaîtrait qu'au premier téléchargement.
+pub fn verifier_dossier_ecriture(chemin: &Path) -> Result<PathBuf, String> {
+    if !chemin.is_dir() {
+        return Err(format!("ce dossier n'existe pas : {}", chemin.display()));
+    }
+    let canonique = chemin
+        .canonicalize()
+        .map_err(|e| format!("dossier inaccessible : {e}"))?;
+    let sonde = canonique.join(format!(".tatami-sonde-{}", std::process::id()));
+    std::fs::write(&sonde, b"").map_err(|e| format!("dossier non accessible en écriture : {e}"))?;
+    let _ = std::fs::remove_file(&sonde);
+    Ok(canonique)
 }
 
 /// Un chapitre = un `.cbz` directement dans le dossier du webtoon :

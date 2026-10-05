@@ -1,7 +1,7 @@
-//! Commandes Tauri du magasin de donnÃ©es (favoris, historique, reprise).
+//! Commandes Tauri du magasin de données (favoris, historique, reprise).
 //!
 //! Elles sont fines : valident, appellent `store::Store`, renvoient un type
-//! sÃ©rialisable. Toute la logique est dans `store.rs`, testable sans Tauri.
+//! sérialisable. Toute la logique est dans `store.rs`, testable sans Tauri.
 
 use serde::Serialize;
 use std::sync::Arc;
@@ -11,14 +11,14 @@ use crate::pagecache::jeton_cover as jeton;
 use crate::pagecache::PageCache;
 use crate::store::{Bookmark, Category, Favorite, HistoryEntry, Store};
 
-/// Nombre d'entrÃ©es renvoyÃ©es quand l'interface ne le prÃ©cise pas.
+/// Nombre d'entrées renvoyées quand l'interface ne le précise pas.
 const RECENT_LIMIT: u32 = 24;
 
 fn vide(v: &str) -> bool {
     v.trim().is_empty()
 }
 
-/// RÃ©sout un paramÃ¨tre obligatoire sous peine d'erreur explicite.
+/// Résout un paramètre obligatoire sous peine d'erreur explicite.
 fn requis(source: &str, manga_url: &str) -> Result<(), String> {
     if vide(source) {
         return Err("PARSE_ERROR: source vide".to_string());
@@ -29,13 +29,13 @@ fn requis(source: &str, manga_url: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Sources que l'utilisateur a Ã©cartÃ©es. Liste vide = toutes actives.
+/// Sources que l'utilisateur a écartées. Liste vide = toutes actives.
 #[tauri::command]
 pub async fn list_disabled_sources(store: State<'_, Arc<Store>>) -> Result<Vec<String>, String> {
     store.disabled_sources()
 }
 
-/// Active ou dÃ©sactive une source. Une source jamais touchÃ©e est active.
+/// Active ou désactive une source. Une source jamais touchée est active.
 #[tauri::command]
 pub async fn set_source_enabled(
     store: State<'_, Arc<Store>>,
@@ -48,21 +48,21 @@ pub async fn set_source_enabled(
     store.set_source_enabled(source.trim(), enabled)
 }
 
-/// RÃ©active toutes les sources d'un coup.
+/// Réactive toutes les sources d'un coup.
 #[tauri::command]
 pub async fn enable_all_sources(store: State<'_, Arc<Store>>) -> Result<(), String> {
     store.enable_all_sources()
 }
 
-/// CatÃ©gories de favoris, dans l'ordre choisi par l'utilisateur.
+/// Catégories de favoris, dans l'ordre choisi par l'utilisateur.
 #[tauri::command]
 pub async fn list_categories(store: State<'_, Arc<Store>>) -> Result<Vec<Category>, String> {
     store.list_categories()
 }
 
-/// CrÃ©e une catÃ©gorie. La couleur est un index de palette (1..=8), pas une
-/// valeur CSS : elle est bornÃ©e ici pour que l'interface ait toujours une
-/// variable Ã  traduire.
+/// Crée une catégorie. La couleur est un index de palette (1..=8), pas une
+/// valeur CSS : elle est bornée ici pour que l'interface ait toujours une
+/// variable à traduire.
 #[tauri::command]
 pub async fn add_category(
     store: State<'_, Arc<Store>>,
@@ -73,7 +73,7 @@ pub async fn add_category(
     store.add_category(nom, color.clamp(1, 8))
 }
 
-/// Renomme et/ou recolore une catÃ©gorie.
+/// Renomme et/ou recolore une catégorie.
 #[tauri::command]
 pub async fn rename_category(
     store: State<'_, Arc<Store>>,
@@ -85,19 +85,19 @@ pub async fn rename_category(
     store.rename_category(id, nom, color.clamp(1, 8))
 }
 
-/// Supprime une catÃ©gorie ; ses favoris reviennent en Â« sans catÃ©gorie Â».
+/// Supprime une catégorie ; ses favoris reviennent en « sans catégorie ».
 #[tauri::command]
 pub async fn delete_category(store: State<'_, Arc<Store>>, id: i64) -> Result<(), String> {
     store.delete_category(id)
 }
 
-/// RÃ©Ã©crit l'ordre des catÃ©gories Ã  partir de la liste d'identifiants.
+/// Réécrit l'ordre des catégories à partir de la liste d'identifiants.
 #[tauri::command]
 pub async fn reorder_categories(store: State<'_, Arc<Store>>, ids: Vec<i64>) -> Result<(), String> {
     store.reorder_categories(&ids)
 }
 
-/// Affecte (ou retire) la catÃ©gorie d'un favori.
+/// Affecte (ou retire) la catégorie d'un favori.
 #[tauri::command]
 pub async fn set_favorite_category(
     store: State<'_, Arc<Store>>,
@@ -109,15 +109,15 @@ pub async fn set_favorite_category(
     store.set_favorite_category(source.trim(), manga_url.trim(), category_id)
 }
 
-/// Nom de catÃ©gorie valide : non vide et bornÃ©. La longueur maximale Ã©vite une
-/// Ã©tiquette qui dÃ©borde partout ailleurs.
+/// Nom de catégorie valide : non vide et borné. La longueur maximale évite une
+/// étiquette qui déborde partout ailleurs.
 fn nom_categorie(name: &str) -> Result<&str, String> {
     let n = name.trim();
     if n.is_empty() {
-        return Err("PARSE_ERROR: nom de catÃ©gorie vide".to_string());
+        return Err("PARSE_ERROR: nom de catégorie vide".to_string());
     }
     if n.chars().count() > 30 {
-        return Err("PARSE_ERROR: nom de catÃ©gorie trop long (30 caractÃ¨res max)".to_string());
+        return Err("PARSE_ERROR: nom de catégorie trop long (30 caractères max)".to_string());
     }
     Ok(n)
 }
@@ -152,7 +152,7 @@ pub async fn add_bookmark(
     )
 }
 
-/// Retire le signet d'une page prÃ©cise.
+/// Retire le signet d'une page précise.
 #[tauri::command]
 pub async fn remove_bookmark(
     store: State<'_, Arc<Store>>,
@@ -170,7 +170,7 @@ pub async fn remove_bookmark(
     )
 }
 
-/// Signets, du plus rÃ©cent au plus ancien, Ã©ventuellement limitÃ©s Ã  un webtoon.
+/// Signets, du plus récent au plus ancien, éventuellement limités à un webtoon.
 #[tauri::command]
 pub async fn list_bookmarks(
     store: State<'_, Arc<Store>>,
@@ -210,8 +210,83 @@ pub async fn list_favorites(
     Ok(lignes)
 }
 
-/// Ajoute ou retire un favori. Le retour indique l'Ã©tat obtenu, pour que
-/// l'interface n'ait pas Ã  refaire une requÃªte.
+// ---------- Réglages ----------
+
+/// Clé du réglage qui porte le dossier de téléchargements.
+const CLE_DOSSIER_TELECHARGEMENTS: &str = "dossier_telechargements";
+
+/// Dossier de téléchargements en vigueur.
+///
+/// `chemin` est restitué tel que l'utilisateur l'a choisi, pas sous sa forme
+/// canonique : un chemin lisible dans les réglages vaut mieux qu'un
+/// `\\?\C:\...`. Le confinement, lui, se fait toujours sur la forme canonique.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DossierTelechargements {
+    pub chemin: String,
+    pub par_defaut: bool,
+}
+
+/// Dossier de téléchargements actuellement utilisé.
+#[tauri::command]
+pub async fn get_downloads_dir(
+    store: State<'_, Arc<Store>>,
+) -> Result<DossierTelechargements, String> {
+    let enregistre = store.get_setting(CLE_DOSSIER_TELECHARGEMENTS)?;
+    let par_defaut = enregistre.as_deref().is_none_or(str::is_empty);
+    let chemin = if par_defaut {
+        crate::download::downloads_root_par_defaut()
+    } else {
+        std::path::PathBuf::from(enregistre.unwrap_or_default())
+    };
+    Ok(DossierTelechargements {
+        chemin: chemin.to_string_lossy().to_string(),
+        par_defaut,
+    })
+}
+
+/// Change le dossier de téléchargements, définitivement.
+///
+/// Le chemin est **validé avant d'être enregistré** : dossier inaccessible en
+/// écriture → refus, et rien n'est écrit en base. Enregistrer un chemin invalide
+/// ferait échouer tous les téléchargements *ensuite*, sans retour possible depuis
+/// l'interface — le pire moment pour le découvrir.
+///
+/// Le dossier est créé s'il n'existe pas : choisir `D:\Manga` avant d'avoir
+/// créé `D:\Manga` est un geste normal, pas une erreur.
+#[tauri::command]
+pub async fn set_downloads_dir(
+    store: State<'_, Arc<Store>>,
+    chemin: String,
+) -> Result<DossierTelechargements, String> {
+    let demande = std::path::PathBuf::from(chemin.trim());
+    if demande.as_os_str().is_empty() {
+        return Err("chemin vide".to_string());
+    }
+    if !demande.exists() {
+        std::fs::create_dir_all(&demande)
+            .map_err(|e| format!("création du dossier impossible : {e}"))?;
+    }
+    let canonique = crate::download::verifier_dossier_ecriture(&demande)?;
+    store.set_setting(CLE_DOSSIER_TELECHARGEMENTS, &canonique.to_string_lossy())?;
+    crate::download::definir_racine_telechargements(canonique);
+    Ok(DossierTelechargements {
+        chemin: demande.to_string_lossy().to_string(),
+        par_defaut: false,
+    })
+}
+
+/// Restaure le dossier par défaut (`%APPDATA%\Tatami\downloads`).
+#[tauri::command]
+pub async fn reset_downloads_dir(store: State<'_, Arc<Store>>) -> Result<String, String> {
+    store.set_setting(CLE_DOSSIER_TELECHARGEMENTS, "")?;
+    let defaut = crate::download::downloads_root_par_defaut();
+    crate::download::definir_racine_telechargements(defaut.clone());
+    Ok(defaut.to_string_lossy().to_string())
+}
+
+/// Ajoute ou retire un favori. Le retour indique l'état obtenu, pour que
+/// l'interface n'ait pas à refaire une requête.
 #[tauri::command]
 pub async fn set_favorite(
     store: State<'_, Arc<Store>>,
@@ -244,8 +319,8 @@ pub async fn set_favorite(
     })
 }
 
-/// Enregistre la position de lecture. AppelÃ©e Ã  chaque changement de chapitre
-/// ou de page, elle doit Ãªtre bon marchÃ© : c'est un `INSERT ... ON CONFLICT`.
+/// Enregistre la position de lecture. Appelée à chaque changement de chapitre
+/// ou de page, elle doit être bon marché : c'est un `INSERT ... ON CONFLICT`.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn save_progress(
@@ -279,9 +354,9 @@ pub async fn save_progress(
     )
 }
 
-/// MÃ©morise la classification d'un titre dÃ©jÃ  prÃ©sent dans l'historique.
-/// AppelÃ©e quand la fiche est chargÃ©e : c'est lÃ  que le classement est fiable
-/// (mesurÃ©, la liste renvoie `UNKNOWN` lÃ  oÃ¹ la fiche dit `ADULT`).
+/// Mémorise la classification d'un titre déjà présent dans l'historique.
+/// Appelée quand la fiche est chargée : c'est là que le classement est fiable
+/// (mesuré, la liste renvoie `UNKNOWN` là où la fiche dit `ADULT`).
 #[tauri::command]
 pub async fn note_content_rating(
     store: State<'_, Arc<Store>>,
@@ -290,7 +365,7 @@ pub async fn note_content_rating(
     content_rating: String,
 ) -> Result<(), String> {
     requis(&source, &manga_url)?;
-    // Une source qui ne classe rien ne doit pas Ã©craser une valeur connue.
+    // Une source qui ne classe rien ne doit pas écraser une valeur connue.
     if vide(&content_rating) || content_rating.eq_ignore_ascii_case("UNKNOWN") {
         return Ok(());
     }

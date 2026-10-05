@@ -106,7 +106,23 @@ fn main() {
         }
     };
 
+    // Le dossier de téléchargements est un réglage en base : on le lit UNE fois
+    // ici, avant toute commande, et `downloads_root()` s'en sert ensuite.
+    // Sans cela, la bibliothèque et les téléchargements repartiraient du dossier
+    // par défaut alors que l'utilisateur en a choisi un autre.
+    let racine = match store.get_setting("dossier_telechargements") {
+        Ok(Some(c)) if !c.trim().is_empty() => std::path::PathBuf::from(c),
+        _ => download::downloads_root_par_defaut(),
+    };
+    let racine = download::verifier_dossier_ecriture(&racine).unwrap_or_else(|e| {
+        tracing::warn!("dossier de telechargements inutilisable ({e}), retour au defaut");
+        download::downloads_root_par_defaut()
+    });
+    tracing::info!("telechargements : {}", racine.display());
+    download::definir_racine_telechargements(racine.clone());
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(sup.clone())
         .manage(Arc::new(store))
         .manage(cache.clone())
@@ -177,6 +193,9 @@ fn main() {
             shelf::set_favorite_category,
             shelf::forget_history,
             shelf::clear_history,
+            shelf::get_downloads_dir,
+            shelf::set_downloads_dir,
+            shelf::reset_downloads_dir,
             shelf::forget_history,
             shelf::add_bookmark,
             challenge::open_challenge,

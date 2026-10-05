@@ -71,6 +71,27 @@ const FR = {
     'Certaines sources scannent tout leur catalogue avant de répondre (EXHENTA : 36 s). Au-delà du délai, la source est signalée hors service plutôt que de faire attendre.',
 
   // --- Écran « état des sources » (tâche 5.4) ---
+  // --- Flux « mises à jour » (tâche 3.2) ---
+  // Le compte vient toujours de `total`, jamais de `chapitres.length` : le moteur
+  // plafonne la liste, donc la longueur annoncerait un nombre faux.
+  'maj.bandeau1': '1 mise à jour',
+  'maj.bandeau': '{n} mises à jour',
+  'maj.bandeau.vu': 'Mises à jour',
+  // Le nombre seul, sans libellé, ne disait pas ce qu'il comptait. On nomme ce
+  // qui a déjà été vu : c'est l'information utile (« 3, dont 1 déjà vue »).
+  // Deux clés, pas une avec « (s) » — et accord en genre : « mise à jour » est
+  // féminin, donc « vue », pas « vu ».
+  'maj.dont.non.vus1': 'dont 1 déjà vue',
+  'maj.dont.non.vus': 'dont {n} déjà vues',
+  'maj.tout.vu': 'Tout marquer comme lu',
+  'maj.nouveau1': '1 nouveau chapitre',
+  'maj.nouveaux': '{n} nouveaux chapitres',
+  'maj.voir.tronque1': 'Voir le chapitre signalé (et {reste} de plus)',
+  'maj.voir.tronque': 'Voir les {n} chapitres signalés (et {reste} de plus)',
+  'maj.voir1': 'Voir le chapitre signalé',
+  'maj.et.pas.de.plus1': '1 autre non listé',
+  'maj.et.pas.de.plus': '{n} autres non listés',
+
   'etat.titre': 'État des sources',
   'etat.tout.va':
     'Aucune source en échec. Les pannes mémorisées sont effacées dès qu’une visite réussit.',
@@ -300,6 +321,21 @@ const EN: Record<Cle, string> = {
     'Some sources scan their whole catalogue before answering (EXHENTA: 36 s). Past the timeout the source is marked as down rather than made to wait.',
 
   // --- Source status screen (task 5.4) ---
+  // --- "Updates" feed (task 3.2) ---
+  'maj.bandeau1': '1 update',
+  'maj.bandeau': '{n} updates',
+  'maj.bandeau.vu': 'Updates',
+  'maj.dont.non.vus1': 'of which 1 already seen',
+  'maj.dont.non.vus': 'of which {n} already seen',
+  'maj.tout.vu': 'Mark all as read',
+  'maj.nouveau1': '1 new chapter',
+  'maj.nouveaux': '{n} new chapters',
+  'maj.voir.tronque1': 'See the flagged chapter (and {reste} more)',
+  'maj.voir.tronque': 'See the {n} flagged chapters (and {reste} more)',
+  'maj.voir1': 'See the flagged chapter',
+  'maj.et.pas.de.plus1': '1 other not listed',
+  'maj.et.pas.de.plus': '{n} others not listed',
+
   'etat.titre': 'Source status',
   'etat.tout.va': 'No source has failed. Recorded failures are cleared as soon as a visit succeeds.',
   'etat.resume1': '1 source failed during a visit.',

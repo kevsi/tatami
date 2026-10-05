@@ -81,6 +81,66 @@ type Favorite = {
   category_color: number | null;
 };
 
+/** Tâche 3.2 — un chapitre tel que le planificateur le rapporte.
+ *
+ *  Les champs sont en `snake_case` comme le contrat Rust : le moteur sérialise
+ *  `Nouveaute`/`Chapitre` directement dans le payload de l'évènement, sans couche
+ *  de conversion. Le nom du champ EST donc le nom Rust, sans quoi `titre`
+ *  arriverait `undefined`.
+ */
+type MajChapitre = {
+  url: string;
+  titre: string;
+  numero: number | null;
+  depose_le: number | null;
+};
+
+/** Un favori qui a reçu des chapitres nouveaux.
+ *
+ *  `total` et `chapitres` diffèrent quand `tronque` est vrai : `chapitres` est
+ *  plafonné côté moteur, `total` est le compte réel. C'est `total` qu'il faut
+ *  afficher — `chapitres.length` annoncerait un nombre faux dès qu'un série
+ *  dépasse le plafond. Le détail l'affirme explicitement.
+ */
+type MajNouveaute = {
+  source: string;
+  manga_url: string;
+  titre: string;
+  chapitres: MajChapitre[];
+  total: number;
+  tronque: boolean;
+};
+
+type MajRate = {
+  source: string;
+  manga_url: string;
+  motif: string;
+};
+
+/** Le payload de `maj://nouveaux-chapitres` : un bilan de passe complet.
+ *
+ *  `verifies` / `sources` / `ignores` sont pour le résumé de la ligne « dernière
+ *  vérification ». `desactive` sert à distinguer « coupée par le réglage » de
+ *  « n'a rien trouvé » — sans quoi l'écran afficherait « 0 nouveau » alors que
+ *  la veille ne tournait pas du tout.
+ */
+type MajPasse = {
+  nouveaux: MajNouveaute[];
+  rates: MajRate[];
+  verifies: number;
+  sources: number;
+  ignores: number;
+  desactive: boolean;
+};
+
+/** Une entrée du flux, conservée côté interface après la réception.
+ *
+ *  `vue` est false tant que l'utilisateur n'a pas ouvert la ligne : le flux est
+ *  persistant (on peut le rouvrir au redémarrage), mais ouvrir une ligne doit
+ *  rester un geste volontaire.
+ */
+type MajItem = MajNouveaute & { at: number; vue: boolean };
+
 /** Une entrée de l'historique de lecture (table `history`). */
 type HistoryItem = {
   source: string;
@@ -519,6 +579,48 @@ function saveQueue(items: Manga[]) {
 }
 
 const HEALTH_KEY = 'tatami.sourceHealth';
+
+/** Tâche 3.2 — le flux est une préférence d'affichage *et* un journal court : il
+ *  vit dans `localStorage`, pas en base. Même règle que `HEALTH_KEY`.
+ *
+ *  On ne garde que les entrées non vidées et on plafonne : le flux s'accumule à
+ *  chaque passe, et une liste de plusieurs centaines dans `localStorage` est une
+ *  base qui déborde. 200 entrées de quelques centaines d'octets chacune restent
+ *  sous le quota, et au-delà le tri par date écarte les plus anciennes.
+ */
+const MAJ_KEY = 'tatami.maj';
+const MAJ_MAX = 200;
+
+function loadMaj(): MajItem[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const brut = JSON.parse(window.localStorage.getItem(MAJ_KEY) || '[]');
+    if (!Array.isArray(brut)) return [];
+    return brut
+      .filter((x) => x && typeof x.source === 'string' && typeof x.titre === 'string')
+      .filter((x) => (x.total ?? 0) > 0)
+      .slice(0, MAJ_MAX)
+      .map((x) => ({
+        ...x,
+        chapitres: Array.isArray(x.chapitres) ? x.chapitres : [],
+        total: typeof x.total === 'number' ? x.total : 0,
+        tronque: x.tronque === true,
+        at: typeof x.at === 'number' ? x.at : Date.now(),
+        vue: x.vue === true,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function saveMaj(items: MajItem[]) {
+  try {
+    window.localStorage.setItem(MAJ_KEY, JSON.stringify(items.slice(0, MAJ_MAX)));
+  } catch {
+    // Quota dépassé ou `localStorage` indisponible : le flux reste en mémoire,
+    // il ne fait pas planter l'application pour une sauvegarde.
+  }
+}
 /** Source en échec réseau, mémorisé pour ne pas la retester à chaque visite. */
 type SourceHealth = Record<string, { code: string; message: string; at: number }>;
 
@@ -634,6 +736,13 @@ export default function Home() {
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [tab, setTab] = useState<string>('home');
+  // Tâche 3.2 — le flux « mises à jour ». État propre : il est relu au
+  // démarrage depuis `localStorage`, donc il survit à un redémarrage. C'est
+  // ce que la passe émet ; l'interface ne la déclenche pas.
+  const [maj, setMaj] = useState<MajItem[]>(loadMaj());
+  // Ce qui n'a pas encore été regardé. Une valeur dérivée, pas un second état :
+  // deux compteurs qui peuvent divergir sont deux bugs en attente.
+  const majNonVus = maj.filter((m) => !m.vue).length;
   // Bibliothèque personnelle : favoris, historique, reprise (table SQLite).
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [recent, setRecent] = useState<HistoryItem[]>([]);
@@ -813,9 +922,50 @@ export default function Home() {
           );
       },
     );
+    // Tâche 3.2 — le flux « mises à jour ». Le planificateur émet
+    // `maj://nouveaux-chapitres` avec un bilan de passe, et **rien** quand il
+    // n'y a rien de neuf : on ne se réabonne donc pas pour rien.
+    //
+    // Une passe remplace le flux précédent plutôt que de s'y ajouter : le même
+    // favori peut être signalé à chaque passe tant que ses chapitres sont dans
+    // la fenêtre « non lus » de la source, et empiler créerait des doublons.
+    // On fusionne donc par `(source, manga_url)`, en gardant la date la plus
+    // récente et en cumulant les totaux — deux '_total_' distincts pour le même
+    // favori sont des chapitres différents, pas les mêmes comptés deux fois.
+    const unlistenMaj = listen<MajPasse>('maj://nouveaux-chapitres', (event) => {
+      const passe = event.payload;
+      if (!passe || !Array.isArray(passe.nouveaux)) return;
+      const maintenant = Date.now();
+      setMaj((precedent) => {
+        const cumul = new Map<string, MajItem>();
+        for (const item of precedent) {
+          cumul.set(item.source + '\u001f' + item.manga_url, item);
+        }
+        for (const n of passe.nouveaux) {
+          if (!n || typeof n.source !== 'string' || (n.total ?? 0) <= 0) continue;
+          const cle = n.source + '\u001f' + n.manga_url;
+          const deja = cumul.get(cle);
+          cumul.set(cle, {
+            ...n,
+            source: n.source,
+            manga_url: n.manga_url,
+            titre: n.titre || deja?.titre || n.source,
+            chapitres: Array.isArray(n.chapitres) ? n.chapitres : [],
+            total: (deja?.total ?? 0) + (n.total ?? 0),
+            tronque: n.tronque === true || deja?.tronque === true,
+            at: maintenant,
+            vue: false,
+          });
+        }
+        const suivant = [...cumul.values()].sort((a, b) => b.at - a.at).slice(0, MAJ_MAX);
+        saveMaj(suivant);
+        return suivant;
+      });
+    });
     return () => {
       unlisten.then((off) => off()).catch(() => {});
       unlistenVerif.then((off) => off()).catch(() => {});
+      unlistenMaj.then((off) => off()).catch(() => {});
     };
     // Montage uniquement : rejouer cet effet à chaque changement de
     // `refreshDownloads` réabonnerait l'écouteur d'événements.
@@ -1071,6 +1221,24 @@ export default function Home() {
 
   function sameSignet(b: Bookmark, cle: { chapter_url: string; page_index: number }): boolean {
     return b.chapter_url === cle.chapter_url && b.page_index === cle.page_index;
+  }
+
+  /** Tâche 3.2 — ouvre la fiche d'un favori signalé par le planificateur.
+   *
+   *  On délègue à `loadChapters`, qui pose déjà `setOpenManga` et appelle
+   *  `details` + `chapters`. J'avais d'abord écrit une version dédiée avec les
+   *  deux appels `Promise.allSettled` — c'était un doublon : le même enchaînement
+   *  existe déjà, et ma version inventait un `setChapitresCharges` qui n'existe
+   *  pas. Le compilateur l'a dit ; autant l'écouter que le redécouvrir plus tard.
+   */
+  function ouvrirFavori(f: Favorite) {
+    void loadChapters({
+      url: f.manga_url,
+      title: f.title,
+      source: f.source,
+      coverUrl: f.cover_url,
+      coverToken: f.cover_token,
+    });
   }
 
   /** Rejouer un signet : rouvre son chapitre exactement à sa page. */
@@ -4023,6 +4191,112 @@ if (reader) {
         </header>
 
         {error && <p className="error">{error}</p>}
+
+        {/* Tâche 3.2 — le flux « mises à jour », en tête de l'accueil.
+         *
+         *  Il est **avant** « Continuer » et non après : c'est la seule
+         *  information de la page qui change tout seule, donc celle qu'on vient
+         *  chercher. Le reste est ce qu'on a laissé ouvert.
+         *
+         *  Le compteur du bandeau est la somme des `total`, **jamais**
+         *  `chapitres.length` : le moteur plafonne la liste, donc la longueur
+         *  annoncerait un nombre faux dès qu'une série dépasse le plafond.
+         */}
+        {maj.length > 0 && (
+          <section className="maj">
+            <div className="band">
+              {majNonVus > 0
+                ? majNonVus === 1
+                  ? t('maj.bandeau1')
+                  : t('maj.bandeau', { n: majNonVus })
+                : t('maj.bandeau.vu', { n: maj.length })}
+              <span className="muted">
+                {maj.length > majNonVus
+                  ? maj.length - majNonVus === 1
+                    ? t('maj.dont.non.vus1')
+                    : t('maj.dont.non.vus', { n: maj.length - majNonVus })
+                  : ''}
+              </span>
+              <button
+                className="btn btn-ghost maj-tout-vu"
+                onClick={() => {
+                  setMaj((prec) => {
+                    const suivant = prec.map((m) => ({ ...m, vue: true }));
+                    saveMaj(suivant);
+                    return suivant;
+                  });
+                }}
+                disabled={majNonVus === 0}
+              >
+                {t('maj.tout.vu')}
+              </button>
+            </div>
+            {maj.map((m) => (
+              <article className={`maj-item${m.vue ? ' vue' : ''}`} key={m.source + '|' + m.manga_url}>
+                <button
+                  className="maj-ouvrir"
+                  onClick={() => {
+                    setMaj((prec) => {
+                      const suivant = prec.map((x) =>
+                        x.source === m.source && x.manga_url === m.manga_url ? { ...x, vue: true } : x,
+                      );
+                      saveMaj(suivant);
+                      return suivant;
+                    });
+                    const cible = favorites.find((f) => f.source === m.source && f.manga_url === m.manga_url);
+                    if (cible) void ouvrirFavori(cible);
+                  }}
+                >
+                  <span className="maj-titre">{m.titre}</span>
+                  <span className="muted">
+                    {m.source} ·{' '}
+                    {m.total === 1 ? t('maj.nouveau1') : t('maj.nouveaux', { n: m.total })}
+                  </span>
+                </button>
+                {m.chapitres.length > 0 && (
+                  <details className="maj-detail" onToggle={(e) => {
+                    if ((e.target as HTMLDetailsElement).open) {
+                      setMaj((prec) => {
+                        const suivant = prec.map((x) =>
+                          x.source === m.source && x.manga_url === m.manga_url ? { ...x, vue: true } : x,
+                        );
+                        saveMaj(suivant);
+                        return suivant;
+                      });
+                    }
+                  }}>
+                    <summary>
+                      {m.tronque
+                        ? m.chapitres.length === 1
+                          ? t('maj.voir.tronque1', { reste: m.total - 1 })
+                          : t('maj.voir.tronque', { n: m.chapitres.length, reste: m.total - m.chapitres.length })
+                        : t('maj.voir1')}
+                    </summary>
+                    <ul className="maj-chapitres">
+                      {m.chapitres.map((c) => (
+                        <li key={c.url}>
+                          <span>{c.titre}</span>
+                          {c.depose_le ? (
+                            <time dateTime={new Date(c.depose_le).toISOString()}>
+                              {depuis(t, c.depose_le)}
+                            </time>
+                          ) : null}
+                        </li>
+                      ))}
+                      {m.tronque && m.total > m.chapitres.length && (
+                        <li className="muted">
+                          {m.total - m.chapitres.length === 1
+                            ? t('maj.et.pas.de.plus1')
+                            : t('maj.et.pas.de.plus', { n: m.total - m.chapitres.length })}
+                        </li>
+                      )}
+                    </ul>
+                  </details>
+                )}
+              </article>
+            ))}
+          </section>
+        )}
 
         <div className="band">
           {t('accueil.continuer')}

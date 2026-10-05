@@ -251,6 +251,27 @@ Sont concernées : protocole du sidecar, schéma de base de données, stockage d
 
 Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de sonde ou du CSS de lecteur.
 
+- **Un `CustomEvent` sur `window` ne déclenche pas un `listen` Tauri.** Le
+  code écoute via IPC, donc la mesure doit émettre par
+  `window.__TAURI_INTERNALS__.invoke('plugin:event|emit', { event, payload,
+  windowLabel })` — c'est le même chemin que l'émetteur Rust. Une sonde qui
+  dispatche un événement DOM passe au vert sans avoir rien testé, et il faut
+  **plusieurs tentatives** pour s'apercevoir que rien ne se passe.
+- **Le pluriel se teste avec une seule unité, jamais avec le nombre qu'on a
+  sous la main.** Deux fois dans la journée : 5.4 avec 7 pannes et 3.2 avec 2
+  entrées — les deux mesures « vert » laissaient le singulier **non testé**, et
+  la capture a montré « 1 source(s) » puis « Voir les 1 chapitres ». Corollaire :
+  une vérification d'affichage ne vaut que si elle a raté l'état **minimal**.
+- **Un test trop lâche apprend à ignorer ses propres alertes.** `/1 autres\b/`
+  matche « **11** autres ». Le nombre précède le mot : il faut une borne
+  `[^0-9]`. Le premier jet d'un test de pluriel signale donc des fautes
+  imaginaires, et il faut le resserrer **avant** de conclure qu'il est cassé.
+- **Copier un existant n'est pas réutiliser un existant.** J'ai écrit
+  `ouvrirFavori` avec les deux `Promise.allSettled` de `ouvrirSignet`, alors
+  que `loadChapters` en faisait autant — et ma version inventait un
+  `setChapitresCharges` inexistant. Chercher avant d'écrire : la duplication
+  coûte une erreur de compilateur, une divergence silencieuse, ou les deux.
+
 - **Un panneau qui ne s'affiche qu'à vide ne prouve rien.** L'écran 5.4 rendait
   parfaitement son message « aucune source en échec » — avec **0 source en
   échec**, donc **sans jamais avoir affiché la table**. Une capture de cet état

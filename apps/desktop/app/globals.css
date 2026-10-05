@@ -2075,6 +2075,94 @@ button:disabled {
   font-weight: 600;
 }
 
+/* ---------------- Flux « mises à jour » (3.2) ----------------
+   L'accent `--accent` parce que c'est la seule zone de l'accueil qui change
+   seule : elle doit sauter aux yeux sans être un bandeau d'alarme. Une entrée
+   déjà lue passe en `--text-2`, jamais en gris pâle — illisible en thème clair. */
+
+.maj {
+  margin: 0 0 var(--s5);
+}
+
+.maj-item {
+  border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  padding: 10px 14px;
+  margin-bottom: var(--s2);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.maj-item:hover {
+  background: var(--surface-2);
+}
+
+.maj-item.vue {
+  border-left-color: var(--line);
+}
+
+/* Lue : on baisse le contraste, pas la lisibilité. */
+.maj-item.vue .maj-titre {
+  color: var(--text-2);
+}
+
+.maj-ouvrir {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+}
+
+.maj-titre {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Le détail est replié par défaut : ouvrir la liste des chapitres est un geste,
+   sinon l'accueil pousse « Continuer » hors de l'écran. */
+.maj-detail {
+  margin-top: 6px;
+}
+
+.maj-detail summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--accent);
+  user-select: none;
+}
+
+.maj-chapitres {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line-soft);
+}
+
+.maj-chapitres li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: 5px 0;
+  font-size: 13px;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.maj-chapitres time {
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.maj-tout-vu {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
 .etat-table {
   width: 100%;
   border-collapse: collapse;

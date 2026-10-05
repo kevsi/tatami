@@ -153,7 +153,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 ### Phase 3 — Tâches de fond et notifications (M)
 
 - [x] **3.1** Planificateur Rust (tokio) : vérification périodique des nouveaux chapitres des favoris, avec limites de débit. **Livré** le 2026-10-05 : `scheduler.rs` + 19 tests, horloge et moteur injectés, débit par source avec retour arrière borné, état persisté en base, évènement `maj://nouveaux-chapitres`. Aucune dépendance ajoutée, aucun écran (3.2 décrit dans le journal, non implémenté). **Point ouvert mesuré le 2026-10-05 (session 1) :** le pire cas calculé de la passe est 20 sources × 20 s = **400 s**, et elle part **au démarrage**, en concurrence avec l'interface — alors que le moteur est séquentiel. Mesuré : `EXHENTAI` (la source qui « scanne tout son catalogue ») répond en **1 339 ms**, et une source rapide pendant/après répond en **620 ms** — donc les 20 s sont un **délai de politesse**, pas une durée d'appel, et le pire cas n'est pas 400 s de travail réel. **Décision : ne rien changer au code.** Le risque restant est `N × (durée réelle d'un appel)` avec un `timeoutSecs` de 60 s, à re-mesurer quand la bibliothèque comptera des centaines de favoris.
-- [ ] **3.2** Flux "mises à jour" dans l'interface. **Détail qui compte, décrit dans le journal** : afficher `Nouveaute.total`, **pas** `chapitres.len()` — les deux diffèrent quand `tronque` est vrai.
+- [x] **3.2** Flux « mises à jour » dans l'interface. **Livré et vérifié** le 2026-10-05. Écoute `maj://nouveaux-chapitres` (le planificateur est son seul producteur, et il n'émet **rien** quand il n'y a rien de neuf), fusionne par `(source, manga_url)` en cumulant les totaux — deux passes du même favori donnent des chapitres **différents**, pas les mêmes comptés deux fois. Persisté dans `localStorage` (plafonné à 200 entrées), donc visible après un redémarrage. **Le piège documenté par le moteur est vérifié explicitement** : un cas tronqué (`total` 47, 3 chapitres listés) affiche bien « 47 nouveaux chapitres » et « et 44 de plus » — donc l'écran lit `total`, jamais `chapitres.length`. Preuve : 2 entrées rendues, fusion 47 + 2 → 49 sans doublon, persistance vérifiée après rechargement, 0 erreur console, et les **singuliers** vérifiés à part dans les deux langues (1 mise / 1 chapitre / 1 autre). Ouvre la fiche par `loadChapters`, qui pose déjà `setOpenManga` et appelle `details` + `chapters` — un doublon écrit d'abord invoices un `setChapitresCharges` inexistant, que le compilateur a signalé.
 - [ ] **3.3** Notifications système (plugin Tauri, à vérifier dans la doc).
 - [ ] **3.4** Icône dans la zone de notification, fermeture dans la zone de notification, démarrage automatique optionnel.
 - [ ] **3.5** Réglages : fréquence, sources concernées, activation.
@@ -245,6 +245,43 @@ Règles données aux trois sessions :
    récupère ces fichiers dans un commit « docs » dédié.
 
 ## 9. Journal
+
+### 2026-10-05 — Flux « mises à jour » (3.2)
+
+- Plan : écouter `maj://nouveaux-chapitres` et afficher le flux. Le planificateur
+  était livré mais son résultat n'était **visible nulle part** : il n'avait
+  aucun effet sur l'utilisateur. C'est la fin de 3.1 qui ne servait à rien.
+- Le contrat a été lu **avant** d'écrire : `ResultatPasse` avec `nouveaux`,
+  `rates`, `verifies`, `sources`, `ignores`, `desactive`. Les champs sont en
+  `snake_case` sans couche de conversion — donc `chapitres`, `total`, `tronque`
+  arrivent tels quels, et un `camelCase` aurait donné `undefined`.
+- **Le piège que le moteur documente, vérifié explicitement** : afficher
+  `Nouveaute.total`, jamais `chapitres.len()` — le moteur plafonne la liste, donc
+  la longueur annoncerait un nombre faux. Le cas émis est volontairement
+  **tronqué** (`total` 47, 3 chapitres listés) : l'écran affiche « 47 nouveaux
+  chapitres » et « et 44 de plus ». Lecture de la mauvaise colonne → 3.
+- **Fusion, pas empilement.** Une passe remplace le flux précédent, car le même
+  favori est signalé à chaque passe tant que ses chapitres sont dans la fenêtre
+  « non lus » de la source. Fusion par `(source, manga_url)` avec cumul des
+  totaux : mesuré, 2 passes du même favori donnent **49** (47 + 2) et **2
+  entrées**, pas 3.
+- Persistance : `localStorage`, plafonné à 200. Vérifié — les 2 entrées sont
+  là après un rechargement.
+- **Un doublon écrit avant d'être lu.** J'ai d'abord écrit une fonction
+  `ouvrirFavori` dédiée avec les deux appels `Promise.allSettled`, en copiant
+  `ouvrirSignet`. `loadChapters` faisait déjà exactement ça, et ma version
+  inventait un `setChapitresCharges` qui **n'existe pas** — le compilateur l'a
+  dit. Corrigé en déléguant, donc il n'y a plus qu'un chemin d'ouverture de fiche.
+- **Les pluriels, encore.** Première passe de mesure : 2 entrées et 3 chapitres
+  listés, donc le singulier **n'était pas testé** — et la capture montrait « 1
+  mise(s) à jour » et « Voir les 1 chapitres signalés ». Même défaut que 5.4,
+  quatre clés de plus. Re-mesuré avec 1 mise / 1 chapitre listé / 12 au total,
+  dans les deux langues : aucune faute.
+- Une **fausse alerte de la sonde** : `/1 autres\b/` matchait « **11** autres ».
+  Le nombre précède le mot, il faut donc borner par `[^0-9]`. Un test trop
+  lâche apprend à ignorer ses propres alertes.
+
+### 2026-10-05 — Vérification sur l'app de 5.4 et du correctif d'hydratation
 
 ### 2026-10-05 — Vérification sur l'app de 5.4 et du correctif d'hydratation
 

@@ -456,6 +456,32 @@ const READER_FIT_KEY = 'tatami.readerFit';
 const READER_SPREAD_KEY = 'tatami.readerSpread';
 const READER_DIR_KEY = 'tatami.readerDir';
 
+/** Tâche 1.8 : combien de pages sont préchargées **en avance** dans le cache Rust.
+ *
+ *  L'interface posait une seule balise `<img class="preload">` sur la page
+ *  suivante, donc un cran de navigation sur deux repartait sur le réseau. Le
+ *  cache disque s'alimente par le protocole `tatami://` : la balise provoque le
+ *  téléchargement, et la page s'affiche ensuite en centièmes de seconde.
+ *
+ *  Plafond volontaire : au-delà, on télécharge des pages que l'utilisateur peut
+ *  ne jamais atteindre (il ferme le chapitre), sur une machine déjà chargée par
+ *  le moteur. Quatre pages couvrent largement un défilement rapide, y compris en
+ *  double page où un cran en consomme deux.
+ */
+const PRECHARGE_PAGES = 4;
+
+/** Tâche 1.8 : distance de molette minimale pour tourner une page.
+ *
+ *  En dessous, on laisse le défilement normal de la page se faire : c'est ce qui
+ *  évite qu'un micro-scroll dans la barre d'outils fasse changer de page.
+ */
+const DELTA_MOLETTE_MIN = 40;
+/** Durée pendant laquelle un même sens de molette est ignoré.
+ *
+ *  C'est ce qui transforme un geste en UNE page au lieu de dix.
+ */
+const DELTA_MOLETTE_FIN_MS = 300;
+
 type ReaderMode = 'page' | 'webtoon';
 /** Tâche 0.13 : comment la page est mise à l'échelle dans le cadre. */
 type ReaderFit = 'width' | 'height';
@@ -695,6 +721,10 @@ export default function Home() {
   // est proportionnelle à cette largeur).
   const dernierScroll = useRef(0);
   const enAttente = useRef(false);
+  // Tâche 1.8 : sens du dernier geste de molette, 0 = aucun en cours. Vaut 1 pour
+  // « on descend », -1 pour « on remonte ». Permet à `onMoletteStage` de
+  // n'avancer que d'une page par geste.
+  const moletteEnCours = useRef(0);
   const [scrollY, setScrollY] = useState(0);
   const [largeurBande, setLargeurBande] = useState(0);
   const [health, setHealth] = useState<SourceHealth>({});
@@ -2443,6 +2473,38 @@ function turn(delta: number) {
   });
 }
 
+/** Tâche 1.8 : la molette tourne la page en mode paginé.
+ *
+ *  Mesuré avant correction : la molette ne faisait **rien** dans le lecteur paginé
+ *  (trois positions testées, « rien ne bouge ») alors que la tâche 1.8 demande
+ *  des « raccourcis clavier et souris ». Le clavier était couvert, la souris pas.
+ *
+ *  Deux garde-fous, tous deux nécessaires :
+ *
+ *  - **Un seuil de distance.** La molette émet des dizaines d'événements pour un
+ *    seul geste de la main. Sans seuil, un geste de lecture traverserait dix
+ *    pages d'un coup — mesuré : 43 événements pour 2 crans de molette.
+ *  - **`Ctrl` est réservé au zoom**, sinon on ne pourrait plus zoomer à la
+ *    molette alors que c'est le geste attendu sur une image.
+ */
+function onMoletteStage(e: React.WheelEvent<HTMLDivElement>) {
+  // En mode webtoon la bande gère son propre défilement : on ne s'en mêle pas.
+  if (readerMode !== 'page') return;
+  if (e.ctrlKey) return;
+  const delta = e.deltaY;
+  if (Math.abs(delta) < DELTA_MOLETTE_MIN) return;
+  e.preventDefault();
+  // Une seule page par direction et par gesture : on mémorise le signe courant et
+  // on ignore les événements qui suivent tant qu'il n'a pas changé.
+  const sens = delta > 0 ? 1 : -1;
+  if (moletteEnCours.current === sens) return;
+  moletteEnCours.current = sens;
+  window.setTimeout(() => {
+    moletteEnCours.current = 0;
+  }, DELTA_MOLETTE_FIN_MS);
+  turn(sens * step());
+}
+
 useEffect(() => {
   if (!reader) return;
   const onKey = (e: KeyboardEvent) => {
@@ -3045,7 +3107,14 @@ if (reader) {
     // Signet présent sur la page affichée : l'état du bouton du lecteur.
     const marque = pageMarquee();
     const by = readerMode === 'page' && spread ? 2 : 1;
-    const next = pages[index + by];
+    // Précharge les pages suivantes, pas seulement la première.
+    //
+    // Mesuré le 2026-10-05 : la balise unique d'avant rendait la page suivante
+    // bien plus vite (elle arrivait depuis le cache disque Rust alimenté par le
+    // protocole), mais elle ne couvrait qu'**une** page — donc un cran de
+    // navigation sur deux repartait sur le réseau. On couvre désormais
+    // `PRECHARGE_PAGES` pages d'avance.
+    const aPrecharger = pages.slice(index + by, index + by + PRECHARGE_PAGES);
     // En double page, la page courante et la suivante partagent le cadre. En RTL
     // (défaut manga) la page courante est à droite : l'ordre DOM est donc
     // inversé, et il ne reste qu'une page à la dernière.
@@ -3310,7 +3379,10 @@ if (reader) {
           </div>
         ) : (
           <>
-            <div className={`reader-stage fit-${fit}${spread ? ' spread' : ''}`}>
+            <div
+              className={`reader-stage fit-${fit}${spread ? ' spread' : ''}`}
+              onWheel={onMoletteStage}
+            >
               {visible.length > 0 ? (
                 visible.map((p) => {
                   const at = pages.indexOf(p);
@@ -3341,9 +3413,10 @@ if (reader) {
           </>
         )}
 
-        {readerMode === 'page' && next && (
-          <img className="preload" src={pageSrc(next.token)} alt="" aria-hidden="true" />
-        )}
+        {readerMode === 'page' &&
+          aPrecharger.map((p) => (
+            <img key={p.token} className="preload" src={pageSrc(p.token)} alt="" aria-hidden="true" />
+          ))}
       </main>
     );
   }

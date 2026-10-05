@@ -2045,6 +2045,72 @@ button:disabled {
   gap: var(--s1);
 }
 
+/* ---------------- État des sources (5.4) ----------------
+   Les erreurs sont regroupées par code : 40 sources en `CHALLENGE_REQUIRED`
+   sont un problème de Cloudflare, pas 40 pannes à poursuivre une par une.
+   D'où une liste de codes d'abord, puis le détail source par source. */
+
+.code-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: 0 0 var(--s4);
+  padding: 0;
+  list-style: none;
+}
+
+.code-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 3px 10px;
+  border: 1px solid var(--danger-bordure);
+  border-radius: 5px;
+  background: var(--danger-fond);
+  font-size: 12px;
+}
+
+.code-list code {
+  color: var(--danger-texte);
+  font-weight: 600;
+}
+
+.etat-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.etat-table th {
+  text-align: left;
+  padding: 6px 10px;
+  color: var(--text-2);
+  font-weight: 600;
+  border-bottom: 1px solid var(--line);
+}
+
+.etat-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+}
+
+.etat-table td:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Le message d'erreur peut être long : il ne doit pas élargir la colonne. */
+.etat-table td:first-child .muted {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.etat-table code {
+  color: var(--danger-texte);
+}
+
 .file {
   background: var(--surface-2);
   border: 1px solid var(--line-soft);

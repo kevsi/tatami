@@ -70,6 +70,29 @@ const FR = {
   'reglages.reseau.note':
     'Certaines sources scannent tout leur catalogue avant de répondre (EXHENTA : 36 s). Au-delà du délai, la source est signalée hors service plutôt que de faire attendre.',
 
+  // --- Écran « état des sources » (tâche 5.4) ---
+  'etat.titre': 'État des sources',
+  'etat.tout.va':
+    'Aucune source en échec. Les pannes mémorisées sont effacées dès qu’une visite réussit.',
+  'etat.resume': '{n} source(s) en échec lors d’une visite.',
+  'etat.sources': '{n} source(s)',
+  'etat.source': 'Source',
+  'etat.code': 'Erreur',
+  'etat.dernier': 'Signalée',
+  'etat.reessayer': 'Tout réessayer',
+
+  // --- Ancienneté traduite. Elle était en français en dur (`sinceFr`),
+  //     contrairement à AGENTS.md §7 : mesuré le 2026-10-05, l’interface en
+  //     anglais affichait « 3 mois » pour la date d’une panne. ---
+  'temps.aujourdhui': 'aujourd’hui',
+  'temps.instance': 'à l’instant',
+  'temps.min': 'il y a {n} min',
+  'temps.heure': 'il y a {n} h',
+  'temps.jour': 'il y a {n} j',
+  'temps.mois': 'il y a {n} mois',
+  'temps.an': 'il y a 1 an',
+  'temps.ans': 'il y a {n} ans',
+
   // --- Réglages : langue
   'reglages.apparence': 'Apparence',
   'reglages.apparence.sombre': 'Sombre',
@@ -269,6 +292,26 @@ const EN: Record<Cle, string> = {
   'reglages.reseau.secondes': '{n} seconds',
   'reglages.reseau.note':
     'Some sources scan their whole catalogue before answering (EXHENTA: 36 s). Past the timeout the source is marked as down rather than made to wait.',
+
+  // --- Source status screen (task 5.4) ---
+  'etat.titre': 'Source status',
+  'etat.tout.va': 'No source has failed. Recorded failures are cleared as soon as a visit succeeds.',
+  'etat.resume': '{n} source(s) failed during a visit.',
+  'etat.sources': '{n} source(s)',
+  'etat.source': 'Source',
+  'etat.code': 'Error',
+  'etat.dernier': 'Reported',
+  'etat.reessayer': 'Retry all',
+
+  // --- Translated age of an event (was hardcoded French in `sinceFr`) ---
+  'temps.aujourdhui': 'today',
+  'temps.instance': 'just now',
+  'temps.min': '{n} min ago',
+  'temps.heure': '{n} h ago',
+  'temps.jour': '{n} d ago',
+  'temps.mois': '{n} months ago',
+  'temps.an': '1 year ago',
+  'temps.ans': '{n} years ago',
 
   'reglages.apparence': 'Appearance',
   'reglages.apparence.sombre': 'Dark',

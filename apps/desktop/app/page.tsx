@@ -403,21 +403,32 @@ function infoRows(m: Manga | null): { label: string; value: string }[] {
   return rows;
 }
 
-/** Ancienneté en français court : « 5 mois », « 3 j » — le format des cartes
- *  de catalogue, où la date exacte Takes trop de place. */
-function sinceFr(ms: number): string {
+/** Ancienneté courte et traduite : « 5 mois », « 3 j », « il y a 2 h ».
+ *
+ *  Cette fonction était française en dur — contraire à `AGENTS.md` §7, qui
+ *  interdit toute chaîne non traduite dans un composant. Mesuré le 2026-10-05
+ *  en ajoutant l'écran 5.4 : alors que l'interface était en anglais, la date
+ *  d'une panne s'affichait en français. Les unités passent donc par `t`, et il
+ *  n'y a plus qu'une seule fonction de calcul.
+ *
+ *  Le type du premier paramètre reprend celui de `useI18n` (`Cle`), pas
+ *  `string` : c'est lui qui fait qu'une clé d'i18n **inexistante ne compile
+ *  pas**. Annoté en `string`, TypeScript aurait accepté n'importe quelle
+ *  faute de frappe.
+ */
+function depuis(t: ReturnType<typeof useI18n>['t'], ms: number): string {
   const diff = Date.now() - ms;
-  if (diff < 0) return "aujourd'hui";
+  if (diff < 0) return t('temps.aujourdhui');
   const min = Math.round(diff / 60_000);
-  if (min < 60) return min <= 1 ? "à l'instant" : `${min} min`;
+  if (min < 60) return min <= 1 ? t('temps.instance') : t('temps.min', { n: min });
   const h = Math.round(min / 60);
-  if (h < 24) return `${h} h`;
+  if (h < 24) return t('temps.heure', { n: h });
   const d = Math.round(h / 24);
-  if (d < 31) return `${d} j`;
+  if (d < 31) return t('temps.jour', { n: d });
   const mo = Math.round(d / 30.44);
-  if (mo < 12) return `${mo} mois`;
+  if (mo < 12) return t('temps.mois', { n: mo });
   const y = Math.floor(d / 365.25);
-  return y <= 1 ? '1 an' : `${y} ans`;
+  return y <= 1 ? t('temps.an') : t('temps.ans', { n: y });
 }
 
 /* Tâche 0.16 : derniers chapitres dans la carte du catalogue.
@@ -1392,7 +1403,7 @@ export default function Home() {
             .map(
               (c) =>
                 `${chapterShort(c)}${
-                  c.uploadDate != null && c.uploadDate > 0 ? ` · ${sinceFr(c.uploadDate)}` : ''
+                  c.uploadDate != null && c.uploadDate > 0 ? ` · ${depuis(t, c.uploadDate)}` : ''
                 }`,
             );
           cache[key] = { labels, total: list.length, at: Date.now() };
@@ -1415,7 +1426,11 @@ export default function Home() {
     void Promise.all(
       Array.from({ length: Math.min(RECENT_CONCURRENCY, todo.length) }, () => run()),
     );
-  }, [latest, showRecent, selected?.name]);
+    // `t` est une dépendance RÉELLE depuis que les étiquettes de chapitre sont
+    // passées par `depuis(t, …)` : sans elle, changer de langue laisserait les
+    // lignes « Ch. 12 · il y a 3 mois » dans l'ancienne langue. L'avertissement
+    // `exhaustive-deps` est donc exact, pas un bruit à supprimer.
+  }, [latest, showRecent, selected?.name, t, langue]);
 
   async function loadChapters(m: Manga) {
     setOpenManga(m);
@@ -2779,21 +2794,89 @@ useEffect(() => {
           </p>
         </section>
 
-        {Object.keys(health).length > 0 && (
-          <p className="muted">
-            {Object.keys(health).length} source(s) signalée(s) hors service lors d&apos;une
-            visite.{' '}
-            <button
-              className="btn btn-ghost"
-              onClick={() => {
-                window.localStorage.removeItem(HEALTH_KEY);
-                setHealth({});
-              }}
-            >
-              Tout réessayer
-            </button>
-          </p>
-        )}
+        {/* Tâche 5.4 — écran « état des sources ».
+         *
+         *  Ce qui existait : un compteur « N sources signalées hors service » et
+         *  un bouton « Tout réessayer ». Aucune liste, aucune date, aucun message
+         *  d'erreur — donc impossible de savoir *quelle* source casse ni
+         *  *depuis quand*, alors que c'est précisément ce que la tâche demande
+         *  (« pour repérer ce qui est cassé »).
+         *
+         *  La donnée est déjà là : `noteHealth` enregistre `{ code, message, at }`
+         *  par source et le persiste. Il n'y avait qu'à l'afficher.
+         *
+         *  Les chiffres sont regroupés par code d'erreur : 1 200 sources en
+         *  `CHALLENGE_REQUIRED` sont un problème de Cloudflare, pas 1 200
+         *  pannes distinctes à pursue une par une.
+         */}
+        <section className="panel">
+          <h2>{t('etat.titre')}</h2>
+          {(() => {
+            const noms = Object.keys(health);
+            if (noms.length === 0) {
+              return <p className="muted">{t('etat.tout.va')}</p>;
+            }
+            // Tri : plus récent d'abord — c'est la panne à regarder en premier.
+            const lignes = noms
+              .map((nom) => ({ nom, ...health[nom] }))
+              .sort((a, b) => b.at - a.at);
+            const parCode = new Map<string, number>();
+            for (const l of lignes) parCode.set(l.code, (parCode.get(l.code) ?? 0) + 1);
+            return (
+              <>
+                <p className="muted">{t('etat.resume', { n: lignes.length })}</p>
+                <ul className="code-list">
+                  {[...parCode.entries()]
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([code, n]) => (
+                      <li key={code}>
+                        <code>{code}</code>
+                        <span className="muted">{t('etat.sources', { n })}</span>
+                      </li>
+                    ))}
+                </ul>
+                <table className="etat-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">{t('etat.source')}</th>
+                      <th scope="col">{t('etat.code')}</th>
+                      <th scope="col">{t('etat.dernier')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lignes.map((l) => (
+                      <tr key={l.nom}>
+                        <td>
+                          <b>{l.nom}</b>
+                          {l.message ? <span className="muted">{l.message}</span> : null}
+                        </td>
+                        <td>
+                          <code>{l.code}</code>
+                        </td>
+                        <td>
+                          <time dateTime={new Date(l.at).toISOString()}>
+                            {depuis(t, l.at)}
+                          </time>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="row-actions">
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      window.localStorage.removeItem(HEALTH_KEY);
+                      setHealth({});
+                    }}
+                  >
+                    {t('etat.reessayer')}
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+        </section>
 
         <section className="panel">
           <h2>{t('reglages.catalogues')}</h2>
@@ -3977,7 +4060,7 @@ if (reader) {
                     {t('accueil.page.sur', {
                       p: h.page_index + 1,
                       n: h.page_count || '?',
-                      quand: sinceFr(h.read_at),
+                      quand: depuis(t, h.read_at),
                     })}
                   </span>
                   <div className="dl-actions">
@@ -4054,7 +4137,7 @@ if (reader) {
                       {t('accueil.page.sur', {
                         p: b.page_index + 1,
                         n: b.page_count,
-                        quand: sinceFr(b.created_at),
+                        quand: depuis(t, b.created_at),
                       })}
                     </span>
                   </span>

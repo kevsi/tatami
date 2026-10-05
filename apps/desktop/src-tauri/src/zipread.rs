@@ -30,7 +30,22 @@ const TAILLE_MAX_EOCD: usize = TAILLE_EOCD + 0xFFFF;
 const TAILLE_CENTRAL_FIXE: usize = 46;
 const TAILLE_LOCAL_FIXE: usize = 30;
 /// Octets lus pour connaître la taille d'une image sans la charger.
-const EN_TETE_MAX: usize = 512;
+///
+/// 512 suffisaient pour un JPEG « minimal », pas pour un JPEG de site. Le
+/// marqueur SOF qui décrit le cadre peut être **très loin** de `FFD8` : un
+/// JPEG servi par MangaDex porte un profil ICC de 472 octets en APP2, et son
+/// SOF0 tombe à l'offset **632**. Au-delà de 512, la lecture s'arrêtait avant
+/// lui, `jpeg_dimensions` rendait `None`, et toutes les dimensions tombaient à 0.
+///
+/// Conséquence mesurée : la bande webtoon recevait une hauteur totale de 0, et
+/// le conteneur `height: 0` empilait les 77 pages les unes sur les autres
+/// (`position: absolute`, `top: 0`) — lecture cassée, sans erreur console.
+/// Un chapitre téléchargé n'était donc lisible que si sa source ne publiait pas
+/// de profil ICC : d'où « ça marche sauf chez MangaDEX ».
+///
+/// 64 Kio couvrent tous les en-têtes réalistes ; au-delà, on abandonne plutôt
+/// que de lire une image entière pour rien (cf. `dimensions_entree`).
+const EN_TETE_MAX: usize = 64 * 1024;
 
 /// Une entrée d'image du `.cbz`.
 #[derive(Debug, Clone, PartialEq, Eq)]

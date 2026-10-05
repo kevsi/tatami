@@ -2067,17 +2067,25 @@ const offsets = useMemo(() => {
   return out;
 }, [hauteurs]);
 
+/** `true` quand chaque page a une hauteur calculée : la bande est virtualisable.
+ *
+ *  `false` = au moins une page sans dimension. On rend alors tout, en flux
+ *  normal — **jamais une estimation** : une hauteur de réserve fausse faisait
+ *  reculer la position de défilement de 3 964 à 1 788 px (mesuré).
+ */
+const bandeVirtualisable = useMemo(
+  () => hauteurs.length > 0 && !hauteurs.some((h) => h <= 0),
+  [hauteurs],
+);
+
 const bandeHauteur = useMemo(() => {
-  // Sans dimension connue (chapitre lu en ligne : le moteur ne renvoie pas la
-  // taille), on ne peut rien virtualiser sans risquer de perdre la position.
-  // On rend alors tout, comme avant — jamais une estimation.
-  if (hauteurs.some((h) => h <= 0)) return 0;
+  if (!bandeVirtualisable) return 0;
   return hauteurs.reduce((n, h) => n + h, 0);
-}, [hauteurs]);
+}, [hauteurs, bandeVirtualisable]);
 
 const fenetre = useMemo(() => {
   const tous = pagesBande.map((_, i) => i);
-  if (readerMode !== 'webtoon' || bandeHauteur <= 0) return tous;
+  if (readerMode !== 'webtoon' || !bandeVirtualisable) return tous;
   let premier = 0;
   while (
     premier < pagesBande.length &&
@@ -2953,7 +2961,14 @@ if (reader) {
                 rendu et une fenêtre glissante peut ne monter qu'une dizaine de
                 nœuds. Une hauteur estimée avait été essayée et retirée : la
                 position de défilement reculait de 3 964 à 1 788 px. */}
-            <div className="webtoon-inner" style={{ height: bandeHauteur }}>
+            {/* Sans dimension connue, on rend toutes les pages en flux normal :
+                `height: 0` + `position: absolute` + `top: 0` empilait les
+                77 pages l'une sur l'autre (mesuré). Le conteneur doit alors
+                laisser sa hauteur au contenu, jamais la forcer à zéro. */}
+            <div
+              className="webtoon-inner"
+              style={bandeVirtualisable ? { height: bandeHauteur } : undefined}
+            >
               {fenetre.map((i) => {
                 const p = pages[i];
                 if (!p) return null;
@@ -2969,12 +2984,16 @@ if (reader) {
                     loading="lazy"
                     decoding="async"
                     data-index={i}
-                    style={{
-                      width: `${zoom}%`,
-                      position: 'absolute',
-                      top: offsets[i] ?? 0,
-                      height: hauteur ? `${hauteur}px` : undefined,
-                    }}
+                    style={
+                      bandeVirtualisable
+                        ? {
+                            width: `${zoom}%`,
+                            position: 'absolute',
+                            top: offsets[i] ?? 0,
+                            height: hauteur ? `${hauteur}px` : undefined,
+                          }
+                        : { width: `${zoom}%` }
+                    }
                     onDoubleClick={() => changeZoom(zoom >= 200 ? 100 : 200)}
                   />
                 );

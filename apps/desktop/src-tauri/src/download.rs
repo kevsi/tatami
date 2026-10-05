@@ -822,4 +822,88 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    // Test de régression du bug « lecture webtoon cassée ».
+    //
+    // On construit un `.cbz` dont les pages sont des JPEG **à profil ICC**, comme
+    // ceux que sert MangaDEX. Avant le correctif, `EN_TETE_MAX` valait 512 : le
+    // marqueur SOF0 de ces images est à l'offset 632, donc `dimensions_entree`
+    // rendait `None`, toutes les dimensions arrivaient à 0, et l'interface
+    // empilait les pages (`height: 0` + `position: absolute` + `top: 0`).
+    //
+    // La mesure qui a condosduit à ce test : sur le fichier réel
+    // `downloads/MANGADEX/No. 6/Chapitre 1.cbz`, la commande `local_file_pages`
+    // renvoyait `width: 0, height: 0` pour ses 77 pages, et le DOM mesuré dans
+    // l'application donnait `.webtoon-inner` à `height: 0px` avec 77 images en
+    // `top: 0px`.
+    #[test]
+    fn les_dimensions_sont_lues_meme_avec_un_profil_icc() {
+        use crate::cbz::CbzWriter;
+        use crate::image::ImageKind;
+
+        /// JPEG dont le SOF0 est à ~632 octets (profil ICC de 472 octets).
+        fn jpeg_bavard(largeur: u16, hauteur: u16) -> Vec<u8> {
+            let mut v = vec![0xFF, 0xD8, 0xFF];
+            v.extend_from_slice(&[0xE0, 0x00, 0x10]);
+            v.extend_from_slice(b"JFIF\0");
+            v.extend_from_slice(&[0x01, 0x02, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]);
+            v.extend_from_slice(&[0xFF, 0xE2]);
+            v.extend_from_slice(&(472u16).to_be_bytes());
+            v.extend_from_slice(b"ICC_PROFILE");
+            v.resize(v.len() + 472 - 12, 0x42);
+            for _ in 0..2 {
+                v.extend_from_slice(&[0xFF, 0xDB]);
+                v.extend_from_slice(&(67u16).to_be_bytes());
+                v.resize(v.len() + 65, 0x11);
+            }
+            v.extend_from_slice(&[0xFF, 0xC0, 0x00, 0x11, 0x08]);
+            v.extend_from_slice(&hauteur.to_be_bytes());
+            v.extend_from_slice(&largeur.to_be_bytes());
+            v.extend_from_slice(&[0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01]);
+            v
+        }
+
+        let dir = crate::download::downloads_root()
+            .join(format!("tatami-test-webtoon-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let chemin = dir.join("Chapitre 1.cbz");
+
+        let taille = 12;
+        {
+            let mut w = CbzWriter::create(&chemin).unwrap();
+            for i in 1..=taille {
+                // 800 x 2171 : format d'une page de webtoon.
+                w.add_image_kind(i, ImageKind::Jpeg, &jpeg_bavard(800, 2171))
+                    .unwrap();
+            }
+            w.sync_and_finish().unwrap();
+        }
+
+        let pages = crate::zipread::pages_de(&chemin).unwrap();
+        assert_eq!(pages.len(), taille);
+
+        let mut fichier = std::fs::File::open(&chemin).unwrap();
+        let entrees = crate::zipread::lire_entrees(&chemin).unwrap();
+        for (rang, _) in &pages {
+            assert_eq!(
+                crate::zipread::dimensions_entree(&mut fichier, &entrees[*rang]),
+                Some((800, 2171)),
+                "page {rang} sans dimension correcte"
+            );
+        }
+
+        // Et la transposition complète, celle que fait la commande : c'est ce
+        // JSON que l'interface reçoit, et c'est lui qui portait le 0.
+        let cache = crate::pagecache::PageCache::new(dir.join("cache"));
+        let json = entries_to_pages(&pages, &chemin, &cache);
+        assert!(
+            json.iter().all(|p| p["width"].as_u64().unwrap_or(0) == 800
+                && p["height"].as_u64().unwrap_or(0) == 2171),
+            "la commande doit transmettre width/height : {}",
+            json[0]
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -274,6 +274,63 @@ mod tests {
         assert_eq!(dimensions(&jpeg(800, 2171)), Some((800, 2171)));
     }
 
+    /// Un JPEG dont le marqueur SOF est loin de `FFD8`.
+    ///
+    /// Mesuré le 2026-10-04 sur un chapitre MangaDEX réel : segments
+    /// `FFE0 long=16`, `FFE2 long=472` (profil ICC), `FFDB long=67`,
+    /// `FFDB long=67`, puis **`FFC0` à l'offset 632**. `EN_TETE_MAX` valait 512,
+    /// donc la lecture s'arrêtait avant le SOF : toutes les dimensions tombaient
+    /// à 0, la bande webtoon recevait `height: 0` et les 77 pages se
+    /// superposaient. Ce test reproduit exactement ce décalage.
+    #[test]
+    fn lit_les_dimensions_d_un_jpeg_a_profil_icc() {
+        let mut v = vec![0xFF, 0xD8, 0xFF];
+        // APP0 de 16 octets (JFIF)
+        v.extend_from_slice(&[0xE0, 0x00, 0x10]);
+        v.extend_from_slice(b"JFIF\0");
+        v.extend_from_slice(&[0x01, 0x02, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]);
+        // APP2 de 472 octets : le profil ICC qui décalait le SOF.
+        v.extend_from_slice(&[0xFF, 0xE2]);
+        v.extend_from_slice(&(472u16).to_be_bytes());
+        v.extend_from_slice(b"ICC_PROFILE");
+        v.resize(v.len() + 472 - 12, 0x42);
+        // Deux DQT de 67 octets, comme sur le fichier réel.
+        for _ in 0..2 {
+            v.extend_from_slice(&[0xFF, 0xDB]);
+            v.extend_from_slice(&(67u16).to_be_bytes());
+            v.resize(v.len() + 65, 0x11);
+        }
+        let position_sof = v.len();
+        assert!(
+            position_sof > 512,
+            "le SOF doit être AU-DELÀ de l'ancien EN_TETE_MAX, sinon le test ne reproduit rien (offset {position_sof})",
+        );
+        v.extend_from_slice(&[0xFF, 0xC0, 0x00, 0x11, 0x08]);
+        v.extend_from_slice(&1730u16.to_be_bytes());
+        v.extend_from_slice(&1153u16.to_be_bytes());
+        v.extend_from_slice(&[0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01]);
+
+        assert_eq!(
+            dimensions(&v),
+            Some((1153, 1730)),
+            "un JPEG bavard doit se lire comme un JPEG minimal"
+        );
+    }
+
+    /// Le garde-fou de `EN_TETE_MAX` : un JPEG dont le SOF est au-delà de la
+    /// fenêtre lue doit rendre `None`, pas une taille inventée.
+    #[test]
+    fn une_fenetre_trop_etroite_ne_donne_pas_de_dimension_au_priere() {
+        let mut v = vec![0xFF, 0xD8, 0xFF];
+        v.resize(4_096, 0x00);
+        v.extend_from_slice(&[0xFF, 0xC0, 0x00, 0x11, 0x08]);
+        v.extend_from_slice(&100u16.to_be_bytes());
+        v.extend_from_slice(&200u16.to_be_bytes());
+        // Tronqué à 512 : le SOF n'est plus dans la fenêtre.
+        let fenetre = &v[..512];
+        assert_eq!(dimensions(fenetre), None);
+    }
+
     #[test]
     fn lit_les_dimensions_d_un_png() {
         let mut v = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];

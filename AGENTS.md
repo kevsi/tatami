@@ -139,18 +139,38 @@ Le contrat vit dans `contract/` : un schéma JSON versionné, à partir duquel o
 1. Unitaires (Rust, TS, Kotlin).
 2. **Tests de contrat** : réponses enregistrées du moteur (métadonnées uniquement, pas d'images d'œuvres) rejouées contre le schéma et contre le code Rust.
 3. Intégration : Rust lance le vrai sidecar et exécute un scénario `hello` → `listSources` → `search`.
-4. Smoke test manuel documenté dans `docs/smoke-test.md` (à créer en phase 0), exécuté avant chaque jalon.
+4. Smoke test manuel documenté dans `docs/smoke-test.md`, exécuté avant chaque jalon.
 
-**Commandes de vérification** (à confirmer et figer à la fin de la phase 0, puis les garder à jour ici) :
+**Commandes de vérification** (figées le 2026-10-05, tâche 0.12). Chacune
+précise son dossier, parce que la plupart échouent depuis la racine :
 
 ```powershell
-pnpm lint
-pnpm typecheck
+# Interface — dossier apps\desktop
+cd apps\desktop
+pnpm typecheck          # tsc --noEmit
+pnpm lint               # eslint ; 4 warnings exhaustive-deps connus, 0 erreur
+pnpm i18n:check         # aucune clé morte ni manquante (152 clés)
+pnpm build              # next build
+
+# Cœur Rust — dossier apps\desktop\src-tauri
+cd apps\desktop\src-tauri
 cargo fmt --check
 cargo clippy -- -D warnings
 cargo test
-./gradlew test
+
+# Moteur JVM — dossier engine
+cd engine
+gradle test             # PAS ./gradlew : il n'y a pas de gradlew.bat dans le dépôt.
+                       # Vérifié le 2026-10-05 : `Get-ChildItem gradlew*` ne renvoie rien,
+                       # donc la commande écrite ici avant le 2026-10-05 ne pouvait pas tourner.
 ```
+
+**Le dossier compte.** Depuis `apps\desktop`, `cargo` ne trouve pas le manifeste et
+`gradle` ne trouve pas le moteur ; depuis la racine, `pnpm` ne trouve pas
+`package.json`. Les chemins ci-dessus sont donc la référence, pas une commodité.
+
+Le smoke test manuel est `docs/smoke-test.md` ; les mesures de démarrage et de
+mémoire du moteur sont `docs/spike-phase0.md`.
 
 **Une tâche est terminée quand** :
 - le code est écrit **et** les commandes de vérification passent (preuve dans le journal) ;

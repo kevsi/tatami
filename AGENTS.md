@@ -155,7 +155,7 @@ pnpm build              # next build
 # Cœur Rust — dossier apps\desktop\src-tauri
 cd apps\desktop\src-tauri
 cargo fmt --check
-cargo clippy -- -D warnings
+cargo clippy --all-targets -- -D warnings
 cargo test
 
 # Moteur JVM — dossier engine
@@ -251,6 +251,28 @@ Sont concernées : protocole du sidecar, schéma de base de données, stockage d
 
 Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de sonde ou du CSS de lecteur.
 
+- **Une estimation de volume est une conjecture, pas une mesure.** La session 3.1
+  annonçait « 200 favoris × 2 000 URLs ≈ 8 Mo » pour l'état du planificateur ;
+  mesuré avec des URLs réelles, c'est **31,7 Mo**, soit 4× plus. L'écart vient de
+  supposer des chaînes « typiques » : une URL de chapitre réelle fait 83 octets,
+  et il y en a deux par entrée (la clé du favori + l'URL). Règle : chiffrer un
+  volume avec des **données réelles**, jamais avec une longueur moyenne supposée.
+- **Le coût dominant d'un état sérialisé n'est pas le stockage, c'est le
+  parsing.** 31,7 Mo de JSON ne gênent pas une passe toutes les 6 h ; mais
+  `JSON.parse` prend **80 ms**, et le planificateur relit son état **à chaque
+  passe** alors qu'une interface le relirait **à chaque navigation**. Une
+  latence *constante* se voit moins qu'un pic, et gêne plus.
+- **Un pire cas calculé peut être deux fois trop pessimiste.** 20 sources × 20 s
+  de délai = 400 s, ce qui suggère une passe de 400 s au démarrage. Mesuré :
+  `EXHENTAI` répond en 1 339 ms — les 20 s sont un **délai de politesse**, pas une
+  durée d'appel. Vérifier le pire cas avant de le déclarer : ici il n'a nié le
+  risque, il l'a mal chiffré.
+- **Deux sessions en parallèle se mesurent mutuellement.** Une session a mesuré
+  `pnpm typecheck` en échec et l'a consigné comme un défaut de l'autre ; en
+  remesurant une heure après : **0 erreur**. Elle avait raison à l'instant t,
+  faux au moment de la conclusion. Règle : une mesure qui accuse une autre
+  session doit être **reprise** avant d'être écrite dans un journal partagé.
+
 - **« Il nous manque une racine de confiance » est une théorie, pas une
   observation.** C'est celle que j'ai écrite sur 0.16, et elle était fausse —
   et elle se corrigeait par l'ajout d'une racine au magasin du système, donc
@@ -276,6 +298,41 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   historique n'a plus de cause observable. Les compter comme « échecs de
   certificat » est faux ; ils sont **injoignables**, ce qui est un statut
   différent — et « compter 3 échecs TLS » devient « 1 échec et 2 morts ».
+
+- **Une fixture écrite à la main ne prouve qu'une chose : qu'elle est conforme.**
+  Une réponse du moteur truly enregistrée est la seule preuve ; une lue dans
+  `Server.kt` et écrite « conforme au schéma » passerait le test même si elle
+  était fausse. Mesuré le 2026-10-05 : les 16 fixtures viennent d'une sonde
+  NDJSON réelle (`hello` → `protocolVersion: "0.1"`, `listSources` → **1370**
+  entrées, `chapters` → **222** chapitres, `fetchImage` → 604 128 octets). Ces
+  nombres sont dans les fixtures, pas dans ma mémoire.
+- **Une porte qui n'a jamais rien trouvé n'est pas une porte — et le test peut
+  passer pour une mauvaise raison.** J'ai voulu prouver `is_transient` en
+  retirant son cas `PARSE_ERROR` : **20 tests sont restés verts**, parce que la
+  liste de marqueurs finals exclut déjà ces messages. Le code cassé ne changeait
+  rien. Il a fallu le casser plus franchement (`PARSE_ERROR` → transitoire) pour
+  voir **2 tests échouer**. Règle : une porte se prouve en la cassant, et
+  « vert après une modif » ne prouve rien tant qu'on n'a pas vu **le nom du
+  test qui échoue**.
+- **`gradle test` peut être vert sans exécuter un seul test.** Deux fois de suite
+  le 2026-10-05 : `UP-TO-DATE`, puis `FROM-CACHE` (le cache de build est activé
+  dans `gradle.properties`). La preuve d'exécution est le compte de
+  `build/test-results/test/*.xml`, rien d'autre. Même famille que la porte Gradle
+  vide trouvée le 2026-10-04 (0 fichier de résultat).
+- **Un test d'intégration ne voit pas le code d'un crate binaire.** Le crate
+  était `main.rs` + `mod` : `tests/` ne pouvait valider que le schéma, jamais la
+  façon dont Rust lit une réponse. Le découpage `lib.rs` + binaire rend le code
+  testable ; côté Tauri, `generate_handler!` résout le chemin jusqu'au dernier
+  segment puis invoque le macro `__cmd__x` **au même chemin**, ce qui marche
+  depuis un autre crate grâce au `pub use` émis par le wrapper
+  (`tauri-macros/src/command/wrapper.rs`). Vérifié dans la source, pas deviné.
+- **`cargo clippy` sans `--all-targets` ne regarde pas `tests/`.** Une porte qui
+  « vérifie le format du test de contrat » sans `--all-targets` ne le vérifie
+  pas. Même piège que `pnpm lint` qui ne lintait que `src/` (§21).
+- **Rendre `pub` un élément du cœur demande une raison écrite.** J'ai publié 5
+  éléments (`into_result`, `is_transient`, `PROTOCOL_MAJOR`,
+  `ajouter_jetons_couverture`, la cible `lib`), chacun avec le défaut qu'il
+  rend visible — sinon on refait les commandes mortes supprimées le 2026-10-04.
 
 - **Le `stdout` du moteur arrive en morceaux de 8 Ko.** Un script qui découpe sur `\n` sans buffer vorher jette les fragments et affiche « aucune réponse » alors que la réponse est arrivée. Bufferiser puis découper — une réponse `listSources` fait ~47 Ko.
 - **Une image `<img>` cassée est déjà « visible » pour Playwright.** Attendre `img.complete && img.naturalWidth > 0`, sinon on mesure une image de 21 px de haut et on conclut à tort que le CSS est fautif.
@@ -380,3 +437,35 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
 - **Un test qui appelle la bibliothèque ne prouve pas le chemin de production.** Le test ZENMANGA (0.17) appelait `parser.getPageUrl` puis le client : vert. L'application montrait toujours des images vides, parce que `fetchImage` téléchargeait **en dehors** du `pool.avec` qui pose le parser. Il a fallu passer par `dispatch` — la fonction réellement appelée par `serve()` — pour voir le défaut, puis le corriger. Corollaire : `java.class.path` dans un `ProcessBuilder` passe aussi les classes de test au moteur enfant, qui démarre alors plus lentement ; prendre le classpath de `installDist`.
 - **Des threads concurrents pour lire un flux sequentiel font perdre des lignes.** Le test de fermeture stdin démarrait cinq threads pour cinq lignes de stdout ; ils se disputaient le flux, d'où « 0 réponse sur 5 » alors que le moteur en rendait 5/5 hors test. Un `FutureTask` par ligne, séquentiel, et le blocage disparaît — le défaut était dans le test, pas dans le code.
 - **Un `Mutex` n'est pas réentrant.** Imbriquer `pool.avec(source)` dans `pool.avec(source)` fige le moteur, et ça se manifeste par un **timeout** du test, pas par un échec propre. Symétriquement, `ThreadLocal` + `Mutex` : deux requêtes sur la même source ne se marchent pas dessus, mais il faut le mutex pour ça — le `ThreadLocal` ne le remplace pas.
+- **Une horloge figée au début d'une boucle longue rend le débit FICTIF.** Dans
+  le planificateur (3.1), la passe interroge jusqu'à 20 sources à 20 s d'écart :
+  elle dure donc 400 s. Horodater toutes les requêtes avec l'heure du **début**
+  de passe leur donne le même `t`, donc `prochaine = t + 20 s` est déjà dépassé à
+  la deuxième requête et **le délai par source ne s'applique jamais**. La
+  politesse était dans le code et absente du comportement. Règle générale : dans
+  une boucle qui dure, **relire l'heure à chaque itération**, jamais une fois au
+  début. Corollaire de mesure : pour prouver un délai, un compteur d'appels ne
+  suffit pas (« 3 appels » peut vouloir dire « 3 appels en 400 ms ») — il faut
+  l'**instant** de chaque appel.
+- **`tokio::time::interval` a deux surprises, opposées.** Le premier `tick` est
+  **immédiat** (pratique : c'est la passe de référence au démarrage, sans attendre
+  une période), et les ticks **manqués sont rattrapés par défaut** — donc une
+  passe plus longue que la période en déclenche une autre d'affilée, en rafale.
+  `MissedTickBehavior::Skip` est obligatoire dès que la période peut être plus
+  courte que le travail. Une seule de ces deux surprises se remarque en lisant le
+  code.
+- **Un état qui ne retient qu'une date ne prouve pas un ORDRE.** Le test
+  « aucun favori n'est affamé par le plafond » échouait à tort : il relisait
+  `verifie_le` par favori, et cinq favoris ajoutés dans la même milliseconde
+  partageaient la même valeur — donc l'« ordre » mesuré était celui du tri de la
+  base, pas celui des requêtes. La preuve est le **journal des appels** (l'ordre
+  réel), jamais l'état. Même famille que « une mesure qui renvoie 0 élément ne
+  prouve rien », mais inversée : une mesure qui renvoie N éléments dans le
+  mauvais ordre ne prouve rien non plus.
+- **Un test qui change la réponse d'une doublure « juste après » le démarrage est
+  ALÉATOIRE.** Le test de boucle posait la réponse mise à jour 1 ms après le
+  `spawn` ; la première passe pouvait la voir déjà à jour, mémoriser le chapitre
+  comme vu, et ne jamais l'annoncer. Le test passait une fois sur deux, pour une
+  raison absente du code. Doublure par **réponses consécutives** (la 1ʳᵉ à l'appel
+  1, la 2ᵉ à l'appel 2, la dernière ensuite) : la course disparaît au lieu d'être
+  espérée.

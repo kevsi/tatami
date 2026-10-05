@@ -63,9 +63,9 @@ tatami/
 | 0 | Fondations et spike des risques | M | **En cours** — 0.1 à 0.11 faits, 0.12 partiel, 0.13 à 0.17 à faire |
 | 1 | Bibliothèque et lecteur | L | **Finie** — 1.1 à 1.10, dont 1.8 et 1.10 livrés le 2026-10-05 |
 | 2 | Hors ligne | M | **Faite** — file, reprise, CBZ, lecture hors ligne, assainissement et stats ; durcie le 2026-10-04 (un `.cbz` par chapitre, `sync_all`, verrou RAII) ; dossier de téléchargement au choix et pause de la file le 2026-10-05 |
-| 3 | Tâches de fond et notifications | M | **Pas commencée** |
+| 3 | Tâches de fond et notifications | M | **Commencée** — 3.1 livré le 2026-10-05 (planificateur tokio, 19 tests) ; reste 3.2 à 3.5 |
 | 4 | Comptes et synchronisation | L | **Pas commencée** |
-| 5 | Durcissement et distribution | M | **Partiellement entamée** — audit de code du 2026-10-04 et ses 5 correctifs livrés |
+| 5 | Durcissement et distribution | M | **Partiellement entamée** — audit de code du 2026-10-04 (5 correctifs) ; **5.3 livré le 2026-10-05** : 16 réponses du moteur enregistrées + test de contrat (20 tests) + CI qui exécute les 9 commandes de AGENTS.md §8 |
 
 Phase en cours : **1 et 2 en parallèle**, la phase 2 ayant un manque bloquant.
 Prochaine tâche : 1.10 (thèmes clair/sombre), puis la dette de phase 0 (0.13 → 0.17).
@@ -152,8 +152,8 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
 ### Phase 3 — Tâches de fond et notifications (M)
 
-- [ ] **3.1** Planificateur Rust (tokio) : vérification périodique des nouveaux chapitres des favoris, avec limites de débit.
-- [ ] **3.2** Flux "mises à jour" dans l'interface.
+- [x] **3.1** Planificateur Rust (tokio) : vérification périodique des nouveaux chapitres des favoris, avec limites de débit. **Livré** le 2026-10-05 : `scheduler.rs` + 19 tests, horloge et moteur injectés, débit par source avec retour arrière borné, état persisté en base, évènement `maj://nouveaux-chapitres`. Aucune dépendance ajoutée, aucun écran (3.2 décrit dans le journal, non implémenté). **Point ouvert mesuré le 2026-10-05 (session 1) :** le pire cas calculé de la passe est 20 sources × 20 s = **400 s**, et elle part **au démarrage**, en concurrence avec l'interface — alors que le moteur est séquentiel. Mesuré : `EXHENTAI` (la source qui « scanne tout son catalogue ») répond en **1 339 ms**, et une source rapide pendant/après répond en **620 ms** — donc les 20 s sont un **délai de politesse**, pas une durée d'appel, et le pire cas n'est pas 400 s de travail réel. **Décision : ne rien changer au code.** Le risque restant est `N × (durée réelle d'un appel)` avec un `timeoutSecs` de 60 s, à re-mesurer quand la bibliothèque comptera des centaines de favoris.
+- [ ] **3.2** Flux "mises à jour" dans l'interface. **Détail qui compte, décrit dans le journal** : afficher `Nouveaute.total`, **pas** `chapitres.len()` — les deux diffèrent quand `tronque` est vrai.
 - [ ] **3.3** Notifications système (plugin Tauri, à vérifier dans la doc).
 - [ ] **3.4** Icône dans la zone de notification, fermeture dans la zone de notification, démarrage automatique optionnel.
 - [ ] **3.5** Réglages : fréquence, sources concernées, activation.
@@ -175,7 +175,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
 - [ ] **5.1** Mise à jour du moteur : manifeste signé, vérification de signature et de hash, remplacement atomique, retour arrière si échec au démarrage.
 - [ ] **5.2** Mise à jour de l'app via l'updater Tauri.
-- [ ] **5.3** Tests de contrat sur réponses enregistrées, exécutés en intégration continue.
+- [x] **5.3** Tests de contrat sur réponses enregistrées, exécutés en intégration continue.
 - [ ] **5.4** Écran "état des sources" (dernière réussite, dernière erreur, version du parser) pour repérer ce qui est cassé.
 - [ ] **5.5** Journaux de diagnostic exportables, sans données personnelles.
 - [ ] **5.6** Installeurs Windows (`.msi`), signature du code, documentation utilisateur et contributeur.
@@ -245,6 +245,297 @@ Règles données aux trois sessions :
    récupère ces fichiers dans un commit « docs » dédié.
 
 ## 9. Journal
+
+### 2026-10-05 — Vérification de 3.1 (planificateur), session 1
+
+La session 2 a livré `scheduler.rs` (~900 lignes, 19 tests) et demandé deux
+décisions. J'ai **remesuré** avant d'accepter, plutôt que de recopier ses chiffres.
+
+**Ce que j'ai vérifié moi-même :**
+
+| porte | résultat |
+|---|---|
+| `cargo fmt --check` | 0 |
+| `cargo clippy --all-targets -D warnings` | 0 |
+| `cargo test` | **104 passés / 0 échec** (83 + 1 + 20) |
+
+Le travail est réel. Deux tests prouvent qu'elle a compris les bugs coûteux de ce
+projet : `le_type_dechduit_vient_des_octets_pas_du_contenttype` et
+`un_interstitiel_html_nest_pas_une_image` — les deux défauts que le projet a
+payés cher.
+
+**Point ouvert n° 2 — concurrence au démarrage : mesuré, et moins grave
+qu'il n'y paraît.** Le pire cas calculé est 20 sources × 20 s = **400 s** de
+passe, partant au démarrage en concurrence avec l'interface (le moteur est
+séquentiel, `supervisor.rs`). J'ai chronométré sur le vrai moteur :
+
+- `EXHENTAI` — la source qui « scanne tout son catalogue » — répond en **1 339 ms** ;
+- une source rapide pendant/après : **620 ms**.
+
+Donc les 20 s sont un **délai de politesse**, pas une durée d'appel : le pire cas
+n'est pas 400 s de travail réel. **Décision : ne rien changer au code.** Le risque
+restant est `N × durée réelle d'un appel`, avec un `timeoutSecs` de 60 s, à
+re-mesurer quand la bibliothèque comptera des centaines de favoris.
+
+**Point ouvert n° 1 — état dans `settings` : l'estimation était 4× trop
+basse.** La session annonçait « 200 favoris × 2 000 URLs ≈ 8 Mo ». Mesuré avec
+des URLs réelles, pas des chaînes de même longueur :
+
+| favoris | chapitres/favori | taille |
+|---|---|---|
+| 10 | 100 | 82 Ko |
+| 50 | 500 | 2,0 Mo |
+| 200 | 1 000 | **15,8 Mo** |
+| 200 | 2 000 | **31,7 Mo** |
+
+Et le coût réel n'est pas le stockage, c'est le **parsing** : `JSON.parse` de
+31,7 Mo prend **80 ms**. Une passe toutes les 6 h s'en accommode ; une lecture
+par page à chaque navigation non.
+
+**Décision : ne rien changer maintenant**, pour deux raisons mesurées. D'abord
+une table `chapitres_vus` implique de toucher `SCHEMA_VERSION`, ce qu'`AGENTS.md`
+§2 interdit sans arbitrage humain — et 3.1 est à 19 tests sans migration. Ensuite
+le volume n'est atteignable qu'avec 200 favoris **et** 1 000 chapitres vus par
+série, ce qui n'est pas le cas d'usage. **Point ouvert conservé** : avant
+d'atteindre ce volume, ou dès que 3.5 affichera l'état, il faudra une table
+dédiée — pas parce que l'estimation était alarmante, mais parce que 80 ms de
+parsing par navigation est une latence **constante**, elle.
+
+### 2026-10-05 — Tâche 3.1 : planificateur Rust (tokio)
+
+- Plan : écrire `scheduler.rs` sans aucun couplage au moteur, pour que la décision
+  « ce chapitre est-il nouveau ? » et le débit par source soient **mesurables**
+  sans JVM. Trois règles structurantes : (1) le premier relevé d'un favori ne
+  signale rien, sinon le premier lancement annonce 286 chapitres par série ; (2)
+  débit borné par source avec retour arrière exponentiel et borné ; (3) une
+  réponse `{chapters: []}` est un **échec**, pas un succès. Horloge et moteur
+  injectés, sinon un intervalle de 4,9 s serait impossible à vérifier.
+- **Fait** : `apps/desktop/src-tauri/src/scheduler.rs` (~900 lignes, 19 tests).
+  `passe()` fait le tour : ordre « moins récemment vérifié d'abord » (donc
+  **aucun favori n'est affamé** par le plafond), plafond de tentatives qui
+  compte les essais et non les favoris parcourus, plafond de sources distinctes,
+  diff par **URL de chapitre** (jamais par numéro — les sources réordonnent),
+  fenêtre de chapters vus bornée à 2 000, tri du plus récent au plus ancien
+  quand les dates existent, `total` complet même si la liste d'annonce est
+  tronquée à 10. État persisté en base (clé `settings` `planificateur.etat`) :
+  une lecture et une écriture par passe. Branché dans `main.rs` au démarrage ;
+  émet `maj://nouveaux-chapitres`, que la tâche 3.2 consommera.
+- **Deux détails mesurés, pas déduits :**
+  - **l'heure est relue à chaque itération, pas figée au début de la passe.** Une
+    passe de 20 sources × 20 s dure 400 s ; avec une heure figée, toutes les
+    requêtes porteraient le même horodatage et **le délai par source ne
+    s'appliquerait jamais** — la politesse aurait été fictive, et aucun test ne
+    l'aurait vu ;
+  - **le premier `tick` d'un `interval` tokio est immédiat.** C'est ce qui pose
+    l'état de référence au démarrage. Le retirer ferait annoncer toute la
+    bibliothèque à la première passe utile. En revanche `MissedTickBehavior::Skip`
+    est obligatoire : par défaut `interval` rattrape les ticks perdus, donc une
+    passe de 400 s avec une période de 5 min déclencherait 1,3 passe d'affilée.
+- **Aucune dépendance ajoutée** : `tokio` était déjà présent (`full`), donc pas
+  d'ADR. `async-trait` aurait été la seule dépendance imaginable — le type de
+  future est écrit à la main, une ligne.
+- **Preuve** (`cd apps\desktop\src-tauri`) :
+  - `cargo fmt --check` → exit 0
+  - `cargo clippy --all-targets -- -D warnings` → exit 0
+  - `cargo test` → **104 passés, 0 échec** (83 lib dont 19 pour le planificateur,
+    1 binaire, 20 de contrat)
+- **Portes prouvées ROUGES puis vertes** (une porte qui n'a jamais rien trouvé
+  n'est pas une porte) — 4 mutations, le nom du test qui échoue est cité :
+  | mutation | tests en échec |
+  |---|---|
+  | garde « premier relevé » supprimé | 4 — dont `le_premier_releve_annonce_rien_et_pose_l_etat_de_reference` |
+  | liste vide traitée comme un succès | 1 — `une_liste_vide_est_un_echec_qui_preserve_l_etat_de_reference` |
+  | limite de débit supprimée | 1 — `le_delai_par_source_est_applique_a_la_seconde_pres` |
+  | ordre figé (plus de priorité au moins-vérifié) | 2 — dont `le_plafond_par_passe_ne_famine_aucun_favori` |
+- **Deux défauts trouvés dans mes propres tests, en les exécutant** (et non en
+  les relisant) :
+  - le test de la boucle était **aléatoire** : la réponse du moteur était
+    modifiée « juste après » le démarrage, donc la première passe pouvait la voir
+    déjà mise à jour, mémoriser le chapitre comme vu, et ne jamais l'annoncer —
+    une fois sur deux. Corrigé par des **réponses consécutives** et une horloge
+    injectée ;
+  - le test « pas de faim » échouait alors que le code était bon : je relisais
+    l'état par favori, mais l'état ne retient qu'une **date**, et cinq favoris
+    partageaient le même `verifie_le` au millième. La preuve de l'équité est
+    l'**ordre réel des requêtes** dans le journal du moteur, pas l'état.
+- **Points ouverts** :
+  - **Aucun écran.** 3.2 (flux « mises à jour ») et 3.5 (réglages) restent à
+    faire ; décrits ci-dessous, pas implémentés.
+  - **L'état vit dans `settings` en JSON, pas dans une table dédiée.** Choix
+    volontaire pour ne pas toucher au schéma dans cette tâche (le `SCHEMA_VERSION`
+    partagé est un point de rupture documenté). À mesurer : 200 favoris × 2 000
+    URLs ≈ 8 Mo dans une seule valeur. Une table `chapitres_vus` sera plus saine
+    quand 3.5 affichera l'état ; **à trancher avant d'atteindre ce volume**.
+  - **Le planificateur démarre actif** (6 h de période, 20 s de délai par source,
+    200 favoris et 20 sources par passe) et sa **première passe part au
+    démarrage**, en concurrence avec les requêtes de l'interface. Le moteur est
+    séquentiel : sur une grosse bibliothèque, la passe peut ralentir l'affichage.
+    Non mesuré (l'agent n'a pas lancé l'application, ports 3000/9223 occupés) ;
+    à mesurer à l'œil ou par journal lors d'une passe réelle.
+  - **`3.5` doit exposer `actif`, `periode_s`, `delai_source_s`** : les trois sont
+    déjà lus et bornés par `Reglages::bornes()`, donc l'interface n'aura qu'à
+    écrire la clé `planificateur.reglages`.
+  - **Le réglage « sources concernées » de 3.5 n'existe pas** : aujourd'hui la
+    liste vient de `store.disabled_sources()`, ce qui est déjà un filtre
+    par source, mais global. Un filtre par favori demandera une colonne.
+  - **Non commité** : PLAN.md §8 bis réserve les commits à la session 1, et
+    `AGENTS.md`, `Cargo.toml`, `supervisor.rs`, `tests/` et `lib.rs` portaient
+    déjà des modifications d'autres sessions au moment où ce travail a commencé.
+
+#### Écrans à faire pour 3.2 et 3.5 — décrits, **pas implémentés** (demande explicite)
+
+- **3.2 — vue « Mises à jour ».** Onglet de navigation, alimenté par
+  `maj://nouveaux-chapitres`. Une ligne par favori, `Nouveaute.titre`, puis le
+  nombre **complet** (`Nouveaute.total`, pas `chapitres.len()` — les deux
+  diffèrent quand `tronque` est vrai) ; la liste des chapitres n'est affichée que
+  si `tronque` est faux, sinon « et N de plus ». Chaque ligne ouvre la fiche du
+  webtoon (les `manga_url` sont déjà là). Marqueur « lu » à mémoriser en base —
+  sinon la même notification revient à chaque application ouverte, et c'est
+  précisément le défaut que `total`/`tronque` permettent d'éviter.
+- **3.2 — dernier passage.** `Etat.dernier_pass` existe déjà et n'est pas
+  encore lu par l'interface : l'afficher dans les réglages rassure
+  (« dernière vérification il y a 6 h ») et prouve d'un coup que la tâche de
+  fond tourne.
+- **3.2 — erreurs.** `ResultatPasse.rates` n'est pas émis (seul `nouveaux`
+  l'est, volontairement). Si l'interface veut montrer « 3 sources n'ont pas
+  répondu », il faudra émettre un second évènement : **à trancher en 3.2**.
+- **3.3/3.4 — notifications système.** Le plugin Tauri n'est ni ajouté ni
+  documenté ici (3.3 le dit « à vérifier dans la doc »). Rien à faire avant que
+  3.2 ait un écran à notifier.
+
+### 2026-10-05 — Tâche 5.3 : tests de contrat sur réponses enregistrées + CI
+
+- Plan : (1) enregistrer de **vraies** réponses du moteur en NDJSON, pas les écrire
+  à la main — une fixture écrite à la main ne prouve qu'une chose, qu'elle est
+  conforme au schéma ; (2) les rendre accessibles au test d'intégration, ce qui
+  supposait de sortir le code du binaire ; (3) écrire le test de contrat, avec
+  des **contre-exemples** pour chaque règle, sinon une porte qui n'a jamais rien
+  trouvé n'est pas une porte ; (4) exécuter en CI la liste de AGENTS.md §8.
+
+- **Fait — 16 réponses enregistrées, 13 méthodes couvertes.** Le moteur compilé
+  (`engine/dist/tatami-engine`, protocole 0.1, parsers `b3c0000`) a été interrogé
+  en NDJSON en deux passes (`.mesures/enregistrer-reponses.mjs`, puis `-2.mjs`
+  pour la progression `latest → details → chapters → pages → fetchImage`, qui
+  exige une URL réelle à chaque étape). Les réponses brutes restent **hors du
+  dépôt** ; ce qui est committé est la version anonymisée
+  (`apps/desktop/src-tauri/tests/fixtures/`, + un `README.md` qui explique la
+  procédure).
+
+- **Anonymisation (AGENTS.md §2.7).** Titres, auteurs, genres, UUID et URLs de
+  sites remplacés par des valeurs fictives. `listSources` : 1370 entrées → 4.
+  `chapters` : 222 → 4 (les 3 formes de `chapterToJson`, dont le nombre flottant
+  mesuré à l'écran). **Les octets de `fetchImage` / `fetchCover` sont une image
+  de synthèse 1×1** : une page de manga n'a rien à faire dans le dépôt. La
+  longueur base64 réelle est conservée en métadonnée (807 504 et 61 940
+  caractères).
+
+- **Fait — `src/lib.rs` : le code sort du binaire.** Le crate était un pur
+  binaire (`main.rs` avec ses `mod`), donc `tests/` ne voyait **aucun** code de
+  production : il ne pouvait valider que le schéma, jamais la façon dont Rust lit
+  une réponse. `src/lib.rs` déclare les 12 modules en `pub`, `main.rs` ne garde
+  que l'assemblage Tauri. Cinq éléments sont devenus `pub`, chacun pour une
+  raison écrite dans `lib.rs` : `commands::into_result`,
+  `supervisor::is_transient`, `supervisor::PROTOCOL_MAJOR`,
+  `commands::ajouter_jetons_couverture`, et la cible `lib` dans `Cargo.toml`.
+  Vérifié dans tauri-macros 2.7.1 que `generate_handler!` résout un chemin
+  jusqu'au dernier segment puis invoque le macro `__cmd__x` **au même chemin**,
+  rendu possible depuis un autre crate par le `pub use` que le wrapper émet —
+  donc l'import de `commands` dans `main.rs` n'est pas cosmétique.
+
+- **Fait — le test de contrat (20 tests).** Trois familles : (a) validation de
+  chaque réponse contre `contract/protocol.json` ; (b) rejeu de chaque réponse
+  contre le **vrai code** (`into_result`, `is_transient`, `image::detect`,
+  `PageCache`) ; (c) contre-exemples, pour que le validateur soit démontré
+  capable de **refuser** (8 cas d'enveloppe, 7 cas de `result`). Le validateur
+  est écrit dans le test — ajouter `jsonschema` ferait entrer un arbre de
+  dépendances dans le dépôt pour juger 16 fichiers, ce qu'AGENTS.md §9 interdit
+  sans ADR. Il couvre le sous-ensemble exact du schéma, et une porte
+  (`le_validateur_couvre_tout_le_schema_du_contrat`) échoue si le schéma
+  gagne un mot-clé que le validateur ne gère pas : sinon le test validerait des
+  réponses qu'il ne sait pas juger, et passerait toujours.
+
+- **Un défaut réel du contrat trouvé et consigné.** `contract/protocol.json`
+  exige `id` et `ok`, mais **n'exige pas `error` quand `ok` vaut `false`** : une
+  enveloppe `{id, ok:false}` sans `error` est valide, et `into_result` en déduit
+  `INTERNAL: ` — un message vide affiché à l'utilisateur. Le test
+  `le_schema_admet_une_erreur_sans_bloc_error_et_nous_le_savons` **fige** ce
+  comportement au lieu de corriger le schéma en douce : AGENTS.md §5 impose une
+  ADR pour toute évolution du contrat, et `protocol.json` est partagé avec le
+  moteur. La correction est un point ouvert ci-dessous.
+
+- **Les portes ont été prouvées mordantes, pas seulement vertes.** Casser
+  `image::detect` pour qu'un interstitiel HTML passe pour une image →
+  `un_interstitiel_html_nest_pas_une_image` **échoue**. Faire rejouer
+  `PARSE_ERROR` dans `is_transient` → **2 tests échouent**. Un troisième essai
+  avait **échoué** : retirer le cas `PARSE_ERROR` de `is_transient` ne casse
+  rien, parce que la liste de marqueurs finals exclut déjà ces messages — le test
+  passait donc pour une mauvaise raison. C'est exactement la leçon « une porte
+  qui n'a jamais rien trouvé n'est pas une porte », appliquée à mes propres
+  portes.
+
+- **Fait — `.github/workflows/ci.yml`.** Un job unique sur `windows-latest`,
+  étapes **séquentielles**, qui exécute les 9 commandes de AGENTS.md §8 avec
+  leurs dossiers. Choix argumentés dans l'en-tête du fichier : Windows d'abord
+  (§1, §3), `cargo test` sur Linux exigerait les libs système de Tauri, et un
+  job unique partage un seul `engine/dist/` entre `pnpm build` et les tests
+  Kotlin. Gradle est installé par l'action officielle (`gradle 9.8.0`, la version
+  mesurée) puisqu'il n'y a pas de wrapper dans le dépôt — AGENTS.md §13 interdit
+  de committer le `gradle-wrapper.jar`.
+
+- Preuve (exécutée dans `apps\desktop\src-tauri`, puis `apps\desktop`, puis
+  `engine`, dans cet ordre) :
+  - `cargo fmt --check` → **0**
+  - `cargo clippy --all-targets -- -D warnings` → **0**
+  - `cargo test` → **80 passés, 0 échec** (59 bibliothèque + 1 binaire +
+    20 contrat)
+  - `pnpm typecheck` → **0** · `pnpm lint` → **0 erreur**, 4 warnings
+    `exhaustive-deps` antérieurs · `pnpm i18n:check` → **152/152** ·
+    `pnpm build` → OK
+  - `gradle test --no-build-cache --rerun-tasks` → **BUILD SUCCESSFUL en 1 m 08**,
+    **24 tests, 0 échec, 0 ignoré** (5 classes). Les deux premiers essais
+    n'avaient **exécuté aucun test** : `UP-TO-DATE`, puis `FROM-CACHE` (le cache
+    de build Gradle est activé dans `gradle.properties`). Le décompte vient des
+    5 XML de `build/test-results/test/`, seul endroit qui prouve l'exécution.
+  - `ci.yml` : YAML parsé (PyYAML), 20 étapes, 1 job, `timeout-minutes: 45`.
+
+  **État de l'arbre au moment où cette ligne est écrite** : le dépôt est
+  partagé avec deux autres sessions, et `apps/desktop/app/page.tsx` est
+  **modifié en ce moment** par le travail 5.4 (écran d'état des sources) : ses
+  clés `etat.*` ne sont pas encore dans `app/i18n.ts`, donc `pnpm typecheck`
+  échoue désormais sur **13 erreurs TS2345/TS2554**, et `pnpm lint` compte
+  5 warnings au lieu de 4. Ce n'est pas lié à 5.3 — je n'ai touché ni
+  `page.tsx` ni `app/` — mais la preuve ci-dessus date de **mon** exécution,
+  avant ce changement. Une preuve est datée : elle vaut pour l'instant où elle
+  a été prise, pas pour l'arbre du lendemain. Qui commite doit repasser la
+  liste sur un arbre tranquille.
+
+- Points ouverts :
+  - **`contract/protocol.json` n'exige pas `error` quand `ok:false`.** Le test
+    le fige ; le corriger (un `if/then` sur `ok`) demande une ADR (AGENTS.md §5).
+  - **AGENTS.md §8 écrit `cargo clippy -- -D warnings`, qui ne regarde pas
+    `tests/`** : le test de contrat ne serait jamais linté. La CI utilise
+    `--all-targets` (sur-ensemble strict). §8 gagnerait à le préciser — c'est
+    dans mon droit de mettre à jour les commandes de vérification (§12).
+  - **4 tests Kotlin dépendent du réseau** (`ParserPoolPaginationTest` ×3,
+    `ZenMangaInterceptionTest` ×1) : verts le 2026-10-05, mais peuvent échouer en
+    CI pour une IP de runner. Je n'ai **pas** réduit la couverture pour faire
+    passer. Correctif durable : `@Tag("reseau")` + exclusion du job courant avec
+    un job planifié qui les garde.
+  - **`gradle test` peut être vert sans rien exécuter** (mesuré deux fois). La CI
+    passe `--no-build-cache` et compte les tests ; §8 devrait le dire aussi.
+  - **Coordination avec la session 3.1** : `src/scheduler.rs` (non committé, pas
+    encore déclaré nulle part → pas compilé) attend `crate::commands::into_result`
+    et `crate::commands::DEEP_TIMEOUT` — les deux sont désormais visibles
+    (`into_result` est même passé `pub` pour mon test). Il reste à ajouter
+    `pub mod scheduler;` **dans `src/lib.rs`**, qui est le fichier que j'ai créé,
+    et non de recréer des `mod` dans `main.rs`.
+  - **`.gitignore` cassé par une autre session** : faute de retour à la ligne
+    après `*.tsbuildinfo`, le motif est devenu `*.tsbuildinfo# Scripts de
+    mesure…`, donc `apps/desktop/tsconfig.tsbuildinfo` **n'est plus ignoré** (il
+    apparaît en `??`). Une seule ligne à ajouter, mais le fichier est modifié et
+    non committé par une autre session : je n'y touche pas.
+  - Rust n'est pas épinglé (pas de `rust-toolchain.toml`) : la CI prend `stable`.
+    À figer quand la phase 5 démarrera pour de bon.
 
 ### 2026-10-05 — Spike phase 0 (0.12)
 

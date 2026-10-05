@@ -251,6 +251,33 @@ Sont concernées : protocole du sidecar, schéma de base de données, stockage d
 
 Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de sonde ou du CSS de lecteur.
 
+- **Tauri ignore silencieusement un paramètre d'écriture en `snake_case`.** Il
+  convertit `camelCase` → `snake_case` côté Rust ; une clé déjà snake_case passe
+  **sans erreur** et n'est pas prise. La commande répond normalement avec les
+  anciennes valeurs, donc un réglage qui ne bouge pas **paraît** réussi. Mesuré
+  le 2026-10-05 sur `set_reglages_planificateur` : `periode_s` sans effet,
+  `periodeS` pris. Corollaire : envoyer un paramètre qu'on believes écrit, puis
+  **relire la valeur** — une commande qui répond n'a rien écrit.
+- **`bornes()`-style : une normalisation destructrice n'est pas un calcul.** Pour
+  afficher les bornes d'un réglage, j'ai appelé la fonction qui *borne* les
+  valeurs — or elle **écrase** (`self.x = x.clamp(...)`). La vue affichait donc
+  `max="20"` au lieu de 200, et le champ était bloqué à sa valeur par défaut sans
+  le moindre message. Les bornes sont des **constantes nommées**, et la
+  normalisation s'y réfère : deux listes de bornes finissent toujours par
+  diverger.
+- **Une valeur par défaut n'est pas une absence de champ.** Un test passait
+  `Default::default()` pour « rien de fourni » — or `actif: true` y est un
+  réglage **actif**. Le test confondait « pas fourni » et « revenu par défaut ».
+  Pour une écriture partielle, le seul moyen de dire « rien » est `None` ;
+  chaque champ doit pouvoir être absent **explicitement**.
+- **`exhaustive-deps` signale parfois un vrai oubli.** Les 4 warnings habituels
+  sont du bruit (`react-hooks/set-state-in-effect`), mais « missing dependency
+  `chargerPlan` » était exact : la fonction était recréée à chaque rendu sans
+  être mémorisée. La règle est de **regarder le nom** avant de classer —
+  « toujours 4 warnings » fait oublier le cinquième.
+
+
+
 - **Un `CustomEvent` sur `window` ne déclenche pas un `listen` Tauri.** Le
   code écoute via IPC, donc la mesure doit émettre par
   `window.__TAURI_INTERNALS__.invoke('plugin:event|emit', { event, payload,

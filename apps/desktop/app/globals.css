@@ -2039,6 +2039,38 @@ button:disabled {
   margin-bottom: var(--s3);
 }
 
+/* ---------------- Veille des nouveautés (3.5) ----------------
+   Les deux plafonds sont des `<input type="number">`. `min`/`max` viennent de
+   Rust, mais le navigateur laisse saisir `0` ou une valeur négative, et surtout
+   un texte vide — `type="number"` vide donne `NaN`, donc `value=""` et un champ
+   visuellement vide alors que la base porte encore la valeur d'avant. D'où les
+   bornes en CSS aussi, et le `font-variant-numeric` pour que les colonnes de
+   chiffres ne dansent pas à chaque frappe. */
+
+.field input[type='number'] {
+  width: 84px;
+  margin-left: auto;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+/* Même alignement à droite que les nombres, sinon les deux `<select>` du
+   planificateur collent leur libellé au lieu de s'aligner sur la colonne. */
+.field select {
+  margin-left: auto;
+}
+
+.field input[type='number']:focus-visible,
+.field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .dl-files {
   display: flex;
   flex-wrap: wrap;

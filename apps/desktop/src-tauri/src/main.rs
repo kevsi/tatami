@@ -1,22 +1,24 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod cbz;
-mod challenge;
-mod commands;
-mod download;
-mod image;
-mod library;
-mod pagecache;
-mod shelf;
-mod store;
-mod supervisor;
-mod zipread;
-
+// Le code vit dans la bibliothèque (`src/lib.rs`) et non ici : c'est ce qui
+// rend les tests de contrat de `tests/` possibles (ils doivent rejouer les
+// réponses enregistrées du moteur contre le code Rust, pas seulement contre le
+// schéma). Ce binaire ne fait que l'assemblage Tauri. Cf. `lib.rs` pour pourquoi.
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use supervisor::{dev_sidecar_paths, Supervisor};
+use tatami_desktop::supervisor::{dev_sidecar_paths, Supervisor};
 use tauri::Manager;
+
+// `generate_handler!` résout le chemin `commands::details` jusqu'au **dernier**
+// segment, puis invoque le macro `__cmd__details` **au même chemin**. Ce macro
+// est `#[macro_export]`é *et* réexporté (`pub use`) par le module qui porte la
+// commande : c'est le réexport qui rend la résolution possible depuis un autre
+// crate. Vérifié dans tauri-macros 2.7.1 (`command/wrapper.rs`, ligne 345 :
+// « allow the macro to be resolved with the same path as the command function »).
+// L'import de `commands` ci-dessous n'est donc pas cosmétique : sans lui, le
+// chemin de `generate_handler!` ne se résout pas.
+use tatami_desktop::{challenge, commands, download, library, pagecache, scheduler, shelf, store};
 
 fn not_found() -> tauri::http::Response<Vec<u8>> {
     tauri::http::Response::builder()
@@ -161,6 +163,8 @@ fn main() {
             });
         })
         .invoke_handler(tauri::generate_handler![
+            scheduler::reglages_planificateur,
+            scheduler::set_reglages_planificateur,
             commands::details,
             commands::chapters,
             commands::pages,
@@ -205,7 +209,24 @@ fn main() {
         .manage(download::DownloadState::default())
         .setup(|app| {
             let handle = app.state::<Arc<Supervisor>>().inner().clone();
+            // Clone AVANT le `move` ci-dessous : le planificateur a besoin du
+            // même superviseur, et `async move` consomme la variable.
+            let pour_planificateur = handle.clone();
             tauri::async_runtime::spawn(async move { handle.run().await });
+
+            // Tâche 3.1 : le planificateur tourne en tâche de fond, à côté du
+            // superviseur. Il interroge le moteur par la même voie que
+            // l'interface (jamais directement) et n'annonce ses résultats que
+            // par l'évènement `maj://nouveaux-chapitres` — l'affichage est
+            // l'affaire de la tâche 3.2, pas d'ici.
+            let arret = scheduler::nouvel_arret();
+            let base = app.state::<Arc<store::Store>>().inner().clone();
+            tauri::async_runtime::spawn(scheduler::demarrer(
+                scheduler::moteur(pour_planificateur),
+                base,
+                app.handle().clone(),
+                arret,
+            ));
             Ok(())
         })
         .build(context)

@@ -70,6 +70,31 @@ const FR = {
   'reglages.reseau.note':
     'Certaines sources scannent tout leur catalogue avant de répondre (EXHENTA : 36 s). Au-delà du délai, la source est signalée hors service plutôt que de faire attendre.',
 
+  // --- Durées (partagées par les réglages du planificateur) ---
+  'duree.min': '{n} min',
+  'duree.heure1': '1 h',
+  'duree.heure': '{n} h',
+  'duree.jour1': '1 jour',
+  'duree.jour': '{n} jours',
+
+  // --- Réglages du planificateur (tâche 3.5) ---
+  'plan.titre': 'Veille des nouveautés',
+  'plan.chargement': 'Lecture des réglages…',
+  'plan.actif': 'Chercher les nouveaux chapitres',
+  'plan.dernier': 'Dernière vérification : {quand}.',
+  'plan.jamais': "Aucune vérification enregistrée depuis le lancement de la veille.",
+  'plan.periode': 'Fréquence',
+  'plan.periode.valeur': 'toutes les {duree}',
+  // Accord en genre : « mise » est féminin, donc « 1 heure », pas « 1 h ».
+  'plan.periode.heure1': 'toutes les 1 heure',
+  'plan.delai.source': 'Délai entre deux requêtes à la même source',
+  'plan.delai.valeur': '{n} s',
+  'plan.max.passe': 'Favoris vérifiés par passage',
+  'plan.max.sources': 'Sources interrogées par passage',
+  'plan.note':
+    'Les favoris écartés par un plafond ne sont pas perdus : ils passent en tête du passage suivant.',
+  'plan.erreur': 'Réglage illisible : {detail}',
+
   // --- Écran « état des sources » (tâche 5.4) ---
   // --- Flux « mises à jour » (tâche 3.2) ---
   // Le compte vient toujours de `total`, jamais de `chapitres.length` : le moteur
@@ -319,6 +344,30 @@ const EN: Record<Cle, string> = {
   'reglages.reseau.secondes': '{n} seconds',
   'reglages.reseau.note':
     'Some sources scan their whole catalogue before answering (EXHENTA: 36 s). Past the timeout the source is marked as down rather than made to wait.',
+
+  // --- Durations (shared with the scheduler settings) ---
+  'duree.min': '{n} min',
+  'duree.heure1': '1 h',
+  'duree.heure': '{n} h',
+  'duree.jour1': '1 day',
+  'duree.jour': '{n} days',
+
+  // --- Scheduler settings (task 3.5) ---
+  'plan.titre': 'New-chapter watch',
+  'plan.chargement': 'Reading settings…',
+  'plan.actif': 'Look for new chapters',
+  'plan.dernier': 'Last checked: {quand}.',
+  'plan.jamais': 'No check recorded since the watch started.',
+  'plan.periode': 'Frequency',
+  'plan.periode.valeur': 'every {duree}',
+  'plan.periode.heure1': 'every 1 hour',
+  'plan.delai.source': 'Delay between two requests to the same source',
+  'plan.delai.valeur': '{n} s',
+  'plan.max.passe': 'Favourites checked per run',
+  'plan.max.sources': 'Sources queried per run',
+  'plan.note':
+    'Favourites skipped because of a cap are not lost: they go to the front of the next run.',
+  'plan.erreur': 'Unreadable setting: {detail}',
 
   // --- Source status screen (task 5.4) ---
   // --- "Updates" feed (task 3.2) ---

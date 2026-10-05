@@ -156,7 +156,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 - [x] **3.2** Flux « mises à jour » dans l'interface. **Livré et vérifié** le 2026-10-05. Écoute `maj://nouveaux-chapitres` (le planificateur est son seul producteur, et il n'émet **rien** quand il n'y a rien de neuf), fusionne par `(source, manga_url)` en cumulant les totaux — deux passes du même favori donnent des chapitres **différents**, pas les mêmes comptés deux fois. Persisté dans `localStorage` (plafonné à 200 entrées), donc visible après un redémarrage. **Le piège documenté par le moteur est vérifié explicitement** : un cas tronqué (`total` 47, 3 chapitres listés) affiche bien « 47 nouveaux chapitres » et « et 44 de plus » — donc l'écran lit `total`, jamais `chapitres.length`. Preuve : 2 entrées rendues, fusion 47 + 2 → 49 sans doublon, persistance vérifiée après rechargement, 0 erreur console, et les **singuliers** vérifiés à part dans les deux langues (1 mise / 1 chapitre / 1 autre). Ouvre la fiche par `loadChapters`, qui pose déjà `setOpenManga` et appelle `details` + `chapters` — un doublon écrit d'abord invoices un `setChapitresCharges` inexistant, que le compilateur a signalé.
 - [ ] **3.3** Notifications système (plugin Tauri, à vérifier dans la doc).
 - [ ] **3.4** Icône dans la zone de notification, fermeture dans la zone de notification, démarrage automatique optionnel.
-- [ ] **3.5** Réglages : fréquence, sources concernées, activation.
+- [x] **3.5** Réglages : fréquence, sources concernées, activation. **Livré et vérifié** le 2026-10-05. Deux commandes Tauri dans `scheduler.rs` (`reglages_planificateur`, `set_reglages_planificateur`) : le Rust avait déjà `Reglages` avec `bornes()`, et le commentaire sur le champ `actif` attendait explicitement cet écran. Écriture **partielle** — chaque paramètre est un `Option`, donc un champ omis garde sa valeur, mesuré : changer la période laisse les trois autres intacts. Les bornes affichées (`min`/`max`) **voyagent depuis Rust**, donc l'écran ne peut pas proposer une valeur que le moteur corrigerait en silence. Affiche aussi `dernier_pass`, parce que « actif » ne prouve rien : une veille active qui n'a pas tourné depuis trois jours semble active.
 
 **Critère de sortie** : un nouveau chapitre (simulé ou réel) déclenche une notification pendant que l'app est réduite dans la zone de notification.
 
@@ -245,6 +245,44 @@ Règles données aux trois sessions :
    récupère ces fichiers dans un commit « docs » dédié.
 
 ## 9. Journal
+
+### 2026-10-05 — Réglages du planificateur (3.5)
+
+- Plan : deux commandes Tauri + l'écran. Le Rust avait déjà tout (`Reglages`,
+  `bornes()`, et `actif` déjà lu par la passe) ; il manquait l'accès.
+- **Porte prouvée ROUGE puis verte.** `aucune_commande_tauri_nest_morte` a cité
+  les deux commandes et dit quoi faire après enregistrement — puis elle est
+  passée au vert une fois l'interface écrite. C'est la porte existante qui a
+  servi, pas une nouvelle.
+- **Un test a trouvé un vrai bug dans mon test.** `ecrire_un_seul_champ…`
+  échouait : le helper prenait `Reglages::default()` pour « rien de fourni »,
+  alors que `default()` a `actif: true`. Le test confondait une **valeur par
+  défaut** avec une **absence de champ**. Le helper prend désormais un champ par
+  paramètre — « rien » doit vouloir dire `None`, pas `default()`.
+- **Deux bugs réels trouvés à la mesure, aucun visible au compilateur :**
+  1. **Les bornes de la vue.** J'utilisais un second `bornes()` pour obtenir les
+     maximums — or `bornes()` **écrase** les valeurs au lieu de les lire. Donc
+     `max_sources_max` valait **20** (la valeur courante) au lieu de 200, et
+     l'écran affichait `max="20"` : le réglage du plafond de sources était
+     bloqué à sa valeur par défaut, sans aucun message. Les bornes sont
+     désormais des **constantes nommées**, et `bornes()` s'y réfère — une seule
+     source de vérité.
+  2. **Le nom des paramètres d'écriture.** J'envoyais `periode_s` ; Tauri
+     convertit `camelCase` en `snake_case` et **ignore silencieusement** une clé
+     déjà snake_case. La commande répondait sans erreur avec les **anciennes
+     valeurs** — donc un réglage qui ne bougeait pas paraissait réussi.
+     Corrigé en `periodeS`, et le type `PlanPatch` l'impose désormais. Le reste
+     du projet suivait déjà cette convention (`mangaUrl`, `timeoutSecs`).
+- Preuve sur l'app réelle : période 21600 → 3600 avec les trois autres champs
+  inchangés ; `actif` coupé puis **relu depuis la base** (l'écran ne se mentait
+  pas) ; `min=1 max=5000` et `min=1 max=200` venus de Rust ; 0 erreur console.
+- `cargo test` **107** (86 + 1 + 20), dont 3 nouveaux · `cargo fmt --check` 0 ·
+  `clippy --all-targets -D warnings` 0 · `tsc` 0 · `lint` 0 erreur (4 warnings
+  antérieurs) · `i18n` sans clé morte.
+- **Porte prouvée mordante** : remettre `max_sources_max: 20` fait échouer
+  `la_vue_expose_les_bornes_et_non_les_valeurs` en nommant `20` contre `200`.
+
+### 2026-10-05 — Flux « mises à jour » (3.2)
 
 ### 2026-10-05 — Flux « mises à jour » (3.2)
 

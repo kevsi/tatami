@@ -141,9 +141,71 @@ type MajPasse = {
  */
 type MajItem = MajNouveaute & { at: number; vue: boolean };
 
+/** Tâche 3.5 — les réglages du planificateur, tels que renvoyés par Rust.
+ *
+ *  Les bornes (`*_min_s`, `*_max`) voyagent **depuis** le cœur : c'est
+ *  `Reglages::bornes()` qui les connaît, donc l'écran ne peut pas proposer une
+ *  valeur que le moteur corrigerait en silence. Les recopier ici ferait
+ *  diverger les deux à la première modification.
+ */
+type PlanReglages = {
+  periode_s: number;
+  delai_source_s: number;
+  max_par_passe: number;
+  max_sources_par_passe: number;
+  actif: boolean;
+  periode_min_s: number;
+  delai_source_min_s: number;
+  max_par_passe_max: number;
+  max_sources_max: number;
+  dernier_pass: number;
+};
+
+/** Écriture **partielle** : seuls les champs fournis voyagent.
+ *
+ *  Chaque paramètre de la commande est un `Option`, donc un champ omis garde sa
+ *  valeur — c'est ce qui permet d'envoyer le seul réglage qu'on change.
+ *
+ *  **Les clés sont en `camelCase`, volontairement.** Tauri convertit
+ *  `camelCase` en `snake_case` côté Rust, et **ignore silencieusement** une clé
+ *  déjà en `snake_case`. Mesuré le 2026-10-05 : `periode_s` passait sans erreur
+ *  et n'était pas pris — le réglage ne bougeait pas et la commande répondait
+ *  quand même avec les anciennes valeurs. Le reste du projet suit déjà cette
+ *  convention (`mangaUrl`, `timeoutSecs`, `chapterUrl`).
+ */
+type PlanPatch = Partial<{
+  periodeS: number;
+  delaiSourceS: number;
+  maxParPasse: number;
+  maxSourcesParPasse: number;
+  actif: boolean;
+}>;
+
+/** Périodes proposées, en secondes. Le plancher est **filtré** à l'affichage
+ *  par `plan.periode_min_s` : proposer une valeur que le moteur refuse serait
+ *  une interface qui ment.
+ */
+const PERIODES = [900, 1800, 3600, 3 * 3600, 6 * 3600, 12 * 3600, 86400];
+/** Délais par source proposés, en secondes. */
+const DELAIS = [5, 10, 20, 30, 60, 120, 300];
+
+/** Durée lisible et **traduite** : « 15 min », « 6 h », « 1 jour ».
+ *
+ *  La première version renvoyait « 1 jour » en dur, donc l'écran english
+ *  affichait « every 1 jour ». Les unités passent par `t`.
+ */
+function dureeFr(t: ReturnType<typeof useI18n>['t'], s: number): string {
+  if (s < 3600) return t('duree.min', { n: Math.round(s / 60) });
+  if (s < 86400) {
+    const h = Math.round(s / 3600);
+    return h === 1 ? t('duree.heure1') : t('duree.heure', { n: h });
+  }
+  const j = Math.round(s / 86400);
+  return j === 1 ? t('duree.jour1') : t('duree.jour', { n: j });
+}
+
 /** Une entrée de l'historique de lecture (table `history`). */
-type HistoryItem = {
-  source: string;
+type HistoryItem = {  source: string;
   manga_url: string;
   title: string;
   cover_url: string | null;
@@ -740,6 +802,11 @@ export default function Home() {
   // démarrage depuis `localStorage`, donc il survit à un redémarrage. C'est
   // ce que la passe émet ; l'interface ne la déclenche pas.
   const [maj, setMaj] = useState<MajItem[]>(loadMaj());
+  // Tâche 3.5 — réglages du planificateur. `null` = pas encore chargé, ce qui
+  // n'est pas la même chose que « absent » : l'écran affiche alors « chargement »
+  // et non des valeurs par défaut inventées.
+  const [plan, setPlan] = useState<PlanReglages | null>(null);
+  const [planErreur, setPlanErreur] = useState<string | null>(null);
   // Ce qui n'a pas encore été regardé. Une valeur dérivée, pas un second état :
   // deux compteurs qui peuvent divergir sont deux bugs en attente.
   const majNonVus = maj.filter((m) => !m.vue).length;
@@ -972,8 +1039,66 @@ export default function Home() {
     }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const refreshDownloads = useCallback(() => {
-    invoke<LibraryItem[]>('list_library', { root: '' })
+  /** Tâche 3.5 — lit les réglages du planificateur.
+   *
+   *  Volontairement **sans** rejeu automatique dans l'effet de montage : les
+   *  régler ne concerne que l'écran Réglages, et une requête inutile au
+   *  démarrage pour un écran rarement ouvert n'est pas un détail (le moteur est
+   *  séquentiel, il sert d'abord l'utilisateur).
+   */
+  const chargerPlan = useCallback(() => {
+    invoke<PlanReglages>('reglages_planificateur')
+      .then((r) => {
+        setPlan(r);
+        setPlanErreur(null);
+      })
+      .catch((e) => setPlanErreur(t('plan.erreur', { detail: String(e) })));
+    // `t` change avec la langue : sans lui, un message d'erreur resterait dans
+    // la langue de l'ouverture de l'écran.
+  }, [t]);
+
+  /** Écrit un **sous-ensemble** des réglages, puis remplace l'état par ce que
+   *  Rust renvoie.
+   *
+   *  On ne devine pas la nouvelle valeur localement : le cœur applique les
+   *  bornes, donc une valeur affichée avant sa relecture serait parfois fausse.
+   */
+  const majPlan = useCallback(
+    (patch: PlanPatch) => {
+      // Un champ numérique vidé donne `Number('') === NaN`, et `NaN` sérialisé
+      // par IPC devient `null` — donc « plateau nul », pas « inchangé ». Un
+      // simple effacement de la frappe ferait donc passer le planificateur à
+      // 1 favori vérifié par passe. On ignore la saisie tant qu'elle n'est pas
+      // un entier fini, et l'affichage reste la valeur relue.
+      const propre: PlanPatch = { ...patch };
+      if (typeof patch.maxParPasse === 'number') {
+        delete propre.maxParPasse;
+        if (Number.isFinite(patch.maxParPasse) && patch.maxParPasse >= 1) {
+          propre.maxParPasse = Math.round(patch.maxParPasse);
+        }
+      }
+      if (typeof patch.maxSourcesParPasse === 'number') {
+        delete propre.maxSourcesParPasse;
+        if (Number.isFinite(patch.maxSourcesParPasse) && patch.maxSourcesParPasse >= 1) {
+          propre.maxSourcesParPasse = Math.round(patch.maxSourcesParPasse);
+        }
+      }
+      if (Object.keys(propre).length === 0) return;
+
+      setPlanErreur(null);
+      invoke<PlanReglages>('set_reglages_planificateur', propre)
+        .then((r) => setPlan(r))
+        .catch((e) => {
+          setPlanErreur(t('plan.erreur', { detail: String(e) }));
+          // On relit : l'écran doit revenir à l'état réel plutôt que garder une
+          // valeur que la base n'a jamais portée.
+          chargerPlan();
+        });
+    },
+    [t, chargerPlan],
+  );
+
+  const refreshDownloads = useCallback(() => {    invoke<LibraryItem[]>('list_library', { root: '' })
       .then((items) => setLibrary(items ?? []))
       .catch(() => setLibrary([]));
   }, []);
@@ -1029,13 +1154,19 @@ export default function Home() {
         void refreshShelf();
         void refreshSignets();
       }
+      // Tâche 3.5 : les réglages du planificateur sont relus **à l'ouverture**
+      // de l'onglet, pas au montage. L'application passe l'essentiel de son
+      // temps ailleurs, et le moteur est séquentiel : une requête au démarrage
+      // pour un écran rarement ouvert vole un tour aux listes de l'utilisateur.
+      // Le refus est ignoré : il n'y a rien à afficher si l'écran est fermé.
+      if (id === 'settings') chargerPlan();
       // Changer d'onglet quitte la vue en cours (source, fiche) : sinon
       // l'ancien écran, rendu avant l'accueil, resterait affiché par-dessus.
       setOpenManga(null);
       if (id !== 'catalog') setSelected(null);
       setTab(id);
     },
-    [refreshDownloads, refreshShelf, refreshSignets],
+    [refreshDownloads, refreshShelf, refreshSignets, chargerPlan],
   );
 
   function isFavorite(m: Manga): boolean {
@@ -2941,6 +3072,99 @@ useEffect(() => {
             </select>
           </label>
           <p className="muted">{t('reglages.reseau.note')}</p>
+        </section>
+
+        {/* Tâche 3.5 — réglages du planificateur (3.1).
+         *
+         *  Les bornes affichées viennent de la **commande**, pas d'une constante
+         *  écrite ici : `ReglagesVue` les tire de `Reglages::bornes()`, seul
+         *  endroit qui les connaît. Les recopier ici ferait diverger l'écran du
+         *  moteur au premier réglage modifié.
+         *
+         *  `dernier_pass` est affiché parce que « actif » ne prouve rien : une
+         *  veille active qui n'a pas tourné depuis trois jours semble active.
+         */}
+        <section className="panel">
+          <h2>{t('plan.titre')}</h2>
+          {plan === null ? (
+            <p className="muted">{t('plan.chargement')}</p>
+          ) : (
+            <>
+              <label className="switch-row">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={plan.actif}
+                  onChange={(e) => void majPlan({ actif: e.target.checked })}
+                />
+                <span>{t('plan.actif')}</span>
+              </label>
+              <p className="muted">
+                {plan.dernier_pass > 0
+                  ? t('plan.dernier', { quand: depuis(t, plan.dernier_pass) })
+                  : t('plan.jamais')}
+              </p>
+
+              <label className="field">
+                {t('plan.periode')}
+                <select
+                  value={plan.periode_s}
+                  onChange={(e) => void majPlan({ periodeS: Number(e.target.value) })}
+                  aria-label={t('plan.periode')}
+                >
+                  {PERIODES.map((s) => (
+                    <option key={s} value={s}>
+                      {s === 3600
+                        ? t('plan.periode.heure1')
+                        : t('plan.periode.valeur', { duree: dureeFr(t, s) })}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                {t('plan.delai.source')}
+                <select
+                  value={plan.delai_source_s}
+                  onChange={(e) => void majPlan({ delaiSourceS: Number(e.target.value) })}
+                  aria-label={t('plan.delai.source')}
+                >
+                  {DELAIS.map((s) => (
+                    <option key={s} value={s}>
+                      {t('plan.delai.valeur', { n: s })}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                {t('plan.max.passe')}
+                <input
+                  type="number"
+                  min={1}
+                  max={plan.max_par_passe_max}
+                  value={plan.max_par_passe}
+                  onChange={(e) => void majPlan({ maxParPasse: Number(e.target.value) })}
+                  aria-label={t('plan.max.passe')}
+                />
+              </label>
+
+              <label className="field">
+                {t('plan.max.sources')}
+                <input
+                  type="number"
+                  min={1}
+                  max={plan.max_sources_max}
+                  value={plan.max_sources_par_passe}
+                  onChange={(e) => void majPlan({ maxSourcesParPasse: Number(e.target.value) })}
+                  aria-label={t('plan.max.sources')}
+                />
+              </label>
+
+              {planErreur && <p className="error">{planErreur}</p>}
+              <p className="muted">{t('plan.note')}</p>
+            </>
+          )}
         </section>
 
         <section className="panel">

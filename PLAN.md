@@ -61,7 +61,7 @@ tatami/
 | Phase | Titre | Taille | Statut |
 |---|---|---|---|
 | 0 | Fondations et spike des risques | M | **En cours** — 0.1 à 0.11 faits, 0.12 partiel, 0.13 à 0.17 à faire |
-| 1 | Bibliothèque et lecteur | L | **Presque finie** — 1.1 à 1.7 et 1.9 faits, 1.10 livré le 2026-10-05 ; reste 1.8 |
+| 1 | Bibliothèque et lecteur | L | **Finie** — 1.1 à 1.10, dont 1.8 et 1.10 livrés le 2026-10-05 |
 | 2 | Hors ligne | M | **Faite** — file, reprise, CBZ, lecture hors ligne, assainissement et stats ; durcie le 2026-10-04 (un `.cbz` par chapitre, `sync_all`, verrou RAII) ; dossier de téléchargement au choix et pause de la file le 2026-10-05 |
 | 3 | Tâches de fond et notifications | M | **Pas commencée** |
 | 4 | Comptes et synchronisation | L | **Pas commencée** |
@@ -129,7 +129,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 - [x] **1.5** Favoris organisés en catégories définies par l'utilisateur.
 - [x] **1.6** Historique de lecture, reprise au bon chapitre et à la bonne page, mode incognito.
 - [x] **1.7** Signets.
-- [ ] **1.8** Lecteur paginé : sens de lecture, zoom, préchargement via le cache Rust, raccourcis clavier et souris.
+- [x] **1.8** Lecteur paginé : sens de lecture, zoom, préchargement via le cache Rust, raccourcis clavier et souris. **Livré** le 2026-10-05. Sens de lecture, zoom, double page et RTL étaient déjà faits ; il restait deux choses, et **les deux n'étaient pas ce qu'elles semblaient être**. La précharge fonctionnait (elle écrit bien dans le cache Rust) mais ne couvrait qu'une page → désormais 4. La molette ne faisait rien en mode paginé → ajoutée, avec seuil de 40 px et verrou de 300 ms par sens (un geste émet 43 événements : mesuré).
 - [x] **1.9** Mode webtoon (défilement continu, liste virtualisée).
 - [x] **1.10** Thèmes clair/sombre, i18n français et anglais en place. **Livré** le 2026-10-05 : l'i18n existait déjà (152 clés) ; le thème clair, non. Le travail réel n'était pas d'ajouter une palette mais de **tokeniser les 69 couleurs écrites en dur** hors tokens — sans quoi rien n'aurait basculé. `--reader-bg` reste identique dans les deux thèmes (pages blanches, un fond clair ferait disparaître leurs bords).
 
@@ -240,6 +240,41 @@ Règles données aux trois sessions :
    récupère ces fichiers dans un commit « docs » dédié.
 
 ## 9. Journal
+
+### 2026-10-05 — Lecteur paginé (1.8)
+
+- Plan : auditer ce qu'il restait vraiment de la 1.8 avant de coder. Sens de
+  lecture, zoom, double page et RTL étaient déjà faits ; le `PLAN.md` disait
+  « la précharge ne couvre que la page suivante », et la molette n'était pas
+  mentionnée du tout.
+- **Ce que j'ai d'abord conclu, et qui était faux** : « la précharge ne fait
+  rien ». Mesuré après 30 s d'attente, zéro écriture sur le disque. Cause : je
+  supprimais le fichier de cache **après** que Chromium l'avait déjà en
+  mémoire, donc son cache HTTP répondait en 4 ms et Rust n'était jamais appelé.
+  La preuve était dans l'**écriture disque** d'une page jamais demandée, pas
+  dans un chronomètre — avec `Network.setCacheDisabled` pour écarter le second
+  cache, la balise a écrit 147 Kio en moins de 2 s. Même famille d'erreur que le
+  scroll : 173 px de course sur une page de 918 px, c'est le maximum, pas un
+  blocage.
+- Codé : `PRECHARGE_PAGES = 4` (une balise par page, plafond volontaire pour ne
+  pas télécharger ce que l'utilisateur n'atteindra pas), et `onMoletteStage` sur
+  `.reader-stage` avec seuil de 40 px, verrou de 300 ms par sens, et `Ctrl`
+  réservé au zoom. En webtoon la molette n'est pas interceptée.
+- Preuve (sur l'app réelle, port CDP 9223) : 4 balises distinctes, aucune visible
+  (`getBoundingClientRect` 1×1), image affichée 800×4375 ; molette delta 300 →
+  page change, delta 12 → rien, delta −300 → recul ; **contrôle négatif webtoon** :
+  la bande défile de 660 px et le compteur ne bouge pas.
+- **Bug trouvé en passant, non demandé** : `apparence.ts` et `i18n.ts` posaient
+  `data-apparence` et `lang` sur `<html>` au chargement du module, donc **avant**
+  l'hydratation de React, qui signalait l'écart en boucle à chaque navigation.
+  Corrigé par un script bloquant dans `layout.tsx` + `suppressHydrationWarning`.
+  Pour le lire, `console.error` ne suffit pas (message tronqué) : il faut un
+  `addInitScript` qui intercepte avant React — la fin du message porte le diff.
+- **Non vérifié** : la lecture de ce correctif d'hydratation *sur l'app*. La
+  session 2 écrit dans `src-tauri`, ce qui redémarre Tauri à chaque modification
+  et fait tomber le port 9223. Vérifié sans elle : le script est bien dans le
+  HTML produit et précède React (les 5 bundles qui le précèdent portent
+  `async=""`). **À confirmer à l'œil dès que les sessions Rust s'arrêtent.**
 
 ### 2026-10-05 — Thème clair (1.10)
 

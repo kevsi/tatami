@@ -244,6 +244,7 @@ private fun fetch_octets(
 
 fun serve() {
     val context = EngineContext()
+    val pool = ParserPool(context)
     val cache = SessionCache()
     val stdin = System.`in`.bufferedReader()
     System.err.println("tatami-engine serve protocol=$PROTOCOL_VERSION engine=$ENGINE_VERSION parsers=$PARSERS_VERSION")
@@ -277,7 +278,7 @@ fun serve() {
             enVol.incrementAndGet()
             val response = try {
                 val result = runBlocking {
-                    withTimeout(timeoutMs) { dispatch(context, cache, method, params) }
+                    withTimeout(timeoutMs) { dispatch(context, pool, cache, method, params) }
                 }
                 ok(id, result)
             } catch (e: TimeoutCancellationException) {
@@ -332,6 +333,7 @@ fun serve() {
 
 private suspend fun dispatch(
     context: EngineContext,
+    pool: ParserPool,
     cache: SessionCache,
     method: String,
     p: JSONObject,
@@ -353,9 +355,7 @@ private suspend fun dispatch(
         JSONObject().put("sources", arr)
     }
 
-    "filterOptions" -> {
-        val sourceName = p.reqString("source")
-        val parser = context.newParserInstance(parseSource(sourceName))
+    "filterOptions" -> pool.avec(parseSource(p.reqString("source"))) { parser ->
         val options = parser.getFilterOptions()
         val tags = JSONArray()
         options.availableTags.forEach { tags.put(JSONObject().put("title", it.title).put("key", it.key)) }
@@ -370,33 +370,34 @@ private suspend fun dispatch(
         val limit = p.optInt("limit", 20)
         val query = p.optString("query", "")
         val tagKeys = p.optJSONArray("tags")
-        val parser = context.newParserInstance(parseSource(sourceName))
-        // availableSortOrders est un Set : on le convertit pour pouvoir choisir
-        // un tri par son rang.
-        val orders = parser.availableSortOrders.toList()
-        // Tri explicite si demandé, sinon le premier disponible (comportement
-        // initial). L'app mobile permet de choisir le tri ; sans cela on reste
-        // bloqué sur un seul sous-ensemble du catalogue.
-        val orderIndex = p.optInt("sortOrder", 0)
-        val order = if (orderIndex in orders.indices) orders[orderIndex] else orders[0]
-        val options = parser.getFilterOptions()
-        val tags = if (tagKeys == null || tagKeys.length() == 0) {
-            emptySet()
-        } else {
-            val keys = (0 until tagKeys.length()).map { tagKeys.getString(it) }.toSet()
-            runCatching { options.availableTags.filter { it.key in keys }.toSet() }
-                .getOrDefault(emptySet())
+        pool.avec(parseSource(sourceName)) { parser ->
+            // availableSortOrders est un Set : on le convertit pour pouvoir choisir
+            // un tri par son rang.
+            val orders = parser.availableSortOrders.toList()
+            // Tri explicite si demandé, sinon le premier disponible (comportement
+            // initial). L'app mobile permet de choisir le tri ; sans cela on reste
+            // bloqué sur un seul sous-ensemble du catalogue.
+            val orderIndex = p.optInt("sortOrder", 0)
+            val order = if (orderIndex in orders.indices) orders[orderIndex] else orders[0]
+            val options = parser.getFilterOptions()
+            val tags = if (tagKeys == null || tagKeys.length() == 0) {
+                emptySet()
+            } else {
+                val keys = (0 until tagKeys.length()).map { tagKeys.getString(it) }.toSet()
+                runCatching { options.availableTags.filter { it.key in keys }.toSet() }
+                    .getOrDefault(emptySet())
+            }
+            val filter = MangaListFilter(
+                query = query.ifBlank { null },
+                tags = tags,
+                contentRating = requestedRatings(p, options),
+            )
+            val list = parser.getList(offset, order, filter).take(limit)
+            list.forEach { cache.putManga(sourceName, it) }
+            val arr = JSONArray()
+            list.forEach { arr.put(mangaToJson(it, sourceName)) }
+            JSONObject().put("list", arr)
         }
-        val filter = MangaListFilter(
-            query = query.ifBlank { null },
-            tags = tags,
-            contentRating = requestedRatings(p, options),
-        )
-        val list = parser.getList(offset, order, filter).take(limit)
-        list.forEach { cache.putManga(sourceName, it) }
-        val arr = JSONArray()
-        list.forEach { arr.put(mangaToJson(it, sourceName)) }
-        JSONObject().put("list", arr)
     }
 
     "search" -> {
@@ -404,17 +405,18 @@ private suspend fun dispatch(
         val query = p.reqString("query")
         val offset = p.optInt("offset", 0)
         val limit = p.optInt("limit", 20)
-        val parser = context.newParserInstance(parseSource(sourceName))
-        val order = parser.availableSortOrders.first()
-        val filter = MangaListFilter(
-            query = query,
-            contentRating = requestedRatings(p, parser.getFilterOptions()),
-        )
-        val list = parser.getList(offset, order, filter).take(limit)
-        list.forEach { cache.putManga(sourceName, it) }
-        val arr = JSONArray()
-        list.forEach { arr.put(mangaToJson(it, sourceName)) }
-        JSONObject().put("list", arr)
+        pool.avec(parseSource(sourceName)) { parser ->
+            val order = parser.availableSortOrders.first()
+            val filter = MangaListFilter(
+                query = query,
+                contentRating = requestedRatings(p, parser.getFilterOptions()),
+            )
+            val list = parser.getList(offset, order, filter).take(limit)
+            list.forEach { cache.putManga(sourceName, it) }
+            val arr = JSONArray()
+            list.forEach { arr.put(mangaToJson(it, sourceName)) }
+            JSONObject().put("list", arr)
+        }
     }
 
     "details" -> {
@@ -423,8 +425,7 @@ private suspend fun dispatch(
         val title = p.optString("mangaTitle", "")
         val parsed = parseSource(sourceName)
         val seed = mangaForDetails(cache, sourceName, url, title, parsed)
-        val parser = context.newParserInstance(parsed)
-        val full = parser.getDetails(seed)
+        val full = pool.avec(parsed) { it.getDetails(seed) }
         cache.putManga(sourceName, full)
         JSONObject().put("manga", mangaToJson(full, sourceName))
     }
@@ -435,8 +436,7 @@ private suspend fun dispatch(
         val title = p.optString("mangaTitle", "")
         val parsed = parseSource(sourceName)
         val seed = mangaForDetails(cache, sourceName, mangaUrl, title, parsed)
-        val parser = context.newParserInstance(parsed)
-        val full = parser.getDetails(seed)
+        val full = pool.avec(parsed) { it.getDetails(seed) }
         val list = full.chapters ?: emptyList()
         cache.putManga(sourceName, full)
         cache.putChapters(sourceName, list)
@@ -450,8 +450,7 @@ private suspend fun dispatch(
         val chapterUrl = p.reqString("chapterUrl")
         val cached = cache.getChapter(sourceName, chapterUrl)
             ?: throw ParamException("unknown chapter url, call chapters first: $chapterUrl")
-        val parser = context.newParserInstance(parseSource(sourceName))
-        val list = parser.getPages(cached)
+        val list = pool.avec(parseSource(sourceName)) { it.getPages(cached) }
         cache.putPages(sourceName, list)
         val arr = JSONArray()
         list.forEachIndexed { i, page -> arr.put(pageToJson(i, page)) }
@@ -489,8 +488,7 @@ private suspend fun dispatch(
         val pageUrl = p.reqString("pageUrl")
         val cached = cache.getPage(sourceName, pageUrl)
             ?: throw ParamException("unknown page url, call pages first: $pageUrl")
-        val parser = context.newParserInstance(parseSource(sourceName))
-        val imageUrl = parser.getPageUrl(cached)
+        val imageUrl = pool.avec(parseSource(sourceName)) { it.getPageUrl(cached) }
         // Garde-fou : une URL d'image vide n'est pas une adresse à aller
         // chercher. Sans ce test, le client HTTP partait sur l'origine du site
         // et renvoyait sa page d'accueil — mesuré : 45 entrées HTML identiques
@@ -538,7 +536,7 @@ private suspend fun dispatch(
             JSONObject().put("ok", true).put("engineVersion", ENGINE_VERSION)
         } else {
             val sourceName = p.getString("source")
-            context.newParserInstance(parseSource(sourceName)) // lève si inconnue
+            parseSource(sourceName) // lève si inconnue
             JSONObject().put("source", sourceName).put("reachable", true)
         }
     }

@@ -568,6 +568,14 @@ export default function Home() {
   const [pageJump, setPageJump] = useState('');
   const stripRef = useRef<HTMLDivElement>(null);
   const stripImages = useRef<(HTMLImageElement | null)[]>([]);
+  /** Page sur laquelle la bande doit se placer à la prochaine ouverture.
+   *
+   *  Déclarée ici, et non près de l'effet qui la consomme : `openReaderAt` la
+   *  remplit, et cette fonction est **définie plus haut** dans le composant. Un
+   *  `useRef` déclaré après son usage resterait `undefined` au moment de la
+   *  lecture — sans erreur, sans avertissement, et la reprise affichait la
+   *  première page (mesuré le 2026-10-05). */
+  const aPositionner = useRef<number | null>(null);
   // Virtualisation de la bande webtoon (tâche 1.9) : hauteur réelle de chaque
   // page, position de la bande, et largeur du conteneur (la hauteur affichée
   // est proportionnelle à cette largeur).
@@ -1687,10 +1695,28 @@ async function openReader(c: Chapter) {
  *  le lire était d'ouvrir un autre logiciel. On demande donc le local d'abord,
  *  et on ne retombe sur la source que si le fichier est absent.
  */
-async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string) {
+/**
+ * Ouvre un chapitre à une page donnée.
+ *
+ * `mangaTitre` est un **paramètre**, pas une lecture de `openManga`. Mesuré le
+ * 2026-10-05 : à la reprise, `openManga?.title` valait `""` — `setOpenManga()`
+ * venait d'être appelé dans la même continuation `await`, et React n hadn't
+ * pas encore appliqué l'état. Conséquence : `local_chapter_pages` cherchait un
+ * dossier `downloads\<source>\` vide, renvoyait 0 page, et le lecteur partait
+ * sur le moteur — donc **hors ligne ne l'était plus**, la bande perdait toutes
+ * ses dimensions, et la reprise s'affichait à la page 1.
+ *
+ * Le lecteur porte déjà `mangaTitre` dans son état ; il suffit de s'y fier.
+ */
+async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string, titreExplicite?: string) {
   const src = sourceName ?? selected?.name;
   if (!src) return;
-  const mangaTitre = openManga?.title ?? '';
+  const mangaTitre = titreExplicite ?? openManga?.title ?? '';
+  if (!mangaTitre) {
+    // Sans titre, le chapitre local est introuvable : mieux vaut le dire que
+    // ouvrir silencieusement une version en ligne d'un chapitre téléchargé.
+    console.warn('openReaderAt: titre du webtoon inconnu, lecture locale impossible');
+  }
   setReaderLoading(true);
   setError(null);
   try {
@@ -1721,6 +1747,9 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string)
     // La position mémorisée peut dépasser le chapitre si celui-ci a été
     // raccourci depuis : on retombe sur sa dernière page.
     const index = Math.max(0, Math.min(pages.length - 1, startIndex));
+    // La bande devra se placer sur cette page : le mode paginé n'en a pas
+    // besoin, le webtoon si (c'est un conteneur de défilement).
+    aPositionner.current = index > 0 ? index : null;
     setReader({
       chapter: c,
       pages,
@@ -1866,7 +1895,7 @@ async function resumeReading(h: HistoryItem) {
     setError('Ce webtoon n’a plus aucun chapitre lisible.');
     return;
   }
-  await openReaderAt(chapter, h.page_index, h.source);
+  await openReaderAt(chapter, h.page_index, h.source, h.title);
 }
 
 // Mémorise la position de lecture à chaque changement de chapitre ou de page.
@@ -1970,13 +1999,18 @@ function switchDir() {
   });
 }
 
-/** Tâche 0.14 : saute à la page demandée (1 → index 0). */
+/** Tâche 0.14 : saute à la page demandée (1 → index 0).
+ *
+ *  En mode webtoon il faut aussi **défiler** : le mode pagé montre la page
+ *  courante par construction, pas la bande.
+ */
 function jumpToPage(raw: string) {
   const n = Number(raw);
   setPageJump('');
   if (!reader || !Number.isFinite(n) || n < 1) return;
   const target = Math.min(reader.pages.length, Math.round(n)) - 1;
-  setReader((r) => (r ? { ...r, index: target } : r));
+  if (readerMode === 'webtoon') scrollToPage(target);
+  else setReader((r) => (r ? { ...r, index: target } : r));
 }
 
 /** Fait défiler la bande jusqu'à la page demandée (mode webtoon).
@@ -2107,7 +2141,7 @@ const fenetre = useMemo(() => {
   const out: number[] = [];
   for (let i = debut; i < limite; i += 1) out.push(i);
   return out;
-}, [pagesBande, readerMode, scrollY, offsets, hauteurs, bandeHauteur]);
+}, [pagesBande, readerMode, scrollY, offsets, hauteurs, bandeVirtualisable]);
 
 // La largeur du conteneur décide de la hauteur affichée : il faut la mesurer,
 // sinon la première bande est dimensionnée sur une largeur nulle.
@@ -2144,6 +2178,49 @@ function onScrollBande() {
   }
   if (reader && i !== reader.index) setReader((r) => (r ? { ...r, index: i } : r));
 }
+
+/** Place la bande sur la page courante à l'ouverture d'un chapitre.
+ *
+ *  Mesuré le 2026-10-05 : la reprise affichait la **page 1** alors que
+ *  `reader.index` valait 50. Rien ne positionnait la bande — ni à
+ *  l'ouverture, ni au changement de mode. Le mode paginé n'en a pas besoin
+ *  (la page courante est rendue), mais la bande est un conteneur de défilement :
+ *  sans `scrollTop`, elle reste en haut quoi qu'on dise dans l'état.
+ *
+ *  On attend que les dimensions soient connues : `offsets` est calculé à partir
+ *  de `largeurBande`, mesurée par un `ResizeObserver` qui n'a pas encore tourné
+ *  au premier rendu. Défiler trop tôt reviendrait à 0 — c'est-à-dire exactement
+ *  le bug. D'où `bandeVirtualisable` comme garde : c'est lui, et non « offset
+ *  non nul » (offsets[0] vaut toujours 0), qui dit que les dimensions sont
+ *  prêtes.
+ *
+ *  `aPositionner` est déclaré **avec les autres refs**, avant tout retour
+ *  conditionnel : un `useRef` lu par une fonction (ligne de `openReaderAt`)
+ *  doit exister avant elle, et les hooks doivent être tous au même niveau.
+ */
+useEffect(() => {
+  if (readerMode !== 'webtoon' || !reader) return;
+  const i = aPositionner.current;
+  if (i === null) return;
+  // On ne positionne QUE dans le bandeau virtualisé : c'est le seul cas où
+  // l'offset calculé est juste. En flux normal, `offsetTop` d'une image dépend
+  // de la hauteur réelle de celles qui la précèdent, connue seulement une fois
+  // les images chargées — défiler avant donnerait 0 (mesuré).
+  if (!bandeVirtualisable) return;
+  const haut = offsets[i];
+  if (haut === undefined) return;
+  const root = stripRef.current;
+  if (!root) return;
+  aPositionner.current = null;
+  const y = Math.max(0, haut - 8);
+  root.scrollTo({ top: y });
+  dernierScroll.current = y;
+  // `fenetre` se calcule à partir de `scrollY`, que seul `onScrollBande` met à
+  // jour. Sans cette ligne, la bande était positionnée sur la bonne page mais
+  // gardait les **images du début** montées : la page 100 était hors du DOM,
+  // donc l'écran paraissait vide (mesuré : scrollTop 199576, images 0, 1, 2).
+  setScrollY(y);
+}, [reader, readerMode, offsets, largeurBande, bandeVirtualisable]);
 
 // En mode webtoon, le compteur suit la page réellement visible.
 useEffect(() => {
@@ -2943,6 +3020,12 @@ if (reader) {
                 placeholder={String(index + 1)}
                 value={pageJump}
                 onChange={(e) => setPageJump(e.target.value)}
+                // La page affichée est le `placeholder` ; le champ ne sert qu'à
+                // saisir une destination. Sans cette remise à zéro, une valeur
+                // saisie puis validée restait affichée pendant que le lecteur
+                // continuait à tourner : on lisait « 50 » en étant page 4
+                // (mesuré), donc la reprise paraissait ne pas reprendre.
+                onBlur={() => setPageJump('')}
                 aria-label="Aller à la page"
               />
               <span className="muted">/ {pages.length}</span>

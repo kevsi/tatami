@@ -18,12 +18,17 @@
  * n'était jamais prévenu, et le `<select>` affichait une valeur que rien ne
  * portait. Mesuré le 2026-10-05 : `localStorage` restait vide après un clic.
  *
- * ## Le piège du premier rendu
+ * ## Le piège du premier rendu — et pourquoi ce n'est plus ici
  *
  * Poser l'attribut dans un `useEffect` laisserait un éclair de thème sombre à
  * chaque démarrage : en export statique le HTML est produit au build, il ne peut
- * donc pas contenir la valeur stockée sur la machine. L'attribut est appliqué au
- * chargement du module, avant le premier rendu, et non dans un effet.
+ * donc pas contenir la valeur stockée sur la machine.
+ *
+ * L'attribut est donc appliqué par un **script bloquant** dans `layout.tsx`, qui
+ * s'exécute avant React. Il était auparavant posé ici, au chargement du module —
+ * donc avant l'hydratation elle aussi, mais React ne l'attendait pas et
+ * signalait « some attributes of the server rendered HTML didn't match »
+ * (mesuré le 2026-10-05). Le même décalage existait sur `lang` dans `i18n.ts`.
  */
 
 import { useSyncExternalStore } from 'react';
@@ -67,5 +72,6 @@ export function useApparence(): [Apparence, (a: Apparence) => void] {
   return [a, setApparence];
 }
 
-// Au chargement du module, donc avant le premier rendu : voir la note en tête.
-appliquer(lire());
+// L'attribut est posé par le script de `layout.tsx`, avant l'hydratation de
+// React — voir la note en tête. Le module garde la responsabilité de l'état, il
+// ne touche plus au `<html>` au chargement.

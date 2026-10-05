@@ -10,4 +10,7 @@ target/
 *.db-journal
 *.cbz
 downloads/
-*.tsbuildinfo
+*.tsbuildinfo# Scripts de mesure Playwright/CDP (sonde l'app ouverte sur le port 9223).
+# Regenables : aucune valeur pour le depot, et ils embarquent des chemins
+# propres a cette machine.
+.mesures/

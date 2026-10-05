@@ -440,15 +440,16 @@ function abonner(cb: () => void): () => void {
  * L'attribut n'était posé que dans `setLang`, donc **jamais au démarrage** :
  * mesuré le 2026-10-05, `localStorage` portait `en` et l'attribut valait `fr`.
  * Un lecteur d'écran annonçait donc le français pendant que l'écran affichait
- * l'anglais. Même correction de fond que pour le thème : appliquée au chargement
- * du module, pas dans un effet.
+ * l'anglais. Même correction de fond que pour le thème : l'attribut est posé par
+ * le script bloquant de `layout.tsx`, **avant** l'hydratation de React. Le poser
+ * au chargement du module — ce qu'il faisait — arrive trop tôt pour React, qui
+ * signalait « some attributes of the server rendered HTML didn't match ».
+ * Ici on ne le fait plus qu'au changement explicite de langue.
  */
 function alignerAttribut(): void {
   if (typeof document === 'undefined') return;
   document.documentElement.lang = lireLangue();
 }
-
-alignerAttribut();
 
 /** Change la langue et prévient tous les composants. */
 export function setLang(lang: Lang): void {

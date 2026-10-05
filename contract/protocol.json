@@ -32,6 +32,7 @@
       "enum": [
         "SOURCE_UNAVAILABLE",
         "CHALLENGE_REQUIRED",
+        "AUTH_REQUIRED",
         "PARSE_ERROR",
         "RATE_LIMITED",
         "TIMEOUT",

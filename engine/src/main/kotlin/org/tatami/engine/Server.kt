@@ -285,14 +285,28 @@ fun serve() {
                 err(id, "TIMEOUT", "exceeded ${timeoutMs}ms")
             } catch (e: SocketTimeoutException) {
                 err(id, "TIMEOUT", e.message ?: "socket timeout")
-            } catch (e: CloudFlareProtectionException) {
-                err(id, "CHALLENGE_REQUIRED", "challenge at ${e.url}", e.url)
             } catch (e: RateLimitedException) {
                 err(id, "RATE_LIMITED", e.message ?: "rate limited")
             } catch (e: ParamException) {
                 err(id, "PARSE_ERROR", e.message ?: "bad params")
             } catch (e: Throwable) {
-                err(id, "INTERNAL", "${e.javaClass.simpleName}: ${e.message}")
+                // Un seul chemin pour les deux exceptions que le parser **emballe** :
+                // `CloudFlareProtectionException` et `AuthRequiredException` finissent
+                // dans une `IOException` (« canceled due to … »), donc un `catch` sur
+                // leur type ne les voit jamais. Mesuré le 2026-10-05 : MANGANATO et
+                // KAGANE renvoyaient `INTERNAL` pour un vrai challenge Cloudflare, et
+                // la fenêtre de résolution ne s'ouvrait pas.
+                //
+                // On déballe ici plutôt que dans chaque `catch` : un seul endroit à
+                // maintenir, et le cas direct passe par la même voie (`t is X`).
+                val challenge = challengeDe(e)
+                if (challenge != null) {
+                    err(id, "CHALLENGE_REQUIRED", "challenge at $challenge", challenge)
+                } else if (authRequise(e) != null) {
+                    err(id, "AUTH_REQUIRED", "this source asks for an account")
+                } else {
+                    err(id, "INTERNAL", "${e.javaClass.simpleName}: ${e.message}")
+                }
             }
             // stdout = protocole uniquement (jamais de logs ici).
             synchronized(stdout) {

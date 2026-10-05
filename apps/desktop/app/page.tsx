@@ -515,18 +515,51 @@ function challengeUrl(raw: string): string | null {
   return m ? m[1] : null;
 }
 
-/** Traduit une erreur brute du moteur en un message court, sans l'URL technique.
- *  Les codes viennent de contract/protocol.json ; le reste est heuristique sur
- *  les messages d'exception observés (sources mortes : 404, hôte inconnu, 403). */
-function describeError(raw: string, sourceName: string): string {
+/** Signature du traducteur, pour les fonctions de module qui doivent parler.
+ *
+ *  La clé est typée comme dans `i18n.ts` : c'est ce qui fait échouer la
+ *  compilation si on passe une clé inexistante. Une `string` large accepterait
+ *  n'importe quelle faute de frappe en silence. */
+type Traduire = (key: MessageKey, vars?: Record<string, string | number>) => string;
+
+/**
+ * Traduit une erreur brute du moteur en un message court, sans l'URL technique.
+ *
+ * Les codes viennent de `contract/protocol.json` ; le reste est heuristique sur
+ * les messages d'exception observés (sources mortes : 404, hôte inconnu, 403).
+ *
+ * `t` est passé en paramètre parce que cette fonction vit hors du composant :
+ * elle n'a pas accès au contexte i18n. C'est aussi ce qui lui permet de
+ * supprimer 20 chaines en dur au profit de l'i18n.
+ */
+function describeError(raw: string, sourceName: string, t: Traduire): string {
   const s = raw.replace(/\s+/g, ' ').trim();
-  if (/TIMEOUT|timeout/i.test(s)) return `${sourceName} n'a pas répondu à temps. Site mort ou trop lent.`;
-  if (/CHALLENGE_REQUIRED/i.test(s)) return `${sourceName} demande une vérification anti-robot, pas encore gérée.`;
-  if (/RATE_LIMITED/i.test(s)) return `${sourceName} est surchargé. Réessaie dans quelques minutes.`;
-  if (/UnknownHostException/i.test(s)) return `Le domaine de ${sourceName} n'existe plus.`;
-  if (/404|NotFoundException/i.test(s)) return `${sourceName} renvoie 404 : la source est hors service.`;
-  if (/403/.test(s)) return `${sourceName} bloque les requêtes (403).`;
-  if (/500|502|503/.test(s)) return `${sourceName} a renvoyé une erreur serveur.`;
+  if (/TIMEOUT|timeout/i.test(s)) {
+    return t('erreur.delai', { source: sourceName });
+  }
+  if (/CHALLENGE_REQUIRED/i.test(s)) {
+    return t('erreur.verification', { source: sourceName });
+  }
+  // 401 : le site exige un compte. Ni un challenge ni une panne réseau — demander
+  // une vérification anti-robot ici serait futile, c'est un compte qu'il faut.
+  if (/AUTH_REQUIRED/i.test(s)) {
+    return t('erreur.compte.requis', { source: sourceName });
+  }
+  if (/RATE_LIMITED/i.test(s)) {
+    return t('erreur.surcharge', { source: sourceName });
+  }
+  if (/UnknownHostException/i.test(s)) {
+    return t('erreur.domaine', { source: sourceName });
+  }
+  if (/404|NotFoundException/i.test(s)) {
+    return t('erreur.404', { source: sourceName });
+  }
+  if (/403/.test(s)) {
+    return t('erreur.403', { source: sourceName });
+  }
+  if (/500|502|503/.test(s)) {
+    return t('erreur.serveur', { source: sourceName });
+  }
   const short = s.length > 140 ? `${s.slice(0, 140)}…` : s;
   return `${sourceName} : ${short}`;
 }
@@ -1217,7 +1250,7 @@ export default function Home() {
       // Une demande de vérification n'est PAS un échec : à résoudre par l'humain.
       if (selected && !url) {
         const code = raw.slice(0, raw.indexOf(':') > 0 ? raw.indexOf(':') : 12);
-        noteHealth([selected.name], code, describeError(raw, selected.name));
+        noteHealth([selected.name], code, describeError(raw, selected.name, t));
         setHealth(loadHealth());
       }
     } finally {
@@ -1551,7 +1584,7 @@ export default function Home() {
         });
         list = r.chapters ?? [];
       } catch (e) {
-        patch({ state: 'erreur', current: describeError(String(e), m.source) });
+        patch({ state: 'erreur', current: describeError(String(e), m.source, t) });
         continue;
       }
       patch({ total: list.length });
@@ -3628,7 +3661,7 @@ if (reader) {
 
         {error && selected && (
           <div className="alert">
-            <p>{describeError(error, selected.name)}</p>
+            <p>{describeError(error, selected.name, t)}</p>
             {challenge && (
               <p className="muted">
                 Ce site demande une vérification anti-robot. Résous-la dans la fenêtre

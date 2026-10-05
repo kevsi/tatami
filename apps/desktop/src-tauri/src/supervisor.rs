@@ -31,7 +31,12 @@ fn is_transient(result: &Result<Value, String>) -> bool {
     let Err(message) = result else {
         return false;
     };
-    if message.contains("PARSE_ERROR") || message.contains("CHALLENGE_REQUIRED") {
+    // `AUTH_REQUIRED` (tâche 0.13) n'est pas transitoire : c'est une décision
+    // du site, pas une panne. Le rejouer retenterait indéfiniment un 401.
+    if message.contains("PARSE_ERROR")
+        || message.contains("CHALLENGE_REQUIRED")
+        || message.contains("AUTH_REQUIRED")
+    {
         return false;
     }
     if message.starts_with("RATE_LIMITED") {

@@ -61,7 +61,7 @@ tatami/
 | Phase | Titre | Taille | Statut |
 |---|---|---|---|
 | 0 | Fondations et spike des risques | M | **En cours** — 0.1 à 0.11 faits, 0.12 partiel, 0.13 à 0.17 à faire |
-| 1 | Bibliothèque et lecteur | L | **Presque finie** — 1.1 à 1.7 faits, 1.8 à 1.10 à faire |
+| 1 | Bibliothèque et lecteur | L | **Presque finie** — 1.1 à 1.7 et 1.9 faits, 1.10 livré le 2026-10-05 ; reste 1.8 |
 | 2 | Hors ligne | M | **Faite** — file, reprise, CBZ, lecture hors ligne, assainissement et stats ; durcie le 2026-10-04 (un `.cbz` par chapitre, `sync_all`, verrou RAII) ; dossier de téléchargement au choix et pause de la file le 2026-10-05 |
 | 3 | Tâches de fond et notifications | M | **Pas commencée** |
 | 4 | Comptes et synchronisation | L | **Pas commencée** |
@@ -131,7 +131,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 - [x] **1.7** Signets.
 - [ ] **1.8** Lecteur paginé : sens de lecture, zoom, préchargement via le cache Rust, raccourcis clavier et souris.
 - [x] **1.9** Mode webtoon (défilement continu, liste virtualisée).
-- [ ] **1.10** Thèmes clair/sombre, i18n français et anglais en place.
+- [x] **1.10** Thèmes clair/sombre, i18n français et anglais en place. **Livré** le 2026-10-05 : l'i18n existait déjà (152 clés) ; le thème clair, non. Le travail réel n'était pas d'ajouter une palette mais de **tokeniser les 69 couleurs écrites en dur** hors tokens — sans quoi rien n'aurait basculé. `--reader-bg` reste identique dans les deux thèmes (pages blanches, un fond clair ferait disparaître leurs bords).
 
 **Critère de sortie** : recherche → ajout en favori → lecture → fermeture → reprise exacte à la réouverture, sur au moins 3 sources différentes, avec tests passants.
 
@@ -240,6 +240,42 @@ Règles données aux trois sessions :
    récupère ces fichiers dans un commit « docs » dédié.
 
 ## 9. Journal
+
+### 2026-10-05 — Thème clair (1.10)
+
+- Plan : ajouter le thème clair et le sélecteur d'apparence. Deux surprises
+  mesurées avant de coder, qui ont changé le contenu de la tâche.
+- **Le vrai travail était la tokenisation.** La feuille contenait **69 couleurs
+  écrites en dur** hors des tokens ; un bloc `[data-apparence='clair']` qui ne
+  surcharge que des tokens ne les aurait pas fait basculer. Il a fallu créer les
+  tokens manquants (`--line-strong`, `--accent-hover`, `--accent-dim-texte`,
+  `--danger-*`, `--succes-*`, `--favori`, `--voile`, `--sur-voile`…), puis
+  remplacer chaque usage. Contrôle final : **0** couleur en dur hors tokens (les
+  8 couleurs de catégories sont des données, pas du style, et restent).
+- **L'état devait vivre dans le module.** Première version : `useState` +
+  appel à `setApparence`. Le setter du composant était **écrasé par l'import du
+  module** — React n'était jamais prévenu, et le `<select>` affichait une valeur
+  que rien ne portait. Mesuré : `localStorage` restait vide après un clic. Corrigé
+  par `useSyncExternalStore`, comme la langue.
+- **Deux contrastes trouvés en mesurant, pas en relisant le CSS :**
+  - le texte posé sur `--accent-dim` : `--text` ne donnait que **2,98:1** en
+    thème clair. Il fallait son propre token (`--accent-dim-texte`), car un voile
+    à 12 % n'a pas la même profondeur sur fond noir et sur fond blanc → **9,22:1** ;
+  - la bordure de champ : `#b4b8c2` ne faisait que **1,99:1** sur blanc, la
+    bordure était invisible. Une bordure demande 3:1, pas 4,5:1 — ce n'est pas
+    du texte (WCAG 1.4.11) → `#8b8f99`, **3,24:1**.
+- Le **lecteur reste sombre dans les deux thèmes**, par choix : les pages sont
+  majoritairement blanches, un fond clair ferait disparaître leurs bords. Les
+  voiles posés sur les images aussi — ils sont faits pour être sombres.
+- Corrigé au passage : `document.documentElement.lang` valait `fr` pendant que
+  l'écran affichait l'anglais. L'attribut n'était posé que dans `setLang`, jamais
+  au démarrage ; un lecteur d'écran annonçait donc la mauvaise langue.
+- Preuve : bascule depuis l'interface, les deux thèmes, quatre vues capturées
+  plus le lecteur sur un chapitre réel. Contrastes mesurés —
+  texte/fond **21,00 → 16,17**, muted **7,37 → 4,59**, bouton primaire
+  **5,05 → 5,97**, accent **17,40 → 10,94**, chip pressé **14,97 → 9,22**,
+  bordure de champ **1,79 → 3,24**. `localStorage tatami.apparence = clair`
+  survit au rechargement. `tsc` 0, `lint` 0 erreur, `build` OK, `i18n:check` 152/152.
 
 ### 2026-10-05 — Dossier de téléchargement au choix + pause de la file
 

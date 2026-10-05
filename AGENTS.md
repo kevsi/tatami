@@ -288,6 +288,31 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   `--text` (foncé), il rendait **1,2:1**. Signalé à l'écran, pas par un calcul.
   Corollaire : à l'ajout d'un token, vérifier qu'il apparaît dans **les deux**
   blocs, sinon il hérite du thème sombre par pur oubli.
+- **Un module qui écrit dans le DOM au chargement arrive TROP TÔT pour React.**
+  `apparence.ts` et `i18n.ts` posaient `data-apparence` et `lang` sur `<html>`
+  au chargement du module. C'est avant l'hydratation — donc React signalait
+  « some attributes of the server rendered HTML didn't match », en boucle, sur
+  **chaque** navigation. La solution documentée Next.js : un script **bloquant**
+  dans `layout.tsx` + `suppressHydrationWarning` sur `<html>`. Corollaire : pour
+  lire l'attribut fautif, `console.error` ne suffit pas — il faut
+  `addInitScript` qui intercepte avant React, la fin du message porte le
+  diff (`+ lang="fr"` / `- lang="en"`).
+- **Supprimer le fichier de cache ne prouve pas qu'une requête est « froide ».**
+  Le cache HTTP de Chromium répond en 4 ms même fichier absent : j'ai conclu
+  « la précharge ne fait rien » après 30 s d'attente sur des pages déjà
+  Chargees, alors qu'elle écrivait bel et bien. Corollaire : la preuve est dans
+  l'**écriture disque** d'une page jamais demandée, ou alors `Network.setCacheDisabled`
+  via CDP. Chronométrer ne prouve rien tant qu'un second cache peut répondre.
+- **Une sonde qui rapporte « rien ne bouge » peut mesurer le mauvais élément.**
+  Quatre sondes de molette ont conclu « la molette est cassée » alors que le
+  curseur était resté au-dessus d'un conteneur à défilement propre (`.chip-wrap`).
+  Toujours `document.elementFromPoint` avant d'agir de la molette, et comparer au
+  max théorique (`scrollHeight - clientHeight`) avant de conclure « figé » :
+  173 px de course sur une page de 918 px, c'est le maximum, pas un blocage.
+- **Un delta de molette de 600 px traverse un webtoon entier** (mesuré : 71
+  pages). Le compteur de page suit la dernière image croisée via
+  `IntersectionObserver` — c'est le comportement voulu de 1.9, pas un défaut de
+  navigation. Mesurer une navigation à la molette demande un **petit** delta.
 - **Un token ne doit pas servir deux usages qui divergent.** `--appbar-fond` sert
   à la barre de titre **et** au compteur posé sur une couverture. Le faire
   basculer aurait éclairci le second — qui est posé sur une image et doit rester

@@ -154,7 +154,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
 - [x] **3.1** Planificateur Rust (tokio) : vérification périodique des nouveaux chapitres des favoris, avec limites de débit. **Livré** le 2026-10-05 : `scheduler.rs` + 19 tests, horloge et moteur injectés, débit par source avec retour arrière borné, état persisté en base, évènement `maj://nouveaux-chapitres`. Aucune dépendance ajoutée, aucun écran (3.2 décrit dans le journal, non implémenté). **Point ouvert mesuré le 2026-10-05 (session 1) :** le pire cas calculé de la passe est 20 sources × 20 s = **400 s**, et elle part **au démarrage**, en concurrence avec l'interface — alors que le moteur est séquentiel. Mesuré : `EXHENTAI` (la source qui « scanne tout son catalogue ») répond en **1 339 ms**, et une source rapide pendant/après répond en **620 ms** — donc les 20 s sont un **délai de politesse**, pas une durée d'appel, et le pire cas n'est pas 400 s de travail réel. **Décision : ne rien changer au code.** Le risque restant est `N × (durée réelle d'un appel)` avec un `timeoutSecs` de 60 s, à re-mesurer quand la bibliothèque comptera des centaines de favoris.
 - [x] **3.2** Flux « mises à jour » dans l'interface. **Livré et vérifié** le 2026-10-05. Écoute `maj://nouveaux-chapitres` (le planificateur est son seul producteur, et il n'émet **rien** quand il n'y a rien de neuf), fusionne par `(source, manga_url)` en cumulant les totaux — deux passes du même favori donnent des chapitres **différents**, pas les mêmes comptés deux fois. Persisté dans `localStorage` (plafonné à 200 entrées), donc visible après un redémarrage. **Le piège documenté par le moteur est vérifié explicitement** : un cas tronqué (`total` 47, 3 chapitres listés) affiche bien « 47 nouveaux chapitres » et « et 44 de plus » — donc l'écran lit `total`, jamais `chapitres.length`. Preuve : 2 entrées rendues, fusion 47 + 2 → 49 sans doublon, persistance vérifiée après rechargement, 0 erreur console, et les **singuliers** vérifiés à part dans les deux langues (1 mise / 1 chapitre / 1 autre). Ouvre la fiche par `loadChapters`, qui pose déjà `setOpenManga` et appelle `details` + `chapters` — un doublon écrit d'abord invoices un `setChapitresCharges` inexistant, que le compilateur a signalé.
-- [ ] **3.3** Notifications système (plugin Tauri, à vérifier dans la doc).
+- [x] **3.3** Notifications système. **Livré et vérifié** le 2026-10-05. Une alerte par passage de la veille, jamais une par chapitre ; silencieuse tant que la fenêtre a le focus ; réglage dans l'écran Réglages ; texte dans les deux langues. **Ce que la doc a révélé** : sur desktop, `sendNotification` du plugin ne passe **pas** par l'IPC — c'est `new window.Notification(...)` (l'API Web Notifications de WebView2). Le plugin Rust n'intervient que pour la **requête** de permission, et seulement quand `window.Notification.permission === 'default'`. Conséquence appliquée : `notification:allow-notify` a été **retiré** de la capability, mobile étant hors v1 (AGENTS.md §7).
 - [ ] **3.4** Icône dans la zone de notification, fermeture dans la zone de notification, démarrage automatique optionnel.
 - [x] **3.5** Réglages : fréquence, sources concernées, activation. **Livré et vérifié** le 2026-10-05. Deux commandes Tauri dans `scheduler.rs` (`reglages_planificateur`, `set_reglages_planificateur`) : le Rust avait déjà `Reglages` avec `bornes()`, et le commentaire sur le champ `actif` attendait explicitement cet écran. Écriture **partielle** — chaque paramètre est un `Option`, donc un champ omis garde sa valeur, mesuré : changer la période laisse les trois autres intacts. Les bornes affichées (`min`/`max`) **voyagent depuis Rust**, donc l'écran ne peut pas proposer une valeur que le moteur corrigerait en silence. Affiche aussi `dernier_pass`, parce que « actif » ne prouve rien : une veille active qui n'a pas tourné depuis trois jours semble active.
 
@@ -600,6 +600,115 @@ parsing par navigation est une latence **constante**, elle.
 - **3.3/3.4 — notifications système.** Le plugin Tauri n'est ni ajouté ni
   documenté ici (3.3 le dit « à vérifier dans la doc »). Rien à faire avant que
   3.2 ait un écran à notifier.
+
+### 2026-10-05 — Notifications système (3.3) — fait
+
+**Ce que la doc a changé dans le plan.** J'avais lu « plugin Tauri » et écrit
+une capability à tout hasard. En cherchant le code réel de `sendNotification`
+dans le chunk chargé :
+
+```js
+function sendNotification(options) {
+  new window.Notification(options.title, options);
+}
+```
+
+Sur desktop, **aucun IPC**. C'est l'API Web Notifications de WebView2. Et
+`isPermissionGranted()` interroge d'abord le navigateur, puis ne tombe sur
+`plugin:notification|is_permission_granted` que si `permission === 'default'`.
+Donc :
+
+- `notification:allow-notify` est **mobile seul** → **retiré** de la capability
+  (AGENTS.md §7 : strict minimum ; §5 : le mobile est hors v1) ;
+- `notification:allow-is-permission-granted` et `allow-request-permission` sont
+  gardés, parce qu'un profil WebView2 neuf est précisément dans l'état
+  `default` ;
+- le plugin Rust reste enregistré : c'est lui qui répond à cette requête, et il
+  portera le chemin mobile le jour où il existera.
+
+**Validation des capabilities — prouvée, pas supposée.** `tauri-build` refuse un
+permission inconnue : injecter `notification:allow-notify-FAUX` fait échouer le
+build en nommant `Permission ... not found`. Le build vert ne prouve donc pas
+seulement que ça compile — il prouve que les trois identifiants **existent**.
+Vérifié aussi dans le `capabilities.json` **généré**, qui ne contient que les
+quatre permissions voulues.
+
+**Rust décide quand, l'interface décide quoi dire.** Même raison que les motifs
+d'import de 2.4 : du texte dans Rust s'affiche tel quel dans les deux langues.
+Rust émet `maj://nouveaux-chapitres`, l'interface traduit et envoie.
+
+**Le réglage est dans `localStorage`, et c'est cohérent** avec la règle du dépôt :
+`localStorage` pour ce que l'interface lit, la base pour ce que le cœur applique.
+Ici le cœur n'applique rien — et surtout, **éteindre les notifications n'arrête
+pas la veille** : le flux « mises à jour » de 3.2 est une autre chose et continue
+de fonctionner. Une chaîne vide n'est jamais un sentinelle : `'1'` / `'0'`, et
+une clé absente vaut « actif ».
+
+**Silence quand la fenêtre a le focus.** `document.hasFocus()` plutôt que
+`getCurrentWindow().isFocused()` : attribut DOM standard, donc **aucune**
+permission à ajouter.
+
+**Un défaut de rédaction que seule la lecture de la sortie a révélé.** La
+première version composait « 12 nouveaux chapitres » + « ou plus », ce qui
+donnait « 12 nouveaux chapitres · ou plus » : correct en anglais, agrammatical en
+français. Le marqueur de troncature est désormais **dans** le fragment
+(`notif.c1p` / `notif.cnp`). Un fragment qui se tient seul est la seule façon de
+composer deux langues sans connaître la grammaire de l'autre.
+
+**Mesure sur l'app réelle** — l'échographie **enveloppe** le constructeur
+`window.Notification` et **notifie pour de vrai** ; le focus est la seule chose
+falsifiée, et c'est précisément le cas que la politesse doit couvrir :
+
+| | FR | EN |
+|---|---|---|
+| 1 chapitre, 1 série | `1 nouveau chapitre · No. 6` | `1 new chapter · No. 6` |
+| 2 chapitres, 2 séries | `2 nouveaux chapitres · 2 séries` | `2 new chapters · 2 series` |
+| 3 chapitres, 1 série | `3 nouveaux chapitres · No. 6` | `3 new chapters · No. 6` |
+| 12 chapitres, 5 séries, tronqué | `12 nouveaux chapitres ou plus · 5 séries` | `12 new chapters or more · 5 series` |
+| total nul | *(aucune)* | *(aucune)* |
+
+- `plugin:notification|is_permission_granted` → `true` (le plugin Rust répond) ;
+- fenêtre **active** → **0** notification ; sans focus → **1** ;
+- `tatami.notif = '0'` → **0** ; clé supprimée → **1** ;
+- une série répétée dans la passe est comptée **une fois** (5, pas 6) ;
+- `role="switch"` sur l'interrupteur, clic → `tatami.notif = "0"` ;
+- **0 erreur console**.
+
+**Un trou de plus dans la porte i18n.** Elle ne lisait que `page.tsx`, donc les
+six clés utilisées dans `app/notification.ts` étaient déclarées **mortes**. Elle
+lit maintenant **tous** les modules de `app/`, sauf le dictionnaire — y inclure
+`i18n.ts` ferait compter toute clé comme utilisée et la porte ne crierait plus
+jamais. Prouvée mordante après le changement.
+
+`cargo test` **121** (100 + 1 + 20) · `fmt` 0 · `clippy --all-targets -D
+warnings` 0 · `tsc` 0 · `lint` 0 erreur (4 warnings antérieurs) · `build` OK ·
+`i18n` 232 clés, aucune morte, aucun placeholder nu.
+
+### 2026-10-05 — Notifications système (3.3) — mini-plan
+
+Doc officielle lue avant d'écrire quoi que ce soit (règle d'or n° 2) :
+<https://v2.tauri.app/plugin/notification/> et docs.rs 2.5.1.
+
+1. **Qui envoie ?** Rust décide **quand**, l'interface décide **quoi dire**.
+   Le planificateur émet déjà `maj://nouveaux-chapitres` ; le texte part de
+   l'interface, seule couche à connaître les langues. Même raison que les motifs
+   d'import de 2.4 : du français dans Rust s'affiche dans un écran anglais.
+2. **Une notification par passe**, pas par chapitre — une passe peut en trouver
+   12 dans 5 séries, et 12 toasts d'un coup sont un utilisateur hostile.
+3. **Silence quand la fenêtre a le focus.** Un utilisateur en plein chapitre ne
+   veut pas être interrompu ; `document.hasFocus()` suffit et ne demande
+   **aucune permission** Tauri.
+4. **Un réglage** dans le panneau 3.5, sinon l'utilisateur ne peut pas éteindre
+   ce qu'il n'a pas demandé.
+5. **Porte** : `pnpm i18n:check` (aucune clé morte) + une clé par variante de
+   pluriel, et l'erreur du plugin **visible** — un `show()` qui échoue en
+   silence est une notification qui n'arrive jamais.
+
+**Limite connue, mesurée dans la doc** : sur Windows le plugin ne fonctionne que
+pour une application **installée** ; en développement c'est le nom et l'icône de
+PowerShell qui s'affichent. La preuve sera donc « ça part », pas « ça a la bonne
+identité ».
+
 
 ### 2026-10-05 — Tâche 5.3 : tests de contrat sur réponses enregistrées + CI
 

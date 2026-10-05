@@ -70,6 +70,28 @@ const FR = {
   'reglages.reseau.note':
     'Certaines sources scannent tout leur catalogue avant de répondre (EXHENTA : 36 s). Au-delà du délai, la source est signalée hors service plutôt que de faire attendre.',
 
+  // --- Notifications système (tâche 3.3) ---
+  //
+  // Les pluriels sont des **clés séparées**, jamais une clé unique : le français
+  // et l'anglais n'ont pas la même règle, et « dans 1 séries » se voit.
+  // Le corps est composé de fragments traduits séparément (`notif.c*` puis
+  // `notif.s*`) plutôt que d'une phrase à deux accolades, parce qu'un pluriel
+  // imbriqué dans une seule clé finit toujours par mentir sur l'une des deux
+  // langues.
+  'notif.titre': 'Nouveaux chapitres',
+  'notif.titre.panneau': 'Notifications système',
+  'notif.c1': '1 nouveau chapitre',
+  'notif.cn': '{n} nouveaux chapitres',
+  'notif.c1p': '1 nouveau chapitre ou plus',
+  'notif.cnp': '{n} nouveaux chapitres ou plus',
+  'notif.s1': '1 série',
+  'notif.sn': '{s} séries',
+  'notif.reglage': 'Prévenir quand un passage en trouve',
+  'notif.reglage.note':
+    'Une seule alerte par passage, jamais une par chapitre. Couper cette option n’arrête pas la veille.',
+  'notif.reglage.note2':
+    'Tant que la fenêtre a le focus, l’alerte reste muette : le flux « mises à jour » de l’accueil montre déjà la même chose.',
+
   // --- Durées (partagées par les réglages du planificateur) ---
   'duree.min': '{n} min',
   'duree.heure1': '1 h',
@@ -371,6 +393,21 @@ const EN: Record<Cle, string> = {
   'reglages.reseau.secondes': '{n} seconds',
   'reglages.reseau.note':
     'Some sources scan their whole catalogue before answering (EXHENTA: 36 s). Past the timeout the source is marked as down rather than made to wait.',
+
+  // --- System notifications (task 3.3) ---
+  'notif.titre': 'New chapters',
+  'notif.titre.panneau': 'System notifications',
+  'notif.c1': '1 new chapter',
+  'notif.cn': '{n} new chapters',
+  'notif.c1p': '1 new chapter or more',
+  'notif.cnp': '{n} new chapters or more',
+  'notif.s1': '1 series',
+  'notif.sn': '{s} series',
+  'notif.reglage': 'Tell me when a run finds something',
+  'notif.reglage.note':
+    'One alert per run, never one per chapter. Turning this off does not stop the watch.',
+  'notif.reglage.note2':
+    'While the window has focus the alert stays quiet: the “updates” feed on the home screen already shows the same thing.',
 
   // --- Durations (shared with the scheduler settings) ---
   'duree.min': '{n} min',

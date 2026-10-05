@@ -32,3 +32,4 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 # téléchargements. Plugin officiel Tauri v2 ; permission declaree dans
 # `capabilities/default.json` (ADR 0004).
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"

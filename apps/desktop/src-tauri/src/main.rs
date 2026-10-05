@@ -125,6 +125,11 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Tâche 3.3. L'enregistrement est indispensable même si l'envoi part de
+        // l'interface : `sendNotification` est un IPC vers la commande Rust du
+        // plugin, et sans `init()` cette commande n'existe pas. Une capability
+        // déclarée ne suffit donc pas — elle autorise une commande absente.
+        .plugin(tauri_plugin_notification::init())
         .manage(sup.clone())
         .manage(Arc::new(store))
         .manage(cache.clone())

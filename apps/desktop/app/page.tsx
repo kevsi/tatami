@@ -4,9 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from '@tauri-apps/plugin-notification';
 
 import { useApparence } from './apparence';
 import { useI18n, type MessageKey } from './i18n';
+import { notifActive, notifie, setNotifActive, texteNotification } from './notification';
 
 type Source = { name: string; lang: string };
 type Manga = {
@@ -876,6 +882,11 @@ export default function Home() {
   // et non des valeurs par défaut inventées.
   const [plan, setPlan] = useState<PlanReglages | null>(null);
   const [planErreur, setPlanErreur] = useState<string | null>(null);
+  // Tâche 3.3 — l'état du réglage est lu **une fois** au montage et recopié ici.
+  // Le recopier dans un état le ferait diverger de `localStorage` dès qu'une
+  // autre fenêtre (ou un walk de mesure) écrit la clé : l'interrupteur
+  // afficherait alors « actif » pendant que plus rien n'est envoyé.
+  const [notif, setNotif] = useState(notifActive());
   // Ce qui n'a pas encore été regardé. Une valeur dérivée, pas un second état :
   // deux compteurs qui peuvent divergir sont deux bugs en attente.
   const majNonVus = maj.filter((m) => !m.vue).length;
@@ -1077,6 +1088,13 @@ export default function Home() {
       const passe = event.payload;
       if (!passe || !Array.isArray(passe.nouveaux)) return;
       const maintenant = Date.now();
+
+      // Tâche 3.3 — une notification **par passe**, pas par chapitre. Une passe
+      // peut en trouver 12 dans 5 séries ; douze alertes d'un coup sont pires
+      // qu'aucune. Le rejet est sans conséquence ici : le flux « mises à »
+      // n'en dépend pas, et notifier est un bonus.
+      void notifie(texteNotification(t, passe.nouveaux));
+
       setMaj((precedent) => {
         const cumul = new Map<string, MajItem>();
         for (const item of precedent) {
@@ -3271,6 +3289,38 @@ useEffect(() => {
               <p className="muted">{t('plan.note')}</p>
             </>
           )}
+        </section>
+
+        {/* Tâche 3.3 — notifications système.
+         *
+         *  Panneau **séparé** et non une ligne de plus dans celui du
+         *  planificateur : les deux réglages ne sont pas le même sujet. « Chercher
+         *  les nouveaux chapitres » décide s'il y a du neuf à trouver ;
+         *  « prévenir » décide si on interrompt l'utilisateur. Un seul interrupteur
+         *  pour les deux rendrait impossible « chercher sans déranger », qui est
+         *  le réglage que les gens servent.
+         *
+         *  Le réglage est **local** (`localStorage`) : c'est l'interface qui
+         *  envoie, donc le cœur n'a rien à appliquer. L'éteindre n'arrête pas la
+         *  veille, seulement l'alerte.
+         */}
+        <section className="panel">
+          <h2>{t('notif.titre.panneau')}</h2>
+          <label className="switch-row">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={notif}
+              onChange={(e) => {
+                const v = e.target.checked;
+                setNotifActive(v);
+                setNotif(v);
+              }}
+            />
+            <span>{t('notif.reglage')}</span>
+          </label>
+          <p className="muted">{t('notif.reglage.note')}</p>
+          <p className="muted">{t('notif.reglage.note2')}</p>
         </section>
 
         <section className="panel">

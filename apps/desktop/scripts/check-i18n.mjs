@@ -8,10 +8,10 @@
 // l'interface, silencieusement.
 //
 // Ce script échoue si une régression réapparaît. Il reste volontairement
-// grossier : il lit les **littéraux** de `page.tsx`. Le compilateur reste la
-// vraie porte — `tsc` tranche quand une clé est absente du dictionnaire, ce
+// grossier : il lit les **littéraux** des modules de l'app. Le compilateur reste
+// la vraie porte — `tsc` tranche quand une clé est absente du dictionnaire, ce
 // qu'aucune regex ne peut faire.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -19,7 +19,23 @@ const ici = dirname(fileURLToPath(import.meta.url));
 const racine = join(ici, '..');
 
 const i18n = readFileSync(join(racine, 'app', 'i18n.ts'), 'utf8');
-const page = readFileSync(join(racine, 'app', 'page.tsx'), 'utf8');
+
+/** Tous les modules de l'app, **sauf le dictionnaire**.
+ *
+ *  Mesuré le 2026-10-05 : la porte ne lisait que `page.tsx`, donc les six clés
+ *  de la tâche 3.3 — utilisées dans `app/notification.ts` — étaient déclarées
+ *  mortes alors qu'elles sont affichées. Un écran peut livedans `page.tsx` dès
+ *  qu'on extrait un module ; la porte doit suivre.
+ *
+ *  `i18n.ts` est exclu : y figurer ferait compter **toute** clé comme utilisée,
+ *  puisque c'est là qu'elles sont définies — la porte ne crierait plus jamais.
+ */
+const modules = readdirSync(join(racine, 'app'))
+  .filter((f) => /\.tsx?$/.test(f) && f !== 'i18n.ts')
+  .sort();
+const page = modules.map((f) => readFileSync(join(racine, 'app', f), 'utf8')).join('\n');
+if (!modules.includes('page.tsx')) throw new Error('page.tsx absent de app/');
+
 
 /** Bornes FR et EN d'un dictionnaire. */
 function bornes(source, nom) {

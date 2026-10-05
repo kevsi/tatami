@@ -251,6 +251,40 @@ Sont concernées : protocole du sidecar, schéma de base de données, stockage d
 
 Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de sonde ou du CSS de lecteur.
 
+- **La doc d'un plugin dit ce qu'il expose, pas ce que fait le code.** Le
+  plugin `notification` de Tauri v2 expose `sendNotification`, et sa doc montre
+  `isPermissionGranted → requestPermission → sendNotification`. Sur desktop,
+  `sendNotification` ne fait que `new window.Notification(...)` : **aucun IPC**.
+  L'IPC n'est atteint que par la *requête* de permission, et seulement quand
+  `window.Notification.permission === 'default'`. Conséquence appliquée : j'ai
+  retiré `notification:allow-notify` de la capability, mobile étant hors v1.
+  Règle : avant d'ajouter une permission, **lire le code du chunk** — pas seulement
+  la liste des commandes exposées.
+- **`tauri-build` valide les permissions, et ça se prouve.** Injecter
+  `notification:allow-notify-FAUX` fait échouer le build en nommant
+  `Permission … not found` et la liste des valides. Un build vert prouve donc que
+  les identifiants existent, pas seulement que ça compile. On peut aussi lire le
+  `capabilities.json` **généré** dans `target/…/out/` : c'est le jeu effectif,
+  horodaté.
+- **Une capability n'autorise pas une commande absente.** `sendNotification`
+  peut appeler `plugin:notification|notify` sans que le plugin soit enregistré :
+  sans `.plugin(tauri_plugin_notification::init())`, la commande n'existe pas et
+  la capability est inutile.
+- **Composer deux phrases avec `·` casse l'une des deux langues.** « 12 nouveaux
+  chapitres » + « ou plus » donnait « 12 nouveaux chapitres · ou plus » : correct
+  en anglais, agrammatical en français. Un fragment qui **se tient seul** est la
+  seule façon de composer sans connaître la grammaire de l'autre ; un pluriel
+  imbriqué dans une clé unique ment toujours sur l'une des deux.
+- **Une porte qui ne lit qu'un seul fichier a un angle mort.** `check-i18n.mjs`
+  ne lisait que `page.tsx` : dès qu'un écran vit dans un module, ses clés sont
+  déclarées mortes. Elle lit maintenant **tous** les modules de `app/` — sauf le
+  dictionnaire, sinon toute clé y serait comptée comme utilisée et la porte ne
+  crierait plus jamais.
+- **Un décompte dépend de la clé choisie.** Une passe peut mentionner la même
+  série deux fois ; compter les entrées aurait annoncé « 6 séries » pour 5.
+  Compter un `Set` de `(source, url)`.
+
+
 - **Un dialogue natif n'est pas shimable : `window.__TAURI_INTERNALS__` et sa
   propriété `invoke` sont gelés.** Mesuré : `writable: false, configurable:
   false` sur les deux. Une assignation `invoke = …` échoue **en silence** (le

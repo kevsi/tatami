@@ -69,8 +69,13 @@
   /* Voile posé SUR une image (cœur, pastilles) : toujours sombre, donc il
      reste le même dans les deux thèmes. */
   --voile: rgba(0, 0, 0, 0.72);
-  /* Voile de la barre de titre et des bandeaux de section. */
+  /* Barre de titre et bandeaux de section : un voile translucide, pour que le
+     contenu passe dessous pendant le défilement. */
   --appbar-fond: rgba(0, 0, 0, 0.9);
+  /* Compteur posé sur une couverture : il doit ressortir de l'image, donc son
+     fond reste sombre dans les deux thèmes. Distinct de `--appbar-fond`, qui
+     bascule. */
+  --pastille-fond: rgba(0, 0, 0, 0.82);
   /* Texte posé sur un voile sombre : reste clair dans les deux thèmes. */
   --sur-voile: #ffffff;
   /* Palour du bouton de fermeture du toast, au survol. */
@@ -161,6 +166,13 @@
   --notice-surface: #ffffff;
   --notice-line: #14663d;
   --notice-ink: #14663d;
+
+  /* Barre de titre. Elle **bascule** : la garder noire sur un fond clair
+     faisait une barre sombre en pleine page blanche, et les onglets — dont le
+     texte vient de `--text`, donc foncé — devenaient illisibles dessus.
+     Mesuré le 2026-10-05 : le texte d'onglet valait `rgb(22,24,29)` sur un
+     fond `rgba(0,0,0,0.9)`, soit 1,2:1. */
+  --appbar-fond: rgba(255, 255, 255, 0.92);
 
   /* Les ombres deviennent douces : sur fond blanc, une ombre noire à 60 %
      donne l'impression d'un contour sale. */
@@ -994,8 +1006,10 @@ button:disabled {
   padding: 3px 8px;
   font-size: 10.5px;
   font-weight: 700;
-  color: var(--text);
-  background: var(--appbar-fond);
+  /* Posé SUR une couverture : le texte reste clair sur un fond sombre, dans
+     les deux thèmes. */
+  color: var(--sur-voile);
+  background: var(--pastille-fond);
   border-top-left-radius: var(--r-sm);
 }
 

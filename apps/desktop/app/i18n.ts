@@ -71,6 +71,11 @@ const FR = {
     'Certaines sources scannent tout leur catalogue avant de répondre (EXHENTA : 36 s). Au-delà du délai, la source est signalée hors service plutôt que de faire attendre.',
 
   // --- Réglages : langue
+  'reglages.apparence': 'Apparence',
+  'reglages.apparence.sombre': 'Sombre',
+  'reglages.apparence.clair': 'Clair',
+  'reglages.apparence.note':
+    'Le lecteur reste sombre dans les deux thèmes : les pages sont majoritairement blanches, un fond clair ferait disparaître leurs bords.',
   'reglages.langue': 'Langue',
   'reglages.langue.fr': 'Français',
   'reglages.langue.en': 'English',
@@ -265,6 +270,11 @@ const EN: Record<Cle, string> = {
   'reglages.reseau.note':
     'Some sources scan their whole catalogue before answering (EXHENTA: 36 s). Past the timeout the source is marked as down rather than made to wait.',
 
+  'reglages.apparence': 'Appearance',
+  'reglages.apparence.sombre': 'Dark',
+  'reglages.apparence.clair': 'Light',
+  'reglages.apparence.note':
+    'The reader stays dark in both themes: pages are mostly white, and a light background would make their edges disappear.',
   'reglages.langue': 'Language',
   'reglages.langue.fr': 'Français',
   'reglages.langue.en': 'English',
@@ -424,13 +434,29 @@ function abonner(cb: () => void): () => void {
   return () => abonnes.delete(cb);
 }
 
+/**
+ * Aligne `document.documentElement.lang` sur la langue réellement stockée.
+ *
+ * L'attribut n'était posé que dans `setLang`, donc **jamais au démarrage** :
+ * mesuré le 2026-10-05, `localStorage` portait `en` et l'attribut valait `fr`.
+ * Un lecteur d'écran annonçait donc le français pendant que l'écran affichait
+ * l'anglais. Même correction de fond que pour le thème : appliquée au chargement
+ * du module, pas dans un effet.
+ */
+function alignerAttribut(): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = lireLangue();
+}
+
+alignerAttribut();
+
 /** Change la langue et prévient tous les composants. */
 export function setLang(lang: Lang): void {
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(LANG_KEY, lang);
-    // Utile pour les lecteurs d'écran et le rendu des chiffres.
-    document.documentElement.lang = lang;
   }
+  // Utile pour les lecteurs d'écran et le rendu des chiffres.
+  alignerAttribut();
   abonnes.forEach((cb) => cb());
 }
 

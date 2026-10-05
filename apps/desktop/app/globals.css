@@ -32,7 +32,49 @@
   --accent: #366ad3;
   --accent-dim: rgba(54, 106, 211, 0.16);
   --accent-ink: #ffffff;
+  --accent-hover: #4278e0;
+  /* Texte posé SUR `--accent-dim`. Doit être un token et non `--text` : sur le
+     fond sombre, `--accent-dim` est un voile à peine perceptible et le texte
+     clair passe ; sur le fond clair, ce même voile est pâle et un texte foncé
+     gris ne suffirait pas. Mesuré le 2026-10-05 : 2,98:1 avec `--text` en thème
+     clair, 10,7:1 avec ce bleu. */
+  --accent-dim-texte: #ffffff;
   --danger: #f13e3e;
+  --danger-ink: #ffffff;
+
+  /* Bordure des contrôles (champs, segments, selects). Distincte de `--line` :
+     c'est elle qui rend un champ lisible dans les deux thèmes. */
+  --line-strong: #444444;
+
+  /* Fond du lecteur. **Volontairement identique dans les deux thèmes** : les
+     pages sont majoritairement blanches, et un fond clair ferait disparaître
+     leurs bords. On ne change pas ce que le lecteur fait de ses images. */
+  --reader-bg: #16151d;
+
+  /* Couleurs d'état. Elles dépendent du fond : un rouge de texte lisible sur
+     noir est illisible sur blanc, et l'inverse est vrai aussi. Un seul jeu de
+     tokens, deux jeux de valeurs, plutôt que des couleurs en dur que le thème
+     clair laisserait passer. */
+  --danger-texte: #ffb0b0;
+  --danger-bordure: rgba(241, 62, 62, 0.35);
+  --danger-fond: rgba(241, 62, 62, 0.12);
+  --danger-survol: #ff5f5f;
+  --succes-texte: #a9e9c4;
+  --succes-bordure: rgba(91, 214, 141, 0.35);
+  --succes-fond: rgba(91, 214, 141, 0.12);
+  /* Cœur de favori : rose saturé, visible sur les deux fonds. */
+  --favori: #ff6b7f;
+  /* Texte « en cours de téléchargement » : un bleu lisible sur les deux. */
+  --encours-texte: var(--encours-texte);
+  /* Voile posé SUR une image (cœur, pastilles) : toujours sombre, donc il
+     reste le même dans les deux thèmes. */
+  --voile: rgba(0, 0, 0, 0.72);
+  /* Voile de la barre de titre et des bandeaux de section. */
+  --appbar-fond: rgba(0, 0, 0, 0.9);
+  /* Texte posé sur un voile sombre : reste clair dans les deux thèmes. */
+  --sur-voile: #ffffff;
+  /* Palour du bouton de fermeture du toast, au survol. */
+  --sur-voile-clair: rgba(255, 255, 255, 0.1);
 
   /* Notification (toast).
      Le fond est **opaque**, pas une teinte translucide : le toast flotte au-dessus
@@ -62,6 +104,70 @@
   --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 
+/* ================= Thème clair =================
+ *
+ * Il ne surcharge que les **tokens**, jamais les règles. C'est tout l'intérêt :
+ * une couleur écrite en dur ne bascule pas, et il y en avait 69 hors tokens
+ * (mesuré le 2026-10-05) — d'où le travail de tokenisation qui a précédé.
+ *
+ * Le lecteur ne change pas (`--reader-bg` est volontairement identique) : les
+ * pages sont majoritairement blanches, un fond clair ferait disparaître leurs
+ * bords. Les voiles posés sur les images non plus : ils sont faits pour être
+ * sombres.
+ */
+:root[data-apparence='clair'] {
+  /* Surfaces : le texte est le foncé, l'ancien texte devient le fond. */
+  --bg: #f4f4f6;
+  --bg-elev: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f7f7f9;
+  --surface-3: #e9eaee;
+  --line: #d6d8de;
+  --line-soft: #e7e8ed;
+  /* Bordure de champ : il faut 3:1 contre le fond (WCAG 1.4.11), pas 4,5:1 —
+     ce n'est pas du texte. `#b4b8c2` ne donnait que 1,99:1 sur blanc, la
+     bordure était invisible. */
+  --line-strong: #8b8f99;
+  --field: #ffffff;
+
+  /* Textes */
+  --text: #16181d;
+  --text-2: #3f434c;
+  --text-3: #6a6f7a;
+
+  /* Accents : l'accent doit rester assez foncé pour porter du texte blanc.
+     Mesuré : #2f5fc0 sur blanc donne 6,3:1, l'ancien #366ad3 n'en donnait que
+     4,7:1 et passait tout juste. */
+  --accent: #2f5fc0;
+  --accent-dim: rgba(47, 95, 192, 0.12);
+  --accent-ink: #ffffff;
+  --accent-hover: #244d9e;
+  --accent-dim-texte: #163a7a;
+  --danger: #c92a2a;
+  --danger-ink: #ffffff;
+
+  /* Couleurs d'état : versions foncées, lisibles sur blanc. */
+  --danger-texte: #a11b1b;
+  --danger-bordure: rgba(201, 42, 42, 0.4);
+  --danger-fond: rgba(201, 42, 42, 0.09);
+  --danger-survol: #e03a3a;
+  --succes-texte: #14663d;
+  --succes-bordure: rgba(20, 102, 61, 0.4);
+  --succes-fond: rgba(20, 102, 61, 0.09);
+  --favori: #d62440;
+  --encours-texte: #2f5fc0;
+
+  /* Notification : fond opaque clair, texte foncé. */
+  --notice-surface: #ffffff;
+  --notice-line: #14663d;
+  --notice-ink: #14663d;
+
+  /* Les ombres deviennent douces : sur fond blanc, une ombre noire à 60 %
+     donne l'impression d'un contour sale. */
+  --shadow: 0 16px 40px rgba(22, 24, 29, 0.14);
+  --shadow-sm: 0 2px 10px rgba(22, 24, 29, 0.1);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -82,7 +188,7 @@ body {
 
 ::selection {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 
 button {
@@ -123,7 +229,7 @@ button:disabled {
   gap: var(--s4);
   margin: 0 calc(-1 * var(--s5)) var(--s5);
   padding: 14px var(--s5);
-  background: rgba(0, 0, 0, 0.9);
+  background: var(--appbar-fond);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line-soft);
 }
@@ -236,15 +342,15 @@ button:disabled {
 }
 
 /* ---------------- Champs ----------------
-   Pilules : bg #111, bordure 2 px #444 — valeurs relevées sur les `<select>`
-   du lecteur du site. */
+   Pilules : fond `--field`, bordure 2 px `--line-strong` — formes relevées sur
+   les `<select>` du lecteur du site. */
 .search,
 .field select,
 .chapter-select,
 .page-jump input {
   background: var(--field);
   color: var(--text-2);
-  border: 2px solid #444444;
+  border: 2px solid var(--line-strong);
   border-radius: var(--r-pill);
   padding: 8px 16px;
   font: inherit;
@@ -314,12 +420,12 @@ button:disabled {
 .chip[aria-pressed='true'] {
   background: var(--accent-dim);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-dim-texte);
 }
 
 .chip-clear {
-  color: #ffb0b6;
-  border-color: rgba(241, 62, 62, 0.4);
+  color: var(--danger-texte);
+  border-color: var(--danger-bordure);
 }
 
 .chips-note {
@@ -342,8 +448,8 @@ button:disabled {
 }
 
 .btn:hover:not(:disabled) {
-  background: #3d3d3d;
-  border-color: #383838;
+  background: var(--surface-3);
+  border-color: var(--line-strong);
   color: var(--text);
 }
 
@@ -358,13 +464,13 @@ button:disabled {
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #4278e0;
-  border-color: #4278e0;
-  color: #fff;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--accent-ink);
 }
 
 .btn-ghost {
@@ -388,12 +494,12 @@ button:disabled {
 .btn-danger {
   background: var(--danger);
   border-color: var(--danger);
-  color: #fff;
+  color: var(--danger-ink);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #ff5f5f;
-  border-color: #ff5f5f;
+  background: var(--danger-survol);
+  border-color: var(--danger-survol);
 }
 
 /* ---------------- Liste des sources ----------------
@@ -646,6 +752,9 @@ button:disabled {
   height: 9px;
   border-radius: 999px;
   flex: none;
+  /* Liseré : sans lui, une pastille claire sur un fond clair disparaît dans
+     le thème clair. `--line` s'y adapte tout seul. */
+  box-shadow: 0 0 0 1px var(--line);
 }
 
 .cat-dot.on-cover {
@@ -746,7 +855,7 @@ button:disabled {
 
 .card.dead {
   opacity: 0.5;
-  border-color: rgba(241, 62, 62, 0.3);
+  border-color: var(--danger-bordure);
 }
 
 .card.dead:hover {
@@ -755,7 +864,7 @@ button:disabled {
 
 .dead-badge {
   color: var(--danger);
-  border-color: rgba(241, 62, 62, 0.45);
+  border-color: var(--danger-bordure);
 }
 
 .card.dead .badge:last-child {
@@ -809,7 +918,7 @@ button:disabled {
   font-size: 15px;
   line-height: 1;
   color: var(--text-3);
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--voile);
   backdrop-filter: blur(4px);
   opacity: 0;
   transition: opacity 0.12s ease, color 0.12s ease;
@@ -826,7 +935,7 @@ button:disabled {
 }
 
 .fav-btn.on {
-  color: #ff6b7f;
+  color: var(--favori);
 }
 
 .fav-remove {
@@ -841,8 +950,8 @@ button:disabled {
   justify-content: center;
   border-radius: var(--r-sm);
   font-size: 15px;
-  color: #ff6b7f;
-  background: rgba(0, 0, 0, 0.72);
+  color: var(--favori);
+  background: var(--voile);
   backdrop-filter: blur(4px);
 }
 
@@ -886,7 +995,7 @@ button:disabled {
   font-size: 10.5px;
   font-weight: 700;
   color: var(--text);
-  background: rgba(0, 0, 0, 0.82);
+  background: var(--appbar-fond);
   border-top-left-radius: var(--r-sm);
 }
 
@@ -943,8 +1052,8 @@ button:disabled {
   height: 24px;
   border-radius: var(--r-sm);
   border: 1px solid var(--line);
-  background: rgba(0, 0, 0, 0.75);
-  color: #fff;
+  background: var(--voile);
+  color: var(--sur-voile);
   font-size: 14px;
   font-weight: 700;
   display: flex;
@@ -1195,7 +1304,7 @@ button:disabled {
   width: 68px;
   background: var(--field);
   color: var(--text-2);
-  border: 2px solid #444444;
+  border: 2px solid var(--line-strong);
   border-radius: var(--r-pill);
   padding: 6px 10px;
   font: inherit;
@@ -1216,8 +1325,8 @@ button:disabled {
   height: calc(100vh - var(--s5) * 2);
   margin: 0 calc(-1 * var(--s5));
   padding: 0 var(--s5);
-  /* Fond du lecteur sur le site : #16151d, pas du noir. */
-  background: #16151d;
+  /* Fond du lecteur : --reader-bg, identique dans les deux themes. */
+  background: var(--reader-bg);
 }
 
 .reader-bar {
@@ -1229,7 +1338,7 @@ button:disabled {
   flex-wrap: wrap;
   padding: 12px var(--s5);
   border-bottom: 1px solid var(--line-soft);
-  background: #000000;
+  background: var(--reader-bg);
 }
 
 .reader-title {
@@ -1253,7 +1362,7 @@ button:disabled {
   display: flex;
   gap: 2px;
   background: var(--field);
-  border: 2px solid #444444;
+  border: 2px solid var(--line-strong);
   border-radius: var(--r-pill);
   padding: 2px;
 }
@@ -1272,11 +1381,11 @@ button:disabled {
 
 .seg-btn[aria-pressed='true'] {
   background: var(--surface-3);
-  color: #fff;
+  color: var(--text);
 }
 
 .seg-btn.solo {
-  border: 2px solid #444444;
+  border: 2px solid var(--line-strong);
   background: var(--field);
 }
 
@@ -1319,7 +1428,7 @@ button:disabled {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: #16151d;
+  background: var(--reader-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1598,7 +1707,7 @@ button:disabled {
 }
 
 .confirm::backdrop {
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--voile);
 }
 
 .confirm h3 {
@@ -1618,8 +1727,8 @@ button:disabled {
 }
 
 .state-termine {
-  color: #5bd68d;
-  border-color: rgba(91, 214, 141, 0.4);
+  color: var(--succes-texte);
+  border-color: var(--succes-bordure);
 }
 
 .state-attente {
@@ -1627,12 +1736,12 @@ button:disabled {
 }
 
 .state-erreur {
-  color: #ff8080;
-  border-color: rgba(241, 62, 62, 0.4);
+  color: var(--danger-texte);
+  border-color: var(--danger-bordure);
 }
 
 .state-telechargement {
-  color: #7ba4f0;
+  color: var(--encours-texte);
   border-color: var(--accent);
 }
 
@@ -1754,15 +1863,15 @@ button:disabled {
 }
 
 .error {
-  background: rgba(241, 62, 62, 0.12);
-  border: 1px solid rgba(241, 62, 62, 0.35);
-  color: #ffb0b0;
+  background: var(--danger-fond);
+  border: 1px solid var(--danger-bordure);
+  color: var(--danger-texte);
 }
 
 .notice {
-  background: rgba(91, 214, 141, 0.12);
-  border: 1px solid rgba(91, 214, 141, 0.35);
-  color: #a9e9c4;
+  background: var(--succes-fond);
+  border: 1px solid var(--succes-bordure);
+  color: var(--succes-texte);
 }
 
 /* ---------- Notifications (toasts) ----------
@@ -1834,7 +1943,7 @@ button:disabled {
 
 .toast-fermer:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--sur-voile-clair);
 }
 
 .toast-fermer:focus-visible {
@@ -1860,8 +1969,8 @@ button:disabled {
 }
 
 .alert {
-  background: rgba(241, 62, 62, 0.1);
-  border: 1px solid rgba(241, 62, 62, 0.3);
+  background: var(--danger-fond);
+  border: 1px solid var(--danger-bordure);
   border-radius: var(--r-sm);
   padding: var(--s4);
   margin-bottom: var(--s4);
@@ -1870,7 +1979,7 @@ button:disabled {
 .alert p {
   margin: 0 0 var(--s3);
   font-size: 14px;
-  color: #ffc4c4;
+  color: var(--danger-texte);
 }
 
 .alert-actions {

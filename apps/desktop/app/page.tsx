@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 
+import { useApparence } from './apparence';
 import { useI18n, type MessageKey } from './i18n';
 
 type Source = { name: string; lang: string };
@@ -568,6 +569,7 @@ export default function Home() {
   // `lang` et `setLang` sont déjà pris par le FILTRE de langue des
   // catalogues : ceux de l'i18n sont donc aliassés.
   const { t, lang: langue, setLang: setLangue } = useI18n();
+  const [apparence, setApparence] = useApparence();
   const [sources, setSources] = useState<Source[]>([]);
   const [lang, setLang] = useState('all');
   const [nameFilter, setNameFilter] = useState('');
@@ -2621,6 +2623,22 @@ useEffect(() => {
               {t('reglages.categories.ajouter')}
             </button>
           </div>
+        </section>
+
+        <section className="panel">
+          <h2>{t('reglages.apparence')}</h2>
+          <label className="field">
+            {t('reglages.apparence')}
+            <select
+              value={apparence}
+              onChange={(e) => setApparence(e.target.value === 'clair' ? 'clair' : 'sombre')}
+              aria-label={t('reglages.apparence')}
+            >
+              <option value="sombre">{t('reglages.apparence.sombre')}</option>
+              <option value="clair">{t('reglages.apparence.clair')}</option>
+            </select>
+          </label>
+          <p className="muted">{t('reglages.apparence.note')}</p>
         </section>
 
         <section className="panel">

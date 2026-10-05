@@ -251,6 +251,60 @@ Sont concernées : protocole du sidecar, schéma de base de données, stockage d
 
 Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de sonde ou du CSS de lecteur.
 
+- **Un dialogue natif n'est pas shimable : `window.__TAURI_INTERNALS__` et sa
+  propriété `invoke` sont gelés.** Mesuré : `writable: false, configurable:
+  false` sur les deux. Une assignation `invoke = …` échoue **en silence** (le
+  code injecté n'est pas strict), donc la sonde croit shimer, le vrai dialogue
+  natif s'ouvre, et la commande répond un message **vrai mais sur le mauvais
+  dossier** — « aucun fichier .cbz » alors qu'il y en a quatre. Deux fois de
+  suite j'ai conclu à un bug d'import. Contournement qui marche : intercepter
+  le **chunk** qui contient le plugin (`page.route` + insérer une garde en tête
+  de `open`) ; tout le reste du chemin reste réel.
+- **Une globale posée avant un rechargement est effacée par celui-ci.** La même
+  famille : la garde tombait sur `undefined`, donc le dialogue natif s'ouvrait
+  et `open()` ne résolvait jamais — le bouton restait bloqué sur « Importing… ».
+  Poser les globales **après** le `reload`.
+- **Un `assert` rouge sur un cas limite peut être la règle qui est fausse.**
+  J'ai écrit un test attendant le refus d'un nom de fichier, alors que
+  `chapter_file_name(titre, "")` retombe **toujours** sur `sanitize(titre).cbz`
+  (le repli d'URL appelle `sanitize("")` → `sans-titre`) : l'aller-retour tient
+  toujours. Le test attendait une garantie inexistante.
+- **Les fixtures hostiles doivent être des noms que la plateforme accepte de
+  créer.** `Ch. 1 : la suite.cbz` (`:` interdit) et `CON.cbz` (nom réservé)
+  échouent **à la création**, donc avant le test — et le message parle de
+  synchronisation, pas du comportement étudié. Restent créables : points de
+  tête, points finaux, espaces de bord, plafond de 80 caractères de `sanitize`.
+- **Une porte dont une regex n'accepte pas un caractère a un trou
+  symétrique.** `check-i18n.mjs` refusait le `-`, donc une clé kebab-case
+  disparaissait du dictionnaire **analysé** par la porte : ni déclarée morte, ni
+  traduite. Le tester suppose que ses deux moitiés voient les mêmes clés.
+- **Une porte qui ne peut pas crier est indiscernable d'une porte verte.**
+  La règle « `{placeholder}` sans valeurs » a d'abord passé : le drapeau `m`
+  manquait, donc `^` s'ancrait au début du fichier et la table des placeholders
+  restait **vide**. Prouver une porte, c'est la faire échouer et **lire le nom
+  de ce qu'elle accuse** — pas constater qu'elle est verte.
+- **Une correction peut être plus fausse que le bug.** Après « `1/1 chapitres` »,
+  j'ai écrit `t('…compte1')` **sans ses paramètres** : l'écran affichait
+  littéralement `{n}/{total} chapitre`, et `tsc` comme `i18n:check` ne voyaient
+  rien. Après une correction, relire ce qu'elle affiche vraiment.
+- **`\\?\` est un chemin Windows valide et illisible.** `canonicalize` le renvoie
+  — c'est ce qui débloque les chemins longs — mais l'afficher est du bruit.
+  Le retirer à l'affichage seulement, jamais en interne.
+- **`lire_entrees` refuse un ZIP sans entrée**, donc `pages_de` ne rend jamais
+  une liste vide. Un « `.cbz` sans image » se fabrique avec une archive dont
+  l'unique entrée est un `.txt`.
+- **Un chemin d'origine et un chemin canonisé ne sont pas la même chaîne** :
+  `\\?\C:\…` contre `C:\…`, même fichier. Comparer les deux `canonicalize()`.
+- **Un dossier de téléchargement réglé sur le dépôt y pollue le dépôt.** Mes
+  fixtures `temp_dir()` écrivent sous `downloads_root()` : vérifier `git status`
+  après une série de tests qui touchent le disque.
+
+- **Un `Tauri::command` qui prend `tauri::State` n'est pas appelable depuis
+  `tests/`.** Prouver une chaîne de lecture qui finit sur une commande Tauri
+  impose d'éprouver la **fonction** que la commande appelle, pas la commande.
+  Ici `chapter_file_for` est la partie à risque (le décalage de chemin), et le
+  reste de la chaîne est déjà couvert par les tests de 2.3.
+
 - **Tauri ignore silencieusement un paramètre d'écriture en `snake_case`.** Il
   convertit `camelCase` → `snake_case` côté Rust ; une clé déjà snake_case passe
   **sans erreur** et n'est pas prise. La commande répond normalement avec les

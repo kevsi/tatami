@@ -142,7 +142,14 @@ fn chapter_dir(root: &Path, source: &str, manga_title: &str) -> PathBuf {
     root.join(sanitize(source)).join(sanitize(manga_title))
 }
 
-fn chapter_file_name(chapter_title: &str, chapter_url: &str) -> String {
+/// Nom du fichier `.cbz` d'un chapitre, **publié pour l'import (2.4)**.
+///
+/// L'import doit écrire le fichier sous **exactement** ce nom : c'est cette
+/// fonction que le lecteur rappelle pour retrouver un chapitre local. Un import
+/// qui choisirait un nom de fichier de son côté produirait un chapitre listé
+/// mais introuvable — le décalage silencieux que la fonction existe pour
+/// empêcher.
+pub(crate) fn chapter_file_name(chapter_title: &str, chapter_url: &str) -> String {
     let base = sanitize(chapter_title);
     if base.is_empty() || base == "sans-titre" {
         let dernier = chapter_url.rsplit('/').next().unwrap_or("").trim();

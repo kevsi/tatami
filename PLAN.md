@@ -145,7 +145,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 - [x] **2.1** Gestionnaire de téléchargements : file d'attente, reprise après interruption, concurrence limitée. *(fait sauf « débit limité par source » : la file est séquentielle globalement, ce qui est plus strict qu'un débit mais pas équivalent)*
 - [x] **2.2** Stockage CBZ, noms de fichiers assainis. *(fait sauf « chemin en base » : le chemin est dérivé de `downloads_root` + source + titre et un `meta.json` fait foi — cf. dérogation signalée au journal, à trancher)*
 - [x] **2.3** Lecture hors ligne des chapitres téléchargés. **Bloquant** : `cbz.rs` sait écrire un ZIP mais rien ne sait le lire, le lecteur passe toujours par le moteur.
-- [ ] **2.4** Import de CBZ tiers et lecture locale ; export d'un chapitre en CBZ.
+- [x] **2.4** Import de CBZ tiers et lecture locale. **Livré et vérifié** le 2026-10-05, **import seul** (l'export reste hors périmètre, décision de début de session). Une commande `import_webtoon` : copie les `.cbz` dans `downloads_root/IMPORT/<titre>/`, écrit le `meta.json`, et refuse — avec un motif — tout fichier illisible. L'import **copie** au lieu de pointer, parce que `local_file_pages` refuse par construction tout chemin hors du dossier de téléchargements : un import qui enregistrerait le chemin d'origine serait illisible. La source `IMPORT` est synthétique et son `url` est vide, donc « retélécharger les chapitres manquants » ne part jamais vers un site qui ne les a pas eus.
 - [x] **2.5** Gestion de l'espace : taille utilisée, suppression. *(emplacement configurable pas fait)*
 
 **Critère de sortie** : télécharger un chapitre, couper le réseau, le lire ; reprendre un téléchargement interrompu ; importer un CBZ externe.
@@ -245,6 +245,77 @@ Règles données aux trois sessions :
    récupère ces fichiers dans un commit « docs » dédié.
 
 ## 9. Journal
+
+### 2026-10-05 — Import d'un dossier de webtoon (2.4)
+
+- Plan : une commande Rust + un panneau dans l'écran Téléchargements. Le
+  dialogue natif choisit un chemin, Rust décide du reste.
+- **Copier, pas pointer.** `local_file_pages` refuse par construction tout
+  chemin hors du dossier de téléchargements — c'est ce qui empêche la webview de
+  faire lire n'importe quel fichier du disque. Un import qui se contentait
+  d'enregistrer le chemin d'origine aurait donc produit une bibliothèque
+  **illisible**. `source = "IMPORT"`, `url = ""` : source synthétique, donc
+  aucune reprise de téléchargement ne part vers un site qui n'a jamais eu ces
+  chapitres.
+- **Un `.cbz` illisible est refusé avant toute écriture.** Un contrôle
+  **négatif** en plus du positif : « absent du dossier de destination », pas
+  seulement « absent du rapport » — un chapitre listé mais illisible est le
+  pire résultat possible.
+- **Le `meta.json` est relu sur le disque, pas accumulé pendant la copie.**
+  Réimporter un dossier **plus petit** ne fait donc pas disparaître les
+  chapitres d'un import précédent, qui sont toujours là.
+- **Le nom écrit est celui que le lecteur recalcule.** `chapter_file_name`
+  devient `pub(crate)` et l'import écrit exactement ce qu'il renvoie : un nom
+  de fichier choisi à part produirait un chapitre listé et introuvable. Test
+  d'aller-retour sur 14 noms, dont `.cbz`, `"   "`, `CON`, `Chapitre/12`.
+- **Les motifs sont des codes, pas des phrases.** Mesuré : le rapport affichait
+  « 4 chapters imported » puis « pas un fichier .cbz » — du français au milieu
+  d'un écran anglais. `RefusCode` sérialisé en kebab-case + `detail` technique
+  ; l'interface traduit via une table `Record<RefusCode, clé>`, donc un code
+  ajouté côté Rust **ne compile pas** tant que sa traduction n'est pas
+  branchée.
+- **Trois bugs trouvés à la mesure, aucun visible au compilateur :**
+  1. **Pluriel.** `1/1 chapitres` et `1/1 chapters`. La clé `compte` n'avait pas
+     de singulier. Deux clés, et le singulier ne vaut que si **les deux**
+     compteurs valent 1 (`1/3 chapitres` est correct en français).
+  2. **Mon correctif du pluriel était lui-même cassé** : `t('…compte1')` sans
+     second argument affichait littéralement `{n}/{total} chapitre`. Ni `tsc`
+     ni la porte « aucune clé morte » ne le voyaient.
+  3. **`\\?\` affiché.** Rust renvoie le chemin canonicalisé, donc préfixé de la
+     forme longue Windows ; c'est indispensable en interne, illisible à l'écran.
+     Retiré à l'affichage seulement.
+- **Deux trous dans la porte `i18n:check`, trouvés en l'écrivant :**
+  1. ses classes de caractères **refusaient le `-`** : une clé kebab-case
+     disparaissait du dictionnaire que la porte analyse — un trou
+     **symétrique**, la clé invisible ne pouvait pas non plus être déclarée
+     morte ;
+  2. une clé cité dans une **table de correspondance** (`Record<Code, clé>`)
+     était déclarée morte alors qu'elle est affichée. Les commentaires sont
+     maintenant retirés avant analyse, pour qu'une clé citée en prose ne compte
+     pas.
+  Nouvelle règle : **`{placeholder}` appelé sans ses valeurs**. Prouvée
+  mordante — `t('…compte1')` nu fait échouer la porte en nommant la clé et les
+  placeholders attendus. Et sa première version ne mordait **pas** : le
+  drapeau `m` manquait, donc `FR_VALEURS` était vide. Une porte qui ne peut pas
+  crier est indiscernable d'une porte verte.
+- **Mesure sur l'app réelle** (dialogue intercepté au niveau du chunk, tout le
+  reste réel) : 4 chapitres importés, ordre **1, 2, 6, 10** (tri numérique,
+  pas alphabétique), 5 refus avec leur motif, `complete: true`, les 4 chapitres
+  ouverts par le lecteur (3, 2, 2, 2 pages), motifs **0/5 identiques** entre
+  les deux langues, **0 erreur console**.
+- **Un test qui supposait un refus a révélé une garantie** :
+  `chapter_file_name(titre, "")` retombe toujours sur `sanitize(titre).cbz` —
+  y compris pour un titre vide, dont le repli d'URL appelle `sanitize("")`. Donc
+  l'aller-retour tient toujours, et la branche de refus de
+  `nom_chapitre_lecteur` est inatteignable. Le test vérifie l'aller-retour, pas
+  un refus qui n'a pas lieu d'être.
+- **Porte prouvée mordante** : changer la règle de nommage du lecteur
+  (`{base}.cbz` → `ch-{base}.cbz`) fait échouer **12** tests.
+- `cargo test` **121** (100 + 1 + 20), dont 14 nouveaux · `cargo fmt --check` 0 ·
+  `clippy --all-targets -D warnings` 0 · `tsc` 0 · `lint` 0 erreur (4 warnings
+  antérieurs) · `build` OK · `i18n` 222 clés, aucune morte, aucun placeholder nu.
+
+### 2026-10-05 — Réglages du planificateur (3.5)
 
 ### 2026-10-05 — Réglages du planificateur (3.5)
 

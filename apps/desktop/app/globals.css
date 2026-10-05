@@ -2107,6 +2107,69 @@ button:disabled {
   font-weight: 600;
 }
 
+/* ---------------- Import d'un dossier (2.4) ----------------
+   Le rapport d'import est le seul endroit de l'application où l'on affiche des
+   **motifs d'échec par fichier**. `.code-list` ne convient pas : ses pastilles
+   sont pensées pour des codes courts alignés en ligne, alors qu'ici chaque
+   entrée est « nom de fichier — raison », donc longue et variable. D'où une
+   liste verticale pleine largeur, avec le nom en chasse fixe et le motif en
+   texte atténué : c'est le motif qu'il faut lire. */
+
+.import {
+  margin: 0 0 var(--s4);
+}
+
+.import .row-actions {
+  margin-top: var(--s2);
+}
+
+.import-rapport {
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+
+.refus-list {
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.refus-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1);
+  padding: 4px 8px;
+  border-left: 2px solid var(--danger-bordure);
+  background: var(--surface-2);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: 12.5px;
+}
+
+.refus-list code {
+  color: var(--text);
+  font-weight: 600;
+  /* Un nom de fichier importé peut être long : sans cela il déborde du cadre
+     au lieu de passer à la ligne. */
+  overflow-wrap: anywhere;
+}
+
+.refus-list .refus-motif {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+/* Le chemin de destination est une donnée machine : il doit être
+   sélectionnable d'un trait, lisible, et ne jamais déborder. */
+.import-dir code {
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+}
+
 /* ---------------- Flux « mises à jour » (3.2) ----------------
    L'accent `--accent` parce que c'est la seule zone de l'accueil qui change
    seule : elle doit sauter aux yeux sans être un bandeau d'alarme. Une entrée

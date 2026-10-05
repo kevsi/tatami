@@ -239,6 +239,33 @@ const FR = {
   'telechargements.stat.a.completer': 'à compléter',
   'telechargements.vos.webtoons': 'Vos webtoons',
   'telechargements.chapitres.compte': '{n}/{total} chapitres',
+  'telechargements.chapitres.compte1': '{n}/{total} chapitre',
+  // Une clé unique ne peut pas servir les deux langues : le français et
+  // l'anglais n'ont pas la même règle de pluriel (leçon AGENTS.md §14).
+  'telechargements.chapitres.sans.total': '{n} chapitres',
+  'telechargements.chapitres.sans.total1': '1 chapitre',
+
+  // --- Import d'un dossier de webtoon (tâche 2.4) ---
+  'import.titre': 'Importer un dossier',
+  'import.note':
+    'Copie les fichiers .cbz d’un dossier de votre disque dans la bibliothèque, pour les lire hors ligne.',
+  'import.dossier.choisir': 'Choisir un dossier…',
+  'import.en.cours': 'Import en cours…',
+  'import.rapport.fermer': 'Masquer le résultat',
+  'import.rapport.ok': '{n} chapitres importés dans « {titre} ».',
+  'import.rapport.ok1': '1 chapitre importé dans « {titre} ».',
+  'import.rapport.refuses': '{n} fichiers n’ont pas été importés :',
+  'import.rapport.refuse1': '1 fichier n’a pas été importé :',
+  'import.erreur': 'Import impossible : {raison}',
+  // Motifs d'import : les clés sont les **codes** renvoyés par Rust
+  // (`RefusCode` sérialisé en kebab-case), donc ajouter un motif côté moteur
+  // oblige à ajouter la paire de clés — et `i18n:check` le signalera.
+  'import.refus.pas-un-cbz': 'ce n’est pas un fichier .cbz',
+  'import.refus.archive-illisible': 'archive illisible ({detail})',
+  'import.refus.aucune-image': 'l’archive ne contient aucune image',
+  'import.refus.nom-chapitre': 'ce nom de fichier ne peut pas servir de nom de chapitre',
+  'import.refus.collision': 'un autre chapitre de ce dossier porte déjà le nom {detail}',
+  'import.refus.copie-impossible': 'copie impossible ({detail})',
   'telechargements.file': 'File de téléchargement',
   'telechargements.file.interrompue': 'File interrompue',
   'telechargements.file.interrompue.note':
@@ -477,6 +504,29 @@ const EN: Record<Cle, string> = {
   'telechargements.stat.a.completer': 'to finish',
   'telechargements.vos.webtoons': 'Your webtoons',
   'telechargements.chapitres.compte': '{n}/{total} chapters',
+  'telechargements.chapitres.compte1': '{n}/{total} chapter',
+  'telechargements.chapitres.sans.total': '{n} chapters',
+  'telechargements.chapitres.sans.total1': '1 chapter',
+
+  // --- Webtoon folder import (task 2.4) ---
+  'import.titre': 'Import a folder',
+  'import.note':
+    'Copies the .cbz files from a folder on your disk into the library, so you can read them offline.',
+  'import.dossier.choisir': 'Choose a folder…',
+  'import.en.cours': 'Importing…',
+  'import.rapport.fermer': 'Hide the result',
+  'import.rapport.ok': 'Imported {n} chapters into “{titre}”.',
+  'import.rapport.ok1': 'Imported 1 chapter into “{titre}”.',
+  'import.rapport.refuses': '{n} files were not imported:',
+  'import.rapport.refuse1': '1 file was not imported:',
+  'import.erreur': 'Import failed: {raison}',
+  // Import refusal reasons: the keys are the **codes** returned by Rust.
+  'import.refus.pas-un-cbz': 'not a .cbz file',
+  'import.refus.archive-illisible': 'unreadable archive ({detail})',
+  'import.refus.aucune-image': 'the archive holds no image',
+  'import.refus.nom-chapitre': 'this file name cannot be used as a chapter name',
+  'import.refus.collision': 'another chapter in this folder is already named {detail}',
+  'import.refus.copie-impossible': 'copy failed ({detail})',
   'telechargements.file': 'Download queue',
   'telechargements.file.interrompue': 'Interrupted queue',
   'telechargements.file.interrompue.note':

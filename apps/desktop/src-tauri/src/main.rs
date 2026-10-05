@@ -177,6 +177,7 @@ fn main() {
             download::local_chapter_pages,
             download::local_file_pages,
             library::list_library,
+            library::import_webtoon,
             library::remove_download,
             shelf::list_favorites,
             shelf::set_favorite,

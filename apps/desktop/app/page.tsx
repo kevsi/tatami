@@ -204,6 +204,76 @@ function dureeFr(t: ReturnType<typeof useI18n>['t'], s: number): string {
   return j === 1 ? t('duree.jour1') : t('duree.jour', { n: j });
 }
 
+/** Tâche 2.4 — ce qu'un import de dossier a produit, tel que renvoyé par Rust.
+ *
+ *  `refuses` est un tableau de paires `[nom, refus]` : Rust sérialise un
+ *  `Vec<(String, Refus)>` en tableau de tableaux, pas en objet.
+ *
+ *  Le motif est un **code**, pas une phrase : Rust n'a pas à connaître les
+ *  langues de l'interface. La version initiale renvoyait du français, et
+ *  l'écran anglais affichait « pas un fichier .cbz » au milieu de ses libellés
+ *  anglais — mesuré, puis corrigé en code + `detail` technique.
+ */
+type RefusCode =
+  | 'pas-un-cbz'
+  | 'archive-illisible'
+  | 'aucune-image'
+  | 'nom-chapitre'
+  | 'collision'
+  | 'copie-impossible';
+
+type ImportRapport = {
+  dir: string;
+  importes: number;
+  refuses: [string, { code: RefusCode; detail?: string | null }][];
+  titre: string;
+};
+
+/** Rend un chemin lisible par un humain.
+ *
+ *  Rust renvoie le chemin **canonicalisé**, donc préfixé de `\\?\` sur Windows
+ *  (forme longue). C'est indispensable en interne — c'est ce qui permet les
+ *  chemins longs au-delà de 260 caractères — mais illisible à l'écran, et
+ *  l'utilisateur ne doit pas avoir à le savoir pour retrouver son dossier dans
+ *  l'explorateur.
+ */
+function cheminLisible(p: string): string {
+  return p.startsWith('\\\\?\\') ? p.slice(4) : p;
+}
+
+/** Table **explicite** des motifs d'import, code → clé de traduction.
+ *
+ *  Une clé construite à la volée (`import.refus.${code}`) aurait deux défauts
+ *  mesurés : `i18n:check` ne voit que les appels `t()` littéraux, donc il
+ *  signalait les six motifs comme morts ; et un code ajouté côté Rust sans
+ *  traduction afficherait la clé brute, sans le moindre avertissement.
+ *
+ *  Ici le type est `Record<RefusCode, …>` : **un code nouveau ne compile pas**
+ *  tant que sa traduction n'est pas branchée. C'est le compilateur qui tranche,
+ *  pas une recherche de texte.
+ */
+const MOTIF_REFUS: Record<RefusCode, Parameters<ReturnType<typeof useI18n>['t']>[0]> = {
+  'pas-un-cbz': 'import.refus.pas-un-cbz',
+  'archive-illisible': 'import.refus.archive-illisible',
+  'aucune-image': 'import.refus.aucune-image',
+  'nom-chapitre': 'import.refus.nom-chapitre',
+  collision: 'import.refus.collision',
+  'copie-impossible': 'import.refus.copie-impossible',
+};
+
+/** Traduit un motif d'import. `{detail}` n'existe que pour les refus qui en ont
+ *  un — les clés sans paramètre le laissent tel quel.
+ */
+function motifRefus(
+  t: ReturnType<typeof useI18n>['t'],
+  r: { code: RefusCode; detail?: string | null },
+): string {
+  const detail = r.detail ?? '';
+  // Un refus sans détail (par exemple « pas un .cbz ») ne doit pas afficher un
+  // `{detail}` vide ni un `{nom}` en trop.
+  return detail ? t(MOTIF_REFUS[r.code], { detail }) : t(MOTIF_REFUS[r.code], {});
+}
+
 /** Une entrée de l'historique de lecture (table `history`). */
 type HistoryItem = {  source: string;
   manga_url: string;
@@ -801,8 +871,7 @@ export default function Home() {
   // Tâche 3.2 — le flux « mises à jour ». État propre : il est relu au
   // démarrage depuis `localStorage`, donc il survit à un redémarrage. C'est
   // ce que la passe émet ; l'interface ne la déclenche pas.
-  const [maj, setMaj] = useState<MajItem[]>(loadMaj());
-  // Tâche 3.5 — réglages du planificateur. `null` = pas encore chargé, ce qui
+  const [maj, setMaj] = useState<MajItem[]>(loadMaj());  // Tâche 3.5 — réglages du planificateur. `null` = pas encore chargé, ce qui
   // n'est pas la même chose que « absent » : l'écran affiche alors « chargement »
   // et non des valeurs par défaut inventées.
   const [plan, setPlan] = useState<PlanReglages | null>(null);
@@ -817,6 +886,11 @@ export default function Home() {
   // Préférence d'affichage, donc `localStorage` est le bon endroit (cf. §6).
   const [incognito, setIncognito] = useState(true);
   const [library, setLibrary] = useState<LibraryItem[]>([]);
+  // Tâche 2.4 — dernier rapport d'import, affiché tel quel. `refuses` porte
+  // un motif par fichier : sans lui, l'utilisateur ne sait pas *pourquoi* un
+  // chapitre de son dossier manque après l'import.
+  const [importRapport, setImportRapport] = useState<ImportRapport | null>(null);
+  const [importEnCours, setImportEnCours] = useState(false);
   // Notifications : une pile, pas un message unique. Un toast remplace le
   // précédent, donc deux confirmations rapprochées (« dossier changé » puis
   // « 13 webtoons ») s'effaçaient l'une l'autre — la seconde n'était jamais vue.
@@ -1098,10 +1172,42 @@ export default function Home() {
     [t, chargerPlan],
   );
 
-  const refreshDownloads = useCallback(() => {    invoke<LibraryItem[]>('list_library', { root: '' })
+  const refreshDownloads = useCallback(() => {
+    invoke<LibraryItem[]>('list_library', { root: '' })
       .then((items) => setLibrary(items ?? []))
       .catch(() => setLibrary([]));
   }, []);
+
+  /** Tâche 2.4 — importe un dossier de `.cbz` déjà téléchargés.
+   *
+   *  Le dialogue ne fait que choisir un chemin : c'est Rust qui décide de ce
+   *  qui est copié, de ce qui est refusé et où ça atterrit. Le dialogue natif
+   *  n'est pas testable par CDP (leçon AGENTS.md §14), donc **seule** la
+   *  commande est vérifiée de bout en bout.
+   *
+   *  Le rapport est affiché tel quel, refus compris : afficher « 12 chapitres
+   *  importés » sans dire que 3 fichiers ont été écartés serait un compte
+   *  flatteur, et l'utilisateur croirait avoir tout son dossier.
+   */
+  async function importerDossier() {
+    setImportEnCours(true);
+    setImportRapport(null);
+    try {
+      const choisi = await open({
+        directory: true,
+        multiple: false,
+        title: t('import.dossier.choisir'),
+      });
+      if (typeof choisi !== 'string') return; // annulé
+      const rapport = await invoke<ImportRapport>('import_webtoon', { dir: choisi });
+      setImportRapport(rapport);
+      await refreshDownloads();
+    } catch (e) {
+      setError(t('import.erreur', { raison: String(e) }));
+    } finally {
+      setImportEnCours(false);
+    }
+  }
 
   /** Recharge favoris et historique. `hideAdult` explicite parce que l'appel
    *  déclenché par l'interrupteur arrive AVANT que l'état change : sans
@@ -3336,6 +3442,66 @@ useEffect(() => {
 
         {error && <p className="error">{error}</p>}
 
+        {/* Tâche 2.4 — import d'un dossier de webtoon.
+         *
+         *  Le bouton est **avant** la liste : l'écran « aucun webtoon » est
+         *  précisément celui où l'utilisateur a le plus besoin d'importer, et
+         *  un bouton sous un texte de vide serait invisible. */}
+        <section className="panel import">
+          <h2>{t('import.titre')}</h2>
+          <p className="muted">{t('import.note')}</p>
+          <div className="row-actions">
+            <button
+              className="btn btn-primary"
+              onClick={() => void importerDossier()}
+              disabled={importEnCours}
+            >
+              {importEnCours ? t('import.en.cours') : t('import.dossier.choisir')}
+            </button>
+            {importRapport && (
+              <button className="btn btn-ghost" onClick={() => setImportRapport(null)}>
+                {t('import.rapport.fermer')}
+              </button>
+            )}
+          </div>
+
+          {importRapport && (
+            <div className="import-rapport">
+              <p>
+                {importRapport.importes > 1
+                  ? t('import.rapport.ok', {
+                      n: importRapport.importes,
+                      titre: importRapport.titre,
+                    })
+                  : t('import.rapport.ok1', { titre: importRapport.titre })}
+              </p>
+              {importRapport.refuses.length > 0 && (
+                <>
+                  <p className="muted">
+                    {importRapport.refuses.length > 1
+                      ? t('import.rapport.refuses', { n: importRapport.refuses.length })
+                      : t('import.rapport.refuse1')}
+                  </p>
+                  <ul className="refus-list">
+                    {importRapport.refuses.map(([nom, refus]) => (
+                      <li key={nom}>
+                        <code>{nom}</code>
+                        <span className="refus-motif">{motifRefus(t, refus)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {/* Le chemin de destination est annoncé : l'import a copié les
+                  fichiers, donc l'utilisateur doit savoir où — et c'est aussi
+                  *comment* il vérifie que rien n'a été écrit ailleurs. */}
+              <p className="muted import-dir">
+                <code>{cheminLisible(importRapport.dir)}</code>
+              </p>
+            </div>
+          )}
+        </section>
+
         {chapitresVisibles && (
           <dialog
             className="confirm"
@@ -3490,8 +3656,24 @@ useEffect(() => {
                       <span className="muted dl-meta">
                         {item.source} ·{' '}
                         {item.totalChapters > 0
-                          ? t('telechargements.chapitres.compte', { n: item.downloaded, total: item.totalChapters })
-                          : `${item.downloaded} chapitre${item.downloaded > 1 ? 's' : ''}`}{' '}
+                          ? // `1/1 chapitre` et non `1/1 chapitres` : le
+                            // singulier ne vaut que si **les deux** compteurs
+                            // valent 1. `1/3 chapitres` est correct en
+                            // français — mesuré : l'import d'un dossier d'un
+                            // seul chapitre affichait « 1/1 chapitres », parce
+                            // qu'une clé unique ne peut pas porter le pluriel.
+                            item.downloaded === 1 && item.totalChapters === 1
+                            ? t('telechargements.chapitres.compte1', {
+                                n: item.downloaded,
+                                total: item.totalChapters,
+                              })
+                            : t('telechargements.chapitres.compte', {
+                                n: item.downloaded,
+                                total: item.totalChapters,
+                              })
+                          : item.downloaded > 1
+                            ? t('telechargements.chapitres.sans.total', { n: item.downloaded })
+                            : t('telechargements.chapitres.sans.total1')}{' '}
                         · {formatBytes(item.sizeBytes)}
                       </span>
                       <div className="progress">

@@ -74,8 +74,13 @@ const FR = {
   'etat.titre': 'État des sources',
   'etat.tout.va':
     'Aucune source en échec. Les pannes mémorisées sont effacées dès qu’une visite réussit.',
-  'etat.resume': '{n} source(s) en échec lors d’une visite.',
-  'etat.sources': '{n} source(s)',
+  // Pluriel et singulier séparés : mesuré le 2026-10-05, l'écran affichait
+  // « 1 source(s) » et « 1 months ago » — l'anglais ne prend pas le pluriel
+  // comme le français, une seule clé ne peut pas servir les deux.
+  'etat.resume1': '1 source en échec lors d’une visite.',
+  'etat.resume': '{n} sources en échec lors des visites.',
+  'etat.sources1': '1 source',
+  'etat.sources': '{n} sources',
   'etat.source': 'Source',
   'etat.code': 'Erreur',
   'etat.dernier': 'Signalée',
@@ -89,6 +94,7 @@ const FR = {
   'temps.min': 'il y a {n} min',
   'temps.heure': 'il y a {n} h',
   'temps.jour': 'il y a {n} j',
+  'temps.mois1': 'il y a 1 mois',
   'temps.mois': 'il y a {n} mois',
   'temps.an': 'il y a 1 an',
   'temps.ans': 'il y a {n} ans',
@@ -296,8 +302,10 @@ const EN: Record<Cle, string> = {
   // --- Source status screen (task 5.4) ---
   'etat.titre': 'Source status',
   'etat.tout.va': 'No source has failed. Recorded failures are cleared as soon as a visit succeeds.',
-  'etat.resume': '{n} source(s) failed during a visit.',
-  'etat.sources': '{n} source(s)',
+  'etat.resume1': '1 source failed during a visit.',
+  'etat.resume': '{n} sources failed during visits.',
+  'etat.sources1': '1 source',
+  'etat.sources': '{n} sources',
   'etat.source': 'Source',
   'etat.code': 'Error',
   'etat.dernier': 'Reported',
@@ -309,6 +317,7 @@ const EN: Record<Cle, string> = {
   'temps.min': '{n} min ago',
   'temps.heure': '{n} h ago',
   'temps.jour': '{n} d ago',
+  'temps.mois1': '1 month ago',
   'temps.mois': '{n} months ago',
   'temps.an': '1 year ago',
   'temps.ans': '{n} years ago',

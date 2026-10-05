@@ -251,6 +251,34 @@ Sont concernées : protocole du sidecar, schéma de base de données, stockage d
 
 Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de sonde ou du CSS de lecteur.
 
+- **Un panneau qui ne s'affiche qu'à vide ne prouve rien.** L'écran 5.4 rendait
+  parfaitement son message « aucune source en échec » — avec **0 source en
+  échec**, donc **sans jamais avoir affiché la table**. Une capture de cet état
+  est indiscernable d'une capture correcte. Il faut **injecter des données
+  représentatives** : plusieurs occurrences d'un même code (pour tester le
+  regroupement), des âges très différents (pour tester la traduction), un message
+  d'erreur long.
+- **« n source(s) » ne fonctionne dans aucune langue.** Le français et
+  l'anglais n'ont pas la même règle de pluriel, donc **une clé unique ne peut
+  pas servir les deux** : mesuré, l'anglais affichait « 1 months ago ». Deux clés,
+  ou un choix de pluriel par langue. Corollaire : `tsc` et `i18n:check` ne
+  voient **rien** ici — les clés existent, elles sont correctes, et la faute est
+  dans le fait d'en choisir une seule.
+- **Changer un réglage par le `<select>` puis recharger ne change pas l'état de
+  React.** La sonde signalait un défaut de traduction : elle faisait le
+  `dispatchEvent` dans un `evaluate`, puis `reload()`, donc le composant
+  redémarrait sur l'ancienne langue pendant que `localStorage` portait la
+  nouvelle. Stocker **données et langue dans le même `evaluate`** avant le
+  rechargement rend le test exact. Troisième fois de la session où la mesure,
+  et non le code, était en cause : le réflexe « chercher le défaut » avant
+  « douter de la mesure » vaut de l'heure.
+- **`read` peut montrer un fichier tandis que le runtime en charge un autre.**
+  L'erreur `x is not defined` alors que `const x` était déclaré trois lignes
+  au-dessus a coûté plusieurs tentatives. La cause : un `t` s'était glissé dans
+  le nom côté usage (`faussataires` contre `faussaires`) — deux noms presque
+  identiques, invisibles à la relecture. Examiner la ligne **en octets** tranche
+  en une commande ; relire trois fois ne servait à rien.
+
 - **Une estimation de volume est une conjecture, pas une mesure.** La session 3.1
   annonçait « 200 favoris × 2 000 URLs ≈ 8 Mo » pour l'état du planificateur ;
   mesuré avec des URLs réelles, c'est **31,7 Mo**, soit 4× plus. L'écart vient de

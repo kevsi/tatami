@@ -176,7 +176,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 - [ ] **5.1** Mise à jour du moteur : manifeste signé, vérification de signature et de hash, remplacement atomique, retour arrière si échec au démarrage.
 - [ ] **5.2** Mise à jour de l'app via l'updater Tauri.
 - [x] **5.3** Tests de contrat sur réponses enregistrées, exécutés en intégration continue.
-- [ ] **5.4** Écran "état des sources" (dernière réussite, dernière erreur, version du parser) pour repérer ce qui est cassé.
+- [x] **5.4** Écran « état des sources » pour repérer ce qui est cassé. **Livré** le 2026-10-05 et **vérifié à l'écran**. Ce qui existait : un compteur « N sources signalées » et un bouton « Tout réessayer » — pas de liste, pas de date, donc impossible de savoir *quelle* source casse ni *depuis quand*. La donnée existait déjà (`noteHealth` enregistre `{code, message, at}` et persiste) : il n'y avait qu'à l'afficher. Regroupement par **code d'erreur** d'abord (3 sources en `CHALLENGE_REQUIRED` sont un problème Cloudflare, pas 3 pannes distinctes), puis le détail, du plus récent au plus ancien. `<time dateTime>` garde la date exploitable par une machine. **Corrigé au passage** : `sinceFr` était français en dur (contre `AGENTS.md` §7) — l'interface anglaise affichait « 3 mois ». Preuve : 7 pannes injectées, 4 chips de regroupement dont la somme vaut 7, 3 colonnes, 0 faute de français en mode `en`, bouton « Tout réessayer » ramène l'état à 0 et la table disparaît. **Non couvert** : la version du parser (exigée par la formulation d'origine) n'est pas affichée — elle vient du moteur et demanderait une commande Rust.
 - [ ] **5.5** Journaux de diagnostic exportables, sans données personnelles.
 - [ ] **5.6** Installeurs Windows (`.msi`), signature du code, documentation utilisateur et contributeur.
 - [ ] **5.7** Politique de suivi de l'amont : procédure pour intégrer les nouvelles versions de `kotatsu-parsers-redo`, miroir/fork de secours.
@@ -245,6 +245,58 @@ Règles données aux trois sessions :
    récupère ces fichiers dans un commit « docs » dédié.
 
 ## 9. Journal
+
+### 2026-10-05 — Vérification sur l'app de 5.4 et du correctif d'hydratation
+
+Deux travaux étaient livrés **sans avoir été vus**. L'app redémarrant à chaque
+écriture dans `src-tauri`, la vérification attendait. Elle est faite.
+
+**1. Correctif d'hydratation : vérifié.** Plus aucune erreur en console, et les
+attributs suivent la valeur stockée dans les deux sens :
+
+| | valeur en base | attribut après | |
+|---|---|---|---|
+| au démarrage | `lang=en` | `lang=en` | cohérent |
+| bascule | `fr` | `lang=fr` | suit |
+| apparence | `sombre` → `clair` | `data-apparence=clair` | suit |
+| 3 navigations | — | **0 erreur d'hydratation** | |
+
+**2. Écran 5.4 : vérifié, puis deux fautes trouvées à la lecture.**
+
+La première mesure a trouvé **0 source en échec** — le message « aucune source en
+échec » s'affiche, ce qui est correct, mais **la table n'avait jamais été
+rendue**. Un panneau qui ne s'affiche qu'à vide ne prouve rien. Avec 7 pannes
+injectées :
+
+- 3 colonnes (`Source`, `Erreur`, `Signalée`), 7 lignes, tri du plus récent ;
+- regroupement : `CHALLENGE_REQUIRED 3`, `PARSE_ERROR 2`, `TIMEOUT 1`,
+  `AUTH_REQUIRED 1` — **la somme des compteurs vaut 7**, elle coïncide donc avec
+  le détail et pas seulement avec le nombre affiché ;
+- contrôle négatif en anglais : **0** des 7 anciennetés contient du français ;
+- « Tout réessayer » : 7 → 0 en base, et la table disparaît de l'écran.
+
+**Les deux fautes, trouvées sur la capture et non dans le code :**
+
+1. l'anglais affichait **`1 months ago`** — le pluriel anglais ne se déduit pas
+   du nombre comme en français. Une clé `{n} mois` ne peut pas servir les deux ;
+   `temps.mois1` a été ajoutée ;
+2. **`1 source(s)`** partout, y compris au pluriel — même cause, même correction
+   (`etat.resume1`, `etat.sources1`).
+
+Les deux n'étaient visibles qu'**à l'œil**, pas dans `tsc` ni dans `i18n:check` :
+les clés existaient, elles étaient correctes, et la faute était dans le choix
+d'une clé unique.
+
+**Une faute de sonde, à ne pas confondre avec un défaut du code.** La sonde
+signalait un défaut de traduction à une seule panne : elle affichait l'anglais
+alors que la langue demandée était le français. La valeur n'était fausse nulle
+part — la sonde changeait la langue par le `<select>` **avant** le rechargement,
+dans un `evaluate` séparé, et React n'avait pas vu le changement. Stocker langue
+et données dans le **même** `evaluate` avant le rechargement a rendu le test
+exact. C'est le troisième cas de la session où la mesure, et non le code, était
+en cause.
+
+### 2026-10-05 — Vérification de 3.1 (planificateur), session 1
 
 ### 2026-10-05 — Vérification de 3.1 (planificateur), session 1
 

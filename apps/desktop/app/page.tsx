@@ -426,7 +426,10 @@ function depuis(t: ReturnType<typeof useI18n>['t'], ms: number): string {
   const d = Math.round(h / 24);
   if (d < 31) return t('temps.jour', { n: d });
   const mo = Math.round(d / 30.44);
-  if (mo < 12) return t('temps.mois', { n: mo });
+  // Le singulier a sa propre cle : mesuré le 2026-10-05 sur l'écran 5.4,
+  // l'anglais affichait « 1 months ago ». Une seule clé `{n} mois` ne peut pas
+  // faire les deux, l'anglais et le français n'ayant pas la même règle.
+  if (mo < 12) return mo <= 1 ? t('temps.mois1') : t('temps.mois', { n: mo });
   const y = Math.floor(d / 365.25);
   return y <= 1 ? t('temps.an') : t('temps.ans', { n: y });
 }
@@ -2824,14 +2827,18 @@ useEffect(() => {
             for (const l of lignes) parCode.set(l.code, (parCode.get(l.code) ?? 0) + 1);
             return (
               <>
-                <p className="muted">{t('etat.resume', { n: lignes.length })}</p>
+                <p className="muted">
+                  {lignes.length === 1 ? t('etat.resume1') : t('etat.resume', { n: lignes.length })}
+                </p>
                 <ul className="code-list">
                   {[...parCode.entries()]
                     .sort((a, b) => b[1] - a[1])
                     .map(([code, n]) => (
                       <li key={code}>
                         <code>{code}</code>
-                        <span className="muted">{t('etat.sources', { n })}</span>
+                        <span className="muted">
+                          {n === 1 ? t('etat.sources1') : t('etat.sources', { n })}
+                        </span>
                       </li>
                     ))}
                 </ul>

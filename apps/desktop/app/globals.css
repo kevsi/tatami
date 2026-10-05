@@ -34,6 +34,15 @@
   --accent-ink: #ffffff;
   --danger: #f13e3e;
 
+  /* Notification (toast).
+     Le fond est **opaque**, pas une teinte translucide : le toast flotte au-dessus
+     du contenu (et du lecteur, qui est en plein écran), donc une teinte à 14 %
+     laissait le texte de la page se lire à travers — signalé à l'écran le
+     2026-10-05. Ces trois valeurs sont pleines, pas des alpha. */
+  --notice-surface: #10241a;
+  --notice-line: #2f6b48;
+  --notice-ink: #7ce5a4;
+
   /* Rayons : 6 px sur les cartes et couvertures, pilules sur les contrôles,
      5 px 5 px 0 0 sur les bandeaux de section. */
   --r-sm: 6px;
@@ -1789,10 +1798,12 @@ button:disabled {
   border-radius: var(--r-sm);
   font-size: 13.5px;
   line-height: 1.4;
-  color: #a9e9c4;
-  background: rgba(91, 214, 141, 0.14);
-  border: 1px solid rgba(91, 214, 141, 0.4);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.32);
+  /* Fond opaque : le toast passe au-dessus du contenu et du lecteur. Une
+     teinte translucide laissait la page se lire à travers le message. */
+  color: var(--notice-ink);
+  background: var(--notice-surface);
+  border: 1px solid var(--notice-line);
+  box-shadow: var(--shadow);
   animation: toast-entree 0.18s ease-out;
 }
 

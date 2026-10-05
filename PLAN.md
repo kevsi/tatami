@@ -62,7 +62,7 @@ tatami/
 |---|---|---|---|
 | 0 | Fondations et spike des risques | M | **En cours** — 0.1 à 0.11 faits, 0.12 partiel, 0.13 à 0.17 à faire |
 | 1 | Bibliothèque et lecteur | L | **Presque finie** — 1.1 à 1.7 faits, 1.8 à 1.10 à faire |
-| 2 | Hors ligne | M | **Faite** — file, reprise, CBZ, lecture hors ligne, assainissement et stats ; durcie le 2026-10-04 (un `.cbz` par chapitre, `sync_all`, verrou RAII) |
+| 2 | Hors ligne | M | **Faite** — file, reprise, CBZ, lecture hors ligne, assainissement et stats ; durcie le 2026-10-04 (un `.cbz` par chapitre, `sync_all`, verrou RAII) ; dossier de téléchargement au choix et pause de la file le 2026-10-05 |
 | 3 | Tâches de fond et notifications | M | **Pas commencée** |
 | 4 | Comptes et synchronisation | L | **Pas commencée** |
 | 5 | Durcissement et distribution | M | **Partiellement entamée** — audit de code du 2026-10-04 et ses 5 correctifs livrés |
@@ -240,6 +240,74 @@ Règles données aux trois sessions :
    récupère ces fichiers dans un commit « docs » dédié.
 
 ## 9. Journal
+
+### 2026-10-05 — Dossier de téléchargement au choix + pause de la file
+
+- Plan : deux demandes de l'utilisateur. (1) Pouvoir choisir le dossier de
+  téléchargements. (2) Pouvoir mettre en pause un téléchargement en cours. La
+  première touche au stockage et aux permissions, la seconde à la file : deux
+  questions d'architecture posées **avant** de coder, l'utilisateur ayant tranché
+  « sélecteur natif » et « pause au chapitre ».
+- **Dossier de téléchargement.** Le chemin était figé dans
+  `downloads_root()` (`%APPDATA%\Tatami\downloads`). Il est maintenant un
+  réglage en base, appliqué par Rust :
+  - table `settings` (`store.rs`, migration v7, `CREATE TABLE IF NOT EXISTS` —
+    et non `if current < 7`, pour qu'un binaire plus ancien n'écrase jamais une
+    base estampillée par un plus récent) + `get_setting` / `set_setting` ;
+  - `downloads_root()` lit un global, initialisé **une fois** au démarrage
+    depuis la base. Une lecture SQLite dans un chemin appelé des dizaines de
+    fois par téléchargement n'apportait rien, et le rendait intestable ;
+  - `verifier_dossier_ecriture` **essaie vraiment** d'écrire un fichier :
+    un dossier existe sans pour autant être accessible, et l'échec
+    n'apparaîtrait sinon qu'au premier téléchargement ;
+  - `set_downloads_dir` valide **avant** d'enregistrer. Enregistrer un chemin
+    invalide ferait échouer tous les téléchargements ensuite, sans retour
+    possible depuis l'interface ;
+  - sélecteur natif `tauri-plugin-dialog` + **seule** permission
+    `dialog:allow-open` (pas `allow-save`, pas `allow-message`, pas le lot
+    `dialog:default`). ADR 0004 révisée : elle interdisait tout plugin.
+- **Pause.** La logique existait déjà (arrêt au chapitre suivant, file
+  persistée et reprise) mais se lisait comme un abandon : le bouton disait
+  « Arrêter après le chapitre en cours » et les éléments restants étaient
+  marqués `annulé`. C'est trompeur, parce que la file **se reprend** — c'est
+  exactement la différence entre un abandon et une pause. Libellé
+  « Mettre en pause », état `pause` affiché « en pause », info-bulle qui
+  explique la sémantique (« le chapitre en cours est terminé, puis la file
+  s'arrête ; reprendre la reprendra où elle s'est arrêtée »). Au passage :
+  « Effacer la file » était du français en dur, hors i18n.
+- Preuve :
+  - `pnpm typecheck` 0 · `pnpm lint` 0 erreur (4 warnings `exhaustive-deps`
+    antérieurs) · `pnpm build` OK · `pnpm i18n:check` **138/138**
+  - `cargo fmt --check` 0 · `cargo clippy --all-targets -D warnings` 0 ·
+    `cargo test` **60 passés, 0 échec** (dont `un_reglage_ecrit_relu_apres_redemarrage`)
+  - Démarrage : `telechargements : \\?\C:\Users\alexanders\AppData\Roaming\Tatami\downloads`
+    — la racine vient bien de la base, canonisée.
+  - Interface réelle (CDP sur WebView2) : panneau « Dossier de téléchargement »
+    présent, chemin affiché, aller-retour `get_downloads_dir` →
+    `set_downloads_dir` → `get_downloads_dir` correct, `reset_downloads_dir`
+    ramène à 100 % (13 webtoons de nouveau visibles).
+  - Pause mesurée de bout en bout : `Mettre en pause` + badge
+    `téléchargement` → 10 s plus tard badge **`en pause`** + panneau
+    « File interrompue » ; `Reprendre la file` → badge `téléchargement`,
+    bannière disparue. File persistée dans `localStorage` entre les deux.
+  - La porte `aucune_commande_tauri_nest_morte` a **échoué** juste après
+    l'ajout des trois commandes : elles n'étaient pas encore appelées par le
+    front. Elle a fait son travail avant même que je pense à m'en servir.
+- Points ouverts :
+  - Changer de dossier **ne déplace rien** : les `.cbz` déjà écrits restent
+    dans l'ancien dossier et la bibliothèque n'affiche plus que ceux du
+    nouveau. C'est dit dans l'interface, mais un « migrer les fichiers
+    existants » reste à faire si l'utilisateur le veut.
+  - La granularité de la pause est le **chapitre**, par choix humain. Une
+    pause à la page exigerait un `.part` réellement reprenable (offsets et
+    entrées persistés) — chantier distinct, avec un risque sur les `.cbz`.
+  - `escape` sur le dialogue natif **a confirmé** un dossier au lieu de
+    l'annuler pendant un test CDP, ce qui a déplacé la racine le temps d'une
+    mesure. Détournement de test, pas défaut de l'app, mais cela veut dire que
+    le dialogue natif n'est pas testable par CDP : seul l'aller-retour de la
+    commande l'est.
+  - La file affichée n'a aucun réglage « arrêter après N chapitres » ; le seul
+    contrôle est la pause.
 
 ### 2026-10-04 — Audit du code réel et correction des 5 constats
 

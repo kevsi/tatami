@@ -1,9 +1,10 @@
-# 0004 — Permissions Tauri : une seule capability, aucun plugin
+# 0004 — Permissions Tauri : une capability, un seul plugin (dialog)
 - Date : 2026-10-04 (consignée après coup ; le code applique déjà cette décision depuis la tâche 0.8)
+- Révisée : 2026-10-05 — ajout de `tauri-plugin-dialog` (décision humaine explicite)
 - Statut : acceptée
 > Chemins cités : `apps/desktop/src-tauri/capabilities/default.json`,
 > `apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/src-tauri/Cargo.toml`,
-> `apps/desktop/src-tauri/src/{main,supervisor,challenge,download}.rs`,
+> `apps/desktop/src-tauri/src/{main,supervisor,challenge,download,shelf}.rs`,
 > `apps/desktop/app/page.tsx`, `apps/desktop/next.config.mjs`.
 ## Contexte
 `AGENTS.md` §7 (Tauri) : permissions et capabilities **au strict minimum** nécessaire, toute
@@ -19,18 +20,30 @@ fenêtre**. Chacune de ces capacités a, dans Tauri v2, une contrepartie « offi
 nécessaires, ou le code Rust suffit-il ?
 
 ## Décision
-**Aucun plugin Tauri. Une seule capability, `core:event:default`.**
+**Un seul plugin Tauri : `dialog`. Une capability, deux permissions.**
 
-1. **Aucun plugin dans `Cargo.toml`** : les dépendances sont `tauri`, `tokio`, `serde`,
-   `serde_json`, `base64`, `tracing`, `tracing-subscriber`, `rusqlite` (`Cargo.toml:9-17`). Pas de
-   `tauri-plugin-*`.
-2. **Une capability, une permission** (`capabilities/default.json`, fichier de 6 lignes) :
+> **Révision du 2026-10-05.** Cette ADR interdisait tout `tauri-plugin-*`. Un cas est
+> désormais accepté, sur demande explicite de l'utilisateur : **choisir le dossier de
+> téléchargements**. Le plugin officiel `tauri-plugin-dialog` n'accorde que
+> `dialog:allow-open`, c'est-à-dire l'affichage d'un sélecteur — l'utilisateur choisit, il ne
+> fait rien être choisi. Aucune lecture ni écriture de fichier par la webview.
+>
+> Ce qui n'a pas bougé : le sidecar reste lancé en Rust pur, `%APPDATA%` reste écrit par Rust,
+> et la CSP interdit toujours tout `https:` en `connect-src`.
+
+1. **Plugins dans `Cargo.toml`** : `tauri`, `tokio`, `serde`, `serde_json`, `base64`, `tracing`,
+   `tracing-subscriber`, `rusqlite`, et **`tauri-plugin-dialog`** (ajouté le 2026-10-05).
+   Pas d'autre `tauri-plugin-*`, et en particulier toujours pas `shell`, `fs`, `http`, `updater`.
+2. **Une capability, deux permissions** (`capabilities/default.json`) :
    ```json
-   { "identifier": "default", "windows": ["main"], "permissions": ["core:event:default"] }
+   { "identifier": "default", "windows": ["main"],
+     "permissions": ["core:event:default", "dialog:allow-open"] }
    ```
-   Elle est limitée à la fenêtre `main` (`default.json:4`). Elle a été **ajoutée après un échec
+   Elle est limitée à la fenêtre `main`. `core:event:default` a été **ajoutée après un échec
    mesuré** : `permissions: []` faisait lever `core:event:allow-listen` au premier `listen()` de
-   l'interface (`PLAN.md`, journal 2026-10-02, audit UX).
+   l'interface (`PLAN.md`, journal 2026-10-02, audit UX). `dialog:allow-open` a été ajoutée le
+   2026-10-05 pour le sélecteur de dossier — **et pas** `dialog:allow-save`, `dialog:allow-message`
+   ni le lot `dialog:default` : le strict minimum, pas le lot pratique.
 3. **La seule permission demandée est l'écoute d'événements**, parce que le cœur Rust émet la
    progression des téléchargements : `app.emit("download://progress", …)`
    (`download.rs:265`, `:278`, `:329`), écouté par l'interface (`page.tsx:528`).
@@ -67,8 +80,22 @@ nécessaires, ou le code Rust suffit-il ?
    ```
    `connect-src` ne contient **aucun `https:`** : l'interface ne peut pas appeler un site
    directement, elle ne peut qu'invoquer Rust.
+   `img-src` ne contient **plus** de `https:` depuis le 2026-10-04 : les couvertures passent
+   par le moteur et sont servies en `tatami://cover/<jeton>`, donc l'interface n'a plus aucune
+   raison d'aller chercher une image chez un site de manga.
+9. **Le dossier de téléchargements est un réglage en base, pas une permission `fs`.**
+   L'interface ne fait que *demander* un chemin (sélecteur natif) ; Rust le valide — dossier
+   existant, **accessible en écriture** (une sonde y écrit réellement un fichier) — puis
+   l'enregistre dans la table `settings` et l'applique. `main.rs` relit ce réglage au démarrage
+   avant toute commande. Un réglage en base et non en `localStorage` parce que c'est une donnée
+   que Rust applique à chaque écriture de fichier : une webview qui la posséderait pourrait
+   diverger de l'état réel.
 
 ## Alternatives étudiées
+- **Champs texte + collage du chemin** (rejeté le 2026-10-05) : zéro dépendance, zéro permission,
+  mais il faut saisir `C:\Users\...\Documents\Manga` à la main. L'utilisateur a préféré le sélecteur
+  natif. Le chemin reste **vérifié par Rust dans les deux cas** — c'est la validation qui compte,
+  pas la façon de le choisir.
 - **Plugin `tauri-plugin-shell` pour lancer le sidecar** : c'est la voie prévue pour les *sidecars*
   natifs via `externalBin`. Elle n'apporte rien ici (le processus est déjà lancé et supervisé en
   Rust, avec chien de garde et backoff, `supervisor.rs:101-119`) et ajouterait une permission

@@ -282,7 +282,30 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
 - **Un réglage que Rust applique ne peut pas vivre dans `localStorage`.** Le dossier de téléchargements est une donnée que le cœur applique à chaque écriture de fichier ; une webview qui la posséderait diverge de l'état réel au premier redémarrage. Règle générale : `localStorage` pour ce que le lecteur lit (`localStorage` = affichage), la base pour ce que le cœur applique.
 - **Valider un chemin en l'écrivant, pas en le Stat.** Un dossier peut exister et être inaccessible (droits, antivirus, disque plein) : la vérification n'échouerait qu'au premier téléchargement, donc au pire moment. `verifier_dossier_ecriture` y crée un vrai fichier, et supprime — c'est une sonde, pas un test.
 - **Renommer l'état pour qu'il dise ce qui se passe.** Le même code s'appelait « arrêter » et marquait `annulé`, alors que la file se reprenait : l'utilisateur y lisait un abandon, et c'est ce qu'il a signalé. L'action et l'état doivent dire la même chose que la reprise possible.
-- **Un dialogue natif n'est pas testable par CDP.** `Escape` sur le sélecteur Windows de dossiers **a confirmé un dossier** au lieu de l'annuler pendant un test automatisé. Seule la commande Rust est vérifiable de bout en bout — donc c'est elle qu'il faut tester, et le dialogue se vérifie à l'œil.
+- **Créer un token ne suffit pas : lui donner une valeur par thème.** Le token
+  `--appbar-fond` a été créé puis laissé **identique dans les deux thèmes** — la
+  barre est restée noire en thème clair, et comme le texte des onglets vient de
+  `--text` (foncé), il rendait **1,2:1**. Signalé à l'écran, pas par un calcul.
+  Corollaire : à l'ajout d'un token, vérifier qu'il apparaît dans **les deux**
+  blocs, sinon il hérite du thème sombre par pur oubli.
+- **Un token ne doit pas servir deux usages qui divergent.** `--appbar-fond` sert
+  à la barre de titre **et** au compteur posé sur une couverture. Le faire
+  basculer aurait éclairci le second — qui est posé sur une image et doit rester
+  sombre. Un token par comportement, pas par élément.
+- **Comparer un texte à un `rgba` ne veut rien dire.** Il faut composer le voile
+  translucide sur le fond **réel** avant de calculer le contraste. Mesuré : un
+  chip donnait 1,83:1 sur la valeur brute et 10,7:1 sur le rendu réel. Le même
+  piège en version inversée : la barre à 92 % d'opacité, mesurée brute, donne
+  des chiffres sans signification.
+- **Une mesure qui renvoie 0 élément ne prouve rien.** Trois sondes successives
+  sur `.card-count` ont rendu « absent » alors que la pastille existait : elle
+  n'apparaît que si `cardTotal` est rempli, ce qui exige de **sélectionner une
+  source précise** et d'attendre l'appel `chapters`. Les chips du catalogue sont
+  des langues, pas des sources.
+- **Un dialogue natif n'est pas testable par CDP.** `Escape` sur le sélecteur
+  Windows de dossiers **a confirmé un dossier** au lieu de l'annuler pendant un
+  test automatisé. Seule la commande Rust est vérifiable de bout en bout — donc
+  c'est elle qu'il faut tester, et le dialogue se vérifie à l'œil.
 - **Un test qui appelle la bibliothèque ne prouve pas le chemin de production.** Le test ZENMANGA (0.17) appelait `parser.getPageUrl` puis le client : vert. L'application montrait toujours des images vides, parce que `fetchImage` téléchargeait **en dehors** du `pool.avec` qui pose le parser. Il a fallu passer par `dispatch` — la fonction réellement appelée par `serve()` — pour voir le défaut, puis le corriger. Corollaire : `java.class.path` dans un `ProcessBuilder` passe aussi les classes de test au moteur enfant, qui démarre alors plus lentement ; prendre le classpath de `installDist`.
 - **Des threads concurrents pour lire un flux sequentiel font perdre des lignes.** Le test de fermeture stdin démarrait cinq threads pour cinq lignes de stdout ; ils se disputaient le flux, d'où « 0 réponse sur 5 » alors que le moteur en rendait 5/5 hors test. Un `FutureTask` par ligne, séquentiel, et le blocage disparaît — le défaut était dans le test, pas dans le code.
 - **Un `Mutex` n'est pas réentrant.** Imbriquer `pool.avec(source)` dans `pool.avec(source)` fige le moteur, et ça se manifeste par un **timeout** du test, pas par un échec propre. Symétriquement, `ThreadLocal` + `Mutex` : deux requêtes sur la même source ne se marchent pas dessus, mais il faut le mutex pour ça — le `ThreadLocal` ne le remplace pas.

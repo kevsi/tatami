@@ -150,6 +150,44 @@ fn nom_remonte(nom: &str) -> bool {
 /// l'ordre des pages. Pour un `.cbz` tiers, c'est aussi l'ordre usuel — mais on
 /// ne s'appuie pas sur le nom pour le deviner, on trie par le nom du fichier
 /// quand il est numéroté, ce qui est plus sûr pour les archives externes.
+/// Normalise un nom d'entrée d'archive en chemin relatif sûr, ou renvoie `None`.
+///
+/// Deux règles, dans cet ordre :
+///
+/// 1. **`\\` devient `/`.** La norme ZIP impose des slashs, mais les outils
+///    Windows écrivent des antislashs — mesuré le 2026-10-05 sur
+///    `Compress-Archive`, qui a produit 180 entrées sur 181 avec un backslash.
+///    Refuser ces noms ne protégeait rien et rendait l'archive inutilisable.
+/// 2. **Refus** si le chemin est absolu, remontant, ou contient une lettre de
+///    lecteur : une archive ne doit jamais décider où l'on écrit
+///    (AGENTS.md §6).
+///
+/// La normalisation précède **volontairement** le refus, donc
+/// `..\\..\\evil.dll` devient `../../evil.dll` et est refusé comme remontant —
+/// si l'on refusait les backslashs avant de normaliser, ce nom serait refusé
+/// pour la **mauvaise** raison, et une future correction du premier filtre
+/// rouvrirait la traversée sans que personne ne s'en aperçoive.
+pub fn assainir_nom(nom: &str) -> Option<String> {
+    let sur: String = nom.replace('\\', "/");
+    if sur.starts_with('/') || sur.contains("..") || lettre_de_lecteur(&sur) {
+        return None;
+    }
+    Some(sur)
+}
+
+/// Vrai si le chemin contient une lettre de lecteur Windows (`C:`).
+///
+/// La lettre est cherchée **n'importe où**, pas en deuxième position :
+/// `canonicalize` renvoie la forme longue `\\\\?\\C:\\…`, donc exiger `C:` en
+/// deuxième position laissait passer tous les chemins réellement ouverts.
+fn lettre_de_lecteur(sur: &str) -> bool {
+    let c: Vec<char> = sur.chars().collect();
+    (0..c.len().saturating_sub(1)).any(|i| {
+        c[i].is_ascii_alphabetic()
+            && c[i + 1] == ':'
+            && (i + 2 >= c.len() || c[i + 2] == '\\' || c[i + 2] == '/')
+    })
+}
 pub fn lire_entrees(chemin: &Path) -> Result<Vec<Entree>, ErreurZip> {
     let mut f = File::open(chemin).map_err(io)?;
     let taille = f.metadata().map_err(io)?.len();
@@ -197,13 +235,14 @@ pub fn lire_entrees(chemin: &Path) -> Result<Vec<Entree>, ErreurZip> {
             break;
         }
         let nom = String::from_utf8_lossy(&repertoire[debut_nom..debut_nom + len_nom]).to_string();
-        // Un nom avec « .. » ou un chemin absolu est refusé : on n'écrit rien,
-        // mais on ne doit pas non plus laisser une archive malveillante
-        // décider d'un chemin (AGENTS.md §6).
-        let nom_sur = if nom.contains("..") || nom.starts_with('/') || nom.contains('\\') {
+        // Refus ou normalisation : voir `assainir_nom`, qui porte la règle et
+        // sa raison. En bref : la norme ZIP impose des slashs, mais
+        // `Compress-Archive` écrit des antislashs — mesuré le 2026-10-05, avec
+        // **toutes** les entrées de l'archive du moteur en backslash. Les écarter
+        // ne protégeait rien : cela faisait qu'une archive produite par l'outil du
+        // projet lui-même n'installait rien, silencieusement.
+        let Some(nom_sur) = assainir_nom(&nom) else {
             continue;
-        } else {
-            nom.clone()
         };
         let offset_local = lire_u32(&repertoire, pos + 42) as u64;
         if offset_local == 0xFFFF_FFFF
@@ -409,6 +448,45 @@ mod tests {
             "le dernier EOCD n est pas la ou il devrait etre",
         );
         u32::from_le_bytes(archive[eocd + 16..eocd + 20].try_into().unwrap()) as usize
+    }
+    /// Les antislashs sont **normalisés**, et le remontement reste **refusé**.
+    ///
+    /// Mesuré le 2026-10-05 : `Compress-Archive` a écrit 180 entrées sur 181 avec
+    /// un backslash. Écarter ces noms ne protégeait rien et rendait l'archive
+    /// inutilisable.
+    ///
+    /// Le cas `..\\..\\evil.dll` est le plus important : il doit être refusé, mais
+    /// **après** normalisation — sinon il le serait pour la mauvaise raison (le
+    /// backslash), et une correction future du filtre des backslashs rouvrirait la
+    /// traversée sans que personne ne s'en aperçoive.
+    #[test]
+    fn les_antislashs_sont_normalises_et_le_remontement_refuse() {
+        // --- cas nominaux : le contenu réel d'une archive Windows ---
+        assert_eq!(
+            assainir_nom(r"lib\asm-7.3.1.jar"),
+            Some("lib/asm-7.3.1.jar".to_string())
+        );
+        assert_eq!(
+            assainir_nom(r"runtime\bin\java.exe"),
+            Some("runtime/bin/java.exe".to_string())
+        );
+        assert_eq!(
+            assainir_nom("tatami-engine.bat"),
+            Some("tatami-engine.bat".to_string()),
+            "un nom simple ne doit pas bouger"
+        );
+
+        // --- refus : chacun pour une raison distincte ---
+        for nom in [
+            r"..\..\evil.dll",      // remontant, en antislashs
+            "../../evil.dll",       // remontant, en slashs
+            "lib/../../evil.dll",   // remontant au milieu
+            "/etc/passwd",          // absolu
+            r"C:\Windows\evil.dll", // lettre de lecteur
+            r"\\?\C:\evil.dll",     // forme longue
+        ] {
+            assert_eq!(assainir_nom(nom), None, "« {nom} » aurait du etre refuse");
+        }
     }
     /// Assemble une archive ZIP à la main, en `STORED` ou en `DEFLATE`.
     ///

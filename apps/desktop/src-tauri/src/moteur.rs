@@ -314,7 +314,22 @@ pub fn installe() -> Option<(PathBuf, String)> {
 /// suffit de régénérer le pointeur, alors que l'autre méthode (écrire par-dessus)
 /// laisserait un fichier tronqué.
 pub fn activer(version: &str) -> Result<Actif, Erreur> {
-    if version.trim().is_empty() || version.contains(['/', '\\', '.']) {
+    // Le nom de version devient un **nom de dossier** (`versions/<version>`), donc
+    // il ne doit contenir ni séparateur, ni `..`.
+    //
+    // Mesuré le 2026-10-05 : interdire **tous** les points rejetait `0.2.0`, donc
+    // toute version sémantique — et le test ne le voyait pas, parce qu'il ne
+    // contenait que des cas **refusés**. Un test qui ne vérifie que des échecs ne
+    // prouve pas que le cas nominal fonctionne. Donc le point est autorisé,
+    // sauf s'il forme `..`.
+    let nom = version.trim();
+    let remonte = nom.is_empty()
+        || nom.contains('/')
+        || nom.contains('\\')
+        || nom == "."
+        || nom == ".."
+        || nom.contains("..");
+    if remonte {
         return Err(Erreur::ChampManquant("version".to_string()));
     }
     let dossier = dossier_version(version).ok_or_else(|| {
@@ -409,14 +424,24 @@ pub fn installer(archive: &Path, m: &Manifeste) -> Result<PathBuf, Erreur> {
     for entree in &entrees {
         // **Refus**, pas « on saute » : `zipread` écarte discrètement les noms
         // hostiles, ce qui convient à la lecture d'un `.cbz`. Ici, une entrée
-        // écartée signifie une installation incomplète, donc silencieuse.
-        if entree.nom.contains("..") || entree.nom.starts_with('/') || entree.nom.contains('\\') {
+        // écartée signifierait une installation **incomplète et silencieuse** — un
+        // moteur sans `lib/` qui ne démarrerait pas, sans rien dire.
+        //
+        // Le nom a déjà été normalisé par `zipread::assainir_nom` (antislashs
+        // vers slashs) : re-vérifier ici est donc une **porte en double**, pas un
+        // doublon inutile. Si `lire_entrees` change un jour et cesse de
+        // normaliser, l'installation refuse au lieu d'écrire où l'archive le
+        // demande.
+        let Some(sur) = crate::zipread::assainir_nom(&entree.nom) else {
             let _ = fs::remove_dir_all(&temporaire);
             return Err(Erreur::CheminHostile(entree.nom.clone()));
-        }
+        };
         let contenu = crate::zipread::lire_entree(&mut fichier, entree)
             .map_err(|e| Erreur::Io(e.to_string()))?;
-        let cible = temporaire.join(&entree.nom);
+        // On joint le nom **normalise**, jamais celui de l'archive : c'est la
+        // seule façon que la destination ne dépende pas de la convention de
+        // séparateur de l'outil qui a écrit le zip.
+        let cible = temporaire.join(&sur);
         if entree.nom.ends_with('/') {
             fs::create_dir_all(&cible).map_err(|e| Erreur::Io(e.to_string()))?;
             continue;
@@ -623,15 +648,119 @@ mod tests {
         );
     }
 
-    /// Le nom de version est un **chemin** : il ne doit pas pouvoir contenir de
-    /// séparateur, sinon `versions/<version>/..` sortirait du dossier.
+    /// Le manifeste **réellement produit** par `scripts/moteur-sign.mjs`, vérifié
+    /// avec la clé publique **compilée dans ce binaire**.
+    ///
+    /// C'est le test le plus fort du module, parce qu'il ferme la frontière entre
+    /// les deux implémentations de la charge signée : Node produit le texte, Rust le
+    /// reconstruit. Si les deux divergent — un champ ajouté d'un côté, un domaine
+    /// changé, un séparateur différent — la signature ne passe plus et ce test
+    /// tombe. `les_champs_signes_concordent_avec_le_script` vérifie la **liste** des
+    /// champs ; celui-ci vérifie le **résultat** sur un vrai fichier.
+    ///
+    /// **Il se saute si le manifeste n'est pas là**, et le dit à voix haute. Un
+    /// test qui passe sans avoir rien fait est indiscernable d'un test vert, et
+    /// celui-ci serait vert sur une machine sans `engine/dist/`. Donc pas de
+    /// `#[ignore]` silencieux : un message explique ce qui manque.
+    #[test]
+    fn le_manifeste_reel_est_verifie_avec_la_cle_embarquee() {
+        let chemin = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("engine")
+            .join("dist")
+            .join("moteur-0.2.0.json");
+        let Ok(json) = fs::read_to_string(&chemin) else {
+            eprintln!(
+                "CE TEST N'A RIEN VÉRIFIÉ : le manifeste est absent.\n  manquant : {}\n\
+                 \n\
+                 Pour le produire :\n\
+                 \x20 1. Compresser-Archive -Path engine/dist/tatami-engine/* \\\n\
+                 \x20       -DestinationPath engine/dist/moteur-0.2.0.zip\n\
+                 \x20 2. node scripts/moteur-sign.mjs preparer engine/dist/tatami-engine \\\n\
+                 \x20       engine/dist/moteur-0.2.0.zip engine/dist/moteur-0.2.0.json 0.2.0\n\
+                 \x20 3. node scripts/moteur-sign.mjs signer engine/dist/moteur-0.2.0.json\n\
+                 \x20    (l'étape 2 exige la clé privée, hors du dépôt)",
+                chemin.display()
+            );
+            return;
+        };
+
+        let m = charger_signe(&json).expect("le manifeste signe par Node doit etre accepte");
+        assert_eq!("0.2.0", m.version);
+        // La version des parsers est **lue dans le nom du jar**, donc elle ne peut
+        // pas diverger de ce qui est réellement embarqué.
+        assert_eq!("b3c0000", m.parsers);
+
+        // Et l'empreinte annoncée doit être celle de l'archive réellement
+        // présente — sinon la signature serait valide sur un fichier fantôme.
+        let archive = chemin.with_extension("zip");
+        if archive.exists() {
+            let obtenue = empreinte_fichier(&archive).expect("archive lisible");
+            assert_eq!(
+                m.sha256.to_ascii_lowercase(),
+                obtenue,
+                "l empreinte du manifeste ne correspond pas a l archive presente",
+            );
+        } else {
+            eprintln!(
+                "archive {} absente : seule la signature a ete verifiee",
+                archive.display()
+            );
+        }
+    }
+    /// Le nom de version est un **chemin** : il ne doit pas pouvoir remonter, sinon
+    /// `versions/<version>/..` sortirait du dossier.
+    ///
+    /// Chaque refus est un cas distinct et nommé, pour qu'un échec dise *lequel*.
     #[test]
     fn un_nom_de_version_hostile_est_refuse() {
-        for nom in ["../ailleurs", "a/b", "a\\b", ".", "", "   "] {
+        for nom in [
+            "../ailleurs", // remontant
+            "a/b",         // séparateur
+            "a\\b",        // séparateur windows
+            ".",           // repertoire courant
+            "..",          // parent
+            "a/../../b",   // remontant au milieu
+            "",            // vide
+            "   ",         // blanc
+            "version/..",  // remontant en fin
+        ] {
             let e = activer(nom).expect_err("un nom hostile doit etre refuse");
             assert!(
                 matches!(e, Erreur::ChampManquant(_) | Erreur::Io(_)),
                 "« {nom} » : {e:?}"
+            );
+        }
+    }
+
+    /// **Le cas nominal**, que le test précédent ne contenait pas.
+    ///
+    /// Mesuré le 2026-10-05 : le refus des noms hostiles interdisait aussi le
+    /// point, donc `0.2.0` — c'est-à-dire **toute** version sémantique — était
+    /// refusé, et rien ne le signalait : le test ne listait que des refus. Or un
+    /// test qui ne vérifie que des échecs ne prouve pas que le cas nominal
+    /// fonctionne. Ici on vérifie donc le **décision**, pas l'appel complet :
+    /// `activer` irait jusqu'au disque, et ce qui compte est « le nom est accepté ».
+    #[test]
+    fn une_version_semantique_est_acceptee() {
+        // Le suffixe `-absent` rend ces noms **absents du disque par construction**,
+        // donc l'appel échoue toujours. Sans lui, le résultat dépend de ce que la
+        // machine a déjà installé — et le test devient une mesure de
+        // l'environnement : mesuré le 2026-10-05, `0.2.0` était installée et le
+        // test a échoué pour cette raison, pas à cause du code.
+        for nom in [
+            "0.2.0-absent",
+            "1.0.0-SNAPSHOT-absent",
+            "2026.10.05-1-absent",
+            "v2-absent",
+        ] {
+            let e = activer(nom).expect_err("absente du disque, donc un echec est normal");
+            assert!(
+                matches!(e, Erreur::Io(_)),
+                "« {nom} » est un nom de version legitime : il doit echouer sur \
+                 « non installee », pas sur le nom. Refu a la place : {e}"
             );
         }
     }

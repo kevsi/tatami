@@ -116,6 +116,63 @@ function generer() {
   console.log('ne pourra être signée. Elle n’est ni versionnée ni reproductible.');
 }
 
+/** `preparer` : lit le moteur bâti, calcule l'empreinte, écrit le manifeste.
+ *
+ *  Les valeurs ne sont **jamais tapées** : la version du moteur et celle des
+ *  parsers sont lues dans les noms des JAR réellement produits. Un nom saisi à la
+ *  main peut se tromper ; un nom lu sur le disque, non — et une erreur de frappe
+ *  dans le manifeste est le genre de faute qui ne se voit qu'à l'installation.
+ */
+function preparer(dossierMoteur, archive, sortie, version) {
+  const lib = path.join(dossierMoteur, 'lib');
+  if (!fs.existsSync(lib)) {
+    throw new Error(`pas de dossier lib dans ${dossierMoteur} : le moteur est-il bâti ?`);
+  }
+  const jars = fs.readdirSync(lib);
+
+  const parseur = jars.find((f) => f.startsWith('kotatsu-parsers-redo-') && f.endsWith('.jar'));
+  if (!parseur) {
+    throw new Error(
+      `aucun kotatsu-parsers-redo-*.jar dans ${lib}\n` +
+        `Sans lui, le manifeste ne pourrait pas dire quelle version des parsers est\n` +
+        `embarquée — donc quelle API le moteur expose réellement à l'application.`,
+    );
+  }
+  // `kotatsu-parsers-redo-b3c0000.jar` -> `b3c0000`
+  const parsers = parseur.replace(/^kotatsu-parsers-redo-/, '').replace(/\.jar$/, '');
+
+  const moteur = jars.find((f) => f.startsWith('tatami-engine-') && f.endsWith('.jar'));
+  if (!moteur) {
+    throw new Error(`aucun tatami-engine-*.jar dans ${lib}`);
+  }
+  const engine = moteur.replace(/^tatami-engine-/, '').replace(/\.jar$/, '');
+
+  if (!fs.existsSync(archive)) {
+    throw new Error(`archive introuvable : ${archive}`);
+  }
+  const sha256 = crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
+  const ko = Math.round(fs.statSync(archive).size / 1024);
+
+  const manifeste = {
+    version,
+    engine,
+    parsers,
+    archive: path.basename(archive),
+    sha256,
+  };
+  fs.writeFileSync(sortie, JSON.stringify(manifeste, null, 2) + '\n', 'utf8');
+
+  console.log(`manifeste écrit : ${sortie}`);
+  console.log(`  version   : ${version}`);
+  console.log(`  engine    : ${engine}   (lu dans ${moteur})`);
+  console.log(`  parsers   : ${parsers}   (lu dans ${parseur})`);
+  console.log(`  archive   : ${manifeste.archive}  (${ko} Ko)`);
+  console.log(`  sha256    : ${sha256}`);
+  console.log('');
+  console.log('Il reste à le signer :');
+  console.log(`  node scripts/moteur-sign.mjs signer ${path.relative(process.cwd(), sortie)}`);
+}
+
 /** `signer` : ajoute le champ `signature` au manifeste, sur place. */
 function signer(chemin) {
   const manifeste = JSON.parse(fs.readFileSync(chemin, 'utf8'));
@@ -163,17 +220,31 @@ function verifier(chemin) {
   process.exit(ok ? 0 : 1);
 }
 
-const [commande, argument] = process.argv.slice(2);
+const [commande, ...args] = process.argv.slice(2);
 try {
   if (commande === 'cles') generer();
-  else if (commande === 'signer') {
-    if (!argument) throw new Error('usage : moteur-sign.mjs signer <manifeste.json>');
-    signer(argument);
+  else if (commande === 'preparer') {
+    const [dossierMoteur, archive, sortie, version] = args;
+    if (!dossierMoteur || !archive || !sortie || !version) {
+      throw new Error(
+        'usage : moteur-sign.mjs preparer <dossier-moteur> <archive.zip> <sortie.json> <version>',
+      );
+    }
+    preparer(dossierMoteur, archive, sortie, version);
+  } else if (commande === 'signer') {
+    if (!args[0]) throw new Error('usage : moteur-sign.mjs signer <manifeste.json>');
+    signer(args[0]);
   } else if (commande === 'verifier') {
-    if (!argument) throw new Error('usage : moteur-sign.mjs verifier <manifeste.json>');
-    verifier(argument);
+    if (!args[0]) throw new Error('usage : moteur-sign.mjs verifier <manifeste.json>');
+    verifier(args[0]);
   } else {
-    console.log('commandes : cles | signer <manifeste.json> | verifier <manifeste.json>');
+    console.log(
+      'commandes :\n' +
+        '  cles\n' +
+        '  preparer <dossier-moteur> <archive.zip> <sortie.json> <version>\n' +
+        '  signer <manifeste.json>\n' +
+        '  verifier <manifeste.json>',
+    );
     process.exit(2);
   }
 } catch (e) {

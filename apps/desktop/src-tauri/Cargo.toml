@@ -2,6 +2,16 @@
 name = "tatami-desktop"
 version = "0.1.0"
 edition = "2021"
+# `default-run` est **indispensable** dès qu'il y a deux binaires : sans lui,
+# `cargo run` (donc `tauri dev`, et la CI) refuse de démarrer en demandant
+# `--bin`. Mesuré le 2026-10-05 à l'ajout de `tatami-moteur` : l'application
+# entière ne démarrait plus.
+#
+# Et cette clé est de `[package]` : la mettre après `[lib]` la fait tomber dans
+# la table de la bibliothèque, où Cargo l'ignore silencieusement — et l'erreur
+# de départ est alors « cargo run ne sait pas quel binaire », sans rapport avec
+# la cause.
+default-run = "tatami-desktop"
 
 # Bibliothèque + binaire (tâche 5.3).
 # Le code est dans la bibliothèque pour que `tests/contrat_moteur.rs` puisse
@@ -15,6 +25,13 @@ path = "src/lib.rs"
 [[bin]]
 name = "tatami-desktop"
 path = "src/main.rs"
+
+# Tâche 5.1 : gestion du moteur en ligne de commande (mode manuel). Ce binaire
+# n'implémente rien : il appelle `tatami_desktop::moteur`, le même code et la
+# même clé embarquée que l'application. Voir `src/bin/tatami-moteur.rs`.
+[[bin]]
+name = "tatami-moteur"
+path = "src/bin/tatami-moteur.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

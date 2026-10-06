@@ -433,6 +433,25 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   script, le test lit le script et compare, comme
   `les_champs_signes_concordent_avec_le_script`.
 
+- **Un second binaire casse `cargo run`, donc `tauri dev`, donc tout.** Cargo ne
+  sait plus quel binaire lancer : « could not determine which binary to run ». Le
+  correctif est `default-run` dans `[package]` — **et la clé doit être dans
+  `[package]`**, sinon Cargo l’ignore silencieusement et l’erreur affichée ne
+  parle ni de la clé ni de sa position. Mesuré le 2026-10-05 : première clé posée
+  après `[lib]`, donc dans la table de la bibliothèque ; le message ne dit rien. Après tout ajout de `[[bin]]`, `cargo run` **et** `tauri dev` se lancent.
+- **Un test qui ne vérifie que des refus ne prouve pas que le cas nominal
+  marche.** J’ai interdit le point dans les noms de version pour empêcher une
+  traversée — donc `0.2.0`, c’est-à-dire toute version sémantique, était refusée,
+  et le test ne le voyait pas parce qu’il ne listait que des noms hostiles. Ajouté
+  depuis : `une_version_semantique_est_acceptee`. Corollaire : à chaque test « un X
+  est refusé », demander « et un X **légitime** est-il accepté ? ».
+- **Les outils Windows écrivent des antislashs dans les archives, et la norme ZIP
+  écrit des slashs.** Mesuré le 2026-10-05 : `Compress-Archive`, 180 entrées sur
+  181 avec un backslash. Notre lecteur les **écartait**, donc une archive produite
+  par l’outil du projet n’installait rien — silencieusement. Règle : **normaliser
+  avant de refuser**, sinon le refus porte sur la forme et non sur le danger ;
+  `..\..\x` doit être refusé **après** normalisation, pour la bonne raison.
+
 - **Tauri ignore silencieusement un paramètre d'écriture en `snake_case`.** Il
   convertit `camelCase` → `snake_case` côté Rust ; une clé déjà snake_case passe
   **sans erreur** et n'est pas prise. La commande répond normalement avec les

@@ -178,14 +178,21 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
   **Partiellement livré le 2026-10-05** — voir ADR 0006. Ce qui manque est listé
   plus bas, et c’est délibéré, pas oublié.
   **Livré** : clé Ed25519 auto-gérée (publique dans le dépôt, privée **hors**
-  dépôt), `scripts/moteur-sign.mjs`, signature vérifiée sur un **texte canonique**
-  (jamais sur le JSON, qui a des espaces libres), empreinte SHA-256 de l’archive
-  vérifiée **avant** extraction, extraction dans `versions/<version>/.en-cours`
-  puis renommage, pointeur `actif.json` écrit par fichier temporaire + renommage,
-  `precedente` mémorisée pour le retour arrière, `sidecar_candidates()` mis en
-  tête sur le moteur installé. `zipread` a reçu le support **DEFLATE**
-  (`flate2`), sans quoi une archive de moteur n’était pas installable du tout.
-  **Manque, volontairement** : (1) le téléchargement HTTP — c’est une décision
+  dépôt), `scripts/moteur-sign.mjs` (`cles`, `preparer`, `signer`, `verifier`),
+  signature vérifiée sur un **texte canonique** (jamais sur le JSON, qui a des
+  espaces libres), empreinte SHA-256 vérifiée **avant** extraction, extraction
+  dans `versions/<version>/.en-cours` puis renommage, pointeur `actif.json` écrit
+  par fichier temporaire + renommage, `precedente` mémorisée,
+  `sidecar_candidates()` en tête sur le moteur installé. `zipread` a reçu
+  `DEFLATE` (`flate2`) et la **normalisation des antislashs**.
+  **Mode manuel choisi par l’utilisateur le 2026-10-05** : pas de téléchargement,
+  tout est local. Gesté par `tatami-moteur` (`etat`, `verifier`, `installer`,
+  `activer`, `revenir`), qui appelle le **même** module et la **même** clé
+  embarquée que l’application.
+  **Manque** : la sonde de démarrage qui appelle `revenir_en_arriere()` — la
+  fonction existe et est testée, mais **rien ne l’appelle**, donc le retour
+  arrière n’est pas encore automatique. Et l’interface, qui viendra si tu la
+  veux.
   humaine (d’où vient le manifeste ?) ; (2) la sonde de démarrage qui appelle
   `revenir_en_arriere()` — la fonction existe et est testée, mais **rien ne
   l’appelle**, donc le retour arrière n’est pas encore automatique ; (3)
@@ -1820,3 +1827,69 @@ binaire ne l’était pas. Corrigé en réécrivant le fichier.
 
 `cargo test` **149** (128 + 1 + 20), dont 14 nouveaux · `fmt` 0 · `clippy
 --all-targets -D warnings` 0 · `tsc` 0. Aucune interface touchée.
+
+### 2026-10-05 — Mode manuel et chaîne complète (5.1) — fait
+
+**Décision humaine : le manuel.** Pas de téléchargement, tout est local. C’est
+cohérent avec « usage personnel », et ça évite de décider d’un hébergement avant
+d’avoir la mécanique.
+
+**La chaîne a tourné pour de vrai**, pas en théorie :
+
+```
+Compress-Archive -Path engine/dist/tatami-engine/* -DestinationPath moteur-0.2.0.zip
+  -> 47,7 Mo, 181 entrées, 10,8 s d’extraction
+moteur-sign.mjs preparer …  -> version=0.2.0 engine=0.1.0-SNAPSHOT parsers=b3c0000
+                                 sha256=daf4f60f…
+moteur-sign.mjs signer …   -> charge signée affichée
+moteur-sign.mjs verifier … -> signature valide
+tatami-moteur installer …  -> 180 fichiers, 64,1 Mo écrits, aucun .en-cours résiduel
+tatami-moteur activer 0.2.0-> pointeur basculé
+```
+
+Et **l’application a réellement utilisé le moteur installé** :
+`sidecar java=%APPDATA%\Tatami\moteur\versions\0.2.0\runtime\bin\java.exe`,
+puis `hello OK (protocol=0.1)`, 0 erreur. C’est la preuve qui compte — sans
+elle, la chaîne ne serait qu’un jeu de commandes qui se répondent.
+
+**Les valeurs ne sont jamais tapées** : `preparer` lit `engine` et `parsers` dans
+les noms des JAR réellement produits (`tatami-engine-0.1.0-SNAPSHOT.jar`,
+`kotatsu-parsers-redo-b3c0000.jar`). Une faute de frappe dans un manifeste ne se
+verrait qu’à l’installation.
+
+**Un test ferme la frontière entre les deux langages** :
+`le_manifeste_reel_est_verifie_avec_la_cle_embarquee` lit le manifeste **signé par
+Node** et le vérifie avec la clé publique **compilée dans le binaire Rust**. Si les
+deux implémentations de la charge signée divergent, ce test tombe. Il se dit
+**à voix haute** quand le manifeste est absent — un test vert sans avoir rien
+vérifié est indiscernable d’un test qui a marché.
+
+**Portes prouvées mordantes, deux fois** :
+
+- un seul caractère de l’empreinte modifiée → **Rust et Node refusent tous les
+  deux**, indépendamment ;
+- le point réinterdit dans un nom de version → `une_version_semantique_est_acceptee`
+  tombe.
+
+**Trois bugs trouvés en faisant tourner la chaîne, pas en la relisant** :
+
+1. **`default-run` manquant.** Ajouter un second binaire fait échouer `cargo run`
+   (« could not determine which binary »), donc **`tauri dev` ne démarrait plus**.
+   Le pis : cette clé est de `[package]`, et la mettre après `[lib]` la fait
+   tomber dans la table de la bibliothèque, où Cargo l’**ignore silencieusement**
+   — l’erreur affichée ne parle alors ni de la clé ni de sa position.
+2. **Les points interdits dans un nom de version.** J’avais écrit
+   `version.contains(['/', '\\', '.'])`, donc `0.2.0` était refusé — toute
+   version sémantique. Mon test ne le voyait pas parce qu’il ne contenait que
+   des **refus** : un test qui ne vérifie que des échecs ne prouve pas que le cas
+   nominal fonctionne. Corrigé, et `une_version_semantique_est_acceptee` ajouté.
+3. **Les antislashs des archives Windows.** `Compress-Archive` a écrit **180
+   entrées sur 181** avec des antislashs, alors que la norme ZIP impose des
+   slashs. `zipread` les **écartait** : aucune archive faite par l’outil du
+   projet n’installe donc rien, silencieusement. Corrigé par
+   `zipread::assainir_nom`, qui **normalise avant de refuser** — donc
+   `..\..\evil.dll` est refusé pour la **bonne** raison (remontant), pas parce
+   qu’il contenait un backslash.
+
+`cargo test` **151** (131 + 1 + 19), dont 3 nouveaux · `fmt` 0 · `clippy
+--all-targets -D warnings` 0 · `tsc` 0.

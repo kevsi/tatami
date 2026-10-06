@@ -92,6 +92,25 @@ const FR = {
   'notif.reglage.note2':
     'Tant que la fenêtre a le focus, l’alerte reste muette : le flux « mises à jour » de l’accueil montre déjà la même chose.',
 
+  // --- Journaux de diagnostic (tâche 5.5) ---
+  //
+  // Les notes expliquent ce qui est conservé et ce qui est remplacé : une
+  // promesse de confidentialité qu'on n'explique pas est une promesse qu'on ne
+  // peut pas vérifier.
+  'journal.titre': 'Journaux de diagnostic',
+  'journal.exporter': 'Exporter un rapport',
+  'journal.exporter.note':
+    'Écrit un fichier texte dans vos Téléchargements, à joindre à un rapport de bug.',
+  'journal.purger': 'Supprimer les journaux',
+  'journal.purger.note':
+    'Supprime les journaux écrits sur le disque. Sans effet sur votre bibliothèque.',
+  'journal.fait': 'Rapport écrit : {chemin}',
+  'journal.purge.ok': '{n} fichier(s) supprimé(s).',
+  'journal.purge.rien': 'Aucun journal à supprimer.',
+  'journal.mention':
+    'Le rapport contient vos comptes et vos identifiants de source, utiles au diagnostic. Vos URL de manga y sont remplacées par une empreinte.',
+  'journal.echec': 'Échec : {raison}',
+
   // --- Démarrage automatique (tâche 3.4) ---
   'demarrage.titre': 'Démarrage automatique',
   'demarrage.reglage': 'Lancer Tatami à l’ouverture de ma session',
@@ -425,6 +444,20 @@ const EN: Record<Cle, string> = {
     'One alert per run, never one per chapter. Turning this off does not stop the watch.',
   'notif.reglage.note2':
     'While the window has focus the alert stays quiet: the “updates” feed on the home screen already shows the same thing.',
+
+  // --- Diagnostic logs (task 5.5) ---
+  'journal.titre': 'Diagnostic logs',
+  'journal.exporter': 'Export a report',
+  'journal.exporter.note':
+    'Writes a text file in your Downloads, to attach to a bug report.',
+  'journal.purger': 'Delete the logs',
+  'journal.purger.note': 'Deletes the logs written on disk. Your library is untouched.',
+  'journal.fait': 'Report written: {chemin}',
+  'journal.purge.ok': '{n} file(s) deleted.',
+  'journal.purge.rien': 'No log to delete.',
+  'journal.mention':
+    'The report contains your counts and your source identifiers, which help diagnose. Your manga URLs are replaced by a fingerprint.',
+  'journal.echec': 'Failed: {raison}',
 
   // --- Autostart (task 3.4) ---
   'demarrage.titre': 'Start on login',

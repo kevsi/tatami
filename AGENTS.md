@@ -377,6 +377,36 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   Corollaire : lire la chaîne de dépendance réelle avant de construire une stratégie
   contre elle — sinon on défend le bon endroit avec le mauvais moyen.
 
+- **Une fonction de contexte dans les dépendances d’un `useEffect` déclenche
+  l’effet à chaque rendu.** `useI18n()` rend `t` sous forme de fonction
+  recréée à chaque rendu, donc `[t]` n’est jamais stable. Mesuré le 2026-10-05
+  sur l’effet qui pousse les libellés du menu de zone : **18 appels au seul
+  démarrage**, chacun suivi d’une lecture du démarrage automatique. Règle :
+  dépendre d’un **primitif** (`langue`), pas de la fonction de traduction. Et
+  lire le journal au démarrage est ce qui a révélé le problème — sans lui,
+  rien ne se voyait.
+- **Une rédaction doit être testée avec la forme que le code écrit vraiment.**
+  Deux implémentations de suite ont passé leurs tests et **toutes les deux
+  fuitaient** : la première ignorait `manga_url=https://…` (forme `clé=valeur`,
+  donc le jeton ne *commence* pas par `https`), la seconde laissait passer
+  `\\?\C:\Users\…` (forme longue que `canonicalize` renvoie). Les tests
+  utilisaient des URL nues et des chemins courts — jamais les formes réelles.
+  Corollaire : écrire un test à partir d’une **ligne de journal relevée**, pas
+  à partir de ce qu’on suppose que le code écrit.
+- **Une porte qui ne lit qu’un fichier est aveugle sur le reste du dossier — et
+  ça arrive deux fois.** `check-i18n.mjs` ne lisait que `page.tsx` ;
+  `aucune_commande_tauri_nest_morte` faisait pareil, et a déclaré morts
+  `exporter_rapport` et `purger_journal` alors que `app/diagnostic.ts` les
+  appelle. Même famille, deux fichiers différents, même date. Règle : dès
+  qu’un écran vit dans un module, toute porte qui balaie le front doit balayer
+  `app/` entier, et le dire dans son nom de test.
+- **Une classe CSS utilisée mais jamais définie ne se voit pas.** `note-ok` était
+  employée dans `page.tsx` pour les messages de confirmation, sans aucune règle
+  dans `globals.css` : le texte s’affichait en style courant et personne ne l’a
+  signalé. Les tokens de succès existaient déjà dans les deux thèmes — seule la
+  règle manquait. Chercher les classes **utilisées** contre celles **définies**
+  est un test de dix lignes qui trouve ce genre de trou.
+
 - **Tauri ignore silencieusement un paramètre d'écriture en `snake_case`.** Il
   convertit `camelCase` → `snake_case` côté Rust ; une clé déjà snake_case passe
   **sans erreur** et n'est pas prise. La commande répond normalement avec les

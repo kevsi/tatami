@@ -1863,6 +1863,23 @@ button:disabled {
   margin: 0 0 var(--s3);
 }
 
+/* Signal de succès.
+ *
+ * La classe était **déjà utilisée** dans `page.tsx` alors qu'aucune règle ne la
+ * définissait ici : les messages de confirmation s'affichaient donc en texte
+ * courant, sans aucun style. Les tokens existaient déjà dans les **deux** thèmes
+ * (`--succes-texte`, `--succes-bordure`, `--succes-fond`) — seule la règle
+ * manquait, donc il n'y avait rien à inventer.
+ */
+.note-ok {
+  font-size: 13px;
+  border-left: 2px solid var(--succes-bordure);
+  background: var(--succes-fond);
+  color: var(--succes-texte);
+  padding: 8px var(--s3);
+  margin: 0 0 var(--s3);
+}
+
 .count {
   color: var(--text-3);
   font-size: 13px;

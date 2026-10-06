@@ -40,6 +40,7 @@ pub mod challenge;
 pub mod commands;
 pub mod download;
 pub mod image;
+pub mod journal;
 pub mod library;
 pub mod pagecache;
 pub mod scheduler;

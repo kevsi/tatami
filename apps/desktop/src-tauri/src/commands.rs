@@ -236,7 +236,15 @@ pub async fn details(
     if manga_url.trim().is_empty() {
         return Err("PARSE_ERROR: manga_url vide".to_string());
     }
-    tracing::info!("details source={source} manga_url={manga_url}");
+    // Tâche 5.5 : l'URL **en clair** est retirée du journal. Elle contient le
+    // titre, donc elle dit ce que la personne lit — et le journal part dans les
+    // rapports de diagnostic. L'empreinte est stable d'une exécution à l'autre :
+    // on peut donc relier deux signalements du même manga sans jamais écrire le
+    // manga.
+    tracing::info!(
+        "details source={source} manga={}",
+        crate::journal::hachage(manga_url.trim())
+    );
     let params = serde_json::json!({
         "source": source.trim(),
         "url": manga_url,
@@ -260,7 +268,11 @@ pub async fn chapters(
     if manga_url.trim().is_empty() {
         return Err("PARSE_ERROR: manga_url vide".to_string());
     }
-    tracing::info!("chapters source={source} manga_url={manga_url}");
+    // Même raison que dans `details` : l'URL devient une empreinte stable.
+    tracing::info!(
+        "chapters source={source} manga={}",
+        crate::journal::hachage(manga_url.trim())
+    );
     // `mangaTitle` permet au moteur de reconstruire le webtoon après un
     // redémarrage (cache de session vide) : sans lui, toute reprise échoue.
     let params = serde_json::json!({

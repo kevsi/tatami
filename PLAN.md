@@ -177,7 +177,23 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 - [ ] **5.2** Mise à jour de l'app via l'updater Tauri.
 - [x] **5.3** Tests de contrat sur réponses enregistrées, exécutés en intégration continue.
 - [x] **5.4** Écran « état des sources » pour repérer ce qui est cassé. **Livré** le 2026-10-05 et **vérifié à l'écran**. Ce qui existait : un compteur « N sources signalées » et un bouton « Tout réessayer » — pas de liste, pas de date, donc impossible de savoir *quelle* source casse ni *depuis quand*. La donnée existait déjà (`noteHealth` enregistre `{code, message, at}` et persiste) : il n'y avait qu'à l'afficher. Regroupement par **code d'erreur** d'abord (3 sources en `CHALLENGE_REQUIRED` sont un problème Cloudflare, pas 3 pannes distinctes), puis le détail, du plus récent au plus ancien. `<time dateTime>` garde la date exploitable par une machine. **Corrigé au passage** : `sinceFr` était français en dur (contre `AGENTS.md` §7) — l'interface anglaise affichait « 3 mois ». Preuve : 7 pannes injectées, 4 chips de regroupement dont la somme vaut 7, 3 colonnes, 0 faute de français en mode `en`, bouton « Tout réessayer » ramène l'état à 0 et la table disparaît. **Non couvert** : la version du parser (exigée par la formulation d'origine) n'est pas affichée — elle vient du moteur et demanderait une commande Rust.
-- [ ] **5.5** Journaux de diagnostic exportables, sans données personnelles.
+- [x] **5.5** Journaux de diagnostic exportables, sans données personnelles. **Livré et
+  vérifié le 2026-10-05.** Le point de départ mesuré : `tracing_subscriber::fmt()`
+  écrivait **sur stdout seul**, et une app installée sur Windows n’a pas de console —
+  donc **aucun journal du tout** en usage normal. Le fichier est désormais borné
+  (2 Mio, bascule sur `.prec`), et **stdout est conservé en parallèle** (c’est là
+  que regarde un `pnpm tauri dev`).
+  « Sans données personnelles » est une règle écrite, pas une description :
+  identifiants de source, codes d’erreur, horodatages, versions et comptes
+  **conservés** ; URL de manga **remplacées par une empreinte** FNV-1a stable ;
+  chemins réduits au nom de fichier. Le rapport dit lui-même que c’est une
+  **pseudonymisation**, pas une anonymisation. La rédaction est appliquée **en
+  dernier** par Rust, donc elle couvre aussi le stderr du moteur et le texte que
+  l’interface compose.
+  Le résumé est composé par l’interface — elle seule connaît l’état de santé des
+  sources, qui vit dans son `localStorage` — et écrit par Rust. Les versions du
+  moteur ne sont pas réinventées : elles sont déjà dans le journal, relayées du
+  stderr (`tatami-engine serve protocol=0.1 engine=0.1.0-SNAPSHOT parsers=b3c0000`).
 - [ ] **5.6** Installeurs Windows (`.msi`), signature du code, documentation utilisateur et contributeur.
 - [x] **5.7** Politique de suivi de l’amont : procédure pour intégrer les nouvelles
   versions de `kotatsu-parsers-redo`, miroir/fork de secours. **Livré le 2026-10-05.**
@@ -1588,3 +1604,115 @@ transforme la mise à jour en remplacement manuel de fichier), vérification PGP
 (on ne possède pas la clé de JitPack), et « ne pas dépendre de l’amont »
 (interdit par §13). Le hash identifie le contenu, il ne prouve pas l’auteur :
 c’est le maximum atteignable sans être JitPack, et c’est ce qu’on retient.
+
+### 2026-10-05 — Journaux de diagnostic (5.5) — mini-plan
+
+**Ce qui n’existe pas, mesuré :** `tracing_subscriber::fmt()` écrit **sur stdout
+seulement**. Une app installée sur Windows n’a pas de console — donc **aucun
+journal du tout** en usage normal. Ce n’est pas une histoire de quantification :
+il n’y a rien à quantifier.
+
+**Ce qui fuit déjà, mesuré** (48 sites de log) :
+
+- `commands.rs:239` et `commands.rs:263` écrivent `manga_url` **en clair** —
+  l’URL contient le titre, donc l’historique de lecture.
+- `store.rs:359` écrit le **chemin complet** de la sauvegarde, donc
+  `C:\Users\<nom>\…` — le nom d’utilisateur Windows.
+- `supervisor.rs:179` relaie le stderr du moteur **en verbatim**. Vérifié : le
+  moteur n’écrit que sa version et un compte (`Server.kt:288`, `:381`), donc c’est
+  sain **aujourd’hui** — et fragile demain, sans qu’aucune porte ne le dise.
+
+**Étapes** : (1) un vrai journal sur disque, borné et roté — une app de bureau ne
+peut pas remplir le disque ; (2) les trois fuites fermées **à la source**, pas
+seulement dans l’export : un hash stable à la place de l’URL, le nom de fichier
+seul à la place du chemin ; (3) un export **composé par l’interface** (elle seule
+connaît l’état de santé, qui vit dans `localStorage`) et **écrit par Rust**, qui
+applique la rédaction en dernier — donc elle couvre aussi ce que le front a
+composé ; (4) la purge, parce que « sans données personnelles » sans moyen de
+tout supprimer n’est qu’une promesse.
+
+**« Sans données personnelles », la règle retenue** : identifiants de source
+**conservés** (ils ne sont pas personnels et sont indispensables au diagnostic),
+URL et titres **remplacés par un hash** (FNV-1a, 8 hex, non salé), chemins
+absolus **réduits au nom de fichier**. Le hash est une **pseudonymisation**, pas
+une anonymisation : il est réversible si quelqu’un possède la liste des URL. Le
+dire dans l’export vaut mieux que le laisser croire.
+
+**Point qui demandera un arbitrage humain** : l’export contiendra des
+**comptages** (favoris, chapitres téléchargés, signets). Un nombre n’est pas une
+donnée personnelle, mais il rend le rapport légèrement plus parlant. Je les
+inclue et je le signale ; les retirer est une ligne.
+
+### 2026-10-05 — Journaux de diagnostic (5.5) — fait
+
+**Ce qui n’existait pas, mesuré :** un journal. `tracing_subscriber::fmt()`
+écrit sur stdout ; une application installée sur Windows n’a pas de console.
+Il n’y avait donc rien à quantifier, rien à limiter, rien à exporter.
+
+**Les trois fuites déjà présentes** (48 sites de log), toutes fermées **à la
+source** *et* derrière une rédaction finale :
+
+- `commands.rs` ×2 : `manga_url` **en clair** — l’URL contient le titre, donc
+  l’historique de lecture ;
+- `store.rs` : le **chemin complet** de la sauvegarde, donc
+  `C:\Users\<nom>\…` ;
+- `supervisor.rs:179` : le stderr du moteur relayé **en verbatim**. Vérifié — le
+  moteur n’écrit que sa version et un compte (`Server.kt:288`, `:381`) — donc
+  sain aujourd’hui, et **fragile demain sans qu’aucune porte ne le dise**.
+
+**Deux implémentations de rédaction ont passé leurs tests et fuitait toutes les
+deux.** La première ignorait `manga_url=https://…` : le jeton ne *commence* pas
+par `https`, il est en `clé=valeur`. La seconde laissait passer
+`\\?\C:\Users\…` : elle exigeait la lettre de lecteur en 2ᵉ position, et
+`canonicalize` renvoie la forme longue — c’est-à-dire **tous** les chemins que
+Rust a réellement ouverts. Les tests utilisaient des URL nues et des chemins
+courts, jamais les formes réelles. Corrigé en cherchant la lettre de lecteur
+**n’importe où** dans le jeton, avec un test sur la forme longue.
+
+**Une porte avait le même angle mort que `check-i18n.mjs`** :
+`aucune_commande_tauri_nest_morte` ne lisait que `app/page.tsx`, et a déclaré
+morts `exporter_rapport` et `purger_journal` alors que `app/diagnostic.ts` les
+appelle. Elle balaie maintenant **tout `app/`**, dictionnaire i18n exclu — y
+trouver le nom d’une commande ne prouverait pas qu’elle est appelée. **Porte
+prouvée mordante** : casser l’appel dans `diagnostic.ts` seulement (
+`page.tsx` intact) la fait échouer en nommant `exporter_rapport`, et elle
+repassait au vert à la restauration.
+
+**Un défaut de 3.4 trouvé par le journal** : `useEffect(…, [t])` déclenchait
+l’effet **à chaque rendu**, parce que `t` est une fonction recréée à chaque
+fois. Mesuré : **18 appels** de `set_libelles` au seul démarrage, chacun suivi
+d’une lecture du démarrage automatique. Dépendre de `langue` (un primitif) :
+**2 appels** — le second est le double montage de StrictMode en dev.
+
+**`note-ok` était utilisée dans `page.tsx` sans aucune règle CSS** : les
+messages de confirmation s’affichaient en texte courant. Les tokens de succès
+existaient déjà dans les deux thèmes, seule la règle manquait — donc rien à
+inventer.
+
+Mesure sur l’app réelle :
+
+| | |
+|---|---|
+| journal sur disque | créé, `LIGNES_RAPPORT` lignes reprises |
+| export | `tatami-diagnostic-<horodatage>.txt` dans Téléchargements |
+| contenu | en-tête + version + état des sources + journal |
+| sources citées | `MANGADEX`, `REMANGA`, `SEIMANGA`, `CHALLENGE_REQUIRED x3` |
+| URL résiduelles | **aucune** |
+| chemins résiduels | **aucun** |
+| nom d’utilisateur | **aucun** |
+| purge | « 1 fichier supprimé » puis « aucun », contrôle négatif |
+| erreurs console | **0** |
+
+La première version de la sonde concluait « fuite de domaine » en cherchant
+`MANGADEX|REMANGA|…` : **faux positif**, ce sont les identifiants de source,
+volontairement conservés. La preuve d’absence d’URL est qu’aucune `http://`
+ne subsiste, pas qu’un mot ne fasse pas partie d’un nom de source. Corrigée,
+puis re-mesurée : propre.
+
+`cargo test` **136** (115 + 1 + 20), dont 11 nouveaux · `fmt` 0 · `clippy
+--all-targets -D warnings` 0 · `tsc` 0 · `lint` **4 warnings, les 4
+antérieurs**, aucun nouveau · `i18n` 250 clés propres · `build` OK.
+
+**Point à arbitrer** : le rapport contient des **comptages**. Un nombre n’est
+pas une donnée personnelle, mais il rend le rapport légèrement plus parlant.
+Je les ai inclus ; les retirer est une ligne.

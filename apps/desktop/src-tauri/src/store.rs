@@ -57,7 +57,12 @@ pub struct HistoryEntry {
     pub read_at: i64,
 }
 
-fn now_ms() -> i64 {
+/// `pub` depuis le 2026-10-05 (tâche 5.5) : le rapport de diagnostic nomme son
+/// fichier avec cet horodatage, et il doit venir de la **même** horloge que le
+/// reste de la base. Deux horloges dans un même binaire finissent par diverger
+/// d'une heure, et le premier symptôme est un rapport « de la veille » daté
+/// d'aujourd'hui.
+pub fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -356,7 +361,15 @@ impl Store {
             .join(name);
         std::fs::copy(&self.path, &dest)
             .map_err(|e| format!("sauvegarde avant migration impossible : {e}"))?;
-        tracing::info!("sauvegarde de la base : {}", dest.display());
+        // Tâche 5.5 : le chemin **complet** est retiré. Il contient
+        // `C:\Users\<nom>\…`, donc le nom d'utilisateur Windows se retrouvait dans
+        // le journal — et le journal part dans les rapports de diagnostic. Le nom
+        // de fichier suffit : il dit quelle version a été sauvegardée.
+        let nom = dest
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "sauvegarde.db".to_string());
+        tracing::info!("sauvegarde de la base : {nom}");
         Ok(())
     }
 

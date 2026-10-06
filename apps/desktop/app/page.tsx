@@ -18,6 +18,7 @@ import {
   reglerDemarrage,
   type EtatDemarrage,
 } from './demarrage';
+import { exporterRapport, purgerJournal } from './diagnostic';
 
 type Source = { name: string; lang: string };
 type Manga = {
@@ -1158,6 +1159,58 @@ export default function Home() {
     setDemarrage(await reglerDemarrage(actif));
   }, []);
 
+  /** Tâche 5.5 — ce que l'écran affiche **après** l'action.
+   *
+   *  Un seul champ `null` = « rien à afficher ». Les deux autres sont
+   *  volontairement distincts : un succès et une erreur qui afficheraient le même
+   *  gris seraient indiscernables, et c'est le cas typique quand on n'affiche que
+   *  « terminé ».
+   */
+  const [journalOccupe, setJournalOccupe] = useState<'export' | 'purge' | null>(null);
+  const [journalMessage, setJournalMessage] = useState<string | null>(null);
+  const [journalErreur, setJournalErreur] = useState<string | null>(null);
+
+  /** Tâche 5.5 — exporte, puis affiche le chemin **que le cœur a réellement écrit**.
+   *
+   *  Le chemin vient du retour de la commande, pas d'une concaténation locale :
+   *  afficher un chemin fabriqué serait afficher un chemin possiblement faux.
+   */
+  const lancerExport = useCallback(async () => {
+    setJournalOccupe('export');
+    setJournalMessage(null);
+    setJournalErreur(null);
+    try {
+      const chemin = await exporterRapport(langue);
+      setJournalMessage(t('journal.fait', { chemin }));
+    } catch (e) {
+      setJournalErreur(t('journal.echec', { raison: String(e).slice(0, 160) }));
+    } finally {
+      setJournalOccupe(null);
+    }
+    // `langue` est une dépendance **réelle** : sans elle, changer de langue
+    // laisserait le rapport exported dans la langue précédente. L'avertissement
+    // `exhaustive-deps` signalait un vrai oubli, pas du bruit.
+  }, [t, langue]);
+
+  /** Tâche 5.5 — supprime, puis affiche **combien** de fichiers sont partis.
+   *
+   *  `0` n'est pas une erreur : c'est l'état déjà propre. Les deux cas ont donc
+   *  leur propre message, sinon « rien » et « impossible » se ressembleraient.
+   */
+  const lancerPurge = useCallback(async () => {
+    setJournalOccupe('purge');
+    setJournalMessage(null);
+    setJournalErreur(null);
+    try {
+      const n = await purgerJournal();
+      setJournalMessage(n > 0 ? t('journal.purge.ok', { n }) : t('journal.purge.rien'));
+    } catch (e) {
+      setJournalErreur(t('journal.echec', { raison: String(e).slice(0, 160) }));
+    } finally {
+      setJournalOccupe(null);
+    }
+  }, [t]);
+
   /** Tâche 3.4 — pousse les libellés du menu de zone vers Rust.
    *
    *  Le menu est créé par le **cœur** (pour qu'il existe même si la webview
@@ -1168,10 +1221,16 @@ export default function Home() {
    *  exception au montage qui empêcherait le reste de l'écran de s'afficher.
    *
    *  La commande **renvoie les textes relus depuis le menu** : un simple `Ok`
-   *  ne prouverait que la réception. Le retour va dans le journal, ce qui donne
+   *  ne prouverait que la réception. Le retour va dans la console, ce qui donne
    *  un moyen de vérifier sans ajouter `core:menu:allow-get-text` aux
    *  capabilities — que la règle « strict minimum » interdit d'ajouter pour les
    *  besoins d'une mesure.
+   *
+   *  Dépendance : **`langue`, pas `t`.** Mesuré le 2026-10-05 : `t` est une
+   *  fonction recréée à chaque rendu, donc `[t]` déclenchait l'effet **à chaque
+   *  rendu** — 18 appels de `set_libelles` au seul démarrage, chacun suivi d'un
+   *  `lireDemarrage()`. Le libellé ne dépend que de la langue, donc c'est la
+   *  seule dépendance qui compte.
    */
   useEffect(() => {
     invoke<[string, string]>('set_libelles', {
@@ -1180,11 +1239,16 @@ export default function Home() {
     })
       .then((lus) => console.info('menu de zone', { ouvrir: lus[0], quitter: lus[1] }))
       .catch(() => {});
-    // Le démarrage automatique est relu à chaque ouverture de l'écran : il peut
-    // avoir été changé ailleurs (gestionnaire de tâches, Paramètres Windows), et
-    // un état figé au montage afficherait le contraire de la réalité.
+    // Le démarrage automatique est relu à chaque changement de langue : il peut
+    // avoir été modifié ailleurs (gestionnaire de tâches, Paramètres Windows), et
+    // un état figé afficherait le contraire de la réalité.
     void lireDemarrage().then(setDemarrage);
-  }, [t]);
+    // La directive doit être sur la ligne **immédiatement** précédente : elle ne
+    // couvre que celle d'après, donc un commentaire de plusieurs lignes entre les
+    // deux la rend « inutilisée » tout en laissant l'avertissement réapparaître
+    // trois lignes plus bas. La raison est dans le commentaire de l'effet.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [langue]);
 
   const chargerPlan = useCallback(() => {
     invoke<PlanReglages>('reglages_planificateur')
@@ -3393,6 +3457,39 @@ useEffect(() => {
           {demarrage === 'indisponible' && <p className="error">{t('demarrage.indisponible')}</p>}
           {demarrage === 'inconnu' && <p className="muted">{t('demarrage.lecture')}</p>}
           <p className="muted">{t('demarrage.note')}</p>
+        </section>
+
+        {/* Tâche 5.5 — journaux de diagnostic.
+         *
+         *  Le **résumé** est composé ici (elle seule connaît l'état de santé des
+         *  sources, qui vit dans son `localStorage`) et écrit par Rust, qui
+         *  applique la rédaction en dernier.
+         *
+         *  Le retour affiché est le **résultat réel** : le chemin écrit par le
+         *  cœur, et le nombre de fichiers réellement supprimés. Afficher « fait »
+         *  sans relire serait exactement le défaut que la purge compte pour
+         *  éviter.
+         */}
+        <section className="panel">
+          <h2>{t('journal.titre')}</h2>
+          <p className="muted">{t('journal.mention')}</p>
+          <div className="row-actions">
+            <button
+              type="button"
+              disabled={journalOccupe !== null}
+              onClick={() => void lancerExport()}
+            >
+              {t('journal.exporter')}
+            </button>
+            <button type="button" onClick={() => void lancerPurge()}>
+              {t('journal.purger')}
+            </button>
+          </div>
+          <p className="muted">{t('journal.exporter.note')}</p>
+          <p className="muted">{t('journal.purger.note')}</p>
+          {journalOccupe === 'export' && <p className="muted">{t('demarrage.lecture')}</p>}
+          {journalOccupe === null && journalMessage && <p className="note-ok">{journalMessage}</p>}
+          {journalOccupe === null && journalErreur && <p className="error">{journalErreur}</p>}
         </section>
 
         <section className="panel">

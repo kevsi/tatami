@@ -19,7 +19,7 @@ use tauri::Manager;
 // L'import de `commands` ci-dessous n'est donc pas cosmétique : sans lui, le
 // chemin de `generate_handler!` ne se résout pas.
 use tatami_desktop::{
-    challenge, commands, download, library, pagecache, scheduler, shelf, store, tray,
+    challenge, commands, download, journal, library, pagecache, scheduler, shelf, store, tray,
 };
 
 fn not_found() -> tauri::http::Response<Vec<u8>> {
@@ -72,8 +72,17 @@ fn sidecar_paths(resource_dir: Option<&std::path::Path>) -> (PathBuf, String) {
 }
 
 fn main() {
+    // Tâche 5.5 : le journal part **sur disque**. Avant, tout partait sur stdout,
+    // et une application installée sur Windows n'a pas de console : il n'y avait
+    // donc aucun journal du tout en usage normal.
+    //
+    // `stdout` est **conservé** en parallèle : c'est là que regarde un
+    // `pnpm tauri dev`, et la redirection de `tracing` vers un seul writer ferait
+    // perdre la console du développeur.
+    let fichier_journal = journal::VersFichier::nouveau(journal::chemin_journal());
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
+        .with_writer(fichier_journal)
         .init();
 
     let context = tauri::generate_context!();
@@ -217,6 +226,8 @@ fn main() {
             shelf::forget_history,
             shelf::add_bookmark,
             tray::set_libelles,
+            journal::exporter_rapport,
+            journal::purger_journal,
             challenge::open_challenge,
             challenge::solve_challenge,
             challenge::cancel_challenge
@@ -280,19 +291,21 @@ mod tests {
     /// porte qui la fasse échouer.
     ///
     /// La recherche est volontairement grossière : elle cherche le nom de la
-    /// commande dans `page.tsx`, sans distinguer la forme de l'appel. Une
-    /// commande citée dans un commentaire ne poserait pas de problème ici — le
+    /// commande dans le code de l'interface, sans distinguer la forme de l'appel.
+    /// Une commande citée dans un commentaire ne poserait pas de problème ici — le
     /// but est d'attraper l'oubli, pas de prouver l'absence.
+    ///
+    /// **Elle lit TOUS les modules de `app/`, pas seulement `page.tsx`.** Mesuré
+    /// le 2026-10-05 : `exporter_rapport` et `purger_journal` (tâche 5.5) sont
+    /// appelées depuis `app/diagnostic.ts`, et la porte les déclarait morts
+    /// parce qu'elle ne lisait que `page.tsx`. C'est exactement l'angle mort que
+    /// `check-i18n.mjs` avait déjà eu, et que la règle « une porte qui ne peut
+    /// pas crier est indiscernable d'une porte verte »-coverait.
     #[test]
     fn aucune_commande_tauri_nest_morte() {
-        let main = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/main.rs"),
-        )
-        .expect("src/main.rs");
-        let page = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/page.tsx"),
-        )
-        .expect("app/page.tsx");
+        let racine = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let main = std::fs::read_to_string(racine.join("src/main.rs")).expect("src/main.rs");
+        let interface = tout_le_code_de_linterface(racine.join("../app"));
 
         let debut = main
             .find("generate_handler![")
@@ -322,7 +335,7 @@ mod tests {
 
         let mortes: Vec<&&str> = enregistrees
             .iter()
-            .filter(|c| !page.contains(**c))
+            .filter(|c| !interface.contains(**c))
             .collect();
         assert!(
             mortes.is_empty(),
@@ -330,5 +343,48 @@ mod tests {
              Une commande morte ne casse rien : supprimez-la, ou appelez-la.",
             mortes
         );
+    }
+
+    /// Concatène tous les modules de l'interface, pour que la porte les voie
+    /// tous.
+    ///
+    /// Le dictionnaire i18n est **exclu** : y trouver le nom d'une commande ne
+    /// prouverait pas qu'elle est appelée. L'exclure coûte le risque de rater un
+    /// appel écrit dans un dictionnaire — qui n'est pas un appel.
+    fn tout_le_code_de_linterface(dossier: std::path::PathBuf) -> String {
+        let mut fichiers: Vec<std::path::PathBuf> = Vec::new();
+        let mut pile = vec![dossier];
+        while let Some(d) = pile.pop() {
+            let Ok(entrees) = std::fs::read_dir(&d) else {
+                continue;
+            };
+            for e in entrees.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    pile.push(p);
+                } else if matches!(
+                    p.extension().and_then(|x| x.to_str()),
+                    Some("ts") | Some("tsx")
+                ) && p.file_name().and_then(|x| x.to_str()) != Some("i18n.ts")
+                {
+                    fichiers.push(p);
+                }
+            }
+        }
+        // Ordre stable : le message d'échec doit être le même d'un run à l'autre.
+        fichiers.sort();
+
+        let mut texte = String::new();
+        for f in fichiers {
+            if let Ok(t) = std::fs::read_to_string(&f) {
+                texte.push_str(&t);
+                texte.push('\n');
+            }
+        }
+        assert!(
+            texte.contains("invoke("),
+            "aucun appel invoke() lu : le balayage de app/ a regresse"
+        );
+        texte
     }
 }

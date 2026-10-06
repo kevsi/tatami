@@ -1,0 +1,107 @@
+# Amont : l'épingle est-elle encore la tête ? (tâche 5.7)
+#
+# Volontairement **séparé de `ci.yml`** : l'en-tête de ce fichier dit qu'il
+# exécute exactement la liste de AGENTS.md §8, « rien de plus, rien de moins ».
+# Ce job n'est pas une commande de §8, donc il ne doit pas y vivre.
+#
+# ## Ce que ce job surveille — et ce qu'il ne surveille pas
+#
+# Il surveille la **fraîcheur** de l'épingle et la **disponibilité** de
+# l'artefact. Il ne surveille pas l'intégrité : c'est fait au build, par les
+# empreintes de `engine/gradle/verification-metadata.xml`.
+#
+# Ces deux choses sont deliberately séparées. Une CI qui rejoue les empreintes
+# à chaque commit n'apprend rien de neuf ; un job hebdomadaire qui n'aurait pas
+# de contexte de cache, lui, est le seul endroit où « l'amont a bougé » peut être
+# vu sans qu'un humain y pense.
+#
+# ## Pourquoi `ubuntu-latest`
+#
+# Ce job ne compile rien et ne touche pas au disque : il fait trois requêtes
+# HTTP et compare des chaînes. Le runner gratuit le plus rapide convient, et il
+# ne coûte pas les 25 minutes de `windows-latest`.
+#
+# ## Ce qu'un échec signifie
+#
+# Pas une urgence, pas une intrusion : **une liste de travail**. Le commit
+# épinglé a peut-être été corrigé côté amont, et il faut décider si on monte.
+# Voir `docs/notes/amont.md` pour la procédure.
+
+name: amont
+
+on:
+  schedule:
+    # Mondays 06:17 UTC. L'heure est volontairement « moche » : les minutes
+    # pleines d'une CI publique sont saturées, et ce job n'a aucune raison
+    # d'attendre dans la file.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+timeout-minutes: 10
+
+jobs:
+  epingle-a-t-elle-bouge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dépôt
+        uses: actions/checkout@v4
+
+      - name: Le pin est-il encore la tête, et l'artefact est-il servi ?
+        id: amont
+        env:
+          # Le dépôt amont, en dur ici et non relu depuis build.gradle.kts :
+          # la CI doit pouvoir comparer les deux, donc il faut deux sources.
+          REPO: Kotatsu-Redo/kotatsu-parsers-redo
+          BRANCHE: master
+        run: |
+          set -uo pipefail
+
+          # --- 1. lire le pin tel qu'il est réellement écrit dans le dépôt ---
+          # Une regex, pas `grep -o` : le pin est le troisième segment d'une
+          # coordonnée Gradle, et un Couffin de kotatsu ailleurs dans le
+          # fichier donnerait un autre nombre.
+          pin=$(sed -n 's|.*kotatsu-parsers-redo:\([A-Za-z0-9]\{7,\}\).*|\1|p' \
+                engine/build.gradle.kts | head -n1)
+          if [ -z "$pin" ]; then
+            echo "::error::pin introuvable dans engine/build.gradle.kts — la ligne a-t-elle changé de forme ?"
+            exit 1
+          fi
+          echo "pin déclaré : $pin"
+
+          # --- 2. la tête de la branche ---
+          tete=$(curl -fsS -m 30 \
+            "https://api.github.com/repos/$REPO/commits?sha=$BRANCHE&per_page=1" \
+            | sed -n 's/ *"sha": "\([0-9a-f]\{40\}\)".*/\1/p' | head -n1)
+          if [ -z "$tete" ]; then
+            echo "::error::tête de $BRANCHE introuvable (dépôt supprimé, renommé, ou API injoignable)"
+            exit 1
+          fi
+          echo "tête de $BRANCHE : ${tete:0:7}"
+
+          # --- 3. le commit épinglé existe-t-il encore ? ---
+          # Séparé de (2) : un dépôt réécrit peut garder une branche tout en
+          # perdant l'historique. C'est le cas qui casse le build, pas le
+          # simple fait d'être en retard.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 30 \
+            "https://api.github.com/repos/$REPO/commits/$pin")
+          echo "commit épinglé : HTTP $code"
+
+          # --- 4. JitPack sert-il encore l'artefact ? ---
+          # Le seul scénario qui justifierait vraiment un miroir (§ fin de
+          # l'ADR 0005) : JitPack ne peut plus reconstruire si le dépôt
+          # disparaît. C'est ici qu'on le verrait.
+          jc=$(curl -s -o /dev/null -w '%{http_code}' -m 30 \
+            "https://jitpack.io/com/github/$REPO/$pin/$REPO-$pin.pom")
+          echo "JitPack : HTTP $jc"
+
+          # --- verdict ---
+          echecs=""
+          [ "$pin" = "$tete" ] || echecs="$echecs\n- le pin ($pin) n'est plus la tête ($tete) : voir docs/notes/amont.md §3"
+          [ "$code" = "200" ] || echecs="$echecs\n- le commit épinglé n'est plus résolvable (HTTP $code) : le dépôt a peut-être été réécrit"
+          [ "$jc" = "200" ] || echecs="$echecs\n- JitPack ne sert plus l'artefact (HTTP $jc) : c'est le seul cas qui justifie un miroir"
+
+          if [ -n "$echecs" ]; then
+            echo -e "::error::l'amont a bougé$echecs"
+            exit 1
+          fi
+          echo "rien à monter : le pin est la tête et l'artefact est servi."

@@ -65,7 +65,7 @@ tatami/
 | 2 | Hors ligne | M | **Faite** — file, reprise, CBZ, lecture hors ligne, assainissement et stats ; durcie le 2026-10-04 (un `.cbz` par chapitre, `sync_all`, verrou RAII) ; dossier de téléchargement au choix et pause de la file le 2026-10-05 |
 | 3 | Tâches de fond et notifications | M | **Commencée** — 3.1 livré le 2026-10-05 (planificateur tokio, 19 tests) ; reste 3.2 à 3.5 |
 | 4 | Comptes et synchronisation | L | **Pas commencée** |
-| 5 | Durcissement et distribution | M | **Partiellement entamée** — audit de code du 2026-10-04 (5 correctifs) ; **5.3 livré le 2026-10-05** : 16 réponses du moteur enregistrées + test de contrat (20 tests) + CI qui exécute les 9 commandes de AGENTS.md §8 |
+| 5 | Durcissement et distribution | M | **Partiellement entamée** — audit de code du 2026-10-04 (5 correctifs) ; **5.3 livré le 2026-10-05** : 16 réponses du moteur enregistrées + test de contrat (20 tests) + CI qui exécute les 9 commandes de AGENTS.md §8 ; **5.7 livré le 2026-10-05** : dépendances vérifiées par SHA-256 (74 composants) + job hebdomadaire de surveillance de l’amont + ADR 0005 |
 
 Phase en cours : **1 et 2 en parallèle**, la phase 2 ayant un manque bloquant.
 Prochaine tâche : 1.10 (thèmes clair/sombre), puis la dette de phase 0 (0.13 → 0.17).
@@ -179,7 +179,18 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 - [x] **5.4** Écran « état des sources » pour repérer ce qui est cassé. **Livré** le 2026-10-05 et **vérifié à l'écran**. Ce qui existait : un compteur « N sources signalées » et un bouton « Tout réessayer » — pas de liste, pas de date, donc impossible de savoir *quelle* source casse ni *depuis quand*. La donnée existait déjà (`noteHealth` enregistre `{code, message, at}` et persiste) : il n'y avait qu'à l'afficher. Regroupement par **code d'erreur** d'abord (3 sources en `CHALLENGE_REQUIRED` sont un problème Cloudflare, pas 3 pannes distinctes), puis le détail, du plus récent au plus ancien. `<time dateTime>` garde la date exploitable par une machine. **Corrigé au passage** : `sinceFr` était français en dur (contre `AGENTS.md` §7) — l'interface anglaise affichait « 3 mois ». Preuve : 7 pannes injectées, 4 chips de regroupement dont la somme vaut 7, 3 colonnes, 0 faute de français en mode `en`, bouton « Tout réessayer » ramène l'état à 0 et la table disparaît. **Non couvert** : la version du parser (exigée par la formulation d'origine) n'est pas affichée — elle vient du moteur et demanderait une commande Rust.
 - [ ] **5.5** Journaux de diagnostic exportables, sans données personnelles.
 - [ ] **5.6** Installeurs Windows (`.msi`), signature du code, documentation utilisateur et contributeur.
-- [ ] **5.7** Politique de suivi de l'amont : procédure pour intégrer les nouvelles versions de `kotatsu-parsers-redo`, miroir/fork de secours.
+- [x] **5.7** Politique de suivi de l’amont : procédure pour intégrer les nouvelles
+  versions de `kotatsu-parsers-redo`, miroir/fork de secours. **Livré le 2026-10-05.**
+  La mesure a **renversé la formulation de la tâche** : la chaîne
+  `KotatsuApp/kotatsu-parsers` est bien archivée (2025-11-03), mais c’est le
+  **parent** — le fork qu’on consomme, `Kotatsu-Redo/kotatsu-parsers-redo`, est
+  **vivant** (dernier push 2026-09-17) et `b3c0000` en est la **tête de `master`**.
+  Le « miroir de secours » que la tâche prévoyait existe donc déjà, fourni par un
+  tiers. Le trou réel était ailleurs : `engine/gradle/verification-metadata.xml`
+  n’existait pas, donc **aucune** dépendance n’était vérifiée par hash. Désormais le
+  JAR de parsers est identifié par son **SHA-256** (74 composants), et
+  `.github/workflows/amont.yml` compare le pin à la tête chaque semaine.
+  Voir `docs/decisions/0005-suivi-amont.md` et `docs/notes/amont.md`.
 
 **Critère de sortie** : installation propre sur une machine neuve, mise à jour du moteur sans republier l'app, suite de tests verte en CI.
 
@@ -201,7 +212,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 |---|---|---|
 | Cloudflare/captchas sur certaines sources | Sources inutilisables | Fenêtre de résolution + cookies (0.11), documenter les limites |
 | Parsers qui cassent souvent | Perte de confiance | Moteur mis à jour séparément (5.1), écran d'état (5.4) |
-| Amont archivé (dépôts KotatsuApp) | Dépendance fragile | Fork/miroir (5.7), version épinglée |
+| Le fork `Kotatsu-Redo` cesse d’être maintenu (**mesuré le 2026-10-05 : il est vivant** ; le risque était formulé d’un cran trop bas) | Dépendance fragile, ou plus de reconstruction JitPack | Pin par empreinte SHA-256 (5.7), job hebdomadaire `amont.yml`, ADR 0005 |
 | JVM lourde sur machine modeste | Lenteur | Runtime `jlink`, tas limité, mesures en 0.7 |
 | Périmètre trop large pour un seul développeur | Épuisement, abandon | Phases courtes, critères de sortie, hors v1 explicite |
 | Divergence de protocole de sync avec le mobile | Pas de sync | Étude 4.1 avant tout code, ADR |
@@ -1491,3 +1502,89 @@ Garde-fou ajouté dans `fetchImage` : une URL d'image vide lève désormais `Par
 - Fait : challenge.rs (nouveau) — open_challenge ouvre une WebView2 sur l'URL du challenge avec **le user-agent du moteur** (le moteur l'expose desormais dans `hello`), solve_challenge lit les cookies **HttpOnly** via `WebviewWindow::cookies_for_url` et les pousse via `setCookies`, cancel_challenge ferme sans appliquer. Cote interface : « Resoudre la verification », « C'est fait, reessayer », « Annuler » ; une demande de verification n'est **pas** marquée source hors service.
 - Preuve : appel reel des trois commandes via l'IPC — `open_challenge` ok et fenetre listee par CDP (`http://localhost:3000/` + `https://mangadex.org/`), `solve_challenge` = **4 cookies** transmis, fermeture propre ; UA de la fenetre = `Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/116.0`, identique au `defaultUserAgent` du moteur ; 0 erreur console. Bug trouve par ce test : un second clic **refermait** la fenetre au lieu de la reutiliser (`close()` est asynchrone, le label existe encore) -> desormais on la reutilise. `clippy` 0, `cargo test` 7 passes, `tsc` 0.
 - Points ouverts : **aucune source de l'echantillon ne renvoie reellement `CHALLENGE_REQUIRED`** (MANGALIB et BAOZIMH renvoient un 403 classique, pas un challenge Cloudflare) : la fin de chaine reste donc a confirmer sur un vrai site protege, cf. §6. Limites connues : la clearance est liee a l'IP et expire ; l'empreinte TLS de WebView2 differe de celle d'OkHttp, donc certains sites peuvent refuser la clearance malgre tout.
+
+### 2026-10-05 — Suivi de l’amont (5.7) — mini-plan
+
+- **Mesuré avant d’écrire** : la chaîne `KotatsuApp/kotatsu-parsers` est **archivée**
+  (2025-11-03), mais le fork qu’on consomme, `Kotatsu-Redo/kotatsu-parsers-redo`,
+  est **vivant** (dernier push 2026-09-17) et `b3c0000` en est **la tête de `master`**.
+  Le risque « amont archivé » est donc mal formulé : la couche archivée est
+  **en dessous** de celle qu’on utilise, et quelqu’un a déjà fait le fork que 5.7
+  nous demande de prévoir.
+- **Le trou réel est ailleurs** : `engine/gradle/verification-metadata.xml` n’existe
+  pas. Nos dépendances — dont le JAR de parsers venu de JitPack — ne sont vérifiées
+  par **aucun hash**. C’est le « miroir de secours » au sens où on peut l’obtenir :
+  la construction refuse tout artefact qui n’est pas exactement celui qu’on a vu.
+- **Étapes** : (1) activer la vérification Gradle par hash ; (2) ADR 0005 qui consigne
+  la chaîne mesurée et les alternatives écartées ; (3) un contrôle mécanique «
+  l’épingle est-elle encore la tête ? », parce qu’une politique écrite ne surveille
+  rien ; (4) la procédure de montée de version, en commandes.
+- **Écarté, avec motif** : committer les JAR ou cloner l’amont dans le dépôt.
+  AGENTS.md §13 interdit de committer un binaire généré, et un miroir ne ferait
+  que dupliquer un dépôt déjà public.
+
+### 2026-10-05 — Suivi de l’amont (5.7) — fait
+
+**La prémisse de la tâche était fausse, et c’est la mesure qui l’a dit.** Le
+tableau des risques annonçait « amont archivé (dépôts KotatsuApp) ». L’API GitHub
+donne autre chose :
+
+| Dépôt | Archivé | Dernier push |
+|---|---|---|
+| `KotatsuApp/kotatsu-parsers` (l’original, **parent**) | **oui** | 2025-11-03 |
+| `Kotatsu-Redo/kotatsu-parsers-redo` (**le nôtre**) | non | 2026-09-17 |
+| `KotatsuApp/kotatsu` (l’app amont) | oui | 2025-11-04 |
+| `KotatsuApp/kotatsu-parsers-redo` | — | — | **n’existe pas** (404) |
+
+Le dépôt archivé est le **parent**, un cran **en dessous** de celui qu’on
+consomme. Et `b3c0000` est **la tête de `master`** du fork : il n’y avait donc
+rien à monter. Le « miroir de secours » que 5.7 prévoyait **existe déjà**, fourni
+par un tiers.
+
+**Le trou réel était ailleurs.** `engine/gradle/verification-metadata.xml`
+n’existait pas — donc **aucune** dépendance n’était vérifiée par hash, et notre
+JAR de parsers était identifié par une *promesse de JitPack* plutôt que par son
+contenu. Le pin seul n’engage à rien tant que rien ne le vérifie.
+
+**La porte mord, et elle mordait déjà avant que je la casse.** Un premier fichier
+généré **sans** `--refresh-dependencies` passait en local (`gradle clean build`
+vert) mais échouait en résolution à froid sur
+`kotlinx-coroutines-bom-1.8.0.pom`, que le cache local n’avait jamais demandé au
+dépôt du plugin. **La CI fait un checkout neuf** : on aurait livré une porte qui
+ne marche que chez soi. Régénéré avec `--refresh-dependencies` → 74 composants,
+résolution à froid verte.
+
+Preuve qu’elle vise la bonne chose : altérer **un seul caractère** du sha256 du
+JAR de parsers (`0d1e167f…` → `ad1e167f…`) fait échouer la construction **en
+nommant l’artefact** :
+
+```
+Dependency verification failed for configuration ':detachedConfiguration1'
+  One artifact failed verification: kotatsu-parsers-redo-b3c0000.jar
+    (com.github.Kotatsu-Redo:kotatsu-parsers-redo:b3c0000) from repository maven
+BUILD FAILED
+```
+
+Le nom dans le message est la preuve ; « FAILED » seul ne le serait pas.
+
+**La surveillance est mécanique.** `.github/workflows/amont.yml` — job
+hebdomadaire qui compare le pin à la tête, vérifie que le commit épinglé est
+toujours résolvable, et que JitPack **sert** encore l’artefact. Ce dernier point
+est le seul scénario qui justifierait vraiment un miroir. Volontairement dans un
+fichier **séparé** de `ci.yml`, dont l’en-tête interdit d’ajouter une commande
+qui n’est pas dans AGENTS.md §8.
+
+Livré : `engine/gradle/verification-metadata.xml` (74 composants),
+`.github/workflows/amont.yml`, `docs/decisions/0005-suivi-amont.md`,
+`docs/notes/amont.md` (la procédure, en commandes), 3 leçons dans AGENTS.md §14.
+
+Preuve : `gradle test` **24 tests réellement exécutés** (avec `--rerun-tasks`, 5
+fichiers de résultat, 0 échec — et non un vert de cache), `gradle clean build
+--refresh-dependencies` vert, porte prouvée rouge puis verte. `docs` : 0 défaut.
+
+**ADR 0005** consigne les alternatives écartées et pourquoi : fork/miroir dans le
+dépôt (AGENTS.md §13 + le fork amont existe déjà), vendoriser le JAR (§13 + ça
+transforme la mise à jour en remplacement manuel de fichier), vérification PGP
+(on ne possède pas la clé de JitPack), et « ne pas dépendre de l’amont »
+(interdit par §13). Le hash identifie le contenu, il ne prouve pas l’auteur :
+c’est le maximum atteignable sans être JitPack, et c’est ce qu’on retient.

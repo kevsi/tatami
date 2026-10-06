@@ -358,6 +358,25 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   français et concluait que l'anglais ne passait pas. Le défaut était dans la
   mesure.
 
+- **Un fichier de vérification Gradle généré sans `--refresh-dependencies` passe
+  en local et casse la CI.** Mesuré le 2026-10-05 : le fichier couvrait 73
+  composants, `gradle clean build` passait… et `--refresh-dependencies` échouait
+  sur `kotlinx-coroutines-bom-1.8.0.pom`, que le cache local n’avait jamais
+  demandé au dépôt du plugin. La CI fait un checkout neuf, donc elle prend le
+  cas froid. Règle : générer **et** prouver avec `--refresh-dependencies`, sinon
+  on livre une porte qui ne marche que chez soi.
+- **Une porte qui mord se prouve sur l’artefact qu’elle prétend protéger.** Altérer
+  **un seul caractère** du sha256 du JAR de parsers fait échouer la construction en
+  nommant `kotatsu-parsers-redo-b3c0000.jar`. On ne se contente pas de voir « FAILED »
+  : c’est le **nom** dans le message qui prouve que la porte vise la bonne chose.
+- **Une tâche peut avoir une prémisse fausse : mesurer la chaîne avant d’implémenter
+  la parade.** 5.7 prévoyait un « miroir/fork de secours » et son tableau des
+  risques disait « amont archivé ». Mesure : le dépôt archivé (`KotatsuApp/kotatsu-parsers`)
+  est le **parent**, et celui qu’on consomme (`Kotatsu-Redo/…`) est **vivant**. Le
+  miroir existait déjà, fourni par un tiers, et le pin était la tête de `master`.
+  Corollaire : lire la chaîne de dépendance réelle avant de construire une stratégie
+  contre elle — sinon on défend le bon endroit avec le mauvais moyen.
+
 - **Tauri ignore silencieusement un paramètre d'écriture en `snake_case`.** Il
   convertit `camelCase` → `snake_case` côté Rust ; une clé déjà snake_case passe
   **sans erreur** et n'est pas prise. La commande répond normalement avec les

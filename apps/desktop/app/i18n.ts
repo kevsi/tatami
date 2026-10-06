@@ -266,6 +266,11 @@ const FR = {
   'catalogue.bandeau.langues': 'Toutes les langues',
   'catalogue.compte.langues':
     '{n} sources réparties en {langs} langues. Choisissez une langue pour parcourir ses sources.',
+  'catalogue.chargement': 'Chargement des séries…',
+  'chapitres.chargement': 'Chargement des chapitres…',
+  'accueil.chargement': 'Chargement de votre bibliothèque…',
+  'telechargements.chargement': 'Chargement de la bibliothèque téléchargée…',
+  'lecteur.page.sur': '{n} / {total}',
   'catalogue.vide.langue': 'Toutes les sources de cette langue sont désactivées.',
   'telechargements.verification.ouverte':
     '{source} demande une vérification : une fenêtre va s’ouvrir, confirmez-y vous-même puis relancez le téléchargement.',
@@ -573,6 +578,11 @@ const EN: Record<Cle, string> = {
   'catalogue.bandeau.langues': 'All languages',
   'catalogue.compte.langues':
     '{n} sources across {langs} languages. Pick a language to browse its sources.',
+  'catalogue.chargement': 'Loading series…',
+  'chapitres.chargement': 'Loading chapters…',
+  'accueil.chargement': 'Loading your library…',
+  'telechargements.chargement': 'Loading the downloaded library…',
+  'lecteur.page.sur': '{n} / {total}',
   'catalogue.vide.langue': 'Every source in this language is disabled.',
   'telechargements.verification.ouverte':
     '{source} asks for a verification: a window will open, confirm there yourself then retry the download.',

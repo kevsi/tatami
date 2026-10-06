@@ -2345,6 +2345,115 @@ button:disabled {
     background-position: -200% 0;
   }
 }
+
+/* Squelettes **de la forme du contenu réel**.
+ *
+ * Mesuré le 2026-10-06 : un simple rectangle ne reproduisait pas la carte
+ * (234 × 351 contre 188 × 328, 0 enfant contre 2) ni la ligne de chapitre
+ * (44 px contre 62 px). Le contenu arrivant, toute la grille se réorganisait.
+ * Le remède : **réutiliser les classes du contenu** — la géométrie vient
+ * alors du même CSS, donc elle ne peut pas diverger.
+ *
+ * On ne dessine que les blocs de texte : la couverture garde son fond, sinon
+ * le dégradé du titre serait visible à travers.
+ */
+.squelette-carte,
+.squelette-ligne {
+  pointer-events: none;
+  animation: shimmer 1.5s linear infinite;
+}
+
+.squelette-carte .cover,
+.squelette-carte .label,
+.squelette-bloc,
+.squelette-ligne .chapter-check {
+  background: linear-gradient(
+    100deg,
+    var(--surface) 30%,
+    var(--surface-2) 50%,
+    var(--surface) 70%
+  );
+  background-size: 200% 100%;
+}
+
+/* Le titre : deux lignes, comme `.label` les réserve. */
+.squelette-carte .label {
+  color: transparent;
+  user-select: none;
+}
+
+.squelette-carte .label::after {
+  content: "";
+  display: block;
+  width: 82%;
+  height: 0.72em;
+  margin-bottom: 0.68em;
+  border-radius: 3px;
+  background: inherit;
+  background-image: linear-gradient(
+    100deg,
+    var(--surface-2) 30%,
+    var(--line-soft) 50%,
+    var(--surface-2) 70%
+  );
+  background-size: 200% 100%;
+}
+
+/* La case à cocher et les blocs de la ligne de chapitre. */
+.squelette-ligne .chapter-check {
+  flex: none;
+}
+
+/* Le carré de la case : on masque la vraie case et on dessine la nôtre, donc
+   la ligne garde exactement la hauteur de la vraie (mesuré : 62 px). */
+.squelette-ligne .chapter-check input {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface-2);
+}
+
+/* Les deux lignes reprennent la **boîte de ligne** du texte réel (même
+ * `font-size`, même `line-height`), donc leur hauteur ne peut pas diverger.
+ * Mesuré : forcer une hauteur en dur donnait 47 px contre 62 px — c'est
+ * exactement le genre d'écart qu'un squelette doit éliminer, et non
+ * reproduire. On rend donc le texte transparent et on remplit le fond. */
+.squelette-ligne .chapter-num,
+.squelette-ligne .chapter-sub {
+  width: 40%;
+  color: transparent;
+  border-radius: 3px;
+  user-select: none;
+}
+
+.squelette-ligne .chapter-sub {
+  width: 62%;
+}
+
+.squelette-ligne .chapter-dl {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+}
+
+/* Compteur de pages, dans la barre du lecteur.
+ *
+ * `font-variant-numeric: tabular-nums` est indispensable : sans lui, la
+ * largeur du texte change à chaque page (« 9 / 303 » puis « 10 / 303 »), donc
+ * le compteur **sautille** — et c'est précisément le défaut qu'il corrige.
+ */
+.reader-compteur {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  padding: 3px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  background: var(--surface);
+}
 /* Mention « Hors ligne » dans la barre du lecteur.
    Classe dediee et non `.badge` : ce dernier porte `margin-left: auto`, qui
    pousserait la mention a l'extremite opposee de la barre. */

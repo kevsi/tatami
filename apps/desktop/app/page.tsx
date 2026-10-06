@@ -919,7 +919,22 @@ export default function Home() {
   // Tâche 3.2 — le flux « mises à jour ». État propre : il est relu au
   // démarrage depuis `localStorage`, donc il survit à un redémarrage. C'est
   // ce que la passe émet ; l'interface ne la déclenche pas.
-  const [maj, setMaj] = useState<MajItem[]>(loadMaj());  // Tâche 3.5 — réglages du planificateur. `null` = pas encore chargé, ce qui
+  //
+  // **Pas `loadMaj()` dans l'initialiseur.** Mesuré le 2026-10-06 : l'export
+  // statique produit un HTML serveur qui ne peut pas contenir la valeur du
+  // `localStorage` de la machine. `loadMaj()` renvoyait donc `[]` côté serveur
+  // (son garde `typeof window`) et la vraie liste côté client — donc
+  // `<section class="maj">` existait d'un seul côté, et React abandonnait
+  // l'hydratation de **tout l'arbre** :
+  //
+  //   Hydration failed …  + <section className="maj">  /  - <div className="band">
+  //
+  // Ce n'est pas une alerte cosmétique : abandonner l'hydratation fait
+  // reconstruire la page entière sur le client, ce qui est précisément le
+  // chargement qu'on cherche à=alléger. La lecture se fait donc dans l'effet
+  // de montage, comme les préférences du lecteur (même raison, même endroit).
+  const [maj, setMaj] = useState<MajItem[]>([]);
+  // Tâche 3.5 — réglages du planificateur. `null` = pas encore chargé, ce qui
   // n'est pas la même chose que « absent » : l'écran affiche alors « chargement »
   // et non des valeurs par défaut inventées.
   const [plan, setPlan] = useState<PlanReglages | null>(null);
@@ -928,7 +943,14 @@ export default function Home() {
   // Le recopier dans un état le ferait diverger de `localStorage` dès qu'une
   // autre fenêtre (ou un walk de mesure) écrit la clé : l'interrupteur
   // afficherait alors « actif » pendant que plus rien n'est envoyé.
-  const [notif, setNotif] = useState(notifActive());
+  //
+  // Même raison que `maj` ci-dessus : `notifActive()` lit le `localStorage`, donc
+  // le serveur ne peut pas connaître sa valeur. On part de la **valeur par
+  // défaut** (`true`) des deux côtés — sans scintillement, parce que ce
+  // interrupteur n'existe que dans l'écran des réglages, que l'utilisateur doit
+  // ouvrir : l'effet de montage a donc déjà fait son travail avant le premier
+  // rendu de cet écran.
+  const [notif, setNotif] = useState(true);
   // Tâche 3.4 — démarrage automatique. `inconnu` au premier rendu : afficher
   // `inactif` avant la lecture du système ferait clignoter l'interrupteur à
   // chaque ouverture de l'écran des réglages.
@@ -939,6 +961,16 @@ export default function Home() {
   // Bibliothèque personnelle : favoris, historique, reprise (table SQLite).
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [recent, setRecent] = useState<HistoryItem[]>([]);
+  /* Chargement de l'accueil et de la bibliothèque.
+   *
+   * Ces deux états ont été ajoutés le 2026-10-06 après mesure, contre un
+   * commentaire qui affirmait que la lecture locale « dure moins d'une image ».
+   * Mesuré sur l'application réelle, chronologie échantillonnée à 120 ms :
+   * squelette de 0 à **295 ms**, contenu réel à **436 ms** — et
+   * **jamais** de « aucun favori » affiché. En incluant le rechargement
+   * complet de la page, l'accueil est prêt en 1,4 s. */
+  const [shelfCharge, setShelfCharge] = useState(true);
+  const [bibliothequeCharge, setBibliothequeCharge] = useState(true);
   // Mode incognito : les titres classés adultes disparaissent de l'accueil.
   // Préférence d'affichage, donc `localStorage` est le bon endroit (cf. §6).
   const [incognito, setIncognito] = useState(true);
@@ -1096,6 +1128,10 @@ export default function Home() {
       setFit((window.localStorage.getItem(READER_FIT_KEY) as ReaderFit) || 'width');
       setSpread(window.localStorage.getItem(READER_SPREAD_KEY) === '1');
       setReaderDir((window.localStorage.getItem(READER_DIR_KEY) as ReaderDir) || 'rtl');
+      // Même raison pour ces deux-là : leur valeur vit dans le navigateur, donc
+      // le HTML statique du serveur ne peut pas la contenir.
+      setMaj(loadMaj());
+      setNotif(notifActive());
     }
     invoke<{ sources: Source[] }>('list_sources')
       .then((r) => setSources(r.sources ?? []))
@@ -1339,9 +1375,11 @@ export default function Home() {
   );
 
   const refreshDownloads = useCallback(() => {
+    setBibliothequeCharge(true);
     invoke<LibraryItem[]>('list_library', { root: '' })
       .then((items) => setLibrary(items ?? []))
-      .catch(() => setLibrary([]));
+      .catch(() => setLibrary([]))
+      .finally(() => setBibliothequeCharge(false));
   }, []);
 
   /** Tâche 2.4 — importe un dossier de `.cbz` déjà téléchargés.
@@ -1383,9 +1421,13 @@ export default function Home() {
   const refreshShelf = useCallback(
     async (hideAdult?: boolean) => {
       const hide = hideAdult ?? incognito;
-      // Pas d'indicateur « chargement » : la lecture est un SQLite local,
-      // elle dure moins d'une image. Un état pour ça ne servirait qu'à
-      // scintiller et à forcer un rendu en cascade.
+      // Le commentaire disait « pas d'indicateur de chargement : la lecture est
+      // un SQLite local, elle dure moins d'une image ». **L'hypothèse était
+      // fausse** : mesuré le 2026-10-06, le squelette tient 295 ms puis les
+      // favoris sont là à 436 ms. Sans cet état, l'écran affiche « aucun
+      // favori » pendant tout ce temps — un message qui **contredit** celui
+      // qui arrive juste après, et que l'utilisateur lit comme une perte.
+      setShelfCharge(true);
       try {
         const [fav, hist, cats] = await Promise.all([
           invoke<Favorite[]>('list_favorites'),
@@ -1401,6 +1443,8 @@ export default function Home() {
         console.error('lecture de la bibliothèque impossible', e);
         setFavorites([]);
         setRecent([]);
+      } finally {
+        setShelfCharge(false);
       }
     },
     [incognito],
@@ -3878,7 +3922,13 @@ useEffect(() => {
           </section>
         )}
 
-        {library.length === 0 ? (
+        {bibliothequeCharge ? (
+          <div className="dl-list" aria-busy="true" aria-label={t('telechargements.chargement')}>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div className="dl-card squelette-ligne" key={i} aria-hidden="true" />
+            ))}
+          </div>
+        ) : library.length === 0 ? (
           <p className="muted">{t('telechargements.aucun')}</p>
         ) : (
           <>
@@ -4083,6 +4133,21 @@ if (reader) {
               {t('lecteur.horsligne')}
             </span>
           )}
+
+          {/* Compteur de pages. Sans lui, sur un chapitre de 303 pages mesuré
+              sur Killer Peter, l'utilisateur ne sait pas où il est — ni
+              combien il reste. `reader.index` sert déjà au clavier et aux
+              signets, mais n'était jamais rendu.
+              *
+              * `index + 1` parce que `index` est base 0 ; en mode double page
+              * on affiche la page de gauche, donc « n / total » reste exact
+              * (le lecteur compte les pages, pas les écrans). */}
+          <span className="reader-compteur" title={t('lecteur.page.sur', {
+            n: index + 1,
+            total: pages.length,
+          })}>
+            {t('lecteur.page.sur', { n: index + 1, total: pages.length })}
+          </span>
 
           <div className="reader-tools">
             <button
@@ -4502,9 +4567,36 @@ if (reader) {
         )}
 
         {loading && chapters.length === 0 ? (
-          <div className="chapter-grid" aria-busy="true" aria-label="Chargement des chapitres">
-            {Array.from({ length: 15 }).map((_, i) => (
-              <div className="chapter-cell skeleton-row" key={i} />
+          /* Même principe que le catalogue, mesuré le 2026-10-06 : le
+           * squelette de chapitre faisait 193 × **44** px et la vraie ligne
+           * 193 × **62** px, sans enfant des deux côtés. 18 px d'écart sur
+           * chaque ligne, donc la liste se décalait d'un cran à l'arrivée.
+           * Ici la ligne reproduit les **trois enfants** réels (case, numéro,
+           * bouton de téléchargement) avec la même structure.
+           */
+          <div
+            className="chapter-grid"
+            aria-busy="true"
+            aria-label={t('chapitres.chargement')}
+          >
+            {Array.from({ length: CHAPTER_PAGE }).map((_, i) => (
+              <div className="chapter-cell squelette-ligne" key={i} aria-hidden="true">
+                <label className="chapter-check">
+                  <input type="checkbox" checked={false} readOnly tabIndex={-1} />
+                </label>
+                {/* Les **deux** lignes de la vraie ligne : `.chapter-open`
+                    empile `chapter-num` et `chapter-sub`. Avec une seule, la
+                    ligne faisait 46 px au lieu de 62 — mesuré. */}
+                <span className="chapter-open">
+                  {/* Le contenu insécable est nécessaire : un `<span>` **vide**
+                      dans un conteneur flex se réduit à 0 px (mesuré : ligne de
+                      46 px au lieu de 62), donc il n'héritait d'aucune boîte de
+                      ligne. Le texte est invisible via `color: transparent`. */}
+                  <span className="chapter-num squelette-bloc">{' '}</span>
+                  <span className="chapter-sub squelette-bloc">{' '}</span>
+                </span>
+                <span className="chapter-dl squelette-bloc" />
+              </div>
             ))}
           </div>
         ) : (
@@ -4759,9 +4851,35 @@ if (reader) {
         )}
 
         {loading && latest.length === 0 ? (
-          <div className="grid">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div className="skeleton" key={i} />
+          /* Squelette **de la même forme que la carte réelle**.
+           *
+           * Mesuré le 2026-10-06 : le catalogue met 2,3 s à se remplir, et
+           * l'ancien squelette (un simple rectangle `.skeleton` dans un `.grid`)
+           * mesurait 234 × 351 px alors que la vraie carte mesurait 188 × 328 :
+           * **46 px d'écart en largeur**, 0 enfant contre 2. Au moment où les
+           * séries arrivaient, toute la grille se réorganisait — c'est pire
+           * qu'un écran vide, parce que l'œil suit un contenu qui bouge.
+           *
+           * Donc on réutilise les **mêmes classes** que la carte réelle, avec
+           * des blocs vides à la place du contenu. La géométrie vient alors du
+           * même CSS, donc elle ne peut pas diverger : `.cover` + `.thumb` (ratio
+           * 2:3) et `.label` (2 lignes réservées) sont exactement ceux du
+           * contenu.
+           *
+           * Le nombre suit aussi la grille : `minmax(170px, 1fr)` donne 3
+           * colonnes sur un écran étroit, donc 6 cartes — pas 8, qui forçaient
+           * une ligne supplémentaire à remplir puis à disparaître.
+           */
+          <div className="manga-grid" aria-busy="true" aria-label={t('catalogue.chargement')}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div className="manga squelette-carte" key={i} aria-hidden="true">
+                <div className="manga-open">
+                  <span className="cover">
+                    <span className="thumb" />
+                  </span>
+                  <span className="label" />
+                </div>
+              </div>
             ))}
           </div>
         ) : (
@@ -5185,7 +5303,23 @@ if (reader) {
           )}
         </div>
 
-        {favorites.length === 0 ? (
+        {shelfCharge ? (
+          /* Pendant la lecture de la base, on ne dit surtout pas « aucun
+           * favori » : c'est faux pendant 1 393 ms mesurés, et l'utilisateur
+           * croit avoir perdu sa bibliothèque. */
+          <div className="manga-grid" aria-busy="true" aria-label={t('accueil.chargement')}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div className="manga squelette-carte" key={i} aria-hidden="true">
+                <div className="manga-open">
+                  <span className="cover">
+                    <span className="thumb" />
+                  </span>
+                  <span className="label" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : favorites.length === 0 ? (
           <p className="muted">{t('accueil.favoris.vide')}</p>
         ) : favorisVisibles.length === 0 ? (
           <p className="muted">{t('accueil.favoris.filtre.vide')}</p>

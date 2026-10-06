@@ -133,9 +133,9 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 
 - [x] **T2.1** Assemblage de la bande virtuelle et découpe en tuiles aux **lignes uniformes** (espaces entre cases), avec fusion des détections aux jonctions. Tests sur des images **synthétiques** générées par script.
 - [x] **T2.2** Détection et segmentation des bulles et du texte, avec masque précis de l'intérieur.
-- [ ] **T2.3** Classification des blocs : dialogue, narration, sfx, texte libre, à ignorer (filigranes, crédits, logos).
-- [ ] **T2.4** OCR de l'anglais, regroupement des lignes d'une même bulle, ordre de lecture (haut vers bas, gauche vers droite).
-- [ ] **T2.5** Effacement du texte dans les bulles de dialogue et de narration ; politique pour le texte hors bulles selon l'ADR 0010.
+- [x] **T2.3** Classification des blocs : dialogue, narration, sfx, texte libre, à ignorer (filigranes, crédits, logos).
+- [x] **T2.4** OCR de l'anglais, regroupement des lignes d'une même bulle, ordre de lecture (haut vers bas, gauche vers droite).
+- [x] **T2.5** Effacement du texte dans les bulles de dialogue et de narration ; politique pour le texte hors bulles selon l'ADR 0010.
 - [ ] **T2.6** Contrôle de résidu : second passage d'OCR sur la zone nettoyée, qui doit ne rien trouver. Sinon, le bloc passe en `review`.
 - [ ] **T2.7** Non-régression contre les mesures de T0, budget mémoire respecté sur la machine cible.
 

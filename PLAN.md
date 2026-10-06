@@ -29,14 +29,21 @@
 9. **Phase T2.2 — Masques de bulles** — module `mask.rs` avec création de masques depuis bbox/boxes, érosion, validation. 4 tests unitaires.
    - Portes passées : `cargo clippy/test` (148/148 mono-thread), frontend gates vertes.
 
+10. **Phase T2.3 — Classification des blocs** — module `classifier.rs` avec `TypeBloc` (Dialogue, Narration, Sfx, TexteLibre, Ignore) et heuristiques géométriques. 6 tests unitaires, scores normalisés à 1.0.
+    - Portes passées : `cargo clippy/test` (154/154 mono-thread), frontend gates vertes.
+
+11. **Phase T2.4 — Traitement OCR et ordre de lecture** — module `ocr.rs` avec regroupement Union-Find des lignes par proximité spatiale, tri haut-vers-bas/gauche-vers-droite, assemblage du texte. 5 tests unitaires.
+    - Portes passées : `cargo clippy/test` (159/159 mono-thread), frontend gates vertes.
+
+12. **Phase T2.5 — Stratégie d'effacement** — module `effacement.rs` avec `StrategieEffacement` (Effacer/Conserver/Ignorer) par type de bloc, politique ADR 0010. 5 tests unitaires.
+    - Portes passées : `cargo clippy/test` (164/164 mono-thread), frontend gates vertes.
+
 ### En cours
-- T2.1 — Assemblage de la bande virtuelle et découpe en tuiles aux lignes uniformes.
+- (aucune)
 
 ### Next steps
-1. **T2.3** — Classification des blocs : dialogue, narration, sfx, texte libre, à ignorer (filigranes, crédits, logos).
-2. **T2.4** — OCR de l'anglais, regroupement des lignes d'une même bulle, ordre de lecture.
-3. **T2.5** — Effacement du texte dans les bulles de dialogue et de narration.
-4. **T2.6** — Contrôle de résidu : second passage d'OCR sur la zone nettoyée.
+1. **T2.6** — Contrôle de résidu : second passage d'OCR sur la zone nettoyée, qui doit ne rien trouver. Sinon, le bloc passe en `review`.
+2. **T2.7** — Non-régression contre les mesures de T0, budget mémoire respecté sur la machine cible.
 
 ### Fichiers modifiés (T1)
 - `contract/translation/schema.json` — schéma v1
@@ -51,9 +58,10 @@
 - `apps/desktop/app/types/traduction.ts` — types TS miroir
 
 ### État du dépôt
-- 8 commits : `b6734e7` téléchargements parallèles, `c141377` chargeur animé, `6e25642` molette fix,
+- 11 commits : `b6734e7` téléchargements parallèles, `c141377` chargeur animé, `6e25642` molette fix,
   `9bf3fe6` clé Gemini dans le trousseau OS, `f410272` suppression du surlignage "en cours",
   `59526aa` T1 complet (schéma, migrations, vision, packs, tests), `ff33cd0` docs T1,
-  `5758ff3` T2.1 tuiles, `539d3ef` T2.2 masques
+  `5758ff3` T2.1 tuiles, `539d3ef` T2.2 masques, `02f63a5` T2.3 classification, `b541844` T2.4 OCR/ordre de lecture,
+  `ed2d745` T2.5 stratégie d'effacement
 - Toutes les vérifications passent (clippy, typecheck, lint, i18n, hooks, chemins).
-- Prochaine phase : **T2.3 — Classification des blocs**.
+- Prochaine phase : **T2.6 — Contrôle de résidu**.

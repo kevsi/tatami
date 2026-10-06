@@ -40,6 +40,7 @@ pub mod challenge;
 pub mod classifier;
 pub mod commands;
 pub mod download;
+pub mod effacement;
 pub mod image;
 pub mod journal;
 pub mod library;

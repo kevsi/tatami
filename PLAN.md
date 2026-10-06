@@ -173,7 +173,22 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
 ### Phase 5 — Durcissement et distribution (M)
 
-- [ ] **5.1** Mise à jour du moteur : manifeste signé, vérification de signature et
+- [x] **5.1** Mise à jour du moteur : manifeste signé, vérification de signature et
+  de hash, remplacement atomique, retour arrière si échec au démarrage. **Livré le
+  2026-10-05**, mode **manuel** (choix humain). Voir ADR 0006.
+  Clé Ed25519 auto-gérée : publique dans le dépôt, privée **hors** dépôt. Signature
+  sur un **texte canonique** (jamais sur le JSON, qui a des espaces libres),
+  empreinte SHA-256 vérifiée **avant** extraction, extraction en
+  `versions/<version>/.en-cours` puis renommage, pointeur `actif.json` atomique,
+  `precedente` mémorisée, `sidecar_candidates()` en tête sur le moteur installé.
+  `zipread` a reçu `DEFLATE` (`flate2`) et la normalisation des antislashs — sans
+  quoi aucune archive du moteur n’était installable.
+  **Sonde de démarrage** : le moteur actif est réellement **démarré** (spawn +
+  `hello`) avant d’être accepté ; en cas d’échec, `revenir_en_arriere()` est
+  appelé. Mesuré dans les deux sens.
+  Gesté par `tatami-moteur` (`etat`, `verifier`, `installer`, `activer`,
+  `revenir`), qui appelle le **même** module et la **même** clé embarquée que
+  l’application. Aucune permission Tauri ajoutée.
   de hash, remplacement atomique, retour arrière si échec au démarrage.
   **Partiellement livré le 2026-10-05** — voir ADR 0006. Ce qui manque est listé
   plus bas, et c’est délibéré, pas oublié.
@@ -1893,3 +1908,40 @@ vérifié est indiscernable d’un test qui a marché.
 
 `cargo test` **151** (131 + 1 + 19), dont 3 nouveaux · `fmt` 0 · `clippy
 --all-targets -D warnings` 0 · `tsc` 0.
+
+### 2026-10-05 — Sonde de démarrage : le retour arrière est automatique
+
+Dernier morceau de 5.1. `revenir_en_arriere()` existait et était testée depuis la
+partie 1, mais **rien ne l’appelait** — donc le retour arrière promettait depuis
+deux tâches sans jamais se produire.
+
+**La sonde démarre un vrai moteur** (spawn + `hello`) au lieu de lire le dossier.
+Un dossier complet et une empreinte conforme ne prouvent pas qu’une JVM y démarre :
+JDK cassé, classpath faux, version de protocole incompatible — tout cela passe la
+vérification statique et casse au lancement.
+
+**Les deux cas mesurés sur l’application réelle** :
+
+| moteur actif | ce que la sonde a fait |
+|---|---|
+| `0.3.0` (java.exe = du texte) | `os error 216` → **retour à la version précédente effectué** → app sur `0.2.0` |
+| `0.2.0` (sain) | **moteur installé vérifié au démarrage (protocol=0.1)** → pointeur inchangé |
+
+Et l’ordre est vérifié dans le journal par les horodatages : la sonde écrit à
+`04:43:03.148`, le choix du moteur à `04:43:03.153`. **5 ms d’écart** — donc la
+sonde précède bien le choix, et pas l’inverse.
+
+**L’ordre est la contrainte de conception, pas un détail.** `sidecar_paths()`
+lit le pointeur. Si la sonde revenait en arrière **après**, le superviseur
+garderait les chemins du moteur cassé et l’application bouclerait sur un moteur
+mort — toute l’opération n’aurait servi à rien. D’où un runtime tokio dédié dans
+`main()`, **avant** `sidecar_paths` : `tauri::async_runtime` n’existe pas encore
+avant le premier `Builder::run`, et la sonde est précisément avant.
+
+**Les drapeaux JVM sont factorisés dans `SPAWN_ARGS`**, partagés par `spawn_once`
+et `probe`. Une duplication ne se verrait qu’au moment où un moteur est
+réellement installé — donc sur la machine du développeur seulement, et seulement
+après qu’il a publié une mise à jour. Invisible jusqu’au jour où ça casse.
+
+`cargo test` **152** (131 + 1 + 20) · `fmt` 0 · `clippy --all-targets -D warnings` 0
+· `tsc` 0. Les scénarios de test (`0.3.0` factice) ont été supprimés.

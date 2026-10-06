@@ -382,6 +382,48 @@ pub fn revenir_en_arriere() -> Result<bool, Erreur> {
     Ok(true)
 }
 
+/// Vérifie au démarrage que le moteur **actif** démarre, et revient en arrière
+/// sinon. Renvoie `Ok(true)` si l'actif est bon, `Ok(false)` s'il a été remplacé
+/// (ou n'y en a pas), `Err` si le rollback lui-même a échoué.
+///
+/// C'est la sonde de la tâche 5.1, et elle **appelle enfin** [`revenir_en_arriere`]
+/// — qui existait et était testée depuis la partie 1, mais que rien n'invoquait.
+///
+/// Le contrat est volontairement restreint : elle ne teste que le moteur
+/// **installé** (`installe()`). Le moteur embarqué n'a pas de version précédente,
+/// donc rien à reprendre — et s'il est cassé, le superviseur le relancera comme
+/// toujours.
+///
+/// La sonde lance un vrai moteur, ce qui prend quelques secondes et **attend
+/// vraiment** : c'est le prix d'une garantie « si le moteur activé démarre, il
+/// fonctionne », qu'aucune lecture de dossier ne peut donner.
+pub async fn verifier_actif_au_demarrage() -> Result<bool, String> {
+    let Some((java, cp)) = crate::moteur::installe() else {
+        // Aucun moteur installé : état normal, rien à vérifier ni à reprendre.
+        return Ok(false);
+    };
+    match crate::supervisor::Supervisor::probe(&java, &cp).await {
+        Ok(version) => {
+            tracing::info!("moteur installé vérifié au démarrage (protocol={version})");
+            Ok(true)
+        }
+        Err(e) => {
+            tracing::warn!("moteur installé refusé au démarrage : {e}");
+            match revenir_en_arriere() {
+                Ok(true) => {
+                    tracing::warn!("retour à la version précédente effectué");
+                    Ok(false)
+                }
+                Ok(false) => {
+                    tracing::warn!("aucune version précédente : le moteur reste en l'état");
+                    Ok(false)
+                }
+                Err(r) => Err(format!("retour arrière impossible après « {e} » : {r}")),
+            }
+        }
+    }
+}
+
 // ----------------------------------------------------------- installation ---
 
 /// Extrait l'archive du moteur dans `versions/<version>/`.

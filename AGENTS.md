@@ -452,6 +452,20 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   avant de refuser**, sinon le refus porte sur la forme et non sur le danger ;
   `..\..\x` doit être refusé **après** normalisation, pour la bonne raison.
 
+- **Un retour arrière qui n’est jamais appelé ne protège de rien.** 5.1 fournit
+  `revenir_en_arriere()` à la partie 1, testée, documentée — et l’appli ne
+  l’appelait pas. Une fonction de reprise non branchée est du code qui rassure :
+  on lit le nom, on suppose la garantie. Corollaire : nommer la **fonction** ne
+  prouve rien ; ce qui compte est de savoir **qui l’appelle**, et à quel moment.
+- **Le retour arrière doit s’exécuter avant le choix qu’il contredit.** `sidecar_paths()` lit le pointeur ; sonder **après** laisserait le superviseur sur les chemins
+  du moteur mort. Vérifié par les horodatages du journal : la ligne de la sonde
+  précède de 5 ms celle du choix. Règle : dès qu’un retour arrière existe, se
+  demander **quelle décision rendrait son travail inutile**, et la placer avant.
+- **Un test de reprise sans le cas nominal ne prouve qu’une moitié.** La sonde de
+  démarrage a été vérifiée sur le moteur **cassé** (`os error 216` → retour arrière) et
+  sur le moteur **sain** (`vérifié au démarrage`, pointeur inchangé). Le cas
+  cassé seul prouverait que la sonde échoue, pas qu’elle réussit.
+
 - **Tauri ignore silencieusement un paramètre d'écriture en `snake_case`.** Il
   convertit `camelCase` → `snake_case` côté Rust ; une clé déjà snake_case passe
   **sans erreur** et n'est pas prise. La commande répond normalement avec les

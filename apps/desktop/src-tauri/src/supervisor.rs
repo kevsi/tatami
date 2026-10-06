@@ -25,6 +25,25 @@ use tokio::sync::{oneshot, Mutex};
 /// Cf. `lib.rs`.
 pub const PROTOCOL_MAJOR: &str = "0";
 const HELLO_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Drapeaux JVM du lancement du moteur, **partagés** par `spawn_once` et `probe`.
+///
+/// Une seule source, volontairement. Si la sonde de la tâche 5.1 dupliquait cette
+/// liste, une divergence ne se verrait qu'au moment où un moteur est réellement
+/// installé — donc sur la machine du développeur seulement, et seulement après
+/// qu'il a publié une mise à jour. C'est invisible jusqu'au jour où ça casse.
+const SPAWN_ARGS: [&str; 6] = [
+    "-Xmx256m",
+    "-XX:+UseSerialGC",
+    // Les sites répondent souvent en IPv6 alors que le réseau local ne l'a pas :
+    // mesuré 6,7 s en IPv4 contre 8,1 s sur EXHENTAI, et plus aucune résolution
+    // DNS en échec sur ce portable.
+    "-Djava.net.preferIPv4Stack=true",
+    // stdout est du NDJSON UTF-8 : on verrouille l'encodage JVM.
+    "-Dfile.encoding=UTF-8",
+    "-Dsun.stdout.encoding=UTF-8",
+    "-Dsun.stderr.encoding=UTF-8",
+];
 /// Deux nouvelles tentatives : 1,5 s puis 3 s. Suffisant pour un DNS qui
 /// titille, sans faire attendre une source vraiment morte.
 const RETRY_ATTEMPTS: u32 = 2;
@@ -104,6 +123,101 @@ impl Supervisor {
         })
     }
 
+    /// Démarre le moteur, exige un `hello`, puis **l'arrête**. Renvoie son verdict.
+    ///
+    /// C'est la sonde de la tâche 5.1 : on ne peut savoir si une version
+    /// installée est utilisable qu'en la **démarrant réellement** — un dossier
+    /// complet et une empreinte conforme ne prouvent pas que la JVM y démarre (JDK
+    /// cassé, classpath faux, version de protocole incompatible).
+    ///
+    /// Elle réutilise **exactement** les mêmes drapeaux de spawn et la même
+    /// poignée de main que `spawn_once`, donc elle ne peut pas valider un moteur
+    /// que la production refuserait — le corollaire du principe « ne teste pas une
+    /// réimplémentation ». Elle renvoie le `protocolVersion` annoncé en cas de
+    /// succès.
+    pub async fn probe(java: &std::path::Path, classpath: &str) -> Result<String, String> {
+        if !java.is_file() {
+            return Err(format!("java introuvable : {}", java.display()));
+        }
+        let mut child = Command::new(java)
+            .args(SPAWN_ARGS)
+            .args(["-cp", classpath, "org.tatami.engine.MainKt", "serve"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("spawn: {e}"))?;
+
+        // On lit stdout à la main : la sonde est ponctuelle, donc elle n'a pas
+        // besoin du routage par identifiant du superviseur. `stderr` est jeté —
+        // sinon le tube se remplit et le moteur se bloque sur une écriture.
+        let stdout = child.stdout.take().ok_or("stdout indisponible")?;
+        let mut reader = BufReader::new(stdout).lines();
+        let mut stdin = child.stdin.take().ok_or("stdin indisponible")?;
+
+        let verdict = tokio::time::timeout(HELLO_TIMEOUT, async {
+            let requete = serde_json::json!({
+                "id": "probe-hello",
+                "method": "hello",
+                "params": {},
+                "timeoutMs": HELLO_TIMEOUT.as_millis() as u64,
+            })
+            .to_string();
+            // Une écriture peut échouer si le moteur est déjà mort : ce n'est pas
+            // une panne du moteur, c'est exactement le verdict « il ne démarre
+            // pas ». Donc pas de `?` ici.
+            let _ = stdin.write_all(format!("{requete}\n").as_bytes()).await;
+            let _ = stdin.flush().await;
+            loop {
+                // `next_line` rend `Result<Option<String>>` : `None` = fin de
+                // flux, donc le moteur a quitté. Les deux cas sont un échec de
+                // démarrage, mais pas le même message.
+                let ligne = match reader.next_line().await {
+                    Ok(Some(l)) => l,
+                    Ok(None) => {
+                        return Err("le moteur a quitté avant de répondre au hello".to_string())
+                    }
+                    Err(e) => return Err(format!("lecture du hello impossible : {e}")),
+                };
+                let Ok(v) = serde_json::from_str::<Value>(&ligne) else {
+                    continue; // ligne non JSON : on l'ignore, comme le superviseur
+                };
+                if v.get("id").and_then(Value::as_str) != Some("probe-hello") {
+                    continue;
+                }
+                if let Some(err) = v.get("error") {
+                    return Err(format!("hello refusé : {err}"));
+                }
+                let version = v
+                    .get("result")
+                    .and_then(|r| r.get("protocolVersion"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                if version.is_empty() {
+                    return Err("hello sans protocolVersion".to_string());
+                }
+                return Ok(version);
+            }
+        })
+        .await;
+
+        // Arrêt propre dans **tous** les cas, y compris le timeout : un moteur
+        // laissé vivant consommerait 256 Mo et un pid pour rien.
+        let _ = stdin
+            .write_all(b"{\"id\":\"probe-shutdown\",\"method\":\"shutdown\"}\n")
+            .await;
+        let _ = stdin.flush().await;
+        drop(stdin);
+        let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+        let _ = child.kill().await;
+
+        match verdict {
+            Err(_elapsed) => Err(format!("pas de réponse au hello en {:?}", HELLO_TIMEOUT)),
+            Ok(r) => r,
+        }
+    }
+
     /// User-agent annoncé par le moteur (vide avant le premier `hello`).
     pub async fn user_agent(&self) -> String {
         self.user_agent.lock().await.clone()
@@ -144,22 +258,11 @@ impl Supervisor {
             return Err(format!("java introuvable : {}", self.java.display()));
         }
         let mut child = Command::new(&self.java)
-            .args([
-                "-Xmx256m",
-                "-XX:+UseSerialGC",
-                // Les sites répondent souvent en IPv6 alors que le réseau local ne
-                // l'a pas : mesuré 6,7 s en IPv4 contre 8,1 s sur EXHENTAI, et
-                // plus aucune résolution DNS en échec sur ce portable.
-                "-Djava.net.preferIPv4Stack=true",
-                // stdout est du NDJSON UTF-8 : on verrouille l'encodage JVM.
-                "-Dfile.encoding=UTF-8",
-                "-Dsun.stdout.encoding=UTF-8",
-                "-Dsun.stderr.encoding=UTF-8",
-                "-cp",
-                &self.classpath,
-                "org.tatami.engine.MainKt",
-                "serve",
-            ])
+            // Les drapeaux JVM sont partagés avec `probe` (voir `SPAWN_ARGS`) :
+            // deux listes divergentes feraient valider par la sonde un moteur que
+            // la production refuse.
+            .args(SPAWN_ARGS)
+            .args(["-cp", &self.classpath, "org.tatami.engine.MainKt", "serve"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

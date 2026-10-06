@@ -98,6 +98,28 @@ fn main() {
     let resource_dir =
         tauri::utils::platform::resource_dir(context.package_info(), &tauri::utils::Env::default())
             .ok();
+
+    // Tâche 5.1 — sonde de démarrage, **avant** le choix du moteur.
+    //
+    // L'ordre est la chose qui compte, et il n'est pas négociable : `sidecar_paths`
+    // lit le pointeur `actif.json`. Si la sonde revenait en arrière **après**, le
+    // superviseur garderait les chemins du moteur cassé, et toute l'opération
+    // n'aurait servi à rien — l'application redémarrerait en boucle sur un moteur
+    // mort. Donc : sonder, puis choisir.
+    //
+    // Un runtime rien que pour ça : `tauri::async_runtime` n'existe pas encore
+    // avant le premier `Builder::run`, et la sonde est précisément avant.
+    match tokio::runtime::Runtime::new() {
+        Ok(rt) => {
+            if let Err(e) = rt.block_on(moteur::verifier_actif_au_demarrage()) {
+                tracing::warn!("{e}");
+            }
+        }
+        Err(e) => tracing::warn!(
+            "runtime de la sonde indisponible ({e}) : le moteur installé ne sera pas vérifié"
+        ),
+    }
+
     let (java, classpath) = sidecar_paths(resource_dir.as_deref());
     tracing::info!("sidecar java={}", java.display());
     let sup: Arc<Supervisor> = Supervisor::new(java, classpath);

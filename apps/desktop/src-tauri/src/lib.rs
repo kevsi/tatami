@@ -42,6 +42,7 @@ pub mod download;
 pub mod image;
 pub mod journal;
 pub mod library;
+pub mod mask;
 pub mod moteur;
 pub mod pack;
 pub mod pagecache;

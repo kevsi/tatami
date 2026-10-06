@@ -406,3 +406,18 @@ synthétiques (crate `image` en dev).
 `cargo test -- --test-threads=1` (173/173), `pnpm typecheck/lint/i18n:check/hooks:check/chemins`.
 
 **Prochaine tâche** : **T3.2** — prompt par page avec budget de caractères par bulle.
+
+### 2026-10-06 — T3.2 livrée
+
+**T3.2 — Prompt par page + validation JSON.** Modules `prompt.rs` et `translator.rs` :
+- `construire_prompt` : prompt structuré avec contexte, glossaire, blocs, budget par bulle.
+- `calculer_budget` : budget proportionnel à la surface (20–200 caractères).
+- `schema_traduction` : schéma JSON de validation (tableau d'objets `id`, `translatedText`, `status`).
+- `traduire_page` : boucle de traduction avec 3 tentatives max, validation du JSON, vérification du nombre de blocs.
+- `valider_reponse` : vérifie tableau JSON, taille, ids, champs requis.
+- Repli : tous les blocs passent en `Fallback` après échec.
+
+**Portes passées** : `cargo clippy --all-targets -- -D warnings` (0 warning),
+`cargo test -- --test-threads=1` (183/183), `pnpm typecheck/lint/i18n:check/hooks:check/chemins`.
+
+**Prochaine tâche** : **T3.3** — glossaire par série (SQLite).

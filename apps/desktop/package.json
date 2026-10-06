@@ -11,6 +11,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "i18n:check": "node scripts/check-i18n.mjs",
+    "hooks:check": "node scripts/check-hooks.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

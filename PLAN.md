@@ -1945,3 +1945,127 @@ après qu’il a publié une mise à jour. Invisible jusqu’au jour où ça cas
 
 `cargo test` **152** (131 + 1 + 20) · `fmt` 0 · `clippy --all-targets -D warnings` 0
 · `tsc` 0. Les scénarios de test (`0.3.0` factice) ont été supprimés.
+
+---
+
+## 2026-10-05 — Pilotage de l'application : une boucle React infinie trouvée et corrigée
+
+Le parcours demandé (« pilote l'app pour tester toutes les fonctionnalités ») a
+rempli son rôle : il a trouvé un défaut que `tsc` et `eslint` ne pouvaient pas
+voir.
+
+### Ce qui a été piloté, et ce qui a été mesuré
+
+Unité de mesure : l'application réelle, en WebView2, pilotée par CDP
+(`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9223` puis
+`connectOverCDP`). Relais : `.mesures/pilot-01.cjs` à `pilot-15.cjs`.
+
+| Parcours | Mesure |
+|---|---|
+| 4 onglets + 13 sections de réglages | 0 erreur console |
+| Catalogue, 19 langues | 1370 sources annoncées, tuiles rendues |
+| Catalogue → langue INT → MANGADEX | 48 tuiles, **20 séries**, 19 couvertures chargées, 0 cassée |
+| Fiche d'une série | 6 chapitres, bouton `Lire` présent |
+| **Lecteur** | monte, **2 pages chargées, 0 cassée, 0 débordement** |
+| Erreurs console, total | **0** |
+
+### Le défaut : `t` dans les dépendances d'un effet
+
+À l'ouverture d'une série, React affichait **« Maximum update depth exceeded »
+× 12**. La cause est l'effet qui charge les « chapitres récents »
+(`apps/desktop/app/page.tsx`) :
+
+```
+}, [latest, showRecent, selected?.name, t, langue]);   // avant
+}, [latest, showRecent, selected?.name, langue]);       // après
+```
+
+`useI18n()` rend `t` sous forme de fonction **recréée à chaque rendu**. L'effet
+la liste dans ses dépendances **et** appelle `setCardRecent`, `setCardTotal` et
+`setRecentBusy`. Donc : rendu → nouvelle `t` → effet relancé → `setState` →
+rendu, sans fin. React abandonne après 50 rendus.
+
+C'est le même fait que la 3.4 (qui faisait appeler `set_libelles` 18 fois au
+démarrage) : la 3.4 l'a corrigé sur **un** effet, celui-ci était le suivant.
+
+La dépendance correcte est `langue` : un **primitif**, qui ne change que quand
+la langue change. `t` n'est utilisé dans l'effet que pour `depuis(t, …)`.
+
+**Preuve du correctif** (`.mesures/pilot-14.cjs`, même parcours) :
+
+```
+« Maximum update depth » avant la série : 0
+« Maximum update depth » après  la série : 0   -> corrigée
+erreurs console totales : 0
+```
+
+**La boucle inondait aussi le moteur.** Le journal du serveur de dev donne une
+mesure indépendante de la console, et sans elle le défaut paraissait discret :
+React abandonnait, donc l'écran finissait par se stabiliser.
+
+Comptage des lignes `commands::chapters` :
+
+| Période | Appels au moteur |
+|---|---|
+| avant le correctif (06:20 → 06:23) | **379** |
+| après le correctif (06:28 → 06:29) | **2** |
+
+Soit 379 requêtes `chapters` pour une vingtaine de séries, en 2 min 30, dont
+des rafales de **37 appels en une seule seconde**. Le moteur JVM est
+séquentiel : chaque appel en coûte un tour à tout le reste.
+
+Les **2** appels restants ne sont pas attribués : les deux portent le même
+manga, à 160 ms d'écart, avec **un seul** `details` — donc un `loadChapters`
+unique devrait produire un `chapters` et un `details`. Deux pistes restent
+ouvertes : l'effet « chapitres récents » (activé par défaut) qui aurait servi
+la même carte, ou un appel en double. Tranché en marquant l'instant du clic dans
+le journal au prochain passage ; **pas de conclusion sans cette mesure**.
+
+### Porte : `pnpm hooks:check`
+
+Nouvelle porte (`apps/desktop/scripts/check-hooks.mjs`) : aucun `useEffect` ne
+peut dépendre de `t`, ni d'un `useCallback` dont les propres dépendances
+contiennent `t`. Un `useCallback([t])` appelé depuis un bouton n'est pas
+interdit — il n'est jamais relancé par un effet.
+
+**Prouvée rouge puis verte** : en remettant `t` dans le tableau, la porte sort
+`code sortie = 1` et nomme `page.tsx:1982`. Une première version accusait
+`page.tsx:1734` : elle remplaçait un commentaire de bloc par un seul espace, ce
+qui **avalait ses sauts de ligne**. Corrigée (chaque caractère non-saut-de-ligne
+devient un espace), la porte nomme la bonne ligne.
+
+Ajoutée aux commandes de vérification d'`AGENTS.md` §8, avec les trois autres.
+
+### Ce qui n'était PAS un défaut (mesures à corriger)
+
+Trois conclusions initiales étaient fausses, et les trois venaient de la
+**mesure**, pas du code :
+
+- « Le lecteur ne s'ouvre pas » : le bouton est `.chapter-open` ; j'avais cliqué
+  `.chapter-cell`, un `<div>` **sans gestionnaire**.
+- « La recherche ne filtre pas » : l'écran Catalogue ouvre sur les **langues** ;
+  la grille des sources n'existe qu'après avoir cliqué une langue.
+- « `ArrowRight` ne fait rien » : `→` est `disabled`, donc le lecteur était déjà
+  à la dernière page. C'est le comportement correct.
+
+Corollaire retenu : `reload()` en tête de parcours. Quatre passages d'affilée
+mesuraient un **état résiduel** (le champ de recherche du passage précédent).
+
+### Point ouvert, non traité
+
+Le lecteur **n'affiche aucun compteur de page** : `reader.index` sert au clavier,
+aux signets et à la navigation, mais n'est jamais rendu en texte. Sur un
+chapitre de 303 pages (mesure sur Killer Peter, 1.9), l'utilisateur ne sait pas
+où il en est. `PLAN.md` ne le demande nulle part : l'ajouter serait un
+élargissement de périmètre, donc **signalé, pas fait**.
+
+Mesure complémentaire : les 7 boutons du lecteur ont tous un nom accessible
+(non vide) — dont `←` et `→`, dont le symbole **est** le nom. Une lecture du JSX
+seule les aurait crus sans nom.
+
+### Vérification
+
+`cargo fmt --check` 0 · `cargo clippy --all-targets -D warnings` 0 ·
+`cargo test` **152** (131 + 1 + 20) · `pnpm typecheck` 0 ·
+`pnpm lint` 4 warnings (les 4 antérieurs, 0 erreur) · `pnpm i18n:check` propre ·
+`pnpm hooks:check` **rouge prouvée puis verte**.

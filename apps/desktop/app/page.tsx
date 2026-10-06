@@ -1964,11 +1964,22 @@ export default function Home() {
     void Promise.all(
       Array.from({ length: Math.min(RECENT_CONCURRENCY, todo.length) }, () => run()),
     );
-    // `t` est une dépendance RÉELLE depuis que les étiquettes de chapitre sont
-    // passées par `depuis(t, …)` : sans elle, changer de langue laisserait les
-    // lignes « Ch. 12 · il y a 3 mois » dans l'ancienne langue. L'avertissement
-    // `exhaustive-deps` est donc exact, pas un bruit à supprimer.
-  }, [latest, showRecent, selected?.name, t, langue]);
+    // `t` est volontairement ABSENT des dépendances : c'est la seule forme
+    // correcte ici. Mesuré le 2026-10-05 : `useI18n()` rend `t` sous forme de
+    // fonction recréée à chaque rendu (le même fait qui faisait appeler
+    // `set_libelles` 18 fois au démarrage en 3.4). Avec `t` en dépendance, cet
+    // effet se rejoue **à chaque rendu** alors qu'il appelle `setCardRecent`,
+    // `setCardTotal` et `setRecentBusy` : chaque exécution provoque un rendu de
+    // plus, qui recrée `t`, qui relance l'effet — donc une **boucle infinie**.
+    // Mesuré : « Maximum update depth exceeded » × 12 à l'ouverture d'une série,
+    // reproduit par le pilotage de l'application (`.mesures/pilot-13.cjs`).
+    //
+    // `langue` est la bonne dépendance : c'est un **primitif**, il ne change que
+    // quand la langue change, et `t` n'est utilisé ici que pour `depuis(t, …)`.
+    // La porte `pnpm hooks:check` refuse le retour de `t` dans un tableau de
+    // dépendances d'effet.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latest, showRecent, selected?.name, langue]);
 
   async function loadChapters(m: Manga) {
     setOpenManga(m);

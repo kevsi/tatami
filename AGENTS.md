@@ -141,6 +141,11 @@ Le contrat vit dans `contract/` : un schéma JSON versionné, à partir duquel o
 3. Intégration : Rust lance le vrai sidecar et exécute un scénario `hello` → `listSources` → `search`.
 4. Smoke test manuel documenté dans `docs/smoke-test.md`, exécuté avant chaque jalon.
 
+Quatrième porte de l'interface, à lancer avec les trois autres :
+`pnpm hooks:check` (`scripts/check-hooks.mjs`) refuse qu'un `useEffect`
+dépende d'une valeur recréée à chaque rendu. Voir la leçon « `t` dans les
+dépendances d'un effet » en §14.
+
 **Commandes de vérification** (figées le 2026-10-05, tâche 0.12). Chacune
 précise son dossier, parce que la plupart échouent depuis la racine :
 
@@ -150,6 +155,7 @@ cd apps\desktop
 pnpm typecheck          # tsc --noEmit
 pnpm lint               # eslint ; 4 warnings exhaustive-deps connus, 0 erreur
 pnpm i18n:check         # aucune clé morte ni manquante (152 clés)
+pnpm hooks:check        # aucune dépendance d'effet recréée à chaque rendu
 pnpm build              # next build
 
 # Cœur Rust — dossier apps\desktop\src-tauri
@@ -499,6 +505,60 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   windowLabel })` — c'est le même chemin que l'émetteur Rust. Une sonde qui
   dispatche un événement DOM passe au vert sans avoir rien testé, et il faut
   **plusieurs tentatives** pour s'apercevoir que rien ne se passe.
+- **`t` dans les dépendances d'un effet est une boucle infinie, et `tsc` /
+  `lint` ne la voient pas.** Mesuré le 2026-10-05 en pilotant l'app réelle
+  (`.mesures/pilot-13.cjs`) : `useI18n()` rend `t` sous forme de fonction
+  **recréée à chaque rendu**. L'effet qui charge les « chapitres récents »
+  (`page.tsx`, tableau `[latest, showRecent, selected?.name, t, langue]`)
+  dépendait de `t` **et** appelait `setCardRecent` / `setCardTotal` /
+  `setRecentBusy` → rendu → nouvelle `t` → effet relancé, sans fin. React
+  abandonnait après 50 rendus : **« Maximum update depth exceeded » × 12** à
+  l'ouverture d'une série. `tsc` : 0 erreur. `eslint` : rien (le warning
+  `exhaustive-deps` ne dit pas *quand* la dépendance est instable). La
+  correction est de dépendre du **primitif** `langue` — c'est le même fait que
+  la 3.4, qui faisait appeler `set_libelles` 18 fois au démarrage. **Porte**
+  `pnpm hooks:check` : refusée si `t` (ou un `useCallback([t])`) revient dans un
+  tableau de dépendances d'effet ; prouvée **rouge** en remettant `t`, verte
+  après. Corollaire : une dépendance d'effet doit être un **primitif** ou une
+  fonction **mémorisée sans `t`** ; `useCallback([t])` appelé d'un bouton est
+  sans danger (jamais relancé par un effet) — la porte vise donc l'effet, pas le
+  rappel.
+
+- **Une porte qui accuse la mauvaise ligne est une porte qu'on finit par ignorer.**
+  Première version de `check-hooks.mjs` : remplacer un commentaire de bloc par
+  un seul espace **avalait ses sauts de ligne**, donc un `/* … */` de 246 lignes
+  décalait tout — la porte nommait `page.tsx:1734` au lieu de `1980`. Même
+  famille que `Move-Item` qui conserve le `mtime` : une mesure qui sort un
+  numéro faux n'est pas une mesure fausse, c'est une mesure **inutilisable**.
+  Règle : quand une porte lit du texte pour en tirer une position, elle doit
+  **préserver la numérotation** (`m.replace(/[^\n]/g, ' ')`), et on vérifie que
+  la ligne nommée contient bien le motif cherché.
+
+- **`Set-Content -Encoding UTF8` (PowerShell 5.1) corrompt un fichier source.**
+  Utilisé pour casser volontairement le code afin de prouver la porte : le
+  fichier a reçu un **BOM** (`EF BB BF` avant le `'use client'`) et a perdu les
+  caractères non-ASCII (`…` → `.`). Les accents semblaient intacts parce que le
+  *console* les affichait en `?` — seul `git diff` a montré la vraie perte.
+  Règle : pour **modifier** un fichier, l'outil `edit` ; pour une casse
+  volontaire, une **sauvegarde par copie d'octets** (`Copy-Item`) restaurée
+  ainsi, avec le `mtime` remis à jour ; et `git diff` comme preuve du contenu
+  réel, jamais l'affichage du terminal.
+
+- **Un état résiduel rend un walk muet, et une mesure répétée sur le même état
+  rend le walk encore plus muet.** Mesuré le 2026-10-05 : quatre passages de
+  pilotage d'affilée ont tous montré « 0 source pour » et une grille
+  vide — le champ de recherche **d'un passage** persistait dans l'état de
+  l'application et ne correspondait à aucune source. La réponse était dans
+  l'écran lui-même : il s'ouvre sur les **langues** (`.lang-tile`), et la grille
+  des sources (`.grid .slot`) n'existe qu'**après** avoir cliqué une langue.
+  Corollaires : (a) `reload()` en tête de parcours, sinon on mesure l'état du
+  passage précédent ; (b) lire le JSX **avant** d'écrire le sélecteur — j'ai
+  cliqué `.chapter-cell` (un `<div>` **sans gestionnaire**) alors que le bouton
+  est `.chapter-open`, et j'ai conclu « le lecteur ne s'ouvre pas » ; (c) un
+  `disabled: true` sur `→` prouve qu'on est déjà à la dernière page, donc
+  qu'`ArrowRight` ne fasse rien est **le comportement correct**, pas un bug —
+  il faut le lire avant de le signaler.
+
 - **Le pluriel se teste avec une seule unité, jamais avec le nombre qu'on a
   sous la main.** Deux fois dans la journée : 5.4 avec 7 pannes et 3.2 avec 2
   entrées — les deux mesures « vert » laissaient le singulier **non testé**, et

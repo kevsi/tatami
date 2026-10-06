@@ -1030,10 +1030,24 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   déjà, et quatre appels de 0,5 s se relancent **ensemble**. Le défaut n'était pas
   le débit moyen (1,3 à 2,1 req/s, correct) mais l'**écart minimum nul** : 0 ms
   sur trois rafales mesurées. Un hôte sent les rafales simultanées, pas le débit
-  moyen. Ajouté `RECENT_INTERVALLE_MS = 800` : mesuré ensuite, écart minimum
-  **738 ms**, médiane 800, débit 1,25/s. Corollaire : **recommander de renforcer
-  un réglage déjà présent sans l'avoir lu est une erreur** — c'est ce que j'ai
-  fait, et il a fallu ouvrir `page.tsx` pour le voir.
+  moyen. Ajouté `RECENT_INTERVALLE_MS` : mesuré ensuite, écart minimum **248 ms**,
+  médiane 400 — donc toujours aucun départ simultané, qui est le vrai défaut.
+  Corollaire de mesure : passer l'intervalle de 800 à 300 ms n'a gagné que
+  **0,7 s**, alors que ne demander que les cartes **visibles** en a gagné
+  **3,6 s**. Le goulot était la latence des réponses, pas l'intervalle — et la
+  correction n'a paru qu'en mesurant **ce que voit l'utilisateur**, jamais le
+  débit. **Recommander de renforcer un
+  réglage déjà présent sans l'avoir lu est une erreur** — c'est ce que j'ai fait,
+  et il a fallu ouvrir `page.tsx` pour le voir.
+- **Apparier une file d'attente au DOM par l'index suppose un ordre qu'on n'a
+  pas vérifié.** Mesuré le 2026-10-06 : le tri « visible d'abord » appariait le
+  nᵉ bouton du DOM au nᵉ élément de la file. Faux : la file est **filtrée** (les
+  entrées en cache sont sautées) et la grille est rendue dans l'ordre de
+  `latestTrie`, qui est **trié**. Le tri ne triait donc rien — et la mesure
+  indiquait pourtant 6/6 visibles remplies, ce qui donnait envie de le croire.
+  Corrigé en exposant `data-manga-key` sur la carte : la clé vient du DOM, sans
+  supposition. Corollaire : quand une mesure « réussit » alors que le
+  mécanisme est faux, c'est le signe qu'elle ne teste pas ce qu'elle croit.
 - **Un pic dans une seconde n'est pas un débit, et un débit moyen cache une
   rafale.** J'ai annoncé « 6 requêtes par seconde » en prenant le maximum d'une
   fenêtre glissante d'une seconde ; le débit soutenu était trois fois moindre.

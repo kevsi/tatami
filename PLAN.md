@@ -2641,7 +2641,7 @@ erreur console sur l'app réelle.
 ### Ma recommandation de la veille était fausse
 
 J'ai proposé de « borner la concurrence à 2-3 ». En lisant le code :
-`RECENT_CONCURRENCY = 4` **existait déjà**. Je recommandais de、强化 un
+`RECENT_CONCURRENCY = 4` **existait déjà**. Je recommandais de renforcer un
 contraire déjà en place, sans l'avoir lu.
 
 Et le chiffre que j'ai avancé — « 6 requêtes par seconde » — était un **pic
@@ -2657,7 +2657,7 @@ L'historique complet du journal du serveur, par rafale :
 | 06:34 | 21 / 13,9 s | **0 ms** | 583 ms | 1,44/s |
 | 06:54 | 20 / 8,9 s | **0 ms** | 413 ms | 2,13/s |
 | 07:33 | 31 / 18,4 s | 1 ms | 468 ms | 1,63/s |
-| **09:08 (après)** | 20 / 15,2 s | **738 ms** | **800 ms** | **1,25/s** |
+| 09:08 (800 ms) | 20 / 15,2 s | 738 ms | 800 ms | 1,25/s |
 
 Le vrai défaut n'était donc pas le débit moyen, c'était **l'écart minimum nul** :
 quatre workers partaient **ensemble**. C'est cela qui pesoit sur un hôte — des
@@ -2668,9 +2668,37 @@ rafales simultanées, pas un flot continu.
 `RECENT_CONCURRENCY` reste à 4 (le nombre de requêtes **en vol** est borné).
 S'y ajoute `RECENT_INTERVALLE_MS = 800`, qui borne le débit par hôte. Les deux
 notions sont distinctes et il fallait les deux — c'est ce que j'avais confondu.
-**Plancher mesuré 739 ms**, pas 800 : `setTimeout` réveille parfois un peu en
-avance et l'écriture du journal a sa propre latence. Écrire « 800 ms pile »
-serait une promesse plus forte que la mesure.
+### Une correction de trop, signalée par l'utilisateur : 800 ms était lent
+
+Deux jours après, l'utilisateur a signalé que « ça prend du temps avant
+d'afficher les chapitres dans la carte ». C'était ma régression.
+
+**D'abord, une mesure qui a trompé.** Passer l'intervalle de 800 à 300 ms n'a
+gagné que **0,7 s** (9,4 s → 8,6 s). L'intervalle n'était donc pas le goulot :
+le coût est la **latence des réponses**, pas l'espacement des départs.
+
+**Ce qui a vraiment aidé : n'interroger que ce qu'on voit.** Le catalogue rend 20
+cartes et il n'y en a que **6** dans la fenêtre. Le tri « visible d'abord »
+apporte plus que l'intervalle, et il supprime du travail jeté.
+
+| | Avant (17,4 s) | Intervalle 300 ms | + visible d'abord |
+|---|---|---|---|
+| Cartes **visibles** remplies | non mesuré | 8,6 s | **5,8 s** |
+| Grille entière | 17,4 s | 18,7 s | **13,5 s** |
+| Plancher d'intervalle mesuré | 0 ms | 248 ms | 248 ms |
+
+**Le piège de cette correction, deux fois de suite.** La première version
+appariait le nᵉ bouton du DOM au nᵉ élément de la file. C'est faux : la file est
+filtrée (on saute les entrées déjà en cache) et la grille est rendue dans
+l'ordre de `latestTrie`, qui est **trié**. Les deux index divergeaient, donc le
+tri ne triait rien — et la mesure le montrait quand même (6/6 visibles), ce qui
+mettait plus de le croire. Corrigé en exposant `data-manga-key` sur la carte :
+la clé est alors lue du DOM, sans supposition sur l'ordre.
+
+**Plancher mesuré 248 ms**, médiane 400 : toujours aucun départ simultané,
+qui est le défaut que `AGENTS.md` §10 demande de traiter. Le reste — ne pas
+interroger 20 séries quand on n'en voit que 6 — reste ouvert, et demanderait un
+observateur de défilement.
 
 **Première version, mesurée fausse encore une fois.** Le compteur était local à
 l'effet. Mesuré : MANGADEX était bien à ~800 ms, mais une autre source finissait

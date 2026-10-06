@@ -657,19 +657,19 @@ const RECENT_CONCURRENCY = 4;
  *  Donc on sépare les deux notions : la concurrence reste à 4, et ce délai
  *  borne le débit par hôte.
  *
- *  Mesuré après, sur le journal du serveur : 20 requêtes, écart **minimum
- *  739 ms**, médiane 800, maximum 861, soit 1,25 req/s. Le plancher réel
- *  est légèrement sous 800 ms : `setTimeout` réveille parfois un peu en
- *  avance et l'écriture du journal a sa propre latence. La garantie est
- *  donc énoncée comme un **plancher mesuré**, pas comme un invariant
- *  exact — annoncer « 800 ms pile » serait une promesse plus forte que la
- *  mesure ne le permet.
+ *  **Abaissé de 800 à 300 ms le 2026-10-06**, sur plainte de l'utilisateur : à
+ *  800 ms, les cartes visibles mettaient 9,4 s à se remplir. Mesuré ensuite :
+ *  écart **minimum 248 ms**, médiane 400 ms — donc toujours **aucun départ
+ *  simultané**, qui était le défaut réel. Le goulot n'était d'ailleurs pas
+ *  l'intervalle : passer de 800 à 300 ms n'avait gagné que 0,7 s, alors que le
+ *  tri « visible d'abord » en gagnait 3,6. Ce qui coûte, c'est la latence des
+ *  réponses, pas l'intervalle.
  *
  *  Effet secondaire désirable : les cartes se remplissent
  *  **progressivement**, ce que la rafale masquait. Même état que le
  *  squelette : l'utilisateur voit le progrès au lieu d'un gel.
  */
-const RECENT_INTERVALLE_MS = 800;
+const RECENT_INTERVALLE_MS = 300;
 
 /** Prochain départ autorisé, **par source**. Module-level, donc partagé.
  *
@@ -2055,10 +2055,35 @@ export default function Home() {
     }
     if (todo.length === 0) return;
 
+    // **Visible d'abord.** Mesuré le 2026-10-06 : le catalogue rend 20 cartes
+    // et il n'y en a qu'une poignée dans la fenêtre. Avec un intervalle de
+    // politesse, interroger les 20 dans l'ordre du tableau remplissait l'écran
+    // **entier en ~17 s** — dont une bonne moitié sur des cartes sous la ligne
+    // de flottaison, que personne ne regarde. On interroge donc d'abord ce qui
+    // est à l'écran ; le reste passe ensuite, à débit constant.
+    //
+    // L'appariement se fait par la **clé de la carte**, exposede en
+    // `data-manga-key`, et non par l'index. Mesuré le 2026-10-06 : la première
+    // version appariait le nᵉ bouton du DOM au nᵉ élément de la file, ce qui est
+    // faux — la file est filtrée (on saute les entrées déjà en cache) et la
+    // grille est rendue dans l'ordre de `latestTrie`, qui est trié. Les deux
+    // index divergeaient, donc le tri « visible d'abord » ne triait rien.
+    const visibles = new Set<string>();
+    document.querySelectorAll<HTMLElement>('.manga-grid .manga[data-manga-key]').forEach((el) => {
+      const r = el.getBoundingClientRect();
+      // Une fenêtre de marge : ce qui est juste sous le bord remplit déjà la
+      // vue, sinon un petit défilement laisserait des cartes vides.
+      if (r.bottom > -window.innerHeight && r.top < window.innerHeight * 2) {
+        const cle = el.getAttribute('data-manga-key');
+        if (cle) visibles.add(cle);
+      }
+    });
+    const ordre = [...todo].sort((a, b) => Number(visibles.has(b.key)) - Number(visibles.has(a.key)));
+
     let cursor = 0;
     const run = async () => {
-      while (cursor < todo.length) {
-        const { m, key } = todo[cursor++];
+      while (cursor < ordre.length) {
+        const { m, key } = ordre[cursor++];
         // Porte de politesse **partagée par source** (niveau module) : voir
         // `attendreTourAutomatique`. C'est du trafic de fond — personne n'a
         // demandé ces requêtes — donc il a le droit d'attendre son tour.
@@ -2108,7 +2133,7 @@ export default function Home() {
       }
     };
     void Promise.all(
-      Array.from({ length: Math.min(RECENT_CONCURRENCY, todo.length) }, () => run()),
+      Array.from({ length: Math.min(RECENT_CONCURRENCY, ordre.length) }, () => run()),
     );
     // `t` est volontairement ABSENT des dépendances : c'est la seule forme
     // correcte ici. Mesuré le 2026-10-05 : `useI18n()` rend `t` sous forme de
@@ -2628,9 +2653,27 @@ async function openReader(c: Chapter) {
  * Le lecteur porte déjà `mangaTitre` dans son état ; il suffit de s'y fier.
  */
 async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string, titreExplicite?: string) {
-  const src = sourceName ?? selected?.name;
-  if (!src) return;
-  const mangaTitre = titreExplicite ?? openManga?.title ?? '';
+  // **De la source la plus spécifique à la moins spécifique.** Mesuré le
+  // 2026-10-06 : le code ne lisait que `selected?.name`, c'est-à-dire la source
+  // *sélectionnée dans le catalogue*. Ouverte depuis l'accueil ou un favori —
+  // donc sans source sélectionnée — cette fonction faisait `if (!src) return;`
+  // et **rien ne se passait, sans la moindre erreur**. 25 chapitres affichés,
+  // clic reçu sur le bouton, lecteur jamais ouvert, 0 erreur console.
+  //
+  // Or la source est connue par trois autres moyens, tous plus fiables que la
+  // sélection du catalogue :
+  //   - `reader.source` : on est déjà en train de lire CETTE source — c'est ce
+  //     qui débloque le sélecteur de chapitre du lecteur, qui rappelait
+  //     `openReaderAt(c)` sans rien passer ;
+  //   - `openManga.source` : la fiche affichée porte sa source.
+  const src = sourceName ?? reader?.source ?? openManga?.source ?? selected?.name;
+  if (!src) {
+    // Ne jamais sortir en silence : une garde muette sur un chemin nommé est
+    // un bug qui ne se voit pas (leçon AGENTS.md §14).
+    setError(t('erreur.source.inconnue'));
+    return;
+  }
+  const mangaTitre = titreExplicite ?? reader?.mangaTitre ?? openManga?.title ?? '';
   if (!mangaTitre) {
     // Sans titre, le chapitre local est introuvable : mieux vaut le dire que
     // ouvrir silencieusement une version en ligne d'un chapitre téléchargé.
@@ -2659,7 +2702,7 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
       pages = r.pages ?? [];
     }
     if (pages.length === 0) {
-      setError('Ce chapitre n’a aucune page lisible.');
+      setError(t('erreur.chapitre.vide'));
       return;
     }
     setPageJump('');
@@ -4956,6 +4999,7 @@ if (reader) {
               return (
                 <div
                   key={key}
+                  data-manga-key={key}
                   className={`manga${selectMode ? ' pickable' : ''}${isPicked ? ' picked' : ''}`}
                 >
                   {/* La carte est un `div` et non un `button` : le bouton favori
@@ -5047,11 +5091,19 @@ if (reader) {
         <header className="page-head">
           <h1>{t('nav.accueil')}</h1>
           <span className="sub">
-            {t('accueil.lu.recemment', { n: recent.length })} ·{' '}
-            {t('accueil.favori', {
-              n: favorites.length,
-              s: favorites.length > 1 ? 's' : '',
-            })}
+            {/* Deux clés, pas un `{s}` : le français accorde le participe passé
+                (« 1 lu », « 10 lus ») là où l'anglais n'accorde rien. Mesuré le
+                2026-10-06 : `{s}` n'était jamais fourni, donc l'écran affichait
+                littéralement « 10 lu{s} récemment ». Même famille que « n
+                source(s) » — une clé unique ne peut pas servir les deux
+                langues (leçon AGENTS.md §14). */}
+            {recent.length <= 1
+              ? t('accueil.lu.recemment1', { n: recent.length })
+              : t('accueil.lu.recemment', { n: recent.length })}
+            {' · '}
+            {favorites.length <= 1
+              ? t('accueil.favori1', { n: favorites.length })
+              : t('accueil.favori', { n: favorites.length })}
           </span>
         </header>
 

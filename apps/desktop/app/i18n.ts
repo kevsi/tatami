@@ -242,8 +242,10 @@ const FR = {
   'accueil.incognito': 'Incognito',
   'accueil.incognito.note':
     "Masque de l'accueil les titres classés adultes par leur source. Ils restent accessibles en recherche.",
-  'accueil.lu.recemment': '{n} lu{s} récemment',
-  'accueil.favori': '{n} favori{s}',
+  'accueil.lu.recemment': '{n} lus récemment',
+  'accueil.lu.recemment1': '{n} lu récemment',
+  'accueil.favori': '{n} favoris',
+  'accueil.favori1': '{n} favori',
   'accueil.reprendre': 'Reprendre',
   'accueil.oublier': 'Oublier',
   'accueil.fiche.titre': 'Ouvrir la fiche de {titre}',
@@ -370,6 +372,9 @@ const FR = {
   // --- Erreurs
   'erreur.lecture': 'Lecture impossible : {raison}',
   'erreur.chapitres': 'Chapitres indisponibles : {raison}',
+  'erreur.source.inconnue':
+    "Source inconnue : cette série n'est rattachée à aucun catalogue. Réouvre sa fiche depuis le catalogue, ou réessaie depuis l'accueil.",
+  'erreur.chapitre.vide': 'Ce chapitre n’a aucune page lisible.',
   'erreur.signet': 'Signet : {raison}',
   'erreur.categorie': 'Catégorie : {raison}',
   'erreur.favori': 'Favori : {raison}',
@@ -648,7 +653,9 @@ const EN: Record<Cle, string> = {
   'accueil.incognito.note':
     'Hides titles their source rates as adult. They stay reachable through search.',
   'accueil.lu.recemment': '{n} recently read',
-  'accueil.favori': '{n} favourite{s}',
+  'accueil.lu.recemment1': '{n} recently read',
+  'accueil.favori': '{n} favourites',
+  'accueil.favori1': '{n} favourite',
   'accueil.reprendre': 'Resume',
   'accueil.oublier': 'Forget',
   'accueil.fiche.titre': 'Open the details for {titre}',
@@ -694,6 +701,9 @@ const EN: Record<Cle, string> = {
 
   'erreur.lecture': 'Cannot read: {raison}',
   'erreur.chapitres': 'Chapters unavailable: {raison}',
+  'erreur.source.inconnue':
+    'Unknown source: this series is not attached to any catalogue. Open its page from the catalogue, or try again from Home.',
+  'erreur.chapitre.vide': 'This chapter has no readable page.',
   'erreur.signet': 'Bookmark: {raison}',
   'erreur.categorie': 'Category: {raison}',
   'erreur.favori': 'Favourite: {raison}',

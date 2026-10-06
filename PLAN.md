@@ -2317,3 +2317,94 @@ l'effet a eu lieu. Le témoin était `maxAt` : identique → rien n'a été écr
 `pnpm typecheck` 0 · `pnpm lint` 4 warnings (les 4 antérieurs, 0 erreur) ·
 `pnpm i18n:check` · `pnpm hooks:check` · `pnpm chemins:check` : propres ·
 `cargo fmt --check` 0 · `cargo test` **152**.
+
+---
+
+## 2026-10-06 — 0.11 de bout en bout : la mécanique est prouvée, et un défaut trouvé
+
+C'est la dernière tâche produit du plan. Relais : `.mesures/pilot-40` à
+`pilot-48`.
+
+### D'abord : quelles sources sont réellement protégées, aujourd'hui ?
+
+Le panneau « état des sources » ne liste que des échecs **passés**. Sondage en
+direct de 10 sources via la commande `latest` :
+
+| Source | Résultat mesuré |
+|---|---|
+| MANGADEX, REMANGA, SEIMANGA, EXHENTAI, MANGASORIGINES, MANGATOWN | **OK** (1,2 à 3,4 s) |
+| **KAGANE** | **`CHALLENGE_REQUIRED`** — `https://kagane.to/api/v2/search/series?…` |
+| **MANGANATO** | **`CHALLENGE_REQUIRED`** — `https://www.natomanga.com/manga-list/latest-manga` |
+| MANGALIB, BAOZIMH | `INTERNAL` sur HTTP 403 |
+
+Les deux premières lignes **corrigent une donnée du plan** : MANGALIB et BAOZIMH
+ne donnent pas de challenge, ils donnent un 403 ordinaire — ce n'est donc pas
+eux qui peuvent prouver 0.11. KAGANE et MANGANATO, eux, renvoient le code
+**avec une URL exploitable**, ce qu'il fallait.
+
+### La mécanique, mesurée étape par étape
+
+| État | `solve_challenge` | Ce que ça prouve |
+|---|---|---|
+| fenêtre fermée | refus : « la fenêtre de vérification est fermée » | la fenêtre est bien celle qu'on croit |
+| fenêtre ouverte, aucun cookie | refus : « aucun cookie pour ce site » | **la commande ne réussit pas toujours** |
+| cookie posé, fenêtre ouverte | **`Ok(1)`** puis **`Ok(4)`** | lecture des cookies → `setCookies` → moteur |
+
+Le journal du serveur confirme le dernier maillon : `setCookies` reçu par le
+moteur (`len=66`). Et KAGANE affiche un vrai « **Un instant… Vérification de
+sécurité en cours** » avec son Ray ID.
+
+**Ce que 0.11 est censé prouver est atteint** : la fenêtre s'ouvre, elle reçoit
+le même agent utilisateur que le moteur, les cookies se transmettent. Ce qui
+reste hors de portée d'une mesure automatique, c'est **résoudre** un challenge
+Cloudflare — cela demande un humain. La source reste donc `CHALLENGE_REQUIRED`
+après transmission, ce qui est le comportement attendu (notre cookie de test ne
+vaut rien).
+
+### Le défaut trouvé au passage : la fenêtre de vérification ne se fermait pas
+
+`cancel_challenge` renvoyait `Ok(())` **sans fermer** : deux annulations
+successives laissaient la fenêtre ouverte, cookie encore lisible.
+
+Cause : le gestionnaire `on_window_event` de la **3.4** transforme toute
+fermeture en « mise dans la zone », et il était enregistré **sans filtre de
+fenêtre**. La fenêtre de vérification n'a pas d'icône de zone : la cacher la
+rendait inaccessible définitivement.
+
+Corrigé par une décision pure sur le label (`est_fenetre_principale_par_label`),
+le cas nominal écrit en premier pour que la porte ne puisse pas passer par
+défaut.
+
+**Prouvé rouge** : en faisant renvoyer `true` à tout, le test échoue en nommant
+`challenge-KAGANE`. **Prouvé vert sur l'app réelle** : après `cancel_challenge`,
+le témoin dit « fenêtre fermée » et la liste CDP passe de 1 à 0.
+
+**Contrôle négatif, obligatoire** : la fenêtre **principale** reste vivante et
+pilotable (`h1: Home`, `role=tablist` présent) — donc la 3.4 n'est pas cassée.
+C'est un échange qui aurait pu se produire, et il ne s'est pas produit.
+
+### Une leçon de mesure, encore
+
+`cancel_challenge` a d'abord été mesuré via CDP (compter les pages). Une page
+fermée peut rester listée — donc « la fenêtre est encore là » ne prouve rien.
+Le **témoin** est la commande qui exige l'existence de la fenêtre : si
+`solve_challenge` répond « la fenêtre de vérification est fermée », c'est Tauri
+qui l'a fermée. Même famille que la règle déjà écrite sur « une commande
+destructive ne prouve pas l'absence d'un état ».
+
+Piège rencontré en route : le premier passage a appelé `solve_challenge` **sans
+`url`**, et j'ai conclu que le flux ne marchait pas. C'était ma signature
+d'appel, pas le code — Tauri refusait l'argument manquant.
+
+### État de 0.11
+
+La tâche est **partiellement vérifiée** : mécanique prouvée sur un vrai site
+protégé, resolution humaine non testable automatiquement. Ce qui reste à faire
+est donc **une vérification manuelle** : résoudre un challenge KAGANE à la main
+et voir si la source se débloque. C'est écrit dans le smoke test.
+
+### Vérification
+
+`cargo fmt --check` 0 · `cargo clippy --all-targets -D warnings` 0 ·
+`cargo test` **153** (132 + 1 + 20), dont 5 tests de `tray` · 0 résidu de test
+dans la bibliothèque.

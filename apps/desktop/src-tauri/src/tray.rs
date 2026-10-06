@@ -191,6 +191,18 @@ pub fn sur_evenement_fenetre(fenetre: &tauri::Window, evenement: &WindowEvent) {
     let WindowEvent::CloseRequested { api, .. } = evenement else {
         return;
     };
+    // **Seule la fenêtre principale se cache.** Mesuré le 2026-10-06 : ce
+    // gestionnaire s'appliquait à *toute* fenêtre, donc la fenêtre de
+    // vérification Cloudflare était **cachée** au lieu d'être fermée — et
+    // `cancel_challenge` renvoyait `Ok(())` en croyant l'avoir fermée. Le
+    // symptôme : deux `cancel_challenge` successifs laissaient la fenêtre
+    // ouverte, le cookie encore lisible, alors que la commande annonçait avoir
+    // fermé. Une fenêtre de challenge n'a pas à revenir dans la zone : elle
+    // n'a pas de tray, donc « la mettre dans la zone » veut dire « la cacher
+    // définitivement ».
+    if !est_fenetre_principale(fenetre) {
+        return;
+    }
     if !doit_cacher(en_cours_de_quitter(), tray_visible()) {
         // Sortie volontaire, ou pas de tray pour ramener la fenêtre : on laisse
         // la fermeture se faire.
@@ -200,6 +212,22 @@ pub fn sur_evenement_fenetre(fenetre: &tauri::Window, evenement: &WindowEvent) {
     if let Err(e) = fenetre.hide() {
         tracing::warn!("cache de la fenetre impossible : {e}");
     }
+}
+
+/// La fenêtre principale est la seule qui se met dans la zone de notification.
+///
+/// Une fenêtre de vérification a un label `challenge-<source>` : elle n'est ni
+/// la fenêtre principale, ni une fenêtre qu'on doit pouvoir ramener — donc la
+/// Decision est prise sur le **label**, seule donnée disponible ici, et la
+/// décision reste testable sans Tauri.
+fn est_fenetre_principale(fenetre: &tauri::Window) -> bool {
+    est_fenetre_principale_par_label(fenetre.label())
+}
+
+/// Version testable : le gestionnaire d'évènement reçoit une fenêtre, donc on
+/// isole la décision sur son label.
+pub fn est_fenetre_principale_par_label(label: &str) -> bool {
+    label == "main"
 }
 
 /// Remplace les libellés du menu. Appelé par l'interface au démarrage et à
@@ -306,5 +334,30 @@ mod tests {
         );
         // Les deux : sortie volontaire ET pas de tray.
         assert!(!doit_cacher(true, false));
+    }
+
+    /// Seule la fenêtre **principale** se met dans la zone.
+    ///
+    /// Mesuré le 2026-10-06 : le gestionnaire s'appliquait à toutes les
+    /// fenêtres, donc la fenêtre de vérification Cloudflare était **cachée**
+    /// au lieu d'être fermée, et `cancel_challenge` renvoyait `Ok(())` en
+    /// croyant l'avoir fermée. Deux annulations successives laissaient la
+    /// fenêtre ouverte, cookie encore lisible.
+    ///
+    /// Le cas nominal est écrit **en premier** : un test qui n'aurait qu'un cas
+    /// d'échec passerait aussi avec la fonction qui renvoie `false` partout.
+    #[test]
+    fn seule_la_fenetre_principale_se_met_dans_la_zone() {
+        assert!(
+            est_fenetre_principale_par_label("main"),
+            "la fenetre principale doit se mettre dans la zone"
+        );
+        for label in ["challenge-KAGANE", "challenge-MANGADEX"] {
+            assert!(
+                !est_fenetre_principale_par_label(label),
+                "une fenetre de verification doit se FERMER : {label} n'a pas de tray, \
+                 donc la cacher la rendrait inaccessible definitivement"
+            );
+        }
     }
 }

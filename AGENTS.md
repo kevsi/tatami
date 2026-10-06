@@ -671,6 +671,20 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   source**. Le témoin décisif a été `maxAt` : **identique → rien n'a été écrit**.
   Règle : capturer un témoin d'activité avant de conclure que l'action a échoué ;
   une écriture qui ne se voit pas n'est pas une écriture ratée.
+- **Un gestionnaire d'évènement qui s'applique à tout casse tout, et le défaut
+  apparaît dans la fonction voisine.** Mesuré le 2026-10-06 : la 3.4 fait
+  qu'une fermeture devient « mise dans la zone ». Le gestionnaire est
+  enregistré **sans filtre de fenêtre**, donc la fenêtre de vérification
+  Cloudflare était **cachée** au lieu d'être fermée — et `cancel_challenge`
+  renvoyait `Ok(())` en croyant l'avoir fermée. Symptôme mesuré : deux annulations
+  successives, fenêtre toujours là, cookie encore lisible. Corrigé par une
+  décision extraite en fonction **pure sur le label**
+  (`est_fenetre_principale_par_label`), testée, **rouge prouvée** en faisant
+  renvoyer `true` à tout. Corollaire : quand une tâche touche « toutes les
+  fenêtres », se demander lesquelles — et une fenêtre sans icône de zone ne peut
+  pas être mise dans la zone, donc la cacher la rend inaccessible à jamais.
+  Une fonction pure + testée vaut mieux ici qu'un `if` dans un gestionnaire
+  d'évènement, qu'on ne peut éprouver qu'en fermant de vraies fenêtres.
 - **`http://tatami.localhost` est un chemin LOCAL, et un classificateur naïf le
   range dans le réseau.** J'ai conclu « la relecture hors ligne va chercher ses
   pages sur https » alors que les quatre URL étaient

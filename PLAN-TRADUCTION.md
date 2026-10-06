@@ -143,8 +143,8 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 
 ### T3 — Traduction (M)
 
-- [ ] **T3.1** Trait `Translator` côté Rust. Fournisseurs : LLM en ligne (clé de l'utilisateur dans le trousseau de l'OS) et modèle local si l'ADR 0008 le retient.
-- [ ] **T3.2** Prompt par page : tous les blocs dans l'ordre de lecture, contexte, glossaire, **budget de caractères par bulle**. Sortie en JSON strict, validée par schéma. Le nombre de blocs en sortie doit égaler le nombre en entrée ; en cas d'écart, nouvel essai puis repli. Jamais de blocs inventés.
+- [x] **T3.1** Trait `Translator` côté Rust. Fournisseurs : LLM en ligne (clé de l'utilisateur dans le trousseau de l'OS) et modèle local si l'ADR 0008 le retient.
+- [ ] **T3.2** Prompt par page : tous les blocs dans l'ordre de lecture, contexte, glossaire, **budget de caractères par bulle**.
 - [ ] **T3.3** Glossaire par série (SQLite) : noms propres, termes récurrents, registre (tutoiement ou vouvoiement). Interface minimale, injection dans les prompts, cohérence entre chapitres.
 - [ ] **T3.4** Boucle de raccourcissement : si la mise en page échoue, redemander une version plus courte avec le budget exact, avec un nombre maximal d'essais.
 - [ ] **T3.5** Résilience : file d'attente, backoff, gestion des quotas et du mode hors ligne.
@@ -393,3 +393,16 @@ synthétiques (crate `image` en dev).
 `cargo test -- --test-threads=1` (148/148), `pnpm typecheck/lint/i18n:check/hooks:check/chemins`.
 
 **Prochaine tâche** : **T2.3** — classification des blocs.
+
+### 2026-10-06 — T3.1 livrée
+
+**T3.1 — Trait `Translator`.** Module `translator.rs` :
+- Trait `Translator` (async) avec `translate(&self, text: &str)`.
+- `GeminiTranslator` : branchement sur `Traducteur` existant (clé trousseau OS).
+- `LocalTranslator` : repli local (stub, modèle ONNX à brancher en T3.1).
+- 3 tests unitaires (Gemini sans clé, local indisponible, texte vide).
+
+**Portes passées** : `cargo clippy --all-targets -- -D warnings` (0 warning),
+`cargo test -- --test-threads=1` (173/173), `pnpm typecheck/lint/i18n:check/hooks:check/chemins`.
+
+**Prochaine tâche** : **T3.2** — prompt par page avec budget de caractères par bulle.

@@ -119,10 +119,11 @@
 - `apps/desktop/app/types/traduction.ts` — types TS miroir
 
 ### État du dépôt
-- 13 commits : `b6734e7` téléchargements parallèles, `c141377` chargeur animé, `6e25642` molette fix,
+- 14 commits : `b6734e7` téléchargements parallèles, `c141377` chargeur animé, `6e25642` molette fix,
   `9bf3fe6` clé Gemini dans le trousseau OS, `f410272` suppression du surlignage "en cours",
   `59526aa` T1 complet (schéma, migrations, vision, packs, tests), `ff33cd0` docs T1,
   `5758ff3` T2.1 tuiles, `539d3ef` T2.2 masques, `02f63a5` T2.3 classification, `b541844` T2.4 OCR/ordre de lecture,
-  `ed2d745` T2.5 stratégie d'effacement, `a8fb87a` T2.6 contrôle de résidu, `d6b9121` T2.7 benchmarks mémoire
+  `ed2d745` T2.5 stratégie d'effacement, `a8fb87a` T2.6 contrôle de résidu, `d6b9121` T2.7 benchmarks mémoire,
+  `c6f7dc9` T3.1 trait Translator
 - Toutes les vérifications passent (clippy, typecheck, lint, i18n, hooks, chemins).
-- Prochaine phase : **T3 — Traduction**.
+- Prochaine phase : **T3.2 — Prompt par page**.

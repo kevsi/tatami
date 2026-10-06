@@ -23,14 +23,20 @@
    - Sécurité : clé Gemini déplacée de SQLite vers le trousseau OS (`keyring` crate).
    - Portes passées : `cargo clippy --all-targets -- -D warnings` (0 warning), `cargo test` (133/133 mono-thread), `pnpm typecheck/lint/i18n:check/hooks:check/chemins:check/build`.
 
+8. **Phase T2.1 — Assemblage de la bande virtuelle** — module `tile.rs` avec découpe en tuiles aux lignes uniformes, fusion des détections aux jonctions. 11 tests unitaires + 6 tests d'intégration sur images synthétiques.
+   - Portes passées : `cargo clippy/test` (144/144 mono-thread), frontend gates vertes.
+
+9. **Phase T2.2 — Masques de bulles** — module `mask.rs` avec création de masques depuis bbox/boxes, érosion, validation. 4 tests unitaires.
+   - Portes passées : `cargo clippy/test` (148/148 mono-thread), frontend gates vertes.
+
 ### En cours
 - T2.1 — Assemblage de la bande virtuelle et découpe en tuiles aux lignes uniformes.
 
 ### Next steps
-1. **T2.1** — Assemblage de la bande virtuelle et découpe en tuiles aux lignes uniformes, avec fusion des détections aux jonctions. Tests sur images synthétiques.
-2. **T2.2** — Détection et segmentation des bulles et du texte, avec masque précis de l'intérieur.
-3. **T2.3** — Classification des blocs : dialogue, narration, sfx, texte libre, à ignorer.
-4. **T2.4** — OCR de l'anglais, regroupement des lignes d'une même bulle, ordre de lecture.
+1. **T2.3** — Classification des blocs : dialogue, narration, sfx, texte libre, à ignorer (filigranes, crédits, logos).
+2. **T2.4** — OCR de l'anglais, regroupement des lignes d'une même bulle, ordre de lecture.
+3. **T2.5** — Effacement du texte dans les bulles de dialogue et de narration.
+4. **T2.6** — Contrôle de résidu : second passage d'OCR sur la zone nettoyée.
 
 ### Fichiers modifiés (T1)
 - `contract/translation/schema.json` — schéma v1
@@ -45,8 +51,9 @@
 - `apps/desktop/app/types/traduction.ts` — types TS miroir
 
 ### État du dépôt
-- 6 commits : `b6734e7` téléchargements parallèles, `c141377` chargeur animé, `6e25642` molette fix,
+- 8 commits : `b6734e7` téléchargements parallèles, `c141377` chargeur animé, `6e25642` molette fix,
   `9bf3fe6` clé Gemini dans le trousseau OS, `f410272` suppression du surlignage "en cours",
-  `59526aa` T1 complet (schéma, migrations, vision, packs, tests)
+  `59526aa` T1 complet (schéma, migrations, vision, packs, tests), `ff33cd0` docs T1,
+  `5758ff3` T2.1 tuiles, `539d3ef` T2.2 masques
 - Toutes les vérifications passent (clippy, typecheck, lint, i18n, hooks, chemins).
-- Prochaine phase : **T2 — Pipeline vision**.
+- Prochaine phase : **T2.3 — Classification des blocs**.

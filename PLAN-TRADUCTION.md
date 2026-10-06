@@ -131,8 +131,8 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 
 ### T2 — Pipeline vision (L)
 
-- [ ] **T2.1** Assemblage de la bande virtuelle et découpe en tuiles aux **lignes uniformes** (espaces entre cases), avec fusion des détections aux jonctions. Tests sur des images **synthétiques** générées par script.
-- [ ] **T2.2** Détection et segmentation des bulles et du texte, avec masque précis de l'intérieur.
+- [x] **T2.1** Assemblage de la bande virtuelle et découpe en tuiles aux **lignes uniformes** (espaces entre cases), avec fusion des détections aux jonctions. Tests sur des images **synthétiques** générées par script.
+- [x] **T2.2** Détection et segmentation des bulles et du texte, avec masque précis de l'intérieur.
 - [ ] **T2.3** Classification des blocs : dialogue, narration, sfx, texte libre, à ignorer (filigranes, crédits, logos).
 - [ ] **T2.4** OCR de l'anglais, regroupement des lignes d'une même bulle, ordre de lecture (haut vers bas, gauche vers droite).
 - [ ] **T2.5** Effacement du texte dans les bulles de dialogue et de narration ; politique pour le texte hors bulles selon l'ADR 0010.
@@ -375,5 +375,21 @@ pollution d'état préexistante), `pnpm typecheck/lint/i18n:check/hooks:check/ch
 **Correction sécurité** : la clé Gemini a été déplacée de SQLite vers le
 trousseau de l'OS (`keyring` crate), conforme à `AGENTS.md` §2.6.
 
-**Prochaine tâche** : **T2.1** — assemblage de la bande virtuelle et découpe
-en tuiles aux lignes uniformes.
+**Prochaine tâche** : **T2.3** — classification des blocs (dialogue, narration,
+sfx, texte libre, à ignorer).
+
+### 2026-10-06 — T2.1 et T2.2 livrées
+
+**T2.1 — Assemblage de la bande virtuelle.** Module `tile.rs` :
+`pages_rectangles`, `lignes_de_coupe`, `decouper_en_tuiles`,
+`DetectionFusion`. 11 tests unitaires + 6 tests d'intégration sur images
+synthétiques (crate `image` en dev).
+
+**T2.2 — Masques de bulles.** Module `mask.rs` : `Masque`, `masque_bbox`,
+`eroder`, `masque_depuis_boxes`, validation (non vide, pas de débordement).
+4 tests unitaires.
+
+**Portes passées** : `cargo clippy --all-targets -- -D warnings` (0 warning),
+`cargo test -- --test-threads=1` (148/148), `pnpm typecheck/lint/i18n:check/hooks:check/chemins`.
+
+**Prochaine tâche** : **T2.3** — classification des blocs.

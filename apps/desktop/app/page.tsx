@@ -982,7 +982,7 @@ export default function Home() {
   const [reveal, setReveal] = useState(0);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
-  const [progress, setProgress] = useState<Progress | null>(null);
+  const [progressParSource, setProgressParSource] = useState<Map<string, Progress>>(() => new Map());
   const [tab, setTab] = useState<string>('home');
   // Tâche 3.2 — le flux « mises à jour ». État propre : il est relu au
   // démarrage depuis `localStorage`, donc il survit à un redémarrage. C'est
@@ -1220,7 +1220,13 @@ export default function Home() {
       .catch((e) => setError(String(e)));
     refreshDownloads();
     const unlisten = listen<Progress>('download://progress', (event) => {
-      setProgress(event.payload);
+      // Deux téléchargements actifs = deux sources distinctes (cf. verrou
+      // Rust), donc la source est une clé sans collision.
+      setProgressParSource((prev) => {
+        const next = new Map(prev);
+        next.set(event.payload.source, event.payload);
+        return next;
+      });
     });
     // Une source peut répondre 200 OK avec sa page de vérification d'âge : le
     // moteur ne signale alors aucun challenge (il ne voit que 403/503). C'est
@@ -2270,7 +2276,11 @@ export default function Home() {
     totalChapters: number,
   ): Promise<string> {
     const title = chapterLabel(chapter);
-    setProgress({ source, chapter: title, page: 0, total: 0, done: false, error: null });
+    setProgressParSource((prev) => {
+      const next = new Map(prev);
+      next.set(source, { source, chapter: title, page: 0, total: 0, done: false, error: null });
+      return next;
+    });
     return invoke<string>('download_chapter', {
       source,
       mangaUrl: manga.url,
@@ -2294,7 +2304,11 @@ export default function Home() {
       setError(t('erreur.telechargement', { raison: String(e) }));
     } finally {
       setDownloading(false);
-      setProgress(null);
+      setProgressParSource((prev) => {
+        const next = new Map(prev);
+        next.delete(selected.name);
+        return next;
+      });
     }
   }
 
@@ -2327,9 +2341,17 @@ export default function Home() {
     setPicked(new Set());
   }
 
-  /** Télécharge tous les chapitres de chaque webtoon de `targets`, un par un,
-   *  en ignorant ce qui est déjà sur le disque. Annulable, et la file est
-   *  persistée : si l'app s'arrête, il reste à la reprise. */
+  /** Télécharge tous les chapitres de chaque webtoon de `targets`, en
+   *  ignorant ce qui est déjà sur le disque. Annulable, et la file est
+   *  persistée : si l'app s'arrête, il reste à la reprise.
+   *
+   *  **Deux webtoons en parallèle au maximum, et jamais deux de la même
+   *  source.** Les chapitres D'UN webtoon restent séquentiels — même source,
+   *  donc même `Mutex` dans le moteur, aucun gain à les mêler. Par contre deux
+   *  webtoons de sources différentes ont chacune leur instance de parser, et le
+   *  verrou global de Rust a été retiré pour leur permettre de se chevaucher.
+   *  Mesuré : le téléchargement était strictement séquentiel (un chapitre à la
+   *  fois, une page toutes les ~2 s selon la source). */
   async function runQueue(targets: Manga[]) {
     if (queueRunning || targets.length === 0) return;
 
@@ -2351,14 +2373,16 @@ export default function Home() {
       })),
     );
 
-    for (const m of targets) {
+    /** Télécharge les chapitres absents d'un webtoon, dans l'ordre.
+     *  Chapitres **séquentiels** : même source = même `Mutex` moteur. */
+    async function telechargerWebtoon(m: Manga) {
       const key = mangaKey(m);
       const patch = (changes: Partial<QueueItem>) =>
         setQueue((prev) => prev.map((q) => (q.key === key ? { ...q, ...changes } : q)));
 
       if (cancelQueue.current) {
         patch({ state: 'pause' });
-        continue;
+        return;
       }
       patch({ state: 'téléchargement' });
 
@@ -2372,13 +2396,10 @@ export default function Home() {
         list = r.chapters ?? [];
       } catch (e) {
         patch({ state: 'erreur', current: describeError(String(e), m.source, t) });
-        continue;
+        return;
       }
       patch({ total: list.length });
 
-      // Reprise : on ne télécharge que ce qui manque vraiment. Le nom de fichier
-      // attendu est calculé par Rust (même règle que le téléchargement), donc
-      // aucune approximation côté interface.
       let todo: Chapter[] = list;
       try {
         await invoke('clean_partials', { source: m.source, title: m.title });
@@ -2418,8 +2439,6 @@ export default function Home() {
         state: cancelQueue.current ? 'pause' : failed > 0 ? 'erreur' : 'terminé',
       });
 
-      // Ce webtoon est réglé : il sort de la file persistée (sauf annulation,
-      // où il reste pour reprendre plus tard).
       if (!cancelQueue.current) {
         const at = pending.findIndex((x) => mangaKey(x) === key);
         if (at >= 0) pending.splice(at, 1);
@@ -2427,9 +2446,39 @@ export default function Home() {
       }
     }
 
-    if (cancelQueue.current) saveQueue(pending);
+    // Boucle de remplissage : tant qu'il reste des cibles et que les slots
+    // libres sont distincts en source.
+    const restants = [...targets];
+    const enCours = new Map<string, { source: string; p: Promise<void> }>();
+    while (restants.length > 0 || enCours.size > 0) {
+      if (!cancelQueue.current) {
+        for (let i = 0; i < restants.length && enCours.size < 2; i++) {
+          const sourceEnCours = new Set([...enCours.values()].map((e) => e.source));
+          if (sourceEnCours.has(restants[i].source)) continue;
+          const m = restants.splice(i, 1)[0];
+          i--;
+          const p = telechargerWebtoon(m).finally(() => {
+            enCours.delete(mangaKey(m));
+          });
+          enCours.set(mangaKey(m), { source: m.source, p });
+        }
+      }
+      if (enCours.size === 0) break; // plus rien à lancer et rien à attendre
+      await Promise.race([...enCours.values()].map((e) => e.p));
+    }
+
+    if (cancelQueue.current) {
+      setQueue((prev) =>
+        prev.map((q) =>
+          q.state === 'attente' || q.state === 'téléchargement'
+            ? { ...q, state: 'pause' as const }
+            : q,
+        ),
+      );
+      saveQueue(pending);
+    }
     setQueueRunning(false);
-    setProgress(null);
+    setProgressParSource(new Map());
     refreshDownloads();
     setTab('downloads');
   }
@@ -3902,7 +3951,6 @@ useEffect(() => {
 
   // ---------- Vue : Téléchargements ----------
   if (tab === 'downloads' && !reader) {
-    const running = queue.find((q) => q.state === 'téléchargement');
     const savedQueue = loadSavedQueue();
     const totalChapters = library.reduce((n, i) => n + i.downloaded, 0);
     const totalBytes = library.reduce((n, i) => n + i.sizeBytes, 0);
@@ -4063,17 +4111,26 @@ useEffect(() => {
                       {q.total > 0
                         ? `${q.done + q.skipped}/${q.total} chapitres${q.skipped > 0 ? ` (${q.skipped} déjà là)` : ''}${q.failed > 0 ? ` · ${q.failed} en échec` : ''}`
                         : 'préparation…'}
-                      {q.current ? ` · ${q.current}` : ''}
+                      {q.state === 'téléchargement' && progressParSource.get(q.source)?.total
+                        ? ` · ${progressParSource.get(q.source)!.chapter}, page ${progressParSource.get(q.source)!.page}/${progressParSource.get(q.source)!.total}`
+                        : q.current
+                          ? ` · ${q.current}`
+                          : ''}
                     </span>
                   </div>
                 );
               })}
             </div>
-            {running && progress && progress.total > 0 && (
-              <p className="muted">
-                {running.title} — {progress.chapter} : page {progress.page}/{progress.total}
-              </p>
-            )}
+            {queue
+              .filter((q) => q.state === 'téléchargement')
+              .map((q) => {
+                const p = progressParSource.get(q.source);
+                return p && p.total > 0 ? (
+                  <p key={q.key} className="muted">
+                    {q.title} — {p.chapter} : page {p.page}/{p.total}
+                  </p>
+                ) : null;
+              })}
           </section>
         )}
 
@@ -4586,6 +4643,9 @@ if (reader) {
 
   // ---------- Vue : chapitres ----------
   if (openManga) {
+    // Un téléchargement peut être actif sur ce webtoon : l'afficher. Le reste
+    // du monde (présuppression de la file, file active) vit ailleurs.
+    const progress = progressParSource.get(openManga.source) ?? null;
     const pct = progress && progress.total > 0 ? Math.round((progress.page / progress.total) * 100) : 0;
     // `info` peut être en retard sur les chapitres : on affiche ce qu'on a.
     const fiche = info ?? openManga;
@@ -4921,24 +4981,28 @@ if (reader) {
           )}
         </div>
 
-        {queueRunning && (
-          <div className="progress" role="status">
-            <div
-              className="progress-bar"
-              style={{
-                width: `${
-                  progress && progress.total > 0
-                    ? Math.round((progress.page / progress.total) * 100)
-                    : 15
-                }%`,
-              }}
-            />
-            <span>
-              {queue.find((q) => q.state === 'téléchargement')?.title ?? 'File en cours'}
-              {progress ? ` — ${progress.chapter} ${progress.page}/${progress.total || '?'}` : ''}
-            </span>
-          </div>
-        )}
+        {queueRunning &&
+          queue
+            .filter((q) => q.state === 'téléchargement')
+            .map((q) => {
+              const p = progressParSource.get(q.source);
+              return (
+                <div key={q.key} className="progress" role="status">
+                  <div
+                    className="progress-bar"
+                    style={{
+                      width: `${
+                        p && p.total > 0 ? Math.round((p.page / p.total) * 100) : 15
+                      }%`,
+                    }}
+                  />
+                  <span>
+                    {q.title}
+                    {p ? ` — ${p.chapter} ${p.page}/${p.total || '?'}` : ''}
+                  </span>
+                </div>
+              );
+            })}
 
         {error && selected && (
           <div className="alert">

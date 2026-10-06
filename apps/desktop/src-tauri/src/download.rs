@@ -28,14 +28,21 @@ pub struct Progress {
     pub error: Option<String>,
 }
 
-/// Un seul téléchargement à la fois : le moteur est séquentiel (cf. Server.kt).
+/// Deux téléchargements à la fois, **de sources différentes**.
+///
+/// Le moteur impose déjà un `Mutex` par source (l'instance de parser et son
+/// paginateur ne sont pas partageables) : lancer deux chapitres du même site en
+/// parallèle ne ferait que les mettre en file sur le `Mutex` du moteur — l'un
+/// attendrait l'autre avec la même vitesse qu'un-après-l'autre, en doublant le
+/// suivi. Deux sources différentes, elles, ont chacune leur instance de parser
+/// et leur `Mutex` : rien ne s'y marche dessus, et le gain est réel.
 ///
 /// `std::sync::Mutex` et non `tokio` : le drapeau n'est jamais tenu à travers un
 /// `await`, et c'est ce qui permet à `VerrouTelechargement` de le relâcher dans
 /// `Drop` (y compris sur une panique).
 #[derive(Default)]
 pub struct DownloadState {
-    running: Arc<std::sync::Mutex<bool>>,
+    actifs: Arc<std::sync::Mutex<std::collections::HashMap<String, ()>>>,
 }
 
 /// Assainit un nom de fichier Windows.
@@ -511,23 +518,37 @@ pub async fn clean_partials(source: String, title: String) -> Result<usize, Stri
 /// téléchargement futur était refusé avec « un téléchargement est déjà en
 /// cours » alors qu'aucun n'était en cours. `Drop` rend la libération
 /// inconditionnelle — c'est tout l'intérêt d'un garde-fou RAII.
-struct VerrouTelechargement(Arc<std::sync::Mutex<bool>>);
+struct VerrouTelechargement {
+    etat: Arc<std::sync::Mutex<std::collections::HashMap<String, ()>>>,
+    source: String,
+}
 
 impl VerrouTelechargement {
-    fn prendre(etat: &Arc<std::sync::Mutex<bool>>) -> Result<Self, String> {
-        let mut running = etat.lock().unwrap_or_else(|e| e.into_inner());
-        if *running {
-            return Err("un téléchargement est déjà en cours".to_string());
+    fn prendre(
+        etat: &Arc<std::sync::Mutex<std::collections::HashMap<String, ()>>>,
+        source: &str,
+    ) -> Result<Self, String> {
+        let mut actifs = etat.lock().unwrap_or_else(|e| e.into_inner());
+        if actifs.len() >= 2 {
+            return Err("deux téléchargements sont déjà en cours".to_string());
         }
-        *running = true;
-        Ok(Self(etat.clone()))
+        if actifs.contains_key(source) {
+            return Err(format!(
+                "un téléchargement est déjà en cours pour {source}"
+            ));
+        }
+        actifs.insert(source.to_string(), ());
+        Ok(Self {
+            etat: etat.clone(),
+            source: source.to_string(),
+        })
     }
 }
 
 impl Drop for VerrouTelechargement {
     fn drop(&mut self) {
-        if let Ok(mut running) = self.0.lock() {
-            *running = false;
+        if let Ok(mut actifs) = self.etat.lock() {
+            actifs.remove(&self.source);
         }
     }
 }
@@ -546,7 +567,7 @@ pub async fn download_chapter(
     cover_url: Option<String>,
     total_chapters: Option<usize>,
 ) -> Result<String, String> {
-    let _verrou = VerrouTelechargement::prendre(&state.running)?;
+    let _verrou = VerrouTelechargement::prendre(&state.actifs, &source)?;
     run_download(
         &app,
         &sup,
@@ -886,37 +907,60 @@ mod tests {
 
     #[test]
     fn le_verrou_de_telechargement_se_libere_sur_panique() {
-        let etat = Arc::new(std::sync::Mutex::new(false));
-        // Le cas réel : une panique entre `running = true` et `running = false`
+        let etat = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        // Le cas réel : une panique entre l'acquisition et la libération
         // laissait tous les téléchargements futurs refusés jusqu'au redémarrage.
         let resultat = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _verrou = VerrouTelechargement::prendre(&etat).expect("premier verrou");
+            let _verrou = VerrouTelechargement::prendre(&etat, "SOURCE_A")
+                .expect("premier verrou");
             panic!("panique simulée au milieu du téléchargement");
         }));
         assert!(resultat.is_err(), "la panique doit se propager");
         assert!(
-            !*etat.lock().unwrap(),
+            etat.lock().unwrap().is_empty(),
             "le verrou doit être libéré même après une panique, sinon \
              « un téléchargement est déjà en cours » pour toujours"
         );
-        // Et un second téléchargement doit pouvoir repartir.
+        // Et un nouveau téléchargement doit pouvoir repartir, sur n'importe
+        // quelle source.
         assert!(
-            VerrouTelechargement::prendre(&etat).is_ok(),
+            VerrouTelechargement::prendre(&etat, "SOURCE_A").is_ok(),
             "un nouveau téléchargement doit être accepté"
         );
     }
 
     #[test]
-    fn le_verrou_refuse_deux_telechargements_simultanes() {
-        let etat = Arc::new(std::sync::Mutex::new(false));
-        let _premier = VerrouTelechargement::prendre(&etat).expect("premier");
-        let deuxieme = VerrouTelechargement::prendre(&etat);
-        assert!(deuxieme.is_err(), "le deuxième doit être refusé");
-        // Le refus ne doit pas relâcher le verrou du premier.
+    fn deux_telechargements_de_sources_distinctes_passent() {
+        let etat = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let _a = VerrouTelechargement::prendre(&etat, "SOURCE_A").expect("A actif");
+        // Une deuxième source différente est acceptée : le moteur n'y mêle pas
+        // les deux.
+        let b = VerrouTelechargement::prendre(&etat, "SOURCE_B");
+        assert!(b.is_ok(), "deux sources distinctes doivent passer");
+        assert_eq!(etat.lock().unwrap().len(), 2);
+        // Un troisième, n'importe quelle source, est refusé.
         assert!(
-            *etat.lock().unwrap(),
-            "un refus ne doit pas ouvrir le verrou"
+            VerrouTelechargement::prendre(&etat, "SOURCE_C").is_err(),
+            "le slot maximum est deux"
         );
+        // Deux téléchargements de la MÊME source restent refusés : ils
+        // attendraient le même `Mutex` du moteur, donc le deuxième n'y gagne
+        // rien — il échouerait juste en rendant le suivi muet.
+        assert!(
+            VerrouTelechargement::prendre(&etat, "SOURCE_A").is_err(),
+            "une source déjà active ne recommence pas"
+        );
+    }
+
+    #[test]
+    fn le_verrou_relache_une_source_sans_toucher_l_autre() {
+        let etat = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let _a = VerrouTelechargement::prendre(&etat, "SOURCE_A").expect("A");
+        {
+            let _b = VerrouTelechargement::prendre(&etat, "SOURCE_B").expect("B");
+        } // B se termine
+        let m = etat.lock().unwrap();
+        assert!(m.contains_key("SOURCE_A") && m.len() == 1, "A doit rester actif");
     }
 
     /// Dossier de fixture sous la vraie racine des téléchargements, comme le

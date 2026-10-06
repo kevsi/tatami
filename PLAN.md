@@ -47,6 +47,61 @@
 ### Next steps
 1. **T2.7** — Non-régression contre les mesures de T0, budget mémoire respecté sur la machine cible.
 
+---
+
+## Phase S — Sources personnalisées scriptées
+
+> ADR 0010 acceptée le 2026-10-06. Motivée par l'instabilité de l'écosystème scantrad FR (BentoManga,
+> LireScan, MangaKawaii, Anime-Sama tous hors ligne ou migrés en octobre 2026).
+
+### S0 — Infrastructure moteur
+
+- [ ] **S0.1** — `HttpBridge.kt` : bridge OkHttp → Nashorn. Expose `http.get(url)` et `http.post(url, body)`
+  au script. Passe par l'OkHttpClient existant (rate-limiter, CloudFlare interceptor, cookieJar).
+  Sécurité : refuse les URLs non-https, timeout 30 s, corps limité à 5 Mo.
+  _Critère : tests unitaires avec mock OkHttp ; une URL `http://` est rejetée._
+
+- [ ] **S0.2** — `ScriptedParser.kt` : charge un script JS via Nashorn, valide la présence de `SOURCE`
+  et de ses méthodes, implémente `MangaParser` en déléguant à Nashorn.
+  _Critère : un script minimal retourne une liste de 1 manga ; une méthode manquante lève `PARSE_ERROR`._
+
+- [ ] **S0.3** — `ScriptedSourceLoader.kt` : scanne le dossier `sources/`, charge/recharge les scripts,
+  expose les parsers au `ParserPool`. Rechargement à chaud quand un fichier change.
+  _Critère : ajouter un `.js` sans redémarrer le moteur → source visible dans `listSources`._
+
+- [ ] **S0.4** — Intégration `Server.kt` : `listSources` inclut les sources custom avec `"custom": true`.
+  `search`/`details`/`chapters`/`pages` routent vers le `ScriptedParser` si `source_id` est custom.
+  _Critère : test d'intégration `hello → listSources → search` avec un script stub._
+
+### S1 — Côté Rust
+
+- [ ] **S1.1** — Migration SQLite v9 : table `custom_sources (id TEXT PK, name TEXT, lang TEXT, path TEXT,
+  installed_at INTEGER)`. Sauvegarde avant migration, test de migration v8→v9.
+
+- [ ] **S1.2** — Commandes Tauri : `importer_source(path)` (copie le `.js` dans le dossier sources,
+  enregistre en base), `lister_sources_custom()`, `supprimer_source_custom(id)` (efface le fichier + la
+  ligne). Validation : nom de fichier assaini (anti path-traversal), taille ≤ 256 Ko.
+  _Critère : `cargo test` couvre les cas limites (traversée, taille, doublon)._
+
+### S2 — Interface
+
+- [ ] **S2.1** — Écran « Sources perso » : bouton « Importer un script (.js) » (dialogue natif), liste
+  des sources installées (nom, langue, date), bouton supprimer avec confirmation.
+  i18n FR + EN. Clés à ajouter dans `i18n.ts`.
+  _Critère : `pnpm typecheck/lint/i18n:check/hooks:check/chemins:check` vertes._
+
+- [ ] **S2.2** — Intégration dans l'écran Sources : les sources custom apparaissent dans la grille avec
+  un badge « Perso ». Désactivation possible comme les sources natives.
+  _Critère : smoke test manuel (docs/smoke-test.md §S)._
+
+### Critère de sortie de la phase S
+
+- `gradle test` passe (moteur)
+- `cargo test` passe (Rust)
+- Toutes les portes front vertes
+- Smoke test §S documenté et exécuté
+- Un script d'exemple `docs/exemple-source.js` fourni et commenté
+
 ### Fichiers modifiés (T1)
 - `contract/translation/schema.json` — schéma v1
 - `contract/protocol.json` — méthodes vision ajoutées

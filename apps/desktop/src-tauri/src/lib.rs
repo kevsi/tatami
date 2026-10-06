@@ -49,6 +49,7 @@ pub mod moteur;
 pub mod ocr;
 pub mod pack;
 pub mod pagecache;
+pub mod bench;
 pub mod residuel;
 pub mod scheduler;
 pub mod shelf;

@@ -792,11 +792,17 @@ const PRECHARGE_PAGES = 4;
  *  évite qu'un micro-scroll dans la barre d'outils fasse changer de page.
  */
 const DELTA_MOLETTE_MIN = 40;
-/** Durée pendant laquelle un même sens de molette est ignoré.
+/** Délai de **silence** après lequel un nouveau geste de molette est accepté.
  *
  *  C'est ce qui transforme un geste en UNE page au lieu de dix.
+ *
+ *  Mesuré le 2026-10-06, et le mot « silence » est porteur de sens : le minuteur
+ *  était armé **une fois** au premier cran, jamais réarmé. Un geste de 2 603 ms
+ *  épuisait donc 8 minuteurs successifs et faisait passer la page 20 à la 28 —
+ *  soit exactement `durée / 300`. Ce qui doit compter, c'est la **pause** entre
+ *  deux gestes, pas la longueur du geste.
  */
-const DELTA_MOLETTE_FIN_MS = 300;
+const DELTA_MOLETTE_SILENCE_MS = 300;
 
 type ReaderMode = 'page' | 'webtoon';
 /** Tâche 0.13 : comment la page est mise à l'échelle dans le cadre. */
@@ -1140,6 +1146,20 @@ export default function Home() {
   // « on descend », -1 pour « on remonte ». Permet à `onMoletteStage` de
   // n'avancer que d'une page par geste.
   const moletteEnCours = useRef(0);
+  // Minuteur de **libération** du verrou ci-dessus : il est réarmé à chaque
+  // événement de molette, donc il expire 300 ms après le *dernier* cran. Armé une
+  // seule fois, il laissait un geste long se déverrouiller tout seul et sauter
+  // des pages (mesuré : 8 pages d'un coup).
+  const moletteTimer = useRef<number | null>(null);
+  // Le minuteur ne doit pas survivre au démontage : il écrirait dans le `ref` d'un
+  // composant mort, et son verrou avalerait le premier geste de la session
+  // suivante.
+  useEffect(
+    () => () => {
+      if (moletteTimer.current !== null) window.clearTimeout(moletteTimer.current);
+    },
+    [],
+  );
   const [scrollY, setScrollY] = useState(0);
   const [largeurBande, setLargeurBande] = useState(0);
   const [health, setHealth] = useState<SourceHealth>({});
@@ -3247,14 +3267,20 @@ function onMoletteStage(e: React.WheelEvent<HTMLDivElement>) {
   const delta = e.deltaY;
   if (Math.abs(delta) < DELTA_MOLETTE_MIN) return;
   e.preventDefault();
-  // Une seule page par direction et par gesture : on mémorise le signe courant et
-  // on ignore les événements qui suivent tant qu'il n'a pas changé.
   const sens = delta > 0 ? 1 : -1;
+  // Le verrou se libère quand la molette **se tait**. Le minuteur est donc
+  // réarmé à *chaque* événement, y compris ceux qu'on ignore juste après : sans
+  // ça il expirait 300 ms après le premier cran et un geste long se
+  // déverrouillait tout seul. Mesuré : 40 crans sur 2 603 ms = 8 pages d'un coup.
+  if (moletteTimer.current !== null) window.clearTimeout(moletteTimer.current);
+  moletteTimer.current = window.setTimeout(() => {
+    moletteEnCours.current = 0;
+    moletteTimer.current = null;
+  }, DELTA_MOLETTE_SILENCE_MS);
+  // Une seule page par direction et par geste : on mémorise le signe courant et
+  // on ignore les événements qui suivent tant qu'il n'a pas changé.
   if (moletteEnCours.current === sens) return;
   moletteEnCours.current = sens;
-  window.setTimeout(() => {
-    moletteEnCours.current = 0;
-  }, DELTA_MOLETTE_FIN_MS);
   turn(sens * step());
 }
 

@@ -37,6 +37,7 @@
 
 pub mod cbz;
 pub mod challenge;
+pub mod classifier;
 pub mod commands;
 pub mod download;
 pub mod image;

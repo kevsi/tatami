@@ -38,12 +38,14 @@
 12. **Phase T2.5 — Stratégie d'effacement** — module `effacement.rs` avec `StrategieEffacement` (Effacer/Conserver/Ignorer) par type de bloc, politique ADR 0010. 5 tests unitaires.
     - Portes passées : `cargo clippy/test` (164/164 mono-thread), frontend gates vertes.
 
+13. **Phase T2.6 — Contrôle de résidu** — module `residuel.rs` avec `verifier_residu` et `ResultatResiduel` (Propre/Review). Second passage d'OCR sur zone nettoyée. 3 tests unitaires.
+    - Portes passées : `cargo clippy/test` (167/167 mono-thread), frontend gates vertes.
+
 ### En cours
 - (aucune)
 
 ### Next steps
-1. **T2.6** — Contrôle de résidu : second passage d'OCR sur la zone nettoyée, qui doit ne rien trouver. Sinon, le bloc passe en `review`.
-2. **T2.7** — Non-régression contre les mesures de T0, budget mémoire respecté sur la machine cible.
+1. **T2.7** — Non-régression contre les mesures de T0, budget mémoire respecté sur la machine cible.
 
 ### Fichiers modifiés (T1)
 - `contract/translation/schema.json` — schéma v1
@@ -58,10 +60,10 @@
 - `apps/desktop/app/types/traduction.ts` — types TS miroir
 
 ### État du dépôt
-- 11 commits : `b6734e7` téléchargements parallèles, `c141377` chargeur animé, `6e25642` molette fix,
+- 12 commits : `b6734e7` téléchargements parallèles, `c141377` chargeur animé, `6e25642` molette fix,
   `9bf3fe6` clé Gemini dans le trousseau OS, `f410272` suppression du surlignage "en cours",
   `59526aa` T1 complet (schéma, migrations, vision, packs, tests), `ff33cd0` docs T1,
   `5758ff3` T2.1 tuiles, `539d3ef` T2.2 masques, `02f63a5` T2.3 classification, `b541844` T2.4 OCR/ordre de lecture,
-  `ed2d745` T2.5 stratégie d'effacement
+  `ed2d745` T2.5 stratégie d'effacement, `a8fb87a` T2.6 contrôle de résidu
 - Toutes les vérifications passent (clippy, typecheck, lint, i18n, hooks, chemins).
-- Prochaine phase : **T2.6 — Contrôle de résidu**.
+- Prochaine phase : **T2.7 — Non-régression**.

@@ -136,7 +136,7 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 - [x] **T2.3** Classification des blocs : dialogue, narration, sfx, texte libre, à ignorer (filigranes, crédits, logos).
 - [x] **T2.4** OCR de l'anglais, regroupement des lignes d'une même bulle, ordre de lecture (haut vers bas, gauche vers droite).
 - [x] **T2.5** Effacement du texte dans les bulles de dialogue et de narration ; politique pour le texte hors bulles selon l'ADR 0010.
-- [ ] **T2.6** Contrôle de résidu : second passage d'OCR sur la zone nettoyée, qui doit ne rien trouver. Sinon, le bloc passe en `review`.
+- [x] **T2.6** Contrôle de résidu : second passage d'OCR sur la zone nettoyée, qui doit ne rien trouver. Sinon, le bloc passe en `review`.
 - [ ] **T2.7** Non-régression contre les mesures de T0, budget mémoire respecté sur la machine cible.
 
 **Critère de sortie** : sur le corpus, détection et OCR au niveau des seuils validés en T0, résidu d'anglais sous le seuil, aucune tuile ne dépasse le budget mémoire.

@@ -45,6 +45,7 @@ pub mod journal;
 pub mod library;
 pub mod mask;
 pub mod moteur;
+pub mod ocr;
 pub mod pack;
 pub mod pagecache;
 pub mod scheduler;

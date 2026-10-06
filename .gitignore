@@ -19,3 +19,29 @@ downloads/
 # Regenables : aucune valeur pour le depot, et ils embarquent des chemins
 # propres a cette machine.
 .mesures/
+
+# Phase T (traduction) — corpus d'evaluation, T0.2.
+# Regle AGENTS.md §2.7 et PLAN-TRADUCTION.md §7 : aucune oeuvre dans le depot.
+# Le corpus vit HORS du depot (C:\Users\<user>\Documents\Workspaces\Tatami-eval).
+# Ces entrees sont une ceinture de securite : elles interdisent qu'un dossier
+# recree par erreur dans l'arborescence versionnee puisse etre ajoute.
+/docs/eval/corpus/
+/docs/eval/captures/
+/docs/eval/modeles/
+/docs/eval/sorties/
+/docs/eval/annotations/
+*.cbz.part
+
+# Poids de modeles, polices et binaires d'evaluation : jamais versionnes
+# (AGENTS.md §13). Aucun de ces motifs ne touche apps/desktop/src-tauri/icons/,
+# verifie sur les 165 fichiers suivis au 2026-10-06.
+*.onnx
+*.safetensors
+*.pt
+*.pth
+*.tflite
+*.bin
+*.ttf
+*.otf
+*.woff
+*.woff2

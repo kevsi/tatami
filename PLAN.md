@@ -1,8 +1,9 @@
-# Tatami — Phase avancée : mode webtoon + highlight chapitre en cours
+# Tatami — Phase avancée : mode webtoon + traduction (T)
 
 ## État actuel (2026-10-06)
 
 ### Terminé ✅
+
 1. **Mode webtoon uniquement** — suppression complète du mode "page" dans le lecteur.
    - Retiré `readerMode === 'page'` et tout le code associé (boutons Pagé/Webtoon, ajustements de pages par écran, ajustement largeur/hauteur, bouton spread/dir, zoom sur les pages simples).
    - Le lecteur affiche maintenant exclusivement du webtoon (bande verticale avec images empilées).
@@ -18,24 +19,34 @@
 
 6. **Nettoyage des clés i18n inutilisées** — supprimé `erreur.page` du fichier `i18n.ts` (FR + EN). `i18n:check` passe maintenant : "aucune clé morte, aucune traduction manquante, aucun placeholder nu".
 
+7. **Phase T1 — Modèle de données et contrat de traduction** — schéma `PageTranslation` v1, migrations SQLite v8 (`page_translations`, `blocks`), types Rust/TS, contrat sidecar vision étendu (`detect`, `ocr`, `inpaint`, `loadPack`, `health`, `shutdown`), gestionnaire de packs de modèles, fixtures JSON, tests de contrat.
+   - Sécurité : clé Gemini déplacée de SQLite vers le trousseau OS (`keyring` crate).
+   - Portes passées : `cargo clippy --all-targets -- -D warnings` (0 warning), `cargo test` (133/133 mono-thread), `pnpm typecheck/lint/i18n:check/hooks:check/chemins:check/build`.
+
 ### En cours
-- Vérifier visuellement que `.chapter-cell.encours` s'affiche correctement en thème clair/sombre avec `--encours-texte`.
-- Valider que la recherche source "hentai" trouve HENTAIORIGINES et affiche le bouton "Voir plus (N restantes)".
-- S'assurer que la page Téléchargements montre `progressParSource` par ligne webtoon.
+- T2.1 — Assemblage de la bande virtuelle et découpe en tuiles aux lignes uniformes.
 
 ### Next steps
-1. Valider l'affichage `.chapter-cell.encours` thème clair/sombre.
-2. S'assurer que `progressParSource` s'affiche correctement sur la page Téléchargements.
-3. Exécuter `pnpm build` pour vérifier la production.
-4. Valider le smoke test manuel `docs/smoke-test.md`.
+1. **T2.1** — Assemblage de la bande virtuelle et découpe en tuiles aux lignes uniformes, avec fusion des détections aux jonctions. Tests sur images synthétiques.
+2. **T2.2** — Détection et segmentation des bulles et du texte, avec masque précis de l'intérieur.
+3. **T2.3** — Classification des blocs : dialogue, narration, sfx, texte libre, à ignorer.
+4. **T2.4** — OCR de l'anglais, regroupement des lignes d'une même bulle, ordre de lecture.
 
-### Fichiers modifiés
-- `apps/desktop/app/page.tsx` — lecteur webtoon-only, highlight chapitre en cours, helpers `chapterPage`/`chapterCount`.
-- `apps/desktop/app/globals.css` — `.chapter-cell.encours` CSS class.
-- `apps/desktop/app/i18n.ts` — supprimé `erreur.page`.
-- `apps/desktop/src-tauri/src/download.rs` — verrou `DownloadState` HashMap (déjà fait auparavant).
+### Fichiers modifiés (T1)
+- `contract/translation/schema.json` — schéma v1
+- `contract/protocol.json` — méthodes vision ajoutées
+- `contract/protocol.fixtures.json` — fixtures vision
+- `apps/desktop/src-tauri/src/traduction.rs` — types + commandes traduction
+- `apps/desktop/src-tauri/src/vision.rs` — types sidecar vision
+- `apps/desktop/src-tauri/src/pack.rs` — gestionnaire de packs
+- `apps/desktop/src-tauri/src/store.rs` — migration v8 + fonctions
+- `apps/desktop/src-tauri/tests/contrat_traduction.rs` — tests contrat traduction
+- `apps/desktop/src-tauri/tests/contrat_vision.rs` — tests contrat vision
+- `apps/desktop/app/types/traduction.ts` — types TS miroir
 
 ### État du dépôt
-- 5 commits : `b6734e7` téléchargements parallèles, `c141377` chargeur animé, `6e25642` molette fix,
-  `9bf3fe6` clé Gemini dans le trousseau OS, `f410272` suppression du surlignage "en cours"
+- 6 commits : `b6734e7` téléchargements parallèles, `c141377` chargeur animé, `6e25642` molette fix,
+  `9bf3fe6` clé Gemini dans le trousseau OS, `f410272` suppression du surlignage "en cours",
+  `59526aa` T1 complet (schéma, migrations, vision, packs, tests)
 - Toutes les vérifications passent (clippy, typecheck, lint, i18n, hooks, chemins).
+- Prochaine phase : **T2 — Pipeline vision**.

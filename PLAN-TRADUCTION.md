@@ -121,11 +121,11 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 
 ### T1 — Modèle de données et contrat (M)
 
-- [ ] **T1.1** Schéma `PageTranslation` dans `contract/translation/`, types Rust et TypeScript générés, version de schéma.
-- [ ] **T1.2** Migrations SQLite (tables de la section 3) et clé de cache composite. Tests de migration.
-- [ ] **T1.3** Contrat du sidecar vision : `hello`, `capabilities`, `detect`, `ocr`, `inpaint`, `health`, `loadPack`, `shutdown`. Erreurs typées : `MODEL_MISSING`, `OUT_OF_MEMORY`, `TILE_TOO_LARGE`, `TIMEOUT`, `CANCELLED`, `INTERNAL`.
-- [ ] **T1.4** Gestionnaire de packs de modèles : manifeste signé, téléchargement avec reprise, vérification de hash, versions, suppression, espace disque. Sans pack installé, la fonction est désactivée proprement (aucune erreur).
-- [ ] **T1.5** Fixtures de contrat (JSON, sans images d'œuvres) et tests de contrat.
+- [x] **T1.1** Schéma `PageTranslation` dans `contract/translation/`, types Rust et TypeScript générés, version de schéma.
+- [x] **T1.2** Migrations SQLite (tables de la section 3) et clé de cache composite. Tests de migration.
+- [x] **T1.3** Contrat du sidecar vision : `hello`, `capabilities`, `detect`, `ocr`, `inpaint`, `health`, `loadPack`, `shutdown`. Erreurs typées : `MODEL_MISSING`, `OUT_OF_MEMORY`, `TILE_TOO_LARGE`, `TIMEOUT`, `CANCELLED`, `INTERNAL`.
+- [x] **T1.4** Gestionnaire de packs de modèles : manifeste signé, téléchargement avec reprise, vérification de hash, versions, suppression, espace disque. Sans pack installé, la fonction est désactivée proprement (aucune erreur).
+- [x] **T1.5** Fixtures de contrat (JSON, sans images d'œuvres) et tests de contrat.
 
 **Critère de sortie** : types générés, migrations testées, packs installables et vérifiables, tests de contrat verts.
 
@@ -355,3 +355,25 @@ CPU Colab (non comparable : modèle ~8× plus gros qu'opus-mt).
 bulles du comparatif Gemini au reset du quota (optionnel, signal déjà net) ;
 second outil assemblé (BallonsTranslator) ; élargissement du corpus aux
 styles absents si GO. Détail : `docs/spike-traduction.md` §8.
+
+### 2026-10-06 — T1 livrée
+
+**T1.1–T1.5 — Complété.** Schéma de traduction v1, migrations SQLite v8,
+types Rust/TS, contrat du sidecar vision étendu (`detect`, `ocr`, `inpaint`,
+`loadPack`, `health`, `shutdown`), gestionnaire de packs de modèles, fixtures
+JSON et tests de contrat.
+
+**Livrables** : `contract/translation/schema.json`, `apps/desktop/src-tauri/src/traduction.rs`,
+`apps/desktop/src-tauri/src/vision.rs`, `apps/desktop/src-tauri/src/pack.rs`,
+`apps/desktop/src-tauri/tests/contrat_traduction.rs`, `apps/desktop/src-tauri/tests/contrat_vision.rs`,
+`contract/protocol.json` (étendu vision), `contract/protocol.fixtures.json`.
+
+**Portes passées** : `cargo clippy --all-targets -- -D warnings` (0 warning),
+`cargo test` (133/133 en mono-thread, 4 tests store échouent en parallèle —
+pollution d'état préexistante), `pnpm typecheck/lint/i18n:check/hooks:check/chemins:check/build`.
+
+**Correction sécurité** : la clé Gemini a été déplacée de SQLite vers le
+trousseau de l'OS (`keyring` crate), conforme à `AGENTS.md` §2.6.
+
+**Prochaine tâche** : **T2.1** — assemblage de la bande virtuelle et découpe
+en tuiles aux lignes uniformes.

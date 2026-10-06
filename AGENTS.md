@@ -955,3 +955,73 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   raison absente du code. Doublure par **réponses consécutives** (la 1ʳᵉ à l'appel
   1, la 2ᵉ à l'appel 2, la dernière ensuite) : la course disparaît au lieu d'être
   espérée.
+
+- **Un squelette doit emprunter la structure du contenu, sinon il fait pire que
+  rien.** Mesuré le 2026-10-06 : le catalogue met 1,3 s et la fiche 2,5 s à se
+  remplir, et le squelette (un simple rectangle) mesurait **234 × 351 px** contre
+  **188 × 328 px** pour la vraie carte — **46 px d'écart en largeur**, 0 enfant
+  contre 2. Le contenu arrivant, toute la grille se réorganisait ; l'œil suit un
+  contenu qui bouge, c'est **pire** qu'un écran vide. Le remède n'est pas une
+  hauteur en dur : c'est de **recomposer les mêmes classes** que le contenu
+  (`.manga` > `.manga-open` > `.cover` + `.label`), pour que la géométrie vienne
+  du même CSS et ne puisse pas diverger. Après : 190 × 320 contre 188 × 328, et
+  193 × **62** contre 193 × **62** sur la ligne de chapitre. Corollaire, mesuré
+  dans la foulée : le nombre de squelettes doit suivre ce qui arrive (8 dessinés
+  pour 20 cartes, donc une ligne en plus apparaissait puis disparaissait).
+
+- **Un `<span>` vide dans un conteneur flex mesure 0 px.** La ligne de chapitre
+  faisait 46 px au lieu de 62 **après avoir retiré toutes les hauteurs en dur** :
+  un élément flex sans contenu n'a pas de boîte de ligne, donc il s'effondre.
+  J'avais conclu « la boîte naturelle suffit » — elle n'existait pas. Il faut un
+  contenu insécable (`{' '}`) avec `color: transparent` : la hauteur vient alors
+  de la même boîte de ligne que le texte réel. Corollaire : « j'ai enlevé la
+  valeur en dur » ne prouve pas que la valeur est redevenue correcte — la mesure,
+  elle, peut le dire.
+
+- **Un état initial lu dans `localStorage` fait abandonner l'hydratation entière.**
+  Mesuré le 2026-10-06, sur l'app réelle : `useState<MajItem[]>(loadMaj())`.
+  L'export statique produit un HTML qui ne peut pas contenir le `localStorage` de
+  la machine, donc `loadMaj()` renvoyait `[]` côté serveur (son garde
+  `typeof window`) et la vraie liste côté client. Diff React :
+  `+ <section className="maj">` / `- <div className="band">`. **Ce n'est pas
+  cosmétique** : abandonner l'hydratation fait reconstruire la page entière sur
+  le client, donc dégrader le chargement qu'on cherche à alléger. Le motif
+  correct existe déjà dans ce dépôt : lire dans un **effet de montage** (comme
+  les préférences du lecteur, même raison). Corollaire : le même état peut être
+  un défaut **latent** — `notif` avait la même cause, invisible parce que
+  l'interrupteur n'existe que dans l'écran des réglages. Chercher `useState(` avec
+  un appel qui touche à `window` / `localStorage` / `Date.now()`.
+
+- **Un échantillon à un seul instant ne prouve rien.** Mesuré le même jour : « à
+  1,2 s il n'y a aucun squelette » — vrai, et sans importance, parce qu'en
+  développement React n'a pas encore hydraté. La chronologie complète à 120 ms a
+  montré squelette de 0 à 295 ms puis contenu à 436 ms, ce que l'instant unique
+  ne montrait pas. Corollaire : afficher la **suite** des états, pas un état.
+
+- **Un relevé fait avant que l'action ait pris mesure l'état précédent.**
+  `location.reload()` est asynchrone : le relevé suivant part **avant** la
+  navigation, donc il lit l'ancien contenu. J'ai obtenu « 61–72 ms » pour un
+  accueil — chiffre plausible et **faux**, écarté du code. Même famille : attendre
+  `domcontentloaded` **puis** échantillonner, jamais l'inverse.
+
+- **Un sélecteur fondé sur un libellé traduit casse dès que la langue change.**
+  Mesuré le 2026-10-06 : après un `localStorage.clear()`, l'interface repasse en
+  français, et « Téléchargements » ne contient pas `download` — mes quatre
+  sélecteurs d'onglet par mot anglais sont tombés, et l'écran a semblé « jamais
+  prêt » pendant 20 s. Corollaire : sélectionner par **indice** ou par attribut
+  stable, jamais par le texte affiché ; et une marche qui remet l'état à zéro
+  doit aussi remettre la **langue**.
+
+- **Un temps mesuré dépend de ce qu'on mesure autour.** « L'accueil met
+  1 393 ms » incluait le rechargement de la page ; depuis `domcontentloaded`,
+  c'est 436 ms. Les deux sont vrais et ne disent pas la même chose. Corollaire :
+  dans un commentaire, écrire le chiffre **avec sa condition de mesure** — sinon
+  le prochain lit un nombre qu'il ne peut pas reproduire.
+
+- **Normaliser les fins de ligne d'un fichier qu'on n'a pas modifié entièrement
+  produit un diff fantôme.** Mesuré le 2026-10-06 : AGENTS.md était en CRLF,
+  j'ai converti les 127 LF que mon bloc apportait, et l'outil d'affichage a
+  montré 133 lignes modifiées dans une zone intacte. `git diff --numstat` disait
+  **64 insertions, 0 suppression** : aucune ligne n'avait bougé. Corollaire : ne
+  pas « réparer » les fins de ligne d'un fichier partagé ; s'appuyer sur
+  `--numstat` plutôt que sur le diff affiché, qui normalise et ment.

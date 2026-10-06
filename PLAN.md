@@ -2408,3 +2408,120 @@ et voir si la source se débloque. C'est écrit dans le smoke test.
 `cargo fmt --check` 0 · `cargo clippy --all-targets -D warnings` 0 ·
 `cargo test` **153** (132 + 1 + 20), dont 5 tests de `tray` · 0 résidu de test
 dans la bibliothèque.
+
+## 2026-10-06 — Compteur de pages et chargement : le squelette mesuré, et une hydratation abandonnée
+
+### La demande
+
+« Abordons le compteur de page et surtout le système de loader : le chargement
+aujourd'hui est un peu limité expérience user. »
+
+Avant de corriger, mesurer ce que l'utilisateur voit pendant l'attente.
+
+### Le défaut mesuré : un squelette qui ne ressemble pas à ce qui arrive
+
+Échantillonnage à 120 ms sur l'app réelle, en comparant la géométrie du
+squelette à celle du contenu qui le remplace :
+
+| Écran | Squelette avant | Contenu réel | Écart |
+|---|---|---|---|
+| Catalogue | 234 × **351**, 0 enfant | 188 × 328, **2 enfants** | largeur **−46 px** |
+| Fiche | 193 × **44**, 0 enfant | 193 × **62**, **3 enfants** | hauteur **−18 px** |
+
+Le contenu arrivant, **toute la grille se réorganisait** — c'est pire qu'un
+écran vide, parce que l'œil suit un contenu qui bouge. Et le nombre de
+squelettes ne suivait pas non plus : 8 dessinés pour 20 cartes arrivées.
+
+### Le correctif : réutiliser les classes du contenu
+
+Le squelette n'a plus de géométrie propre — il **recompose la structure réelle**
+(`.manga` > `.manga-open` > `.cover` + `.label`, et `.chapter-cell` >
+`.chapter-check` + `.chapter-open` (deux lignes) + `.chapter-dl`). La taille vient
+donc du même CSS et ne peut pas diverger.
+
+Mesuré après :
+
+| Écran | Squelette | Contenu réel | Écart |
+|---|---|---|---|
+| Catalogue | 190 × 320 | 188 × 328 | largeur 2 px, hauteur 8 px |
+| Fiche | 193 × **62** | 193 × **62** | **0** |
+
+### Un piège : un `<span>` vide dans un conteneur flex fait 0 px
+
+La première version de la ligne de chapitre mesurait **46 px** au lieu de 62,
+après avoir pourtant retiré toutes les hauteurs en dur. Cause mesurée : un
+élément flex **vide** n'a pas de boîte de ligne, donc il se réduit à zéro.
+Corrigé par un contenu insécable (`{' '}`) avec `color: transparent` — la hauteur
+vient alors de la même boîte de ligne que le texte réel.
+
+### L'accueil affichait un « aucun favori » pendant le chargement
+
+Le code affirmait : « pas d'indicateur de chargement, la lecture est un SQLite
+local, elle dure moins d'une image ». **L'hypothèse était fausse.** Chronologie
+échantillonnée à 120 ms : squelette de 0 à **295 ms**, contenu à **436 ms**, et
+le faux « aucun favori » **n'apparaît jamais** (il le faisait avant). En
+incluant le rechargement complet de la page, l'accueil est prêt en 1,4 s.
+
+Deux états ajoutés (`shelfCharge`, `bibliothequeCharge`), même idée pour la
+bibliothèque téléchargée.
+
+### Bonus mesuré : l'artefact livré peint le squelette avant React
+
+`out/index.html` (8 292 caractères) contient `squelette-carte` **et** `aria-busy` :
+le squelette est donc dans les octets livrés, peint au premier affichage, sans
+travail de React. C'est le gain réel, pas un gain conditionnel.
+
+### Le compteur de pages
+
+Ajouté dans la barre du lecteur, `n / total`, avec `font-variant-numeric:
+tabular-nums` — sans quoi la largeur change à chaque page et le compteur
+**sauteille**, ce qui est précisément le défaut qu'il corrige.
+
+Vérifié dans les deux modes : `4 / 37` en mode page (c'est la **reprise de
+lecture** : `index` vient de `startIndex`, ce n'est pas un défaut), et
+`4 / 37` → `5 / 37` après un défilement de 150 px en mode webtoon.
+0 erreur console.
+
+### Un défaut préexistant trouvé en route : l'hydratation abandonnée
+
+Le badge Next.js portait `data-error="true"`. Diff relevé :
+
+```
+Hydration failed …  + <section className="maj">  /  - <div className="band">
+```
+
+**Vérifié préexistant** : `git stash` des changements, même erreur, même diff.
+
+Cause : `useState<MajItem[]>(loadMaj())`. L'export statique produit un HTML qui
+ne peut pas contenir le `localStorage` de la machine ; `loadMaj()` renvoyait donc
+`[]` côté serveur (son garde `typeof window`) et la vraie liste côté client —
+donc `<section class="maj">` existait d'un seul côté. Corollaire : **`notif` avait
+le même défaut**, latent parce que l'interrupteur n'existe que dans les réglages.
+
+Ce n'est pas cosmétique : abandonner l'hydratation fait **reconstruire la page
+entière sur le client**, ce qui est exactement le chargement qu'on cherche à
+alléger. Corrigé en lisant les deux dans l'effet de montage, comme les préférences
+du lecteur qui utilisaient déjà ce motif (même raison, même endroit). Après :
+`data-error="false"`, 0 erreur, et `class="maj"` absent de l'HTML livré — donc
+serveur et client concordent.
+
+### Ce que mes propres mesures ont eu tort
+
+- Trois fois de suite, j'ai chronométré un écran avec un marqueur de « prêt » qui
+  ne se déclenchait pas : mes « temps » étaient **mon plafond**. Le premier faux
+  était `.manga`, absent du catalogue.
+- MANGADEX n'est pas dans la liste EN : le clic ne faisait rien, donc la séquence
+  suivante ne s'exécutait pas. Le défaut était dans la marche, pas dans l'app.
+- Un clic émis **avant** que `.lang-tile` existe est perdu en silence.
+- Après `localStorage.clear()`, l'interface repasse **en français**, et
+  « Téléchargements » ne contient pas « download » : tous mes sélecteurs d'onglet
+  par mot anglais sont tombés. Passage par l'**indice** de `TABS`.
+- Un relevé de « 61–72 ms » était faux : `location.reload()` est asynchrone, la
+  mesure lisait l'ancien contenu. Ce chiffre est jeté, il ne figure nulle part.
+
+### Vérification
+
+`pnpm typecheck` 0 · `pnpm lint` 4 warnings (les 4 connus, 0 erreur) ·
+`pnpm i18n:check` aucune clé morte · `pnpm hooks:check` · `pnpm chemins:check` ·
+`pnpm build` ✓ Compiled successfully in 13.5 s · `data-error="false"` et 0
+erreur console sur l'app réelle.

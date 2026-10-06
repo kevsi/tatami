@@ -35,10 +35,12 @@
 //! que ça peut servir » est exactement ce qui a produit les commandes mortes
 //! supprimées le 2026-10-04.
 
+pub mod bench;
 pub mod cbz;
 pub mod challenge;
 pub mod classifier;
 pub mod commands;
+pub mod custom_source;
 pub mod download;
 pub mod effacement;
 pub mod image;
@@ -49,7 +51,7 @@ pub mod moteur;
 pub mod ocr;
 pub mod pack;
 pub mod pagecache;
-pub mod bench;
+pub mod prompt;
 pub mod residuel;
 pub mod scheduler;
 pub mod shelf;

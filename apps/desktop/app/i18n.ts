@@ -214,6 +214,19 @@ const FR = {
   'reglages.langue.en': 'English',
   'reglages.langue.note': 'Change la langue de toute l’interface. Les titres restent dans leur langue d’origine.',
 
+  // --- Traduction des bulles (T3) ---
+  'reglages.traduction': 'Traduction des bulles',
+  'reglages.traduction.cle_gemini': 'Clé API Gemini (optionnel)',
+  'reglages.traduction.cle_gemini.placeholder': 'Collez votre clé Gemini ici…',
+  'reglages.traduction.cle_gemini.sauver': 'Enregistrer la clé',
+  'reglages.traduction.cle_gemini.supprimer': 'Supprimer la clé',
+  'reglages.traduction.cle_gemini.note':
+    'Gratuit sur aistudio.google.com/apikey (quota journalier). Sans clé, seule la traduction hors ligne est utilisée.',
+  'reglages.traduction.note':
+    'La traduction est asynchrone : l’original s’affiche d’abord, le français apparaît ensuite en surcouche.',
+  'reglages.traduction.cle_ok': 'Clé Gemini enregistrée.',
+  'reglages.traduction.cle_supprimee': 'Clé Gemini supprimée.',
+
   // --- Catalogue
   'catalogue.sources.disponibles': '{n} sources disponibles',
   'catalogue.sources.desactivees': '{n} désactivée{s}',
@@ -340,7 +353,6 @@ const FR = {
   'telechargements.file.abandonner': 'Abandonner la file',
 
   // --- Téléchargements
-    'erreur.page': 'Page introuvable.',
   'fiche.chapitres.vide': 'Aucun chapitre disponible sur cette source.',
   'source.chapitres.vide': 'Clique un webtoon pour voir ses chapitres.',
   'source.chapitres.recents': 'Chapitres récents',
@@ -556,6 +568,19 @@ const EN: Record<Cle, string> = {
   'reglages.langue.note':
     'Changes the language of the whole interface. Titles stay in their original language.',
 
+  // --- Bubble translation (T3) ---
+  'reglages.traduction': 'Bubble translation',
+  'reglages.traduction.cle_gemini': 'Gemini API key (optional)',
+  'reglages.traduction.cle_gemini.placeholder': 'Paste your Gemini key here…',
+  'reglages.traduction.cle_gemini.sauver': 'Save key',
+  'reglages.traduction.cle_gemini.supprimer': 'Delete key',
+  'reglages.traduction.cle_gemini.note':
+    'Free at aistudio.google.com/apikey (daily quota). Without a key, only offline translation is used.',
+  'reglages.traduction.note':
+    'Translation is asynchronous: the original shows first, then the French appears as an overlay.',
+  'reglages.traduction.cle_ok': 'Gemini key saved.',
+  'reglages.traduction.cle_supprimee': 'Gemini key deleted.',
+
   'catalogue.sources.disponibles': '{n} sources available',
   'catalogue.sources.desactivees': '{n} disabled',
   'catalogue.rechercher': 'Search a catalogue…',
@@ -673,7 +698,6 @@ const EN: Record<Cle, string> = {
   'accueil.filtre.toutes': 'All',
   'accueil.filtre.sans': 'No category ({n})',
 
-    'erreur.page': 'Page not found.',
   'fiche.chapitres.vide': 'No chapter available on this source.',
   'source.chapitres.vide': 'Click a webtoon to see its chapters.',
   'source.chapitres.recents': 'Recent chapters',

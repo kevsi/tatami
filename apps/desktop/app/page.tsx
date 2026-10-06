@@ -538,6 +538,8 @@ function chapterShort(c: Chapter): string {
   return `Ch. ${Number.isInteger(arrondi) ? arrondi.toFixed(0) : arrondi}`;
 }
 
+
+
 const DATE_FR = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 
 /** Date de publication d'un chapitre. Le moteur émet l'epoch en ms, 0 quand la
@@ -766,49 +768,7 @@ function saveRecentCache(cache: Record<string, RecentEntry>) {
 /** File de téléchargement persistée : ce qui reste à faire si l'app s'arrête. */
 type SavedQueue = { items: Manga[]; startedAt: number };
 const QUEUE_KEY = 'tatami.queue';
-const READER_MODE_KEY = 'tatami.readerMode';
 const READER_ZOOM_KEY = 'tatami.readerZoom';
-const READER_FIT_KEY = 'tatami.readerFit';
-const READER_SPREAD_KEY = 'tatami.readerSpread';
-const READER_DIR_KEY = 'tatami.readerDir';
-
-/** Tâche 1.8 : combien de pages sont préchargées **en avance** dans le cache Rust.
- *
- *  L'interface posait une seule balise `<img class="preload">` sur la page
- *  suivante, donc un cran de navigation sur deux repartait sur le réseau. Le
- *  cache disque s'alimente par le protocole `tatami://` : la balise provoque le
- *  téléchargement, et la page s'affiche ensuite en centièmes de seconde.
- *
- *  Plafond volontaire : au-delà, on télécharge des pages que l'utilisateur peut
- *  ne jamais atteindre (il ferme le chapitre), sur une machine déjà chargée par
- *  le moteur. Quatre pages couvrent largement un défilement rapide, y compris en
- *  double page où un cran en consomme deux.
- */
-const PRECHARGE_PAGES = 4;
-
-/** Tâche 1.8 : distance de molette minimale pour tourner une page.
- *
- *  En dessous, on laisse le défilement normal de la page se faire : c'est ce qui
- *  évite qu'un micro-scroll dans la barre d'outils fasse changer de page.
- */
-const DELTA_MOLETTE_MIN = 40;
-/** Délai de **silence** après lequel un nouveau geste de molette est accepté.
- *
- *  C'est ce qui transforme un geste en UNE page au lieu de dix.
- *
- *  Mesuré le 2026-10-06, et le mot « silence » est porteur de sens : le minuteur
- *  était armé **une fois** au premier cran, jamais réarmé. Un geste de 2 603 ms
- *  épuisait donc 8 minuteurs successifs et faisait passer la page 20 à la 28 —
- *  soit exactement `durée / 300`. Ce qui doit compter, c'est la **pause** entre
- *  deux gestes, pas la longueur du geste.
- */
-const DELTA_MOLETTE_SILENCE_MS = 300;
-
-type ReaderMode = 'page' | 'webtoon';
-/** Tâche 0.13 : comment la page est mise à l'échelle dans le cadre. */
-type ReaderFit = 'width' | 'height';
-/** Ordre de lecture d'une double page. Le manga se lit de droite à gauche. */
-type ReaderDir = 'rtl' | 'ltr';
 
 function loadSavedQueue(): SavedQueue | null {
   if (typeof window === 'undefined') return null;
@@ -1091,6 +1051,7 @@ export default function Home() {
   const [rating, setRating] = useState('SUGGESTIVE');
   const [onePageOnly, setOnePageOnly] = useState(false);
   const [listTimeout, setListTimeout] = useState(60);
+  const [cleGemini, setCleGemini] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<LibraryItem | null>(null);
   // Sélecteur de chapitre d'un webtoon téléchargé : avant, « Lire » ouvrait
   // toujours le premier chapitre, ce qui est inutilisable sur une série de 137.
@@ -1108,13 +1069,11 @@ export default function Home() {
   const [verif, setVerif] = useState<{ source: string; url: string; reason: string } | null>(
     null,
   );
-  // Confort de lecture : mode paginé ou webtoon (bande verticale), et largeur.
-  const [readerMode, setReaderMode] = useState<ReaderMode>('page');
+  // Confort de lecture : largeur de la bande.
   const [zoom, setZoom] = useState(100);
-  // Tâche 0.13 : ajustement largeur/hauteur, double page, sens de lecture.
-  const [fit, setFit] = useState<ReaderFit>('width');
-  const [spread, setSpread] = useState(false);
-  const [readerDir, setReaderDir] = useState<ReaderDir>('rtl');
+  // Le lecteur est en mode webtoon, c'est le seul qu'on offre. Le mode
+  // « pagé », le double écran et l'ajustement hauteur ont été jugés inutiles
+  // sur le retour de l'usage : on garde uniquement la bande verticale.
   // Tâche 0.14 : aller directement à un chapitre sans repasser par la fiche.
   const [pageJump, setPageJump] = useState('');
   /** Dossier de téléchargement choisi par l'utilisateur (choix humain du 2026-10-05).
@@ -1142,24 +1101,6 @@ export default function Home() {
   // est proportionnelle à cette largeur).
   const dernierScroll = useRef(0);
   const enAttente = useRef(false);
-  // Tâche 1.8 : sens du dernier geste de molette, 0 = aucun en cours. Vaut 1 pour
-  // « on descend », -1 pour « on remonte ». Permet à `onMoletteStage` de
-  // n'avancer que d'une page par geste.
-  const moletteEnCours = useRef(0);
-  // Minuteur de **libération** du verrou ci-dessus : il est réarmé à chaque
-  // événement de molette, donc il expire 300 ms après le *dernier* cran. Armé une
-  // seule fois, il laissait un geste long se déverrouiller tout seul et sauter
-  // des pages (mesuré : 8 pages d'un coup).
-  const moletteTimer = useRef<number | null>(null);
-  // Le minuteur ne doit pas survivre au démontage : il écrirait dans le `ref` d'un
-  // composant mort, et son verrou avalerait le premier geste de la session
-  // suivante.
-  useEffect(
-    () => () => {
-      if (moletteTimer.current !== null) window.clearTimeout(moletteTimer.current);
-    },
-    [],
-  );
   const [scrollY, setScrollY] = useState(0);
   const [largeurBande, setLargeurBande] = useState(0);
   const [health, setHealth] = useState<SourceHealth>({});
@@ -1205,11 +1146,7 @@ export default function Home() {
     // la machine de l'utilisateur. Les poser dans un initialiseur paresseux
     // créerait un écart serveur/client ; l'effet est ici le bon moment.
     if (typeof window !== 'undefined') {
-      setReaderMode((window.localStorage.getItem(READER_MODE_KEY) as ReaderMode) || 'page');
       setZoom(Number(window.localStorage.getItem(READER_ZOOM_KEY)) || 100);
-      setFit((window.localStorage.getItem(READER_FIT_KEY) as ReaderFit) || 'width');
-      setSpread(window.localStorage.getItem(READER_SPREAD_KEY) === '1');
-      setReaderDir((window.localStorage.getItem(READER_DIR_KEY) as ReaderDir) || 'rtl');
       // Même raison pour ces deux-là : leur valeur vit dans le navigateur, donc
       // le HTML statique du serveur ne peut pas la contenir.
       setMaj(loadMaj());
@@ -1409,6 +1346,20 @@ export default function Home() {
     // trois lignes plus bas. La raison est dans le commentaire de l'effet.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [langue]);
+
+  // T3 — charge la clé Gemini au démarrage (stockée par Rust dans la base).
+  useEffect(() => {
+    void invoke<boolean>('cle_gemini_configuree')
+      .then((configuree) => {
+        if (configuree) {
+          // La clé elle-même n'est jamais renvoyée au frontend : on masque
+          // le champ pour indiquer qu'elle est présente, et on ne l'affiche
+          // jamais en clair.
+          setCleGemini('••••••••');
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const chargerPlan = useCallback(() => {
     invoke<PlanReglages>('reglages_planificateur')
@@ -2134,7 +2085,7 @@ export default function Home() {
               if (da !== db) return db - da;
               return (b.number ?? 0) - (a.number ?? 0);
             })
-            .slice(0, 3)
+            .slice(0, 1)
             .map(
               (c) =>
                 `${chapterShort(c)}${
@@ -2532,6 +2483,25 @@ export default function Home() {
       await refreshDownloads();
     } catch (e) {
       setError(t('telechargements.dossier.erreur', { raison: String(e) }));
+    }
+  }
+
+  async function sauverCleGemini() {
+    try {
+      await invoke('definir_cle_gemini', { cle: cleGemini.trim() });
+      setNotice(t('reglages.traduction.cle_ok'));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function supprimerCleGemini() {
+    try {
+      await invoke('definir_cle_gemini', { cle: '' });
+      setCleGemini('');
+      setNotice(t('reglages.traduction.cle_supprimee'));
+    } catch (e) {
+      setError(String(e));
     }
   }
 
@@ -3021,44 +2991,10 @@ function apresFermetureLecteur() {
   }
 }
 
-function switchMode(mode: ReaderMode) {
-  setReaderMode(mode);
-  window.localStorage.setItem(READER_MODE_KEY, mode);
-}
-
 function changeZoom(next: number) {
   const value = Math.min(200, Math.max(50, next));
   setZoom(value);
   window.localStorage.setItem(READER_ZOOM_KEY, String(value));
-}
-
-/** En double page, un cran de navigation avance de deux pages. */
-function step(): number {
-  return readerMode === 'page' && spread ? 2 : 1;
-}
-
-function switchFit(next: ReaderFit) {
-  setFit(next);
-  window.localStorage.setItem(READER_FIT_KEY, next);
-}
-
-function toggleSpread() {
-  setSpread((prev) => {
-    const next = !prev;
-    window.localStorage.setItem(READER_SPREAD_KEY, next ? '1' : '0');
-    // Referme sur une page paire pour que la double page démarre sur un
-    // couple cohérent (0-1, 2-3, ...) au lieu d'un décalage d'une page.
-    setReader((r) => (r && next && r.index % 2 === 1 ? { ...r, index: r.index - 1 } : r));
-    return next;
-  });
-}
-
-function switchDir() {
-  setReaderDir((prev) => {
-    const next: ReaderDir = prev === 'rtl' ? 'ltr' : 'rtl';
-    window.localStorage.setItem(READER_DIR_KEY, next);
-    return next;
-  });
 }
 
 /** Tâche 0.14 : saute à la page demandée (1 → index 0).
@@ -3071,8 +3007,7 @@ function jumpToPage(raw: string) {
   setPageJump('');
   if (!reader || !Number.isFinite(n) || n < 1) return;
   const target = Math.min(reader.pages.length, Math.round(n)) - 1;
-  if (readerMode === 'webtoon') scrollToPage(target);
-  else setReader((r) => (r ? { ...r, index: target } : r));
+  scrollToPage(target);
 }
 
 /** Fait défiler la bande jusqu'à la page demandée (mode webtoon).
@@ -3095,7 +3030,9 @@ function scrollToPage(i: number) {
     el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     setReader((r) => (r ? { ...r, index: cible } : r));
   } else {
-    turn(cible - (reader?.index ?? 0));
+    // Fallback sans bande rendue : positionne l'état, la bande se replace
+    // à son effet suivant via `bandeVirtualisable`.
+    setReader((r) => (r ? { ...r, index: cible } : r));
   }
 }
 
@@ -3142,7 +3079,7 @@ async function basculerPleinEcran() {
 // dans le bloc du lecteur violerait l'ordre des hooks, puisque le composant
 // retourne avant d'y arriver selon la vue affichée.
 const pagesBande = reader?.pages ?? EMPTY_PAGES;
-const formatBande = (readerMode === 'webtoon' ? zoom : 100) / 100;
+const formatBande = zoom / 100;
 const hauteurs = useMemo(() => {
   const l = largeurBande || 1;
   return pagesBande.map((p) => {
@@ -3181,7 +3118,7 @@ const bandeHauteur = useMemo(() => {
 
 const fenetre = useMemo(() => {
   const tous = pagesBande.map((_, i) => i);
-  if (readerMode !== 'webtoon' || !bandeVirtualisable) return tous;
+  if (!bandeVirtualisable) return tous;
   let premier = 0;
   while (
     premier < pagesBande.length &&
@@ -3203,7 +3140,7 @@ const fenetre = useMemo(() => {
   const out: number[] = [];
   for (let i = debut; i < limite; i += 1) out.push(i);
   return out;
-}, [pagesBande, readerMode, scrollY, offsets, hauteurs, bandeVirtualisable]);
+}, [pagesBande, scrollY, offsets, hauteurs, bandeVirtualisable]);
 
 // La largeur du conteneur décide de la hauteur affichée : il faut la mesurer,
 // sinon la première bande est dimensionnée sur une largeur nulle.
@@ -3216,7 +3153,7 @@ useEffect(() => {
   const observateur = new ResizeObserver(mesurer);
   observateur.observe(root);
   return () => observateur.disconnect();
-}, [nbPagesBande, readerMode]);
+}, [nbPagesBande]);
 
 /** Défilement de la bande : recalcule la fenêtre de pages montées. */
 function onScrollBande() {
@@ -3261,7 +3198,7 @@ function onScrollBande() {
  *  doit exister avant elle, et les hooks doivent être tous au même niveau.
  */
 useEffect(() => {
-  if (readerMode !== 'webtoon' || !reader) return;
+  if (!reader) return;
   const i = aPositionner.current;
   if (i === null) return;
   // On ne positionne QUE dans le bandeau virtualisé : c'est le seul cas où
@@ -3282,11 +3219,11 @@ useEffect(() => {
   // gardait les **images du début** montées : la page 100 était hors du DOM,
   // donc l'écran paraissait vide (mesuré : scrollTop 199576, images 0, 1, 2).
   setScrollY(y);
-}, [reader, readerMode, offsets, largeurBande, bandeVirtualisable]);
+}, [reader, offsets, largeurBande, bandeVirtualisable]);
 
 // En mode webtoon, le compteur suit la page réellement visible.
 useEffect(() => {
-  if (!reader || readerMode !== 'webtoon') return;
+  if (!reader) return;
   const root = stripRef.current;
   if (!root) return;
   const observer = new IntersectionObserver(
@@ -3304,63 +3241,12 @@ useEffect(() => {
   // L'observateur dépend du chapitre, du mode et du nombre de pages — pas de
   // l'objet `reader` complet, qui est recréé à chaque changement de page et
   // rejouerait l'observation sans raison.
-}, [reader?.chapter.url, readerMode, reader?.pages.length]);
-
-function turn(delta: number) {
-  setReader((r) => {
-    if (!r) return r;
-    const next = r.index + delta;
-    if (next < 0 || next >= r.pages.length) return r;
-    return { ...r, index: next };
-  });
-}
-
-/** Tâche 1.8 : la molette tourne la page en mode paginé.
- *
- *  Mesuré avant correction : la molette ne faisait **rien** dans le lecteur paginé
- *  (trois positions testées, « rien ne bouge ») alors que la tâche 1.8 demande
- *  des « raccourcis clavier et souris ». Le clavier était couvert, la souris pas.
- *
- *  Deux garde-fous, tous deux nécessaires :
- *
- *  - **Un seuil de distance.** La molette émet des dizaines d'événements pour un
- *    seul geste de la main. Sans seuil, un geste de lecture traverserait dix
- *    pages d'un coup — mesuré : 43 événements pour 2 crans de molette.
- *  - **`Ctrl` est réservé au zoom**, sinon on ne pourrait plus zoomer à la
- *    molette alors que c'est le geste attendu sur une image.
- */
-function onMoletteStage(e: React.WheelEvent<HTMLDivElement>) {
-  // En mode webtoon la bande gère son propre défilement : on ne s'en mêle pas.
-  if (readerMode !== 'page') return;
-  if (e.ctrlKey) return;
-  const delta = e.deltaY;
-  if (Math.abs(delta) < DELTA_MOLETTE_MIN) return;
-  e.preventDefault();
-  const sens = delta > 0 ? 1 : -1;
-  // Le verrou se libère quand la molette **se tait**. Le minuteur est donc
-  // réarmé à *chaque* événement, y compris ceux qu'on ignore juste après : sans
-  // ça il expirait 300 ms après le premier cran et un geste long se
-  // déverrouillait tout seul. Mesuré : 40 crans sur 2 603 ms = 8 pages d'un coup.
-  if (moletteTimer.current !== null) window.clearTimeout(moletteTimer.current);
-  moletteTimer.current = window.setTimeout(() => {
-    moletteEnCours.current = 0;
-    moletteTimer.current = null;
-  }, DELTA_MOLETTE_SILENCE_MS);
-  // Une seule page par direction et par geste : on mémorise le signe courant et
-  // on ignore les événements qui suivent tant qu'il n'a pas changé.
-  if (moletteEnCours.current === sens) return;
-  moletteEnCours.current = sens;
-  turn(sens * step());
-}
+}, [reader?.chapter.url, reader?.pages.length]);
 
 useEffect(() => {
   if (!reader) return;
   const onKey = (e: KeyboardEvent) => {
-    const webtoon = readerMode === 'webtoon';
     const last = reader ? reader.pages.length - 1 : 0;
-    // Un cran = 1 page, ou 2 en double page : le lecteur ne s'arrête jamais
-    // au milieu d'un couple de pages.
-    const by = step();
     if (e.key === 'Escape') {
       // En plein écran, `Échap` doit d'abord sortir du plein écran : fermer le
       // lecteur d'un coup est exactement ce que l'utilisateur ne cherche pas,
@@ -3377,25 +3263,23 @@ useEffect(() => {
     const back = ['ArrowLeft', 'ArrowUp', 'PageUp'];
     if (forward.includes(e.key)) {
       e.preventDefault();
-      webtoon ? scrollToPage(Math.min(last, reader!.index + 1)) : turn(by);
+      scrollToPage(Math.min(last, reader!.index + 1));
     } else if (back.includes(e.key)) {
       e.preventDefault();
-      webtoon ? scrollToPage(Math.max(0, reader!.index - 1)) : turn(-by);
+      scrollToPage(Math.max(0, reader!.index - 1));
     } else if (e.key === 'Home') {
       e.preventDefault();
-      webtoon ? scrollToPage(0) : setReader((r) => (r ? { ...r, index: 0 } : r));
+      scrollToPage(0);
     } else if (e.key === 'End') {
       e.preventDefault();
-      webtoon
-        ? scrollToPage(last)
-        : setReader((r) => (r ? { ...r, index: r.pages.length - 1 } : r));
+      scrollToPage(last);
     }
   };
   window.addEventListener('keydown', onKey);
   return () => window.removeEventListener('keydown', onKey);
-  // `scrollToPage` et `step` sont redéfinies à chaque rendu ; les inclure
-  // rebouclerait l'écouteur sur chaque changement d'état du lecteur.
-}, [reader, readerMode, spread]);
+  // `scrollToPage` est redéfinie à chaque rendu ; l'inclure rebouclerait
+  // l'écouteur sur chaque changement d'état du lecteur.
+}, [reader]);
 
   // ---------- Vue : Réglages ----------
   // Chaque vue s'affiche par un `return` conditionnel. Le lecteur doit donc
@@ -3565,6 +3449,32 @@ useEffect(() => {
             </select>
           </label>
           <p className="muted">{t('reglages.langue.note')}</p>
+        </section>
+
+        <section className="panel">
+          <h2>{t('reglages.traduction')}</h2>
+          <p className="muted">{t('reglages.traduction.note')}</p>
+          <label className="field">
+            {t('reglages.traduction.cle_gemini')}
+            <input
+              type="password"
+              value={cleGemini}
+              onChange={(e) => setCleGemini(e.target.value)}
+              placeholder={t('reglages.traduction.cle_gemini.placeholder')}
+              aria-label={t('reglages.traduction.cle_gemini')}
+            />
+          </label>
+          <p className="muted">{t('reglages.traduction.cle_gemini.note')}</p>
+          <div className="row-actions">
+            <button className="btn btn-primary" onClick={sauverCleGemini}>
+              {t('reglages.traduction.cle_gemini.sauver')}
+            </button>
+            {cleGemini && (
+              <button className="btn btn-ghost" onClick={supprimerCleGemini}>
+                {t('reglages.traduction.cle_gemini.supprimer')}
+              </button>
+            )}
+          </div>
         </section>
 
         <section className="panel">
@@ -4303,32 +4213,11 @@ useEffect(() => {
   // ---------- Vue : lecteur ----------
 if (reader) {
     const { pages, index, chapter } = reader;
-  const webtoon = readerMode === 'webtoon';
     const page = pages[index];
     // Signet présent sur la page affichée : l'état du bouton du lecteur.
     const marque = pageMarquee();
-    const by = readerMode === 'page' && spread ? 2 : 1;
-    // Précharge les pages suivantes, pas seulement la première.
-    //
-    // Mesuré le 2026-10-05 : la balise unique d'avant rendait la page suivante
-    // bien plus vite (elle arrivait depuis le cache disque Rust alimenté par le
-    // protocole), mais elle ne couvrait qu'**une** page — donc un cran de
-    // navigation sur deux repartait sur le réseau. On couvre désormais
-    // `PRECHARGE_PAGES` pages d'avance.
-    const aPrecharger = pages.slice(index + by, index + by + PRECHARGE_PAGES);
-    // En double page, la page courante et la suivante partagent le cadre. En RTL
-    // (défaut manga) la page courante est à droite : l'ordre DOM est donc
-    // inversé, et il ne reste qu'une page à la dernière.
-    const visible: Page[] = [];
-    if (readerMode === 'page' && spread) {
-      const second = pages[index + 1];
-      if (page && second) visible.push(...(readerDir === 'rtl' ? [second, page] : [page, second]));
-      else if (page) visible.push(page);
-    } else if (page) {
-      visible.push(page);
-    }
     return (
-      <main className={`reader${readerMode === 'webtoon' ? ' pleine-largeur' : ''}`}>
+      <main className="reader pleine-largeur">
         {/* `renderSuperpositions()` n'est rendu qu'après l'AppBar, pas ici — le
             chargeur de chapitre, lui, est aussi utile dans le lecteur (changement
             de chapitre via le sélecteur). */}
@@ -4384,14 +4273,14 @@ if (reader) {
               <button
                 className="seg-btn"
                 disabled={index === 0}
-                onClick={() => (webtoon ? scrollToPage(index - 1) : turn(-1))}
+                onClick={() => scrollToPage(index - 1)}
               >
                 {'←'}
               </button>
               <button
                 className="seg-btn"
                 disabled={index >= pages.length - 1}
-                onClick={() => (webtoon ? scrollToPage(index + 1) : turn(1))}
+                onClick={() => scrollToPage(index + 1)}
               >
                 {'→'}
               </button>
@@ -4405,80 +4294,6 @@ if (reader) {
             >
               {pleinEcran ? '⤡' : '⤢'}
             </button>
-
-            <div className="seg" role="group" aria-label="Mode de lecture">
-              <button
-                className="seg-btn"
-                aria-pressed={readerMode === 'page'}
-                onClick={() => switchMode('page')}
-              >
-                Pagé
-              </button>
-              <button
-                className="seg-btn"
-                aria-pressed={readerMode === 'webtoon'}
-                onClick={() => switchMode('webtoon')}
-              >
-                Webtoon
-              </button>
-            </div>
-
-            {readerMode === 'page' && (
-              <>
-                <div className="seg" role="group" aria-label="Pages par écran">
-                  <button
-                    className="seg-btn"
-                    aria-pressed={!spread}
-                    onClick={() => {
-                      if (spread) toggleSpread();
-                    }}
-                  >
-                    Simple
-                  </button>
-                  <button
-                    className="seg-btn"
-                    aria-pressed={spread}
-                    onClick={() => {
-                      if (!spread) toggleSpread();
-                    }}
-                  >
-                    Double
-                  </button>
-                </div>
-
-                <div className="seg" role="group" aria-label="Ajustement de la page">
-                  <button
-                    className="seg-btn"
-                    aria-pressed={fit === 'width'}
-                    onClick={() => switchFit('width')}
-                  >
-                    Largeur
-                  </button>
-                  <button
-                    className="seg-btn"
-                    aria-pressed={fit === 'height'}
-                    onClick={() => switchFit('height')}
-                  >
-                    Hauteur
-                  </button>
-                </div>
-
-                {spread && (
-                  <button
-                    className="seg-btn solo"
-                    onClick={switchDir}
-                    title="Inverser l'ordre des deux pages"
-                    aria-label={
-                      readerDir === 'rtl'
-                        ? 'Sens de lecture droite à gauche, inverser'
-                        : 'Sens de lecture gauche à droite, inverser'
-                    }
-                  >
-                    {readerDir === 'rtl' ? 'RTL' : 'LTR'}
-                  </button>
-                )}
-              </>
-            )}
 
             <label className="zoom">
               <span className="muted">{zoom}%</span>
@@ -4531,10 +4346,12 @@ if (reader) {
                 inputMode="numeric"
                 min={1}
                 max={pages.length}
+                // Affiche le numéro de page courant quand aucun destinataire n'est saisi,
+                // sinon la valeur tapée par l'utilisateur.
+                value={pageJump || String(index + 1)}
                 placeholder={String(index + 1)}
-                value={pageJump}
                 onChange={(e) => setPageJump(e.target.value)}
-                // La page affichée est le `placeholder` ; le champ ne sert qu'à
+                // La page affichée est le `value` ; le champ ne sert qu'à
                 // saisir une destination. Sans cette remise à zéro, une valeur
                 // saisie puis validée restait affichée pendant que le lecteur
                 // continuait à tourner : on lisait « 50 » en étant page 4
@@ -4547,8 +4364,7 @@ if (reader) {
           </div>
         </header>
 
-        {readerMode === 'webtoon' ? (
-          <div className="webtoon" ref={stripRef} onScroll={onScrollBande}>
+        <div className="webtoon" ref={stripRef} onScroll={onScrollBande}>
             {/* Tâche 1.9 — virtualisation. Mesuré : Killer Peter = 303 pages
                 dans UN `.cbz` ; rendues toutes, le navigateur chargeait les
                 303 images à l'ouverture (211 requêtes `tatami://`).
@@ -4597,46 +4413,6 @@ if (reader) {
               })}
             </div>
           </div>
-        ) : (
-          <>
-            <div
-              className={`reader-stage fit-${fit}${spread ? ' spread' : ''}`}
-              onWheel={onMoletteStage}
-            >
-              {visible.length > 0 ? (
-                visible.map((p) => {
-                  const at = pages.indexOf(p);
-                  return (
-                    <img
-                      key={p.token}
-                      src={pageSrc(p.token)}
-                      alt={`Page ${at + 1} sur ${pages.length}`}
-                    />
-                  );
-                })
-              ) : (
-                <p className="muted">{t('erreur.page')}</p>
-              )}
-            </div>
-            <div className="reader-nav">
-              <button className="btn" disabled={index === 0} onClick={() => turn(-by)}>
-                Page précédente
-              </button>
-              <button
-                className="btn btn-primary"
-                disabled={index >= pages.length - 1}
-                onClick={() => turn(by)}
-              >
-                Page suivante
-              </button>
-            </div>
-          </>
-        )}
-
-        {readerMode === 'page' &&
-          aPrecharger.map((p) => (
-            <img key={p.token} className="preload" src={pageSrc(p.token)} alt="" aria-hidden="true" />
-          ))}
       </main>
     );
   }
@@ -4840,7 +4616,9 @@ if (reader) {
                     aria-label={`Lire ${chapterLabel(c)}`}
                   >
                     <span className="chapter-num">{chapterShort(c)}</span>
-                    <span className="chapter-sub">{date ?? chapterLabel(c)}</span>
+                    <span className="chapter-sub">
+                      {date ?? chapterLabel(c)}
+                    </span>
                   </button>
                   <button
                     className="chapter-dl"
@@ -5184,12 +4962,20 @@ if (reader) {
           </p>
         )}
 
-        {hasMore && !loading && (
+        {hasMore && (
           <button
             className="btn btn-more"
             onClick={() => loadSource(selected, latestOffset, { tags: activeTags, query: mangaQuery })}
+            disabled={loading}
           >
-            Voir plus ({latest.length} chargés)
+            {loading ? (
+              <span className="loader-inline">
+                <span className="roue" aria-hidden="true" />
+                Chargement…
+              </span>
+            ) : (
+              <>Voir plus ({latest.length} chargés)</>
+            )}
           </button>
         )}
       </main>

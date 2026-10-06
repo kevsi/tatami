@@ -1025,3 +1025,30 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   **64 insertions, 0 suppression** : aucune ligne n'avait bougé. Corollaire : ne
   pas « réparer » les fins de ligne d'un fichier partagé ; s'appuyer sur
   `--numstat` plutôt que sur le diff affiché, qui normalise et ment.
+- **Bornez la concurrence ET l'intervalle : ce sont deux choses, et la seconde
+  fait la politesse.** Mesuré le 2026-10-06 : `RECENT_CONCURRENCY = 4` existait
+  déjà, et quatre appels de 0,5 s se relancent **ensemble**. Le défaut n'était pas
+  le débit moyen (1,3 à 2,1 req/s, correct) mais l'**écart minimum nul** : 0 ms
+  sur trois rafales mesurées. Un hôte sent les rafales simultanées, pas le débit
+  moyen. Ajouté `RECENT_INTERVALLE_MS = 800` : mesuré ensuite, écart minimum
+  **738 ms**, médiane 800, débit 1,25/s. Corollaire : **recommander de renforcer
+  un réglage déjà présent sans l'avoir lu est une erreur** — c'est ce que j'ai
+  fait, et il a fallu ouvrir `page.tsx` pour le voir.
+- **Un pic dans une seconde n'est pas un débit, et un débit moyen cache une
+  rafale.** J'ai annoncé « 6 requêtes par seconde » en prenant le maximum d'une
+  fenêtre glissante d'une seconde ; le débit soutenu était trois fois moindre.
+  Pire : je mesurais l'**arrivée** des réponses côté interface, alors que la
+  garantie porte sur le **départ**. L'écart minimum mesuré côté interface
+  (304 ms) était une contradiction apparente, pas un défaut. Règle : **le journal
+  du serveur est la source autoritative du débit** — Rust y écrit une ligne par
+  requête réellement partie. Une mesure d'interface mesure la réponse.
+- **Un compteur de débit local à un effet n'est pas un compteur de débit.**
+  L'effet se relance (changement de source), le compteur repart de zéro, un
+  second flux frappe en parallèle : deux horloges, aucune garantie. Mesuré :
+  MANGADEX à 800 ms sur une rafale, **200 ms** sur la suivante. Une garantie
+  partagée par une ressource externe (un hôte HTTP) appartient au **module**, pas
+  au composant : ici une `Map` source → prochain départ.
+- **Une porte de politesse ne doit pas retarder un clic.** La fonction
+  d'attente ne sert que le trafic de fond. Faire attendre quelqu'un qui vient de
+  cliquer, pour être poli envers le site, est l'inverse du but. Cinq sites
+  appellent `chapters` ; un seul est automatique, et c'est le seul qui attend.

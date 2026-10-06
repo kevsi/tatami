@@ -2635,3 +2635,68 @@ serveur et client concordent.
 `pnpm i18n:check` aucune clé morte · `pnpm hooks:check` · `pnpm chemins:check` ·
 `pnpm build` ✓ Compiled successfully in 13.5 s · `data-error="false"` et 0
 erreur console sur l'app réelle.
+
+## 2026-10-06 — La politesse du catalogue : un plancher d'intervalle, pas un nombre de workers
+
+### Ma recommandation de la veille était fausse
+
+J'ai proposé de « borner la concurrence à 2-3 ». En lisant le code :
+`RECENT_CONCURRENCY = 4` **existait déjà**. Je recommandais de、强化 un
+contraire déjà en place, sans l'avoir lu.
+
+Et le chiffre que j'ai avancé — « 6 requêtes par seconde » — était un **pic
+dans une seconde**, pas un débit soutenu. Le débit moyen était de 1,3 à 2,1
+requêtes/s. Deux erreurs, donc, dont une de mesure.
+
+### Ce que la mesure réelle dit
+
+L'historique complet du journal du serveur, par rafale :
+
+| Heure | Requêtes | Écart min | Médiane | Débit |
+|---|---|---|---|---|
+| 06:34 | 21 / 13,9 s | **0 ms** | 583 ms | 1,44/s |
+| 06:54 | 20 / 8,9 s | **0 ms** | 413 ms | 2,13/s |
+| 07:33 | 31 / 18,4 s | 1 ms | 468 ms | 1,63/s |
+| **09:08 (après)** | 20 / 15,2 s | **738 ms** | **800 ms** | **1,25/s** |
+
+Le vrai défaut n'était donc pas le débit moyen, c'était **l'écart minimum nul** :
+quatre workers partaient **ensemble**. C'est cela qui pesoit sur un hôte — des
+rafales simultanées, pas un flot continu.
+
+### Le correctif : un plancher d'intervalle, par source, au niveau module
+
+`RECENT_CONCURRENCY` reste à 4 (le nombre de requêtes **en vol** est borné).
+S'y ajoute `RECENT_INTERVALLE_MS = 800`, qui borne le débit par hôte. Les deux
+notions sont distinctes et il fallait les deux — c'est ce que j'avais confondu.
+**Plancher mesuré 739 ms**, pas 800 : `setTimeout` réveille parfois un peu en
+avance et l'écriture du journal a sa propre latence. Écrire « 800 ms pile »
+serait une promesse plus forte que la mesure.
+
+**Première version, mesurée fausse encore une fois.** Le compteur était local à
+l'effet. Mesuré : MANGADEX était bien à ~800 ms, mais une autre source finissait
+sur **200 ms**. Cause : dès que l'effet se relance (changement de source),
+le compteur repart de zéro et un second flux frappe en parallèle. Deux horloges,
+aucune garantie.
+
+La porte est donc **au niveau module**, dans une `Map` indexée par source : la
+politesse est une propriété de l'**hôte**, pas d'un effet React. Une seule horloge
+par source, donc un seul flux.
+
+### Une limite volunteersirement posée
+
+`attendreTourAutomatique` est réservé au **trafic de fond**. Un clic
+de l'utilisateur — ouvrir une fiche, un signet, un chapitre — **n'attend pas** :
+faire attendre quelqu'un qui a cliqué, pour être poli envers le site, serait
+l'inverse du but. Cinq sites appellent `chapters` ; un seul est automatique.
+
+### Effet secondaire
+
+Les cartes se remplissent **progressivement** (11/20 à 11,9 s, 19/20 à 17,4 s),
+ce que la rafale masquait. Même état que le squelette : l'utilisateur voit le
+progrès au lieu d'un gel.
+
+### Vérification
+
+`pnpm typecheck` 0 · `pnpm lint` 4 warnings (les 4 connus) ·
+`pnpm i18n:check` / `pnpm hooks:check` / `pnpm chemins:check` propres ·
+`pnpm build` ✓ Compiled successfully in 6.0 s · 0 erreur console sur l'app réelle.

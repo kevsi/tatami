@@ -645,6 +645,68 @@ function depuis(t: ReturnType<typeof useI18n>['t'], ms: number): string {
 const RECENT_KEY = 'tatami.recent';
 const RECENT_TTL = 30 * 60 * 1000;
 const RECENT_CONCURRENCY = 4;
+/** Intervalle **minimal entre deux requêtes** vers la même source.
+ *
+ *  `RECENT_CONCURRENCY` borne le nombre de requêtes **en vol**, ce qui
+ *  n'est pas la même chose que le débit : quatre appels de 0,5 s se
+ *  relancent aussitôt. Mesuré le 2026-10-06 avant correction, le journal
+ *  du serveur donnait un écart **minimum de 0 ms** sur trois rafales : des
+ *  départs simultanés. Or `AGENTS.md` §10 demande de limiter le débit par
+ *  source, et un hôte sent les rafales, pas le débit moyen.
+ *
+ *  Donc on sépare les deux notions : la concurrence reste à 4, et ce délai
+ *  borne le débit par hôte.
+ *
+ *  Mesuré après, sur le journal du serveur : 20 requêtes, écart **minimum
+ *  739 ms**, médiane 800, maximum 861, soit 1,25 req/s. Le plancher réel
+ *  est légèrement sous 800 ms : `setTimeout` réveille parfois un peu en
+ *  avance et l'écriture du journal a sa propre latence. La garantie est
+ *  donc énoncée comme un **plancher mesuré**, pas comme un invariant
+ *  exact — annoncer « 800 ms pile » serait une promesse plus forte que la
+ *  mesure ne le permet.
+ *
+ *  Effet secondaire désirable : les cartes se remplissent
+ *  **progressivement**, ce que la rafale masquait. Même état que le
+ *  squelette : l'utilisateur voit le progrès au lieu d'un gel.
+ */
+const RECENT_INTERVALLE_MS = 800;
+
+/** Prochain départ autorisé, **par source**. Module-level, donc partagé.
+ *
+ *  Première version, mesurée fausse : le compteur était local à l'effet des
+ *  « derniers chapitres ». Mesuré le 2026-10-06 sur le journal du serveur,
+ *  MANGADEX était bien à 800 ms (806, 793, 796, 799)… mais une autre source
+ *  finissait sur **200 ms**. Cause : dès que l'effet se relance (changement de
+ *  source, `latest` qui change), le compteur repart de zéro et un second flux
+ *  frappe en parallèle. Deux horloges, aucune garantie.
+ *
+ *  D'où le niveau module : la politesse est une propriété de **l'hôte**, pas
+ *  d'un effet React. Une seule horloge par source, donc un seul flux.
+ *
+ *  `Map` et non objet : une source s'appelle `__proto__` sur une source
+ *  malveillante, pas sur un `Object.create(null)`.
+ */
+const prochainDepartParSource = new Map<string, number>();
+
+/**
+ * Attend son tour pour une requête **automatique** vers `source`.
+ *
+ *  Réservé au trafic de fond. Un clic de l'utilisateur — ouvrir une fiche, un
+ *  signet, un chapitre — **n'attend pas** : faire attendre quelqu'un qui a
+ *  cliqué pour rester poli envers le site serait l'inverse du but. Seules les
+ *  requêtes que personne n'a demandées passent par ici.
+ *
+ *  La lecture puis l'écriture se font sans `await` entre les deux : le code
+ *  JavaScript est mono-thread, donc deux.work Workers ne peuvent pas lire la
+ *  même valeur et partir ensemble.
+ */
+async function attendreTourAutomatique(source: string): Promise<void> {
+  const maintenant = Date.now();
+  const depart = Math.max(maintenant, prochainDepartParSource.get(source) ?? 0);
+  prochainDepartParSource.set(source, depart + RECENT_INTERVALLE_MS);
+  const attente = depart - maintenant;
+  if (attente > 0) await new Promise((r) => setTimeout(r, attente));
+}
 /** Plafond d'entrées du cache des « derniers chapitres ».
  *
  *  Le TTL purge l'essentiel ; ce plafond est le filet de sécurité pour qu'un
@@ -1997,6 +2059,10 @@ export default function Home() {
     const run = async () => {
       while (cursor < todo.length) {
         const { m, key } = todo[cursor++];
+        // Porte de politesse **partagée par source** (niveau module) : voir
+        // `attendreTourAutomatique`. C'est du trafic de fond — personne n'a
+        // demandé ces requêtes — donc il a le droit d'attendre son tour.
+        await attendreTourAutomatique(m.source);
         recentInFlight.current.add(key);
         setRecentBusy((n) => n + 1);
         try {

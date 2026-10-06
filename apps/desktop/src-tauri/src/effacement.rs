@@ -10,7 +10,6 @@
 //!
 //! L'effacement est fait par tuile pour respecter le budget mémoire.
 
-
 use super::classifier::{BlocClassifie, TypeBloc};
 use super::mask::{eroder, masque_bbox, Masque};
 use super::tile::Bbox;
@@ -48,7 +47,11 @@ pub fn strategie_pour_type(type_bloc: TypeBloc) -> StrategieEffacement {
 /// Prépare le masque d'effacement pour un bloc.
 ///
 /// Le masque est érodé de 2 px pour ne pas effacer le contour de la bulle.
-pub fn preparer_masque(page_width: u32, page_height: u32, bbox: &Bbox) -> Result<Masque, ErreurEffacement> {
+pub fn preparer_masque(
+    page_width: u32,
+    page_height: u32,
+    bbox: &Bbox,
+) -> Result<Masque, ErreurEffacement> {
     let masque = masque_bbox(page_width, page_height, bbox);
     eroder(&masque, 2).map_err(|e| ErreurEffacement::Masque(e.to_string()))
 }
@@ -68,9 +71,7 @@ pub async fn effacer_tuile<F>(
 where
     F: std::future::Future<Output = Result<InpaintResult, String>>,
 {
-    let result = inpaint_fn
-        .await
-        .map_err(ErreurEffacement::Inpaint)?;
+    let result = inpaint_fn.await.map_err(ErreurEffacement::Inpaint)?;
 
     Ok(result)
 }
@@ -162,7 +163,17 @@ mod tests {
 
     #[test]
     fn preparer_masque_eroide() {
-        let masque = preparer_masque(100, 100, &Bbox { x: 10, y: 10, w: 20, h: 20 }).unwrap();
+        let masque = preparer_masque(
+            100,
+            100,
+            &Bbox {
+                x: 10,
+                y: 10,
+                w: 20,
+                h: 20,
+            },
+        )
+        .unwrap();
         // 20x20 - érosion 2px = 16x16 = 256.
         assert_eq!(masque.compter_blancs(), 16 * 16);
     }

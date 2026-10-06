@@ -9,13 +9,13 @@
 //! Le fichier de base est sauvegardé avant toute migration appliquée.
 
 use rusqlite::{params, Connection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Version du schéma attendue par ce binaire.
-const SCHEMA_VERSION: i64 = 8;
+const SCHEMA_VERSION: i64 = 9;
 
 #[derive(Serialize)]
 pub struct Favorite {
@@ -147,6 +147,19 @@ pub struct BlockRow {
     pub overrides: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+/// Source personnalisée installée par l'utilisateur (script JavaScript local).
+///
+/// Le moteur JVM charge ces scripts depuis le dossier `sources/` au démarrage.
+/// `installed_at` est un horodatage Unix en millisecondes (cohérent avec `now_ms()`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomSource {
+    pub id: String,
+    pub name: String,
+    pub lang: String,
+    pub path: String,
+    pub installed_at: i64,
 }
 
 pub struct Store {
@@ -393,6 +406,24 @@ impl Store {
                  "#,
             )
             .map_err(|e| format!("migration v8 : {e}"))?;
+        }
+        // v9 : sources personnalisées scriptées (JavaScript). Installées par
+        // l'utilisateur depuis un fichier .js local ; le chemin est absolu et
+        // validé à l'import (anti path-traversal). `installed_at` est un
+        // horodatage Unix en millisecondes produit par `now_ms()`.
+        if current < 9 {
+            tx.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS custom_sources (
+                    id           TEXT    NOT NULL PRIMARY KEY,
+                    name         TEXT    NOT NULL,
+                    lang         TEXT    NOT NULL,
+                    path         TEXT    NOT NULL,
+                    installed_at INTEGER NOT NULL
+                );
+                "#,
+            )
+            .map_err(|e| format!("migration v9 : {e}"))?;
         }
         if current < SCHEMA_VERSION {
             tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
@@ -977,6 +1008,75 @@ impl Store {
             .map_err(|_| "base verrouillée".to_string())?;
         conn.execute("DELETE FROM sources_state", [])
             .map_err(|e| format!("réactivation des sources : {e}"))?;
+        Ok(())
+    }
+
+    // ---------- Sources personnalisées ----------
+
+    /// Enregistre une source personnalisée. `id` est le nom du fichier sans
+    /// extension ; c'est la clé primaire — importer deux fois le même script
+    /// met à jour son chemin et son horodatage.
+    pub fn add_custom_source(
+        &self,
+        id: &str,
+        name: &str,
+        lang: &str,
+        path: &str,
+    ) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute(
+            "INSERT INTO custom_sources (id, name, lang, path, installed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id) DO UPDATE SET
+               name = excluded.name, lang = excluded.lang,
+               path = excluded.path, installed_at = excluded.installed_at",
+            params![id, name, lang, path, now_ms()],
+        )
+        .map_err(|e| format!("source personnalisée : {e}"))?;
+        Ok(())
+    }
+
+    /// Liste toutes les sources personnalisées installées, par ordre
+    /// d'installation décroissant.
+    pub fn list_custom_sources(&self) -> Result<Vec<CustomSource>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, lang, path, installed_at
+                 FROM custom_sources
+                 ORDER BY installed_at DESC",
+            )
+            .map_err(|e| format!("sources personnalisées : {e}"))?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(CustomSource {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    lang: r.get(2)?,
+                    path: r.get(3)?,
+                    installed_at: r.get(4)?,
+                })
+            })
+            .map_err(|e| format!("sources personnalisées : {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("sources personnalisées : {e}"))
+    }
+
+    /// Retire une source personnalisée de la base. Sans effet si l'id est
+    /// inconnu (le fichier peut déjà avoir été supprimé manuellement).
+    pub fn remove_custom_source(&self, id: &str) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute("DELETE FROM custom_sources WHERE id = ?1", params![id])
+            .map_err(|e| format!("source personnalisée : {e}"))?;
         Ok(())
     }
 
@@ -1758,6 +1858,41 @@ mod tests {
         )
         .unwrap();
         assert_eq!(s.list_recent(10, false).unwrap()[0].chapter_index, 3);
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn migration_v8_vers_v9_cree_custom_sources() {
+        // Simule une base estampillée v8 (sans la table custom_sources),
+        // réapplique migrate() et vérifie que la table existe et que la
+        // version est bien 9.
+        let (s, path) = store_vierge();
+        // Rétrograder à v8 : DROP la table si elle existait déjà, puis
+        // fixer user_version.
+        {
+            let conn = s.conn.lock().unwrap();
+            conn.execute_batch("DROP TABLE IF EXISTS custom_sources")
+                .unwrap();
+            conn.execute_batch("PRAGMA user_version = 8").unwrap();
+        }
+        s.migrate().unwrap();
+        assert_eq!(
+            s.version().unwrap(),
+            9,
+            "la version doit être 9 après migration"
+        );
+        // La table doit exister et être utilisable.
+        s.add_custom_source("test-src", "Test Source", "fr", "/tmp/test.js")
+            .unwrap();
+        let liste = s.list_custom_sources().unwrap();
+        assert_eq!(liste.len(), 1);
+        assert_eq!(liste[0].id, "test-src");
+        assert_eq!(liste[0].name, "Test Source");
+        assert_eq!(liste[0].lang, "fr");
+        // Retirer est idempotent.
+        s.remove_custom_source("test-src").unwrap();
+        s.remove_custom_source("test-src").unwrap(); // deuxième fois : sans erreur
+        assert!(s.list_custom_sources().unwrap().is_empty());
         nettoyer(&path);
     }
 }

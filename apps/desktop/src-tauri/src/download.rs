@@ -533,9 +533,7 @@ impl VerrouTelechargement {
             return Err("deux téléchargements sont déjà en cours".to_string());
         }
         if actifs.contains_key(source) {
-            return Err(format!(
-                "un téléchargement est déjà en cours pour {source}"
-            ));
+            return Err(format!("un téléchargement est déjà en cours pour {source}"));
         }
         actifs.insert(source.to_string(), ());
         Ok(Self {
@@ -911,8 +909,7 @@ mod tests {
         // Le cas réel : une panique entre l'acquisition et la libération
         // laissait tous les téléchargements futurs refusés jusqu'au redémarrage.
         let resultat = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _verrou = VerrouTelechargement::prendre(&etat, "SOURCE_A")
-                .expect("premier verrou");
+            let _verrou = VerrouTelechargement::prendre(&etat, "SOURCE_A").expect("premier verrou");
             panic!("panique simulée au milieu du téléchargement");
         }));
         assert!(resultat.is_err(), "la panique doit se propager");
@@ -960,7 +957,10 @@ mod tests {
             let _b = VerrouTelechargement::prendre(&etat, "SOURCE_B").expect("B");
         } // B se termine
         let m = etat.lock().unwrap();
-        assert!(m.contains_key("SOURCE_A") && m.len() == 1, "A doit rester actif");
+        assert!(
+            m.contains_key("SOURCE_A") && m.len() == 1,
+            "A doit rester actif"
+        );
     }
 
     /// Dossier de fixture sous la vraie racine des téléchargements, comme le

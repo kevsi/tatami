@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Version du schéma attendue par ce binaire.
-const SCHEMA_VERSION: i64 = 7;
+const SCHEMA_VERSION: i64 = 8;
 
 #[derive(Serialize)]
 pub struct Favorite {
@@ -109,6 +109,44 @@ fn bookmark_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Bookmark> {
         page_count: r.get::<_, i64>(7)? as u16,
         created_at: r.get(8)?,
     })
+}
+
+/// Page de webtoon traduite, telle qu'écrite dans `page_translations`.
+#[derive(Debug, Clone, Serialize)]
+pub struct PageTranslationRow {
+    pub page_id: String,
+    pub manga_url: Option<String>,
+    pub chapter_url: String,
+    pub source: String,
+    pub width: i64,
+    pub height: i64,
+    pub pipeline_version: String,
+    pub models: String,
+    pub source_lang: String,
+    pub target_lang: String,
+    pub clean_image_ref: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// Bloc de traduction, tel qu'écrit dans `blocks`.
+#[derive(Debug, Clone, Serialize)]
+pub struct BlockRow {
+    pub id: String,
+    pub page_id: String,
+    pub type_bloc: String,
+    pub bbox_x: i64,
+    pub bbox_y: i64,
+    pub bbox_w: i64,
+    pub bbox_h: i64,
+    pub original_text: Option<String>,
+    pub translated_text: Option<String>,
+    pub reading_order: i64,
+    pub status: String,
+    pub confidence: Option<f64>,
+    pub overrides: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 pub struct Store {
@@ -306,6 +344,56 @@ impl Store {
         // de constante, jamais une entrée utilisateur. Réécrire la même valeur
         // est sans effet ; on ne l'écrit que si elle change pour éviter de
         // toucher au fichier à chaque démarrage.
+        // v8 : tables de traduction (T1.2). Une page de webtoon peut avoir
+        // plusieurs blocs ; les corrections manuelles sont stockées dans
+        // `overrides` et survivent aux mises à jour du pipeline.
+        if current < 8 {
+            tx.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS page_translations (
+                     page_id        TEXT    NOT NULL PRIMARY KEY,
+                     manga_url      TEXT,
+                     chapter_url    TEXT    NOT NULL,
+                     source         TEXT    NOT NULL,
+                     width          INTEGER NOT NULL,
+                     height         INTEGER NOT NULL,
+                     pipeline_version TEXT NOT NULL,
+                     models         TEXT    NOT NULL,
+                     source_lang    TEXT    NOT NULL DEFAULT 'en',
+                     target_lang    TEXT    NOT NULL DEFAULT 'fr',
+                     clean_image_ref TEXT,
+                     created_at     INTEGER NOT NULL,
+                     updated_at     INTEGER NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS page_translations_chapter
+                     ON page_translations (chapter_url);
+                 CREATE INDEX IF NOT EXISTS page_translations_source
+                     ON page_translations (source);
+
+                 CREATE TABLE IF NOT EXISTS blocks (
+                     id             TEXT    NOT NULL PRIMARY KEY,
+                     page_id        TEXT    NOT NULL
+                                         REFERENCES page_translations(page_id) ON DELETE CASCADE,
+                     type           TEXT    NOT NULL,
+                     bbox_x         INTEGER NOT NULL,
+                     bbox_y         INTEGER NOT NULL,
+                     bbox_w         INTEGER NOT NULL,
+                     bbox_h         INTEGER NOT NULL,
+                     original_text  TEXT,
+                     translated_text TEXT,
+                     reading_order  INTEGER NOT NULL,
+                     status         TEXT    NOT NULL,
+                     confidence     REAL,
+                     overrides      TEXT,
+                     created_at     INTEGER NOT NULL,
+                     updated_at     INTEGER NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS blocks_page_order
+                     ON blocks (page_id, reading_order);
+                 "#,
+            )
+            .map_err(|e| format!("migration v8 : {e}"))?;
+        }
         if current < SCHEMA_VERSION {
             tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
                 .map_err(|e| format!("migration : écriture de la version : {e}"))?;
@@ -690,6 +778,94 @@ impl Store {
             params![source, manga_url, chapter_url, page_index],
         )
         .map_err(|e| format!("signet : {e}"))?;
+        Ok(())
+    }
+
+    /// Clé de cache déterministe pour une page traduite.
+    ///
+    /// La clé combine : hash du contenu de la page + version du pipeline +
+    /// versions des modèles + langue cible + version du glossaire.
+    /// Toute variation de ces éléments invalide le cache.
+    pub fn translation_cache_key(
+        page_content_hash: &str,
+        pipeline_version: &str,
+        models: &str,
+        target_lang: &str,
+        glossary_version: &str,
+    ) -> String {
+        format!(
+            "{}:{}:{}:{}:{}",
+            page_content_hash, pipeline_version, models, target_lang, glossary_version
+        )
+    }
+
+    /// Sauvegarde une page traduite et ses blocs dans la base.
+    ///
+    /// Écrase la page existante si `page_id` est déjà présent.
+    pub fn save_page_translation(
+        &self,
+        page: &PageTranslationRow,
+        blocks: &[BlockRow],
+    ) -> Result<(), String> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("transaction : {e}"))?;
+        tx.execute(
+            r#"INSERT OR REPLACE INTO page_translations
+               (page_id, manga_url, chapter_url, source, width, height,
+                pipeline_version, models, source_lang, target_lang, clean_image_ref,
+                created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"#,
+            rusqlite::params![
+                &page.page_id,
+                &page.manga_url,
+                &page.chapter_url,
+                &page.source,
+                page.width,
+                page.height,
+                &page.pipeline_version,
+                &page.models,
+                &page.source_lang,
+                &page.target_lang,
+                &page.clean_image_ref,
+                page.created_at,
+                page.updated_at,
+            ],
+        )
+        .map_err(|e| format!("insert page_translation : {e}"))?;
+        for b in blocks {
+            tx.execute(
+                r#"INSERT OR REPLACE INTO blocks
+                   (id, page_id, type, bbox_x, bbox_y, bbox_w, bbox_h,
+                    original_text, translated_text, reading_order, status,
+                    confidence, overrides, created_at, updated_at)
+                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"#,
+                rusqlite::params![
+                    &b.id,
+                    &b.page_id,
+                    &b.type_bloc,
+                    b.bbox_x,
+                    b.bbox_y,
+                    b.bbox_w,
+                    b.bbox_h,
+                    &b.original_text,
+                    &b.translated_text,
+                    b.reading_order,
+                    &b.status,
+                    b.confidence,
+                    &b.overrides,
+                    b.created_at,
+                    b.updated_at,
+                ],
+            )
+            .map_err(|e| format!("insert block : {e}"))?;
+        }
+        tx.commit()
+            .map_err(|e| format!("commit traduction : {e}"))?;
         Ok(())
     }
 

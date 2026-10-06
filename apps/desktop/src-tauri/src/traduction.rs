@@ -1,7 +1,8 @@
 //! Module de traduction EN → FR pour les bulles de webtoon.
 //!
 //! Stratégie (ADR 0008) : hybride Gemini en ligne + opus-mt hors ligne en repli.
-//! La clé Gemini est fournie par l'utilisateur dans les paramètres de l'application.
+//! La clé Gemini est fournie par l'utilisateur dans les paramètres de l'application,
+//! stockée dans le trousseau de l'OS (`keyring`), jamais en clair dans SQLite.
 //!
 //! Architecture :
 //!   - `Traducteur` gère les deux fournisseurs et le fallback.
@@ -14,8 +15,8 @@ use std::sync::Arc;
 
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use tauri::State;
+use thiserror::Error;
 
 use crate::store::Store;
 
@@ -45,18 +46,84 @@ pub enum ErreurTraduction {
 const MODELE_GEMINI: &str = "gemini-3.5-flash";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types du contrat de traduction
 // ---------------------------------------------------------------------------
 
-/// Résultat d'une traduction.
+/// Type de bloc reconnu sur une page de webtoon.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TraductionResultat {
-    /// Texte original (anglais).
-    pub original: String,
-    /// Texte traduit (français).
-    pub traduit: String,
-    /// Moteur ayant produit la traduction : `"gemini"`, `"local"` ou `"aucun"`.
-    pub moteur: String,
+#[serde(rename_all = "snake_case")]
+pub enum TypeBloc {
+    Dialogue,
+    Narration,
+    Sfx,
+    FreeText,
+    Ignore,
+}
+
+/// Résultat du pipeline sur un bloc.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatutBloc {
+    Ok,
+    Review,
+    Fallback,
+}
+
+/// Boîte englobante d'un bloc, en pixels.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Bbox {
+    pub x: i64,
+    pub y: i64,
+    pub w: i64,
+    pub h: i64,
+}
+
+/// Bloc de texte détecté sur une page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlocTraduction {
+    /// Identifiant stable du bloc sur la page.
+    pub id: String,
+    /// Classification du bloc.
+    #[serde(rename = "type")]
+    pub type_bloc: TypeBloc,
+    /// Position et taille dans la page.
+    pub bbox: Bbox,
+    /// Texte source lu par l'OCR (anglais attendu).
+    #[serde(rename = "originalText")]
+    pub original_text: Option<String>,
+    /// Texte traduit (français). Vide si `status` n'est pas `ok`.
+    #[serde(rename = "translatedText")]
+    pub translated_text: Option<String>,
+    /// Ordre de lecture sur la page (0 = premier bloc lu).
+    #[serde(rename = "readingOrder")]
+    pub reading_order: i64,
+    /// Résultat du pipeline.
+    #[serde(rename = "status")]
+    pub status: StatutBloc,
+    /// Score de confiance OCR/traduction, 0 = inconnu, 1 = certain.
+    pub confidence: Option<f64>,
+}
+
+/// Page de webtoon prête à être traduite / affichée.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageTranslation {
+    /// Identifiant stable de la page.
+    #[serde(rename = "pageId")]
+    pub page_id: String,
+    /// URL stable du manga.
+    #[serde(rename = "mangaUrl")]
+    pub manga_url: Option<String>,
+    /// URL stable du chapitre.
+    #[serde(rename = "chapterUrl")]
+    pub chapter_url: String,
+    /// Nom d'entrée MangaParserSource.
+    pub source: String,
+    /// Largeur de la page en pixels.
+    pub width: i64,
+    /// Hauteur de la page en pixels.
+    pub height: i64,
+    /// Blocs lus sur la page, triés par `readingOrder` croissant.
+    pub blocks: Vec<BlocTraduction>,
 }
 
 // ---------------------------------------------------------------------------
@@ -102,9 +169,6 @@ impl Traducteur {
             "generationConfig": {
                 "temperature": 0.3,
                 "maxOutputTokens": 200,
-                // gemini-3.5 est un modèle « à réflexion » : sans cette garde,
-                // la pensée consomme les tokens de sortie et la traduction
-                // arrive tronquée (mesuré : « FERME-LA ! JE DO »).
                 "thinkingConfig": { "thinkingBudget": 0 },
             }
         });
@@ -160,16 +224,11 @@ impl Traducteur {
     /// Ordre des fournisseurs :
     /// 1. Gemini (si une clé est configurée).
     /// 2. opus-mt local (quand le modèle sera chargé).
-    pub async fn traduire(&self, texte: &str) -> Result<TraductionResultat, ErreurTraduction> {
+    pub async fn traduire(&self, texte: &str) -> Result<String, ErreurTraduction> {
         if texte.trim().is_empty() {
-            return Ok(TraductionResultat {
-                original: texte.to_string(),
-                traduit: texte.to_string(),
-                moteur: "aucun".into(),
-            });
+            return Ok(texte.to_string());
         }
 
-        // Essayer Gemini d'abord si la clé existe.
         if let Ok(Some(cle)) = Self::cle_gemini() {
             if !cle.is_empty() {
                 match self.traduire_gemini(texte, &cle).await {
@@ -179,11 +238,7 @@ impl Traducteur {
                             texte.len(),
                             trad.len()
                         );
-                        return Ok(TraductionResultat {
-                            original: texte.to_string(),
-                            traduit: trad,
-                            moteur: "gemini".into(),
-                        });
+                        return Ok(trad);
                     }
                     Err(e) => {
                         tracing::warn!(
@@ -195,18 +250,7 @@ impl Traducteur {
             }
         }
 
-        // Repli local.
-        match self.traduire_local(texte).await {
-            Ok(trad) => Ok(TraductionResultat {
-                original: texte.to_string(),
-                traduit: trad,
-                moteur: "local".into(),
-            }),
-            Err(e) => {
-                tracing::error!("traduction impossible : {e}");
-                Err(e)
-            }
-        }
+        self.traduire_local(texte).await
     }
 }
 
@@ -219,7 +263,7 @@ impl Traducteur {
 pub async fn traduire_texte(
     _store: State<'_, Arc<Store>>,
     texte: String,
-) -> Result<TraductionResultat, String> {
+) -> Result<String, String> {
     let traducteur = Traducteur::new();
     traducteur.traduire(&texte).await.map_err(|e| e.to_string())
 }

@@ -66,10 +66,12 @@ code ne dit rien des poids.
 |---|---|---|---|
 | `ogkalu/comic-text-and-bubble-detector` (RT-DETR-V2, 11 k images de comics) | **Apache-2.0** | int8 41,8 Mo · fp32 160,7 Mo | **Retenu** |
 | `Carve/LaMa-ONNX` — `lama_fp32.onnx` | **Apache-2.0** | 198,4 Mo | **Retenu** |
-| `onnx-community/manga-ocr-base-ONNX` | **Apache-2.0** | enc 327,5 + dec 112,0 Mo | Retenu, sous réserve (§5) |
-| `kha-white/manga-ocr-base` (poids d'origine) | **Apache-2.0** | `pytorch_model.bin` 423,6 Mo | même modèle |
+| ~~`onnx-community/manga-ocr-base-ONNX`~~ | Apache-2.0 | enc 327,5 + dec 112,0 Mo | **Retiré le 2026-10-06 (§3.3)** : lit le **japonais**, pas l'anglais |
+| ~~`kha-white/manga-ocr-base` (poids d'origine)~~ | Apache-2.0 | `pytorch_model.bin` 423,6 Mo | même retrait |
+| `ogkalu/ppocr-v6-onnx` (PP-OCR v6, OCR de comic-translate pour l'anglais) | **Apache-2.0** | 20,2 Mo + dictionnaire 0,1 Mo | **Retenu le 2026-10-06** (§3.3) |
 | `dreMaz/AnimeMangaInpainting` (LaMa affiné manga) | **MIT** | — | Alternative |
 | `Helsinki-NLP/opus-mt-en-fr` | **Apache-2.0** | 286,9 Mo (torch) | Retenu hors ligne |
+| `Infomaniak-AI/onnx-opus-mt-en-fr` (export ONNX quantifié du précédent) | **Apache-2.0** | enc 189,5 + déc 330,2 Mo | **Retenu et mesuré le 2026-10-06** (§3.3) |
 | `Helsinki-NLP/opus-mt-tc-big-en-fr` | **CC-BY-4.0** | — | Retenu (attribution exigée) |
 | `facebook/m2m100_418M` / `m2m100_1.2B` | **MIT** | — | Licence OK, **qualité non mesurée** |
 | `facebook/xglm-564M` | **MIT** | — | Licence OK, **qualité non mesurée** |
@@ -97,6 +99,26 @@ détecteur devenait un composant livré, il faudrait trancher ce point.
 Le même README ajoute : « We would not (don't have the right) share training
 sets or fonts publicly ». Donc **on ne doit pas récupérer les jeux
 d'entraînement** de ce projet — ni pour audit, ni pour fixture.
+
+### 3.3 Correction du 2026-10-06 — l'OCR retenu lisait la mauvaise langue
+
+`kha-white/manga-ocr-base` est, par sa carte de modèle Hugging Face, un OCR
+« for **Japanese** text, with the main focus being Japanese manga »
+(tokenizer `cl-tohoku/bert-base-japanese-char-v2`, MeCab). L'audit initial
+avait vérifié la **licence** mais pas la **langue** — et le test « lit HELLO
+WORLD » passait parce que le vocabulaire japonais contient l'ASCII. La
+licence reste Apache-2.0 ; le modèle est simplement **hors sujet pour
+l'anglais** et est retiré du tableau.
+
+Deux remplacements, tous deux **Apache-2.0** et mesurés sur la machine cible :
+
+- **OCR anglais** : `ogkalu/ppocr-v6-onnx` — c'est le modèle que
+  comic-translate télécharge pour l'anglais (PP-OCR v6, famille PaddleOCR).
+  20,2 Mo, dictionnaire de 18 708 entrées avec couverture française complète.
+  Lit l'anglais réel des bulles du corpus (6/6 sur texte rendu de contrôle).
+- **Traduction hors ligne en ONNX** : `Infomaniak-AI/onnx-opus-mt-en-fr`
+  (export quantifié de `Helsinki-NLP/opus-mt-en-fr`, déjà Apache-2.0).
+  519,7 Mo au total. Médiane mesurée : 214 ms par bulle.
 
 ---
 
@@ -133,7 +155,7 @@ trop confortable.
 
 | Point | Pourquoi ce n'est pas tranché |
 |---|---|
-| Fidélité du décodeur OCR sans `transformers` | Mesuré **non fonctionnel** (§7) : les espaces disparaissent. C'est ma sonde qui est fautive, pas le modèle — mais tant que ce n'est pas corrigé, l'export ONNX de l'OCR **n'est pas validé**. |
+| ~~Fidélité du décodeur OCR sans `transformers`~~ | **Caduque le 2026-10-06** : manga-ocr est retiré (§3.3). Son remplaçant PP-OCR v6 est **validé** : 6/6 sur texte rendu, anglais réel lu sur le corpus (espace = indice 18709 du dictionnaire, mesuré). |
 | `l0wgear/manga-ocr-2025-onnx` | 4 882 téléchargements, **aucune licence déclarée**, encodeur 21,3 Mo seulement. Sans licence : exclu, règle de la phase. |
 | AOT-GAN (`ogkalu/AOT-GAN`) | API HF `401` : absent **ou** privé. Impossible de distinguer sans compte. |
 | Mécanisme de mise à jour des poids | Un pack signé (T1.4) exige de savoirrvérifier la signature de l'amont. |

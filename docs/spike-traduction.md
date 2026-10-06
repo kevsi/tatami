@@ -208,3 +208,194 @@ git status --short                                    # aucun fichier d'image
 4. ADR 0008 à reprendre quand la qualité hors ligne sera mesurée — il est
    aujourd'hui **explicitement ouvert**, et c'est honnête : le trancher sans
    mesure serait inventer.
+
+---
+
+## 8. Seconde session (2026-10-06, après décision « corpus 3×3 »)
+
+L'humain a choisi l'option (b) du bloc 1 : **3 chapitres de 3 séries
+différentes**. Cette section remplace les « non mesuré » ci-dessus par des
+chiffres, et corrige **trois erreurs** de la première session.
+
+### 8.1 Corpus constitué — et la langue d'une source n'est pas une garantie
+
+Corpus final : `1-webtoonsen` (*Daytime in the Bunker*), `2-webtoonsen`
+(*I Love Yoo*), `3-webtoonsen` (*Like Mother, Like Daughter*) — 36 pages,
+0 illisible. Description complète dans `docs/eval/corpus.md`.
+
+**Quatre échecs de langue mesurés avant d'y arriver** : MangaDex a servi du
+**coréen**, du **hongrois** et du **portugais** (avec des crédits en anglais,
+le piège le plus trompeur) ; SEIMANGA sert du russe. Seules **WEBTOONS_EN** et
+**TOOMICSEN** répondent en anglais. La langue réelle d'un chapitre ne se
+vérifie que **par OCR d'un échantillon**, jamais par le nom de la série.
+
+### 8.2 Correction n° 1 — l'OCR retenu lit le JAPONAIS, pas l'anglais
+
+`kha-white/manga-ocr-base` (retenu à T0.6) est, par sa carte de modèle,
+« Optical character recognition for **Japanese** text ». Son
+`tokenizer_config.json` est `cl-tohoku/bert-base-japanese-char-v2` (MeCab).
+« HELLO WORLD » avait été lu juste parce que le vocabulaire japonais contient
+les caractères ASCII — **une fixture qui passe peut tester la mauvaise chose**
+(§14), appliquée une deuxième fois à moi-même.
+
+Le modèle que **comic-translate** utilise réellement pour l'anglais est
+`ogkalu/ppocr-v6-onnx` (PP-OCR v6, **Apache-2.0**, 20,2 Mo, dictionnaire
+18 708 entrées couvrant latin, chiffres et **tout le français** : é, œ, « »).
+Téléchargé et exécuté.
+
+### 8.3 Correction n° 2 — l'« IoU 0,16 » était un bug de coordonnées
+
+Le mystère de la première session (boîtes « lâches », IoU 0,16, letterbox
+infirmé) est **résolu**, et la cause n'était ni le modèle ni le letterbox :
+**deux conventions mal lues dans mon propre code**.
+
+1. L'export ONNX produit des boîtes `[x1, y1, x2, y2]`, pas `[cx, cy, w, h]`
+   (mesuré : avec la mauvaise lecture, une boîte déborde du cadre de 28 % en
+   hauteur ; avec la bonne, elle épouse une ligne de texte de 313×48 px).
+2. `orig_target_sizes` attend **[largeur, hauteur]**, pas [hauteur, largeur]
+   (mesuré : l'ordonnée détectée valait 0,82× l'ordonnée réelle — exactement
+   le facteur d'échelle de la largeur).
+
+Avec les deux corrections, la zone détectée tombe **exactement** sur le texte
+et l'OCR la lit. Le détecteur était probablement sain depuis le début ; toute
+la première mesure de « qualité de détection » est à jeter, pas à conserver.
+
+### 8.4 Le pipeline complet mesuré sur de vraies pages anglaises
+
+Chaîne exécutée : fenêtrage (1 300 px) → détection RT-DETR-V2 → NMS (le
+modèle émet la même zone sous 2–3 classes, IoU 0,96–1,00) → découpe en lignes
+par projection horizontale → OCR PP-OCRv6 → traduction opus-mt-en-fr.
+
+| Étape | Latence mesurée | RAM |
+|---|---|---|
+| Détection (int8) | **2,2–3,3 s** / fenêtre 800×1 300 | — |
+| Découpe en lignes | 1,2 ms | — |
+| OCR PP-OCRv6 | **médiane 24–49 ms** / ligne | — |
+| Traduction opus-mt (bulle) | **médiane 214 ms** / bulle | — |
+| Effacement LaMa fp32 (§2) | 8–11 s / tuile | — |
+| **Détection + OCR chargés** | | **394 Mo** |
+| **+ traduction (enc + 2 déc)** | | **933 Mo** |
+
+**L'OCR lit l'anglais réel**, multi-lignes incluses : « SHUT UP! | I HAVE TO
+TAKE | THAT ROAD, | YOU KNOW! », « IT'S NOT LIKE | IT'S ANYTHING NEW, BUT… »,
+« DON'T LITTER, | PUT THE TRASH IN | YOUR POCKET. », « WAS IT MY FAULT ».
+Contrôle sur texte rendu : **6/6 exact**. Défauts restants : SFX stylisées
+lues en caractères CJK (≈ 3 zones), zones vides sur onomatopées (≈ 6/21), et
+une confusion occasionnelle (« FALLT » pour « FAULT »).
+
+### 8.5 La traduction hors ligne : mesurée, et le découpage change tout
+
+opus-mt-en-fr ONNX (Infomaniak, **Apache-2.0**, enc 189,5 + déc 330,2 Mo,
+tokenizer SentencePiece — attention : les `.spm` ont 32 000 pièces, le modèle
+attend les ids de `vocab.json` (59 514) ; sans ce mapping la sortie est du
+charabia).
+
+**Ligne par ligne**, la qualité s'effondre (« OH MY » + « GOSH! » séparés →
+« - Oui ! »). **Par bulle entière**, elle devient lisible :
+
+- « OH MY GOSH! » → « Oh mon Dieu ! »
+- « I'M HOME… » → « Je suis chez moi… »
+- « NOT HERE. » → « Pas ici. »
+- « …BUT HE'S NOT THAT BAD OF A KID IN MY EYES. » → « Mais il n'est pas si
+  mal qu'un gamin dans mes yeux. »
+- « HOW COULD YOU TEACH YOUR KID LIKE THIS… » → « Comment pourrais-tu
+  apprendre à tes enfants quand tu es un prof ? »
+
+Défauts mesurés : un mot tombé (« SHUT UP! » disparait de la première
+bulle), du vocabulaire approximatif sur l'argot et les SFX (« GOOSEBUMPS » →
+« OBJECTIFS », « pocket » → « poteau », « trash » → « trace »), et les erreurs
+d'OCR qui se propagent (« FALLT » → « mon échec »). **Conclusion de mesure** :
+le hors ligne est **utilisable mais imparfait** — exactement le signal que
+l'ADR 0008 attendait pour être reprise.
+
+### 8.6 T0.5 — comparatif des moteurs, partiel mais le signal est net
+
+Clés fournies par l'utilisateur le 2026-10-06 (dans le registre utilisateur,
+jamais dans le dépôt). Trois enseignements mesurés :
+
+**Gemini est visiblement meilleur que le hors ligne**, sur les 6 bulles où il
+a répondu :
+
+| Anglais | opus-mt (hors ligne) | Gemini (en ligne) |
+|---|---|---|
+| SHUT UP! I HAVE TO TAKE THAT ROAD… | Je dois prendre cette road… *(SHUT UP! perdu, « road » non traduit)* | **TAIS-TOI ! JE DOIS PRENDRE CETTE ROUTE, TU SAIS !** |
+| IT'S NOT LIKE… THE STING OF BEING SO HATED STILL HURTS. | …le fait d'être si hanté jusqu'à ce jour. *(contresens)* | **…mais ça fait toujours aussi mal d'être détestée à ce point.** |
+| I'M HOME… | Je suis chez moi… *(calque)* | **JE SUIS RENTRÉ…** |
+| OH MY GOSH! | Oh mon Dieu ! | OH MON DIEU ! |
+
+Et la config « production » (glossaire + budget 130 %) produit des sorties
+**plus courtes** que la config brute (« Ce n'est pas nouveau, mais… » contre
+« C'est pas comme si c'était nouveau, mais… ») : le budget de caractères est
+tenable par un LLM, pas par opus-mt.
+
+**Le quota gratuit d'une clé Gemini récente est très bas** : ~14 appels
+journaliers sur `gemini-3.5-flash`, épuisés en deux passes (429, et les pauses
+de 30 s ne débloquent rien → quota **journalier**, pas par minute). Deux
+pièges de modèle mesurés en route : `gemini-2.0-flash` est **retiré** (404),
+`gemini-2.5-flash` est **refusé aux clés récentes** (404 « no longer available
+to new users ») ; et sans `thinkingConfig: {thinkingBudget: 0}`, le modèle
+3.5 brûle son budget de sortie en « réflexion » et la traduction arrive
+**tronquée**. Les 8 bulles restantes seront traduites au reset du quota
+(minuit, heure du Pacifique) si nécessaire — le signal qualitatif, lui, est
+déjà net.
+
+**Mistral est inutilisable en gratuit sur ce compte** : HTTP 429
+`rate_limited` dès le **premier** appel, persistant après 45 s. Blocage côté
+compte, pas côté client. T0.5 tourne donc avec **1 LLM en ligne + le hors
+ligne** au lieu de 2 + 1 — déviation documentée ici même.
+
+### 8.6 bis — NLLB-200 mesuré sur Colab : la référence hors ligne n'est **pas** meilleure
+
+L'utilisateur a exécuté `facebook/nllb-200-distilled-600M` sur Google Colab
+(CPU) le 2026-10-06, sur les **12 bulles** (légal en évaluation ; toujours
+exclu de la redistribution, CC-BY-NC). Résultat qui clôt le débat « et si le
+meilleur hors ligne était ailleurs » :
+
+| Anglais | opus-mt | NLLB-200 (Colab) | Gemini |
+|---|---|---|---|
+| SHUT UP! I HAVE TO TAKE… | road *(SHUT UP! perdu)* | cette route *(**SHUT UP! perdu aussi**)* | **TAIS-TOI ! JE DOIS…** |
+| …STING OF BEING SO HATED STILL HURTS. | si hanté *(contresens)* | le souffle… toujours douloureux *(sens préservé)* | **…ça fait toujours aussi mal…** |
+| WAS IT MY FALLT *(faute d'OCR)* | mon échec | **C'était ma faute** *(corrige la typo !)* | — |
+| DON'T LITTER, PUT THE TRASH… | mets la trace dans ton poteau | **Ne pas mentir**, la déchette *(contresens)* | — |
+| …NOT THAT BAD OF A KID… | qu'un gamin dans mes yeux | *(« of a kid » perdu)* | — |
+| GOOSEBUMPS | OBJECTIFS | Les poules *(les deux faux)* | — |
+
+**Verdict mesuré : NLLB-200 ≈ opus-mt.** Chacun gagne des bulles et en perd
+d'autres ; les deux laissent tomber « SHUT UP! ». L'écart de qualité n'est
+pas **entre** les modèles de traduction classiques, il est entre eux **et le
+LLM**. Conséquence pour l'ADR 0008 : l'exclusion de NLLB-200 (CC-BY-NC) ne
+coûte **rien en qualité** — opus-mt est confirmé comme choix hors ligne
+livrable. Latence NLLB-200 : médiane 2,8 s/bulle sur **CPU Colab** — non
+comparable à la machine cible (modèle ~8× plus gros qu'opus-mt, mesuré lui à
+214 ms **sur la machine cible**).
+
+### 8.7 Ce qui reste ouvert après cette session
+
+- **Métriques S1–S6** (rappel/précision détection, taux d'erreur OCR) :
+  toujours non calculables sans annotation humaine (4–7 h).
+- **Comparatif en ligne (T0.5)** : partiel — 6 bulles sur 12, un seul LLM au
+  lieu de deux. Complétable au reset du quota Gemini, ou avec une seconde
+  clé qui fonctionne.
+- **Second outil (T0.4)** : toujours non fait, mais la chaîne mesurée ici
+  **est** celle de comic-translate (son détecteur + son OCR) — la preuve par
+  les modèles existe, la preuve par l'outil assemblé reste à faire.
+- **Erreur de l'app découverte en passant** : MangaDex ne garantit pas la
+  langue du chapitre servi (cf. §8.1). Hors phase T ; signalée dans `PLAN.md`.
+
+### 8.8 Journal des commandes (seconde session)
+
+```
+node corpus-probe.mjs      # moteur NDJSON ; 2 series (dont 1 non anglaise)
+node serie3.mjs            # identification via details.title + tag "Web Comic"
+node sources-en.mjs        # 2 sources EN qui repondent : WEBTOONS_EN, TOOMICSEN
+node corpus-en.mjs         # 2 series EN (36 -> 24 pages), 0 refusee
+node corpus-en3.mjs        # 3e serie EN, 12 pages
+python detecter-reel.py    # detection sur pages reelles (32 fenetres)
+python brut-boxes.py       # convention [x1,y1,x2,y2] + orig_target_sizes=[w,h]
+python controle-ocr-en.py  # PP-OCRv6 : 6/6 sur texte rendu, espace=indice 18709
+python pipeline-en3.py     # pipeline complet : texte anglais reel lu
+python traduire.py         # opus-mt ligne/ligne : contexte casse
+python traduire-bulles.py  # opus-mt par bulle : lisible, mediane 214 ms
+python comparatif-t05.py   # T0.5 : Gemini 3.5 (6/12 bulles) vs opus-mt ;
+                           # Mistral 429 des le 1er appel ; quota Gemini ~14/j
+```

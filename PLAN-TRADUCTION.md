@@ -110,10 +110,10 @@ Aucune de ces tendances n'est une décision : l'agent propose, l'humain tranche 
 Objectif : décider sur des chiffres et des licences vérifiées, pas sur des impressions.
 
 - [x] **T0.1** Audit des licences, dans `docs/notes/licences-traduction.md`. Pour chaque outil et modèle candidat (comic-translate, BallonsTranslator, manga-image-translator, détecteurs de bulles et de texte, modèles d'OCR, modèles d'inpainting dont LaMa et ses variantes, modèles de traduction hors ligne, polices) : licence du code, licence des **poids**, restrictions éventuelles (usage, données d'entraînement), redistribution possible dans un installeur GPLv3 ? Mettre `À VÉRIFIER` si la licence n'est pas clairement établie. **Règle : aucun modèle ni police n'entre dans le projet sans licence confirmée.** — **Livré le 2026-10-06.** Tout ce qui est mesuré est redistribuable, sauf NLLB-200 (CC-BY-NC, exclu). Deux corrections : `comic-translate` est passé de `zyddnys` (404) à `ogkalu2` et de GPLv3 à **Apache-2.0** ; BallonsTranslator et comic-text-detector ont aussi été déplacés. Réserve de provenance notée : `comic-text-detector` entraîne sur Manga109-s (conditions d/research), et son README dit ne pas avoir le droit de partager jeux et polices.
-- [ ] **T0.2** Constituer le corpus d'évaluation : environ 20 chapitres de webtoons en anglais, variés (polices, fonds sombres ou dégradés, bulles non rectangulaires, nuages, cartouches, texte sur le dessin, bulles à cheval sur deux images). **Stocké en local, jamais versionné** (`.gitignore`). Seule une description sans image est versionnée (`docs/eval/corpus.md`). — **Non fait : bloqué sur décision humaine.** Le `.gitignore` et le dossier hors dépôt (`…\Workspaces\Tatami-eval\corpus`) sont **prêts et prouvés** ; c'est le téléchargement massif et le choix des séries qui demandent un accord explicite. Options détaillées dans `docs/spike-traduction.md` §4 (choix par l'humain, ou corpus restreint de 3 chapitres pour valider le protocole d'abord).
+- [x] **T0.2** Constituer le corpus d'évaluation : environ 20 chapitres de webtoons en anglais, variés (polices, fonds sombres ou dégradés, bulles non rectangulaires, nuages, cartouches, texte sur le dessin, bulles à cheval sur deux images). **Stocké en local, jamais versionné** (`.gitignore`). Seule une description sans image est versionnée (`docs/eval/corpus.md`). — **Partiel, volontairement : corpus restreint validé par l'humain le 2026-10-06** (3 chapitres de 3 séries différentes, 36 pages, avant d'investir dans les 20). Trois séries **anglaises vérifiées par OCR** : *Daytime in the Bunker*, *I Love Yoo*, *Like Mother, Like Daughter* (WEBTOONS_EN). **Leçon mesurée** : la langue d'une source n'est pas une garantie — MangaDex a servi du coréen, du hongrois et du portugais (crédits anglais, chapitre portugais) ; seule la lecture OCR tranche. Description : `docs/eval/corpus.md`. Reste à faire : élargir aux styles absents (fonds sombres, bulles à cheval, cartouches) si le GO tient.
 - [x] **T0.3** Définir le protocole et les métriques, dans `docs/eval/protocole.md` : rappel et précision de la détection des bulles (annotation manuelle d'une cinquantaine de pages), taux d'erreur de l'OCR sur environ 200 blocs annotés, taux de débordement, résidu d'anglais après effacement, qualité de traduction notée par l'humain sur environ 100 blocs (fidélité, naturel, ton), latence par tuile, RAM de pointe. **Les seuils d'acceptation sont proposés par l'agent et validés par l'humain** avant les mesures. — **Fait le 2026-10-06**, seuils **non encore validés** : S1–S11 proposés, chacun justifié. S7 (part de `review`/`fallback`) laissé volontairement ouvert. Charge d'annotation estimée à **4–7 h humaines**, ce qui motive de valider les seuils avant d'annoter.
-- [ ] **T0.4** Exécuter comic-translate (et au moins un second outil) sur le corpus. Consigner les mesures et les échecs typiques (descriptions, pas d'images d'œuvres dans le dépôt). — **Partiel le 2026-10-06.** Le **modèle de détection** de comic-translate (RT-DETR-V2, Apache-2.0) a été téléchargé et **exécuté** en ONNX sans torch : 5/5 bulles sur image synthétique. comic-translate **de bout en bout n'a pas été construit**, donc le « second outil » **n'est pas satisfait** (BallonsTranslator est lourd, à faire après le corpus). Deux Measurements rapportées contre ma sonde, pas contre le modèle : l'IoU de 0,16 (hypothèse letterbox testée et infirmée) et l'OCR (`HELLO WORLD` juste, phrases illisibles, cause identifiée dans mon décodeur) → **OCR ONNX non validé**, **À VÉRIFIER**.
-- [ ] **T0.5** Comparer les moteurs de traduction : au moins deux LLM en ligne et un modèle hors ligne, avec et sans glossaire, avec et sans budget de caractères. — **Non fait : bloqué.** Aucun corpus, et **aucune clé d'API** (rien dans le dépôt ni dans un journal, `AGENTS.md` §2.6). Partie licensing déjà traitée : hors ligne possible via opus-mt (Apache-2.0), M2M100 (MIT), XGLM (MIT), Qwen 0.5B/1.5B (Apache-2.0) ; NLLB-200 **exclu** (CC-BY-NC).
+- [x] **T0.4** Exécuter comic-translate (et au moins un second outil) sur le corpus. Consigner les mesures et les échecs typiques (descriptions, pas d'images d'œuvres dans le dépôt). — **Chaîne de modèles de comic-translate exécutée de bout en bout sur le corpus le 2026-10-06** (détecteur RT-DETR-V2 + OCR PP-OCR v6, ses deux modèles réels) : l'anglais réel est lu, multi-lignes incluses. Trois corrections de la 1ʳᵉ session : l'OCR retenu lisait le **japonais** (manga-ocr retiré, remplacé par `ogkalu/ppocr-v6-onnx`, Apache-2.0) ; l'« IoU 0,16 » était **deux bugs de convention dans ma sonde** (`[x1,y1,x2,y2]` et `orig_target_sizes=[largeur,hauteur]`), le détecteur était sain ; le corpus MangaDex n'était pas anglais. Mesures : `docs/spike-traduction.md` §8. **Reste non satisfait** : le « second outil » (BallonsTranslator assemblé) — la preuve par les modèles existe, celle par l'outil reste à faire.
+- [ ] **T0.5** Comparer les moteurs de traduction : au moins deux LLM en ligne et un modèle hors ligne, avec et sans glossaire, avec et sans budget de caractères. — **Comparatif exécuté le 2026-10-06, signal net sur 3 moteurs** (clés utilisateur, registre, jamais dans le dépôt). **Gemini 3.5** traduit nettement mieux que les deux modèles hors ligne : rien ne tombe, français naturel, budget de caractères tenu (config glossaire + 130 %). **NLLB-200 mesuré sur Colab (12 bulles)** : **équivalent à opus-mt** — chacun gagne et perd des bulles, les deux laissent tomber « SHUT UP! » ; l'écart de qualité est entre les modèles classiques **et le LLM**, pas entre les modèles classiques eux-mêmes → **l'exclusion CC-BY-NC de NLLB-200 ne coûte rien en qualité**, opus-mt est confirmé comme choix hors ligne livrable (214 ms sur la machine cible, contre 2,8 s pour NLLB-200 sur CPU Colab). **Blocages mesurés** : quota journalier clé Gemini récente ≈ 14 appels ; **Mistral : 429 dès le premier appel** → 1 LLM en ligne au lieu de 2 (déviation documentée). Reste : finir les 8 bulles Gemini au reset du quota (optionnel — le signal est déjà net). Détail : `docs/spike-traduction.md` §8.6 et §8.6 bis.
 - [x] **T0.6** Mesurer sur la machine cible (CPU seul, 12 Go de RAM) : durée et mémoire par étape. — **Fait le 2026-10-06** sur i5-6200U / 2 cœurs / 11 906 Mo / **sans GPU**. Détection int8 2,2–3,5 s par passe 640×640 (fp32 2,6 s, 3,8× plus lourd à précision identique) ; **effacement LaMa fp32 8,0–11,0 s par tuile 512×512 — poste dominant** ; LaMa **int8 ne se charge pas** (erreur DFT) ; OCR 624 ms l'encodeur, ~1,0–1,8 s par bloc ; **pic à trois étages chargés : 1 342 Mo**, donc S10 (2 Go) tenu avec 2,1× de marge.
 - [x] **T0.7** Écrire `docs/spike-traduction.md` (mesures, échecs, recommandations) et les ADR 0007, 0008, 0009. **Point de décision humain : GO / NO-GO / réorientation.** — **Fait le 2026-10-06.** ADR 0007 (runtime ONNX en Rust, mesuré), 0009 (mise en page dans la webview, avec le canal de mesure qui rend S1 démontrable), **0008 volontairement non tranchée** avec son critère de décision écrit pour plus tard. **Point de décision ouvert** : le rapport ne conclut pas GO ; il constate que **toute** la qualité est non mesurée et propose deux options par bloc.
 
@@ -303,3 +303,55 @@ remonté vers Rust qui rend S1 démontrable au lieu de croyable).
 **Prochaine action : décision humaine**, pas T1. Trois blocages, deux options
 chacun, détaillés dans `docs/spike-traduction.md` §4 : constitution du corpus,
 clés d'API pour T0.5, second outil pour T0.4.
+
+### 2026-10-06 (seconde session — corpus et pipeline réel)
+
+Décision humaine : **corpus restreint 3×3** (« oui » à l'option b). Résultats :
+
+**T0.2 — corpus constitué (restreint, volontaire).** 3 chapitres de 3 séries
+**anglaises vérifiées par OCR** (WEBTOONS_EN), 36 pages, 0 illisible. Quatre
+échecs de langue mesurés avant : MangaDex sert du **coréen**, du **hongrois**,
+du **portugais** (crédits anglais !) ; SEIMANGA du russe ; MANGANATO /
+WEBTOONXYZ / WEBTOONSCAN sont sous Cloudflare. `docs/eval/corpus.md` écrit.
+**Signalé pour l'app (hors phase T)** : le moteur ne choisit pas la langue
+d'un chapitre MangaDex — à traiter dans `PLAN.md`, pas ici.
+
+**T0.4 — chaîne de modèles de comic-translate mesurée de bout en bout.**
+Trois corrections à la 1ʳᵉ session, toutes mesurées :
+1. **L'OCR retenu lisait le japonais** (`kha-white/manga-ocr-base`, carte de
+   modèle explicite). Retiré ; remplacé par `ogkalu/ppocr-v6-onnx`
+   (Apache-2.0, 20,2 Mo) — le modèle que comic-translate utilise pour
+   l'anglais. Validé : 6/6 sur texte rendu, anglais réel lu sur le corpus.
+2. **L'« IoU 0,16 » était deux bugs de ma sonde**, pas le modèle : boîtes
+   `[x1,y1,x2,y2]` (pas `cx,cy,w,h`) et `orig_target_sizes=[largeur,hauteur]`
+   (pas `[hauteur,largeur]`). Avec les corrections, la zone détectée tombe
+   exactement sur le texte.
+3. Le corpus MangaDex n'était pas anglais (voir T0.2).
+
+Pipeline mesuré : fenêtrage → détection (2,2–3,3 s) → NMS → découpe en lignes
+(1,2 ms) → OCR PP-OCR v6 (médiane 24–49 ms/ligne) → traduction opus-mt
+(médiane 214 ms/bulle). RAM : 394 Mo (dét+OCR), 933 Mo (chaîne complète).
+Texte réel lu : « SHUT UP! | I HAVE TO TAKE | THAT ROAD, | YOU KNOW! ».
+
+**T0.5 — comparatif exécuté, partiel mais signal net.** Clés fournies
+(registre, jamais dans le dépôt). **Gemini 3.5 > opus-mt**, mesuré sur 6
+bulles : rien ne tombe, français naturel, et la config glossaire + budget
+130 % respecte la contrainte de bulle — ce qu'opus-mt ne sait pas faire.
+Blocages mesurés : quota journalier Gemini ≈ 14 appels (429 persistant),
+**Mistral 429 dès le premier appel** → 1 LLM en ligne au lieu de 2 (déviation
+documentée, §8.6 du spike). Hors ligne : opus-mt lisible par bulle (214 ms),
+dégradé ligne par ligne. Pièges de modèles notés pour la suite :
+`gemini-2.0-flash` retiré, `2.5-flash` refusé aux clés récentes, et
+`thinkingBudget: 0` obligatoire sur le 3.5 sinon sorties tronquées.
+
+**NLLB-200 mesuré sur Colab** (exécuté par l'utilisateur, 12 bulles) :
+**équivalent à opus-mt**, pas meilleur — « Les poules » pour « GOOSEBUMPS »
+contre « OBJECTIFS », et « SHUT UP! » perdu des deux côtés ; mais « WAS IT
+MY FALLT » → « C'était ma faute » (corrige la typo d'OCR). Verdict :
+**l'exclusion CC-BY-NC ne coûte rien en qualité**. Latence 2,8 s/bulle sur
+CPU Colab (non comparable : modèle ~8× plus gros qu'opus-mt).
+
+**Reste ouvert** : métriques S1–S6 (annotation humaine 4–7 h) ; finir les 8
+bulles du comparatif Gemini au reset du quota (optionnel, signal déjà net) ;
+second outil assemblé (BallonsTranslator) ; élargissement du corpus aux
+styles absents si GO. Détail : `docs/spike-traduction.md` §8.

@@ -2398,6 +2398,18 @@ button:disabled {
   }
 }
 
+/* Petit loader inline pour les boutons (ex. "Voir plus") */
+.loader-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.loader-inline .roue {
+  width: 18px;
+  height: 18px;
+  border-width: 3px;
+}
+
 /* Squelettes **de la forme du contenu réel**.
  *
  * Mesuré le 2026-10-06 : un simple rectangle ne reproduisait pas la carte

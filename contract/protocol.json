@@ -24,7 +24,11 @@
         "fetchCover",
         "setCookies",
         "health",
-        "shutdown"
+        "shutdown",
+        "detect",
+        "ocr",
+        "inpaint",
+        "loadPack"
       ]
     },
     "errorCode": {
@@ -37,7 +41,10 @@
         "RATE_LIMITED",
         "TIMEOUT",
         "CANCELLED",
-        "INTERNAL"
+        "INTERNAL",
+        "MODEL_MISSING",
+        "OUT_OF_MEMORY",
+        "TILE_TOO_LARGE"
       ]
     },
     "request": {
@@ -149,6 +156,107 @@
         }
       },
       "additionalProperties": true
+    },
+    "bbox": {
+      "type": "object",
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "detectResult": {
+      "type": "object",
+      "description": "Forme de `result` pour `detect`.",
+      "required": ["boxes"],
+      "properties": {
+        "boxes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/bbox" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ocrResult": {
+      "type": "object",
+      "description": "Forme de `result` pour `ocr`.",
+      "required": ["lines"],
+      "properties": {
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text", "bbox"],
+            "properties": {
+              "text": { "type": "string" },
+              "bbox": { "$ref": "#/$defs/bbox" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "inpaintResult": {
+      "type": "object",
+      "description": "Forme de `result` pour `inpaint`.",
+      "required": ["data", "contentType"],
+      "properties": {
+        "data": { "type": "string", "description": "Image nettoyée, base64 standard." },
+        "contentType": { "type": "string", "description": "Type MIME de l'image résultante (ex. image/png)." }
+      },
+      "additionalProperties": false
+    },
+    "packManifest": {
+      "type": "object",
+      "required": ["packId", "version", "models", "sha256"],
+      "properties": {
+        "packId": { "type": "string" },
+        "version": { "type": "string" },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "path", "sha256"],
+            "properties": {
+              "id": { "type": "string" },
+              "path": { "type": "string" },
+              "sha256": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "sha256": { "type": "string", "description": "Hash du manifeste, pour vérification de cohérence." }
+      },
+      "additionalProperties": false
+    },
+    "loadPackResult": {
+      "type": "object",
+      "description": "Forme de `result` pour `loadPack`.",
+      "required": ["packId", "version"],
+      "properties": {
+        "packId": { "type": "string" },
+        "version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "healthResult": {
+      "type": "object",
+      "description": "Forme de `result` pour `health` (vision).",
+      "required": ["ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "packId": { "type": "string" },
+        "version": { "type": "string" },
+        "models": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

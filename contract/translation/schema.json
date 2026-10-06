@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tatami.app/contract/translation/schema.json",
+  "title": "Tatami translation page schema",
+  "description": "Schéma d'une page de webtoon traduite : blocs, ordre de lecture, statuts. Version : 1.",
+  "type": "object",
+  "required": ["pageId", "chapterUrl", "source", "width", "height", "blocks"],
+  "properties": {
+    "pageId": {
+      "type": "string",
+      "description": "Identifiant stable de la page (même clé que `page.url` dans le contrat principal)."
+    },
+    "mangaUrl": {
+      "type": "string",
+      "description": "URL stable du manga."
+    },
+    "chapterUrl": {
+      "type": "string",
+      "description": "URL stable du chapitre."
+    },
+    "source": {
+      "type": "string",
+      "description": "Nom d'entrée MangaParserSource, ex. MANGADEX."
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Largeur de la page en pixels."
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Hauteur de la page en pixels."
+    },
+    "blocks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/block" },
+      "description": "Blocs lus sur la page, triés par `readingOrder` croissant."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "blockType": {
+      "type": "string",
+      "enum": ["dialogue", "narration", "sfx", "free_text", "ignore"],
+      "description": "Classification du bloc : dialogue, narration, effet sonore, texte libre, ou à ignorer."
+    },
+    "blockStatus": {
+      "type": "string",
+      "enum": ["ok", "review", "fallback"],
+      "description": "Résultat du pipeline : ok = publié tel quel, review = validation humaine requise, fallback = original conservé."
+    },
+    "bbox": {
+      "type": "object",
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "block": {
+      "type": "object",
+      "required": ["id", "type", "bbox", "readingOrder", "status"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identifiant stable du bloc sur la page."
+        },
+        "type": { "$ref": "#/$defs/blockType" },
+        "bbox": { "$ref": "#/$defs/bbox" },
+        "originalText": {
+          "type": "string",
+          "description": "Texte source lu par l'OCR (anglais attendu)."
+        },
+        "translatedText": {
+          "type": "string",
+          "description": "Texte traduit (français). Vide si `status` n'est pas `ok`."
+        },
+        "readingOrder": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Ordre de lecture sur la page, 0 = premier bloc lu."
+        },
+        "status": { "$ref": "#/$defs/blockStatus" },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Score de confiance OCR/traduction, 0 = inconnu, 1 = certain."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

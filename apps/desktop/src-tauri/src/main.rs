@@ -19,8 +19,8 @@ use tauri::Manager;
 // L'import de `commands` ci-dessous n'est donc pas cosmétique : sans lui, le
 // chemin de `generate_handler!` ne se résout pas.
 use tatami_desktop::{
-    challenge, commands, download, journal, library, moteur, pagecache, scheduler, shelf, store,
-    tray,
+    challenge, commands, download, journal, library, moteur, pack, pagecache, scheduler, shelf,
+    store, traduction, tray,
 };
 
 fn not_found() -> tauri::http::Response<Vec<u8>> {
@@ -165,6 +165,11 @@ fn main() {
     tracing::info!("telechargements : {}", racine.display());
     download::definir_racine_telechargements(racine.clone());
 
+    // T1.4 — gestionnaire de packs de modèles. Sans pack installé, la
+    // fonction est désactivée proprement (aucune erreur).
+    let packs_dir = data_dir.join("packs");
+    let pack_manager = pack::PackManager::nouveau(packs_dir);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         // Tâche 3.3. L'enregistrement est indispensable même si l'envoi part de
@@ -181,6 +186,7 @@ fn main() {
         .manage(sup.clone())
         .manage(Arc::new(store))
         .manage(cache.clone())
+        .manage(pack_manager)
         .register_asynchronous_uri_scheme_protocol("tatami", move |_ctx, request, responder| {
             let sup = sup.clone();
             let cache = cache.clone();
@@ -261,7 +267,14 @@ fn main() {
             journal::purger_journal,
             challenge::open_challenge,
             challenge::solve_challenge,
-            challenge::cancel_challenge
+            challenge::cancel_challenge,
+            traduction::traduire_texte,
+            traduction::definir_cle_gemini,
+            traduction::cle_gemini_configuree,
+            pack::liste_packs,
+            pack::charger_pack,
+            pack::supprimer_pack,
+            pack::etat_pack
         ])
         .manage(download::DownloadState::default())
         .setup(|app| {

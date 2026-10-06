@@ -1066,3 +1066,57 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   d'attente ne sert que le trafic de fond. Faire attendre quelqu'un qui vient de
   cliquer, pour être poli envers le site, est l'inverse du but. Cinq sites
   appellent `chapters` ; un seul est automatique, et c'est le seul qui attend.
+
+- **Un export ONNX de détecteur HF ne se devine pas : il se calibre sur une
+  mesure.** Mesuré le 2026-10-06 sur `ogkalu/comic-text-and-bubble-detector` :
+  les boîtes sortent en `[x1, y1, x2, y2]` (pas `cx,cy,w,h`), et
+  `orig_target_sizes` attend **[largeur, hauteur]** (pas l'ordre HF habituel).
+  Deux inversions cumulées donnaient des boîtes « lâches » couvrant 90 % de la
+  fenêtre et un « IoU 0,16 » qui a coûté une session à chasser un fantôme
+  (letterbox). Le calibrage qui tranche en une mesure : la boîte top-score doit
+  avoir `x2>x1`, `y2>y1`, une forme de **ligne de texte**, et tomber sur une
+  zone dont l'OCR lit quelque chose. Corollaire : quand une métrique de
+  qualité est inexplicablement mauvaise, vérifier d'abord la **forme** des
+  sorties brutes (plages par colonne), pas le modèle.
+- **La langue d'un modèle se lit sur sa carte, pas sur sa licence.** L'audit
+  des licences avait retenu `kha-white/manga-ocr-base` (Apache-2.0) pour lire
+  l'anglais : sa carte dit « for **Japanese** text ». « HELLO WORLD » passait
+  parce que le vocabulaire japonais contient l'ASCII — une fixture qui teste
+  la mauvaise chose, deux fois de suite sur le même piège. Pour l'anglais,
+  comic-translate utilise `ogkalu/ppocr-v6-onnx` (PP-OCR, CTC ; l'**espace est
+  l'indice 18709**, juste après le dictionnaire de 18 708 entrées — mesuré en
+  inspectant les indices produits pour un texte connu). Un OCR CTC n'accepte
+  qu'**une ligne** : une bulle multi-lignes écrasée à 48 px rend du charabia
+  ou du vide ; il faut une découpe en lignes (projection horizontale, 1,2 ms).
+- **La langue d'une source n'est pas une garantie.** Mesuré le 2026-10-06 :
+  MangaDex a servi du coréen, du hongrois et du portugais — dont un chapitre
+  dont **les crédits étaient en anglais** mais le contenu en portugais. Seul
+  un OCR d'échantillon tranche ; le titre de la série, le nom de la source et
+  la première page ne prouvent rien. (Consigné aussi dans `PLAN.md` §8.)
+- **Un tokenizer SentencePiece n'est pas le vocabulaire du modèle.** opus-mt :
+  les `.spm` ont 32 000 pièces, le modèle en attend 59 514 — passer les ids
+  `.spm` directs donne du charabia qui ressemble à du français. Il faut mapper
+  pièce → id via `vocab.json`, dans les deux sens. Et le décodeur ONNX
+  `decoder_model` sort **12 pasts encodeur + 12 décodeur**, mais
+  `decoder_with_past_model` n'en ressort que 12 (décodeur) : les pasts
+  encodeur se réutilisent de la première passe, inchangés.
+- **Traduire ligne par ligne détruit le contexte ; par bulle entière le
+  restaure.** Mesuré sur opus-mt-en-fr : « OH MY » + « GOSH! » séparés →
+  « - Oui ! » ; joints → « Oh mon Dieu ! ». La granularité d'envoi au
+  traducteur est une décision de qualité, pas de confort.
+
+- **Un modèle d'API gratuit a trois pièges distincts, tous mesurés le
+  2026-10-06.** (1) Le nom **retiré** : `gemini-2.0-flash` → 404 ; la liste
+  `GET /v1beta/models` est la seule source fiable. (2) Le nom **interdit aux
+  clés récentes** : `gemini-2.5-flash` → 404 « no longer available to new
+  users » — listé ≠ utilisable. (3) Le modèle **« à réflexion »** : sans
+  `thinkingConfig: {thinkingBudget: 0}`, gemini-3.5 brûle `maxOutputTokens`
+  en pensée et la traduction arrive tronquée (« FERME-LA ! JE DO »). Et le
+  quota gratuit d'une clé récente est **journalier** (~14 appels) : des pauses
+  de 30 s n'y changent rien — un 429 persistant après pause = quota du jour,
+  pas de la minute. Mistral gratuit : 429 dès le premier appel (compte), pas
+  de contournement côté client.
+- **Une clé posée par `setx` n'est pas visible du service déjà lancé.** Les
+  processus héritent de l'environnement de démarrage d'OpenCode ; la clé se
+  lit alors dans `HKCU:\Environment` et s'injecte dans le seul processus du
+  script — jamais affichée, jamais journalisée.

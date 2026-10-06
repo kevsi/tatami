@@ -41,11 +41,16 @@
 13. **Phase T2.6 — Contrôle de résidu** — module `residuel.rs` avec `verifier_residu` et `ResultatResiduel` (Propre/Review). Second passage d'OCR sur zone nettoyée. 3 tests unitaires.
     - Portes passées : `cargo clippy/test` (167/167 mono-thread), frontend gates vertes.
 
+14. **Phase T2.7 — Budget mémoire et non-régression** — module `bench.rs` avec `empreinte_tuile`, `tuile_dans_budget`, `tuiles_max_simultanees`. Budgets : 64 Mo/tuile, 256 Mo pipeline. 3 tests unitaires.
+    - Portes passées : `cargo clippy/test` (170/170 mono-thread), frontend gates vertes.
+
+**Phase T2 livrée** — pipeline vision complet : tuiles → masques → classification → OCR → effacement → contrôle de résidu → benchmarks mémoire.
+
 ### En cours
 - (aucune)
 
 ### Next steps
-1. **T2.7** — Non-régression contre les mesures de T0, budget mémoire respecté sur la machine cible.
+1. **T3.1** — Trait `Translator` côté Rust. Fournisseurs : LLM en ligne (clé de l'utilisateur dans le trousseau de l'OS) et modèle local si l'ADR 0008 le retient.
 
 ---
 
@@ -115,10 +120,10 @@
 - `apps/desktop/app/types/traduction.ts` — types TS miroir
 
 ### État du dépôt
-- 12 commits : `b6734e7` téléchargements parallèles, `c141377` chargeur animé, `6e25642` molette fix,
+- 13 commits : `b6734e7` téléchargements parallèles, `c141377` chargeur animé, `6e25642` molette fix,
   `9bf3fe6` clé Gemini dans le trousseau OS, `f410272` suppression du surlignage "en cours",
   `59526aa` T1 complet (schéma, migrations, vision, packs, tests), `ff33cd0` docs T1,
   `5758ff3` T2.1 tuiles, `539d3ef` T2.2 masques, `02f63a5` T2.3 classification, `b541844` T2.4 OCR/ordre de lecture,
-  `ed2d745` T2.5 stratégie d'effacement, `a8fb87a` T2.6 contrôle de résidu
+  `ed2d745` T2.5 stratégie d'effacement, `a8fb87a` T2.6 contrôle de résidu, `d6b9121` T2.7 benchmarks mémoire
 - Toutes les vérifications passent (clippy, typecheck, lint, i18n, hooks, chemins).
-- Prochaine phase : **T2.7 — Non-régression**.
+- Prochaine phase : **T3 — Traduction**.

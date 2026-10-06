@@ -645,9 +645,27 @@ function depuis(t: ReturnType<typeof useI18n>['t'], ms: number): string {
 const RECENT_KEY = 'tatami.recent';
 const RECENT_TTL = 30 * 60 * 1000;
 const RECENT_CONCURRENCY = 4;
+/** Plafond d'entrées du cache des « derniers chapitres ».
+ *
+ *  Le TTL purge l'essentiel ; ce plafond est le filet de sécurité pour qu'un
+ *  cache ne puisse pas croître sans limite (voir `purgerCacheRecent`).
+ */
+const MAX_ENTREES_RECENT = 500;
 
 type RecentEntry = { labels: string[]; total: number; at: number };
 
+/** Cache des « derniers chapitres » des cartes, avec purge des entrées mortes.
+ *
+ *  Le TTL existait **à la lecture** depuis le début, mais rien ne purgeait à
+ *  l'écriture. Mesuré le 2026-10-06 : `tatami.recent` contenait **443 entrées
+ *  dont 422 expirées**, 57 Ko — donc 95 % du cache ne servait plus à rien et
+ *  continuait d'être réécrit à chaque série consultée.
+ *
+ *  La purge est ici, dans `saveRecentCache`, et nulle part ailleurs : c'est le
+ *  seul endroit qui décide de la taille du cache. Le faire à la lecture aurait
+ *  été prématuré — un cache n'a pas à être purgé pour être lu, et cela coûterait
+ *  un `localStorage.setItem` par simple affichage.
+ */
 function loadRecentCache(): Record<string, RecentEntry> {
   try {
     const raw = window.localStorage.getItem(RECENT_KEY);
@@ -657,9 +675,27 @@ function loadRecentCache(): Record<string, RecentEntry> {
   }
 }
 
+/** Retire les entrées trop vieilles, et borne le reste.
+ *
+ *  La borne est le filet de sécurité : même si le TTL change un jour, le cache
+ *  ne peut pas croître sans limite. Mesuré : ~0,13 Ko par entrée, donc
+ *  500 entrées ≈ 64 Ko, très en dessous du quota de ~5 Mo — mais un cache non
+ *  borné finit toujours par le toucher, sur une machine qui browse beaucoup.
+ */
+function purgerCacheRecent(cache: Record<string, RecentEntry>): Record<string, RecentEntry> {
+  const maintenant = Date.now();
+  const vivants: [string, RecentEntry][] = [];
+  for (const [cle, entree] of Object.entries(cache)) {
+    if (maintenant - (entree.at ?? 0) <= RECENT_TTL) vivants.push([cle, entree]);
+  }
+  // Les plus récentes d'abord, puis on garde les `MAX_ENTREES_RECENT` premières.
+  vivants.sort((a, b) => (b[1].at ?? 0) - (a[1].at ?? 0));
+  return Object.fromEntries(vivants.slice(0, MAX_ENTREES_RECENT));
+}
+
 function saveRecentCache(cache: Record<string, RecentEntry>) {
   try {
-    window.localStorage.setItem(RECENT_KEY, JSON.stringify(cache));
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(purgerCacheRecent(cache)));
   } catch {
     /* quota atteint : le cache est un confort, pas une donnée */
   }

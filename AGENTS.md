@@ -644,6 +644,18 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   la cause (« Overlapped entries… File name in directory and header differ »).
   Mesure obtenue : `The White Devil.cbz`, **20 128 668 o, 37 entrées, 37 tailles
   distinctes, 37 JPEG** — donc pas de page répétée, pas de HTML déguisé.
+- **Une mesure qui doit montrer un *effet* doit d'abord prouver que l'effet a
+  eu lieu.** Mesuré le 2026-10-06 : trois fois de suite la purge du cache a
+  semblé ne pas fonctionner (« 400 entrées expirées → 400 »), alors que
+  **aucune écriture n'avait eu lieu** — donc rien n'avait pu être purgé. Les
+  trois causes : (1) la source était **déjà** dans le cache, donc aucune
+  requête, donc aucun `saveRecentCache` ; (2) le clic sur la langue n'avait pas
+  pris et l'écran était resté sur la liste des **langues**, donc `latest` était
+  vide et l'effet ne s'exécutait pas ; (3) le champ de filtre **réduit la liste
+  des sources**, il ne charge pas le catalogue — il faut **ensuite cliquer la
+  source**. Le témoin décisif a été `maxAt` : **identique → rien n'a été écrit**.
+  Règle : capturer un témoin d'activité avant de conclure que l'action a échoué ;
+  une écriture qui ne se voit pas n'est pas une écriture ratée.
 - **`http://tatami.localhost` est un chemin LOCAL, et un classificateur naïf le
   range dans le réseau.** J'ai conclu « la relecture hors ligne va chercher ses
   pages sur https » alors que les quatre URL étaient

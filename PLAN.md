@@ -2243,3 +2243,72 @@ chemin normal. Supprimés par la forme longue `\\?\`, seule voie.
 `cargo test` **152** (131 + 1 + 20), **3 runs consécutifs** sans résidu.
 Aucune modification du code de production : `DossierDeTest` est sous
 `#[cfg(test)]`, vérifié ligne à ligne dans le diff.
+
+---
+
+## 2026-10-06 — Le double appel `chapters` (mesuré) et le cache jamais purgé
+
+Reprise du dernier point ouvert du 2026-10-05. Relais :
+`.mesures/pilot-27` à `pilot-39`.
+
+### Le double appel `chapters` : mesuré, et ce n'est pas un défaut
+
+Les 2 appels pour la même série, 160 ms d'écart, **un seul `details`** : la
+signature d'un second chemin. Instrumenté par l'IPC lui-même, en interceptant le
+**chunk** qui contient `invoke` — parce que `window.__TAURI_INTERNALS__` et sa
+propriété `invoke` sont **gelés** (`writable: false, configurable: false`,
+mesuré ; l'écriture échoue, et la globale elle aussi ne peut pas être
+redéfinie). Trois tentatives ont été nécessaires pour trouver une voie qui
+fonctionne ; les trois sont dans `pilot-27` à `pilot-30`.
+
+**Résultat de la pile d'appels** : une ouverture de fiche produit exactement
+**1 `details` + 1 `chapters`**, tous deux de `loadChapters` via le `onClick`.
+**Aucun doublon.**
+
+L'appel surnuméraire vient de l'effet « chapitres récents », qui écrit le cache
+pour la série **avant** que l'utilisateur ne clique sa carte. Ce n'est pas un
+doublon : c'est une mise en cache, et l'ouverture de fiche n'en profite pas
+puisque `loadChapters` a sa propre requête. **Comportement correct**, mais
+coûtant une requête par série visitée sur une carte déjà en cache.
+
+Corollaire : sur un écran **frais**, 0 appel avant le clic ; sur un écran dont le
+cache est déjà rempli, 1 appel avant. Les deux mesures étaient justes, elles
+portaient sur des états différents.
+
+### Un défaut trouvé au passage : le cache n'était jamais purgé
+
+`tatami.recent` (le cache des « derniers chapitres ») avait un TTL **à la
+lecture**, mais **rien ne purgeait à l'écriture**. Mesuré : **443 entrées dont
+422 expirées**, 57 Ko — 95 % du cache ne servait plus à rien, et était réécrit
+à chaque série consultée.
+
+Corrigé par `purgerCacheRecent()`, appelé dans `saveRecentCache` — le seul
+endroit qui décide de la taille — plus un plafond de 500 entrées en filet de
+sécurité (le TTL peut changer un jour, un cache non borné finit toujours par
+toucher le quota).
+
+**Prouvé par injection** : 400 entrées volontairement expirées + 5 valides,
+puis une visite de catalogue qui force une écriture → **405 entrées → 22,
+0 expirée, les 5 valides conservées**, 30 Ko → 3 Ko.
+
+### Trois mesures qui ont failli conclure à tort
+
+Trois fois de suite la purge a semblé ne pas fonctionner (« 400 → 400 »). Les
+trois fois, le parcours **n'avait produit aucune écriture** :
+
+1. MANGADEX était **déjà** dans le cache → aucune requête → aucun
+   `saveRecentCache` ;
+2. le clic sur la langue n'avait pas pris : l'écran restait sur les **langues**,
+   la grille des sources n'existait pas, `latest` était vide ;
+3. le filtre de nom **réduit la liste des sources**, il ne charge pas le
+   catalogue : il faut **ensuite cliquer la source**.
+
+Règle : une mesure qui doit montrer un **effet** doit d'abord prouver que
+l'effet a eu lieu. Le témoin était `maxAt` : identique → rien n'a été écrit. Et
+`waitFor` sur un marqueur visible, jamais un délai fixe.
+
+### Vérification
+
+`pnpm typecheck` 0 · `pnpm lint` 4 warnings (les 4 antérieurs, 0 erreur) ·
+`pnpm i18n:check` · `pnpm hooks:check` · `pnpm chemins:check` : propres ·
+`cargo fmt --check` 0 · `cargo test` **152**.

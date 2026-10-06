@@ -2762,8 +2762,28 @@ function renderSuperpositions() {
   return (
     <>
       {renderVerif()}
+      {renderChargement()}
       <Toaster toasts={toasts} onClose={fermerToast} />
     </>
+  );
+}
+
+/** Chargeur d'ouverture de chapitre, rendu dans **toutes** les vues.
+ *
+ *  Mesuré le 2026-10-06 : l'ouverture d'un chapitre laissait l'écran inchangé
+ *  pendant 1 à 3 s — le sélecteur de chapitre était simplement `disabled`, et
+ *  au premier chapitre on retombait sur la liste sans le moindre retour. C'est
+ *  exactement l'absence de signal qui fait appuyer deux fois sur le bouton,
+ *  ouvrir deux fois le même chapitre. `readerLoading` tournait déjà, il
+ *  n'avait juste personne pour l'afficher.
+ */
+function renderChargement() {
+  if (!readerLoading) return null;
+  return (
+    <div className="chargement" role="status">
+      <span className="roue" aria-hidden="true" />
+      <span className="chargement-txt">{t('lecteur.chargement')}</span>
+    </div>
   );
 }
 
@@ -4252,6 +4272,10 @@ if (reader) {
     }
     return (
       <main className={`reader${readerMode === 'webtoon' ? ' pleine-largeur' : ''}`}>
+        {/* `renderSuperpositions()` n'est rendu qu'après l'AppBar, pas ici — le
+            chargeur de chapitre, lui, est aussi utile dans le lecteur (changement
+            de chapitre via le sélecteur). */}
+        {renderChargement()}
         <header className="reader-bar">
           <button className="btn btn-ghost" onClick={closeReader}>
             {'←'} Chapitres

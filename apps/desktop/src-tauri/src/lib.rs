@@ -49,6 +49,7 @@ pub mod scheduler;
 pub mod shelf;
 pub mod store;
 pub mod supervisor;
+pub mod tile;
 pub mod traduction;
 pub mod tray;
 pub mod vision;

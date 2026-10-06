@@ -700,28 +700,32 @@ pub async fn note_chapter(
 mod tests {
     use super::*;
 
-    /// Compteur + pid : les tests sont parallèles, deux fixtures ne doivent
-    /// jamais se marcher dessus (leçon AGENTS.md §14).
-    static COMPTEUR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
     /// Fixture **dans la vraie racine des téléchargements** : c'est la seule
     /// racine que `list_library` accepte, donc un test qui verifiableait le
     /// confinement avec une racine bidon ne prouverait rien.
-    fn temp_dir(tag: &str) -> PathBuf {
-        let n = COMPTEUR.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let dir = crate::download::downloads_root()
-            .join(format!("tatami-test-{tag}-{}-{n}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("dossier temporaire");
-        dir
+    fn temp_dir(tag: &str) -> crate::download::DossierDeTest {
+        crate::download::DossierDeTest::new(tag)
     }
 
     /// Cache jetable pour les tests : seule la couverture l'utilise, et un
     /// cache réel ici laisserait des fichiers derrière lui.
-    fn cache_de_test() -> std::sync::Arc<crate::pagecache::PageCache> {
-        crate::pagecache::PageCache::new(
-            crate::download::downloads_root().join("tatami-cache-test"),
-        )
+    ///
+    /// Le dossier est **unique et effacé**, comme toute fixture. Le nom fixe
+    /// `tatami-cache-test` posait deux problèmes, et un seul était visible :
+    /// il ne disparaissait jamais (mesuré le 2026-10-06, il traînait dans la
+    /// bibliothèque), et surtout **deux tests parallèles se partageaient le
+    /// même dossier** — donc le jeton écrit par l'un était lisible par l'autre.
+    /// Ce couplage invisible peut masquer un défaut de `list_library`, qui ne
+    /// doit lire que les jetons de ses propres chapitres.
+    ///
+    /// La garde est retournée pour rester vivante : liée au cache, pas à une
+    /// variable du test.
+    fn cache_de_test() -> (
+        std::sync::Arc<crate::pagecache::PageCache>,
+        crate::download::DossierDeTest,
+    ) {
+        let garde = crate::download::DossierDeTest::new("cache");
+        (crate::pagecache::PageCache::new(garde.chemin()), garde)
     }
 
     /// Un chemin **réellement existant** hors des téléchargements : sans
@@ -736,7 +740,7 @@ mod tests {
             hors.is_dir(),
             "le dossier temporaire doit exister pour que le test soit probant"
         );
-        let cache = cache_de_test();
+        let (cache, _garde_cache) = cache_de_test();
         let err = lister(&hors.to_string_lossy(), &cache)
             .await
             .expect_err("un chemin hors des téléchargements doit être refusé");
@@ -753,7 +757,8 @@ mod tests {
 
     #[tokio::test]
     async fn note_chapter_cree_le_meta_et_ignore_les_doublons() {
-        let root = temp_dir("note");
+        let garde = temp_dir("note");
+        let root = garde.chemin();
         // Organisation réelle : <downloads>/<source>/<webtoon>/
         let dir = root.join("MANGADEX").join("Test");
         std::fs::create_dir_all(&dir).unwrap();
@@ -785,9 +790,8 @@ mod tests {
         .await
         .unwrap();
 
-        let items = lister(&root.to_string_lossy(), &cache_de_test())
-            .await
-            .unwrap();
+        let (cache, _garde_cache) = cache_de_test();
+        let items = lister(&root.to_string_lossy(), &cache).await.unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "Test");
         assert_eq!(items[0].source, "MANGADEX");
@@ -799,15 +803,15 @@ mod tests {
 
     #[tokio::test]
     async fn meta_absent_reconstruit_letat_depuis_les_fichiers() {
-        let dir = temp_dir("rebuild");
+        let garde = temp_dir("rebuild");
+        let dir = garde.chemin();
         let manga = dir.join("MANGABUFF").join("Sans Meta");
         std::fs::create_dir_all(&manga).unwrap();
         std::fs::write(manga.join("Chapitre 1.cbz"), b"x").unwrap();
         std::fs::write(manga.join("Chapitre 2.cbz"), b"x").unwrap();
 
-        let items = lister(&dir.to_string_lossy(), &cache_de_test())
-            .await
-            .unwrap();
+        let (cache, _garde_cache) = cache_de_test();
+        let items = lister(&dir.to_string_lossy(), &cache).await.unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "Sans Meta");
         assert_eq!(items[0].source, "MANGABUFF");
@@ -846,20 +850,45 @@ mod tests {
     }
 
     /// Dossier source d'un import, avec `noms` fichiers `.cbz` lisibles.
-    fn dossier_source(noms: &[&str]) -> PathBuf {
-        let dir = temp_dir("import-src");
+    /// La garde est **retournée** avec le chemin, et c'est pas un détail.
+    ///
+    /// Mesuré le 2026-10-06 : la première version renvoyait seulement le
+    /// `PathBuf`, donc la garde tombait **à la fin de cette fonction** — le
+    /// dossier était effacé avant même le premier `assert`. Symptôme : 14 tests
+    /// en échec sur `écrivain cbz: NotFound`, alors que le code de production
+    /// n'avait pas bougé. Corollaire : un garde-fou qui nettoie doit être
+    /// **transporté** jusqu'à la fin du test, sinon il nettoie trop tôt ; d'où
+    /// le type `(PathBuf, DossierDeTest)` plutôt que `PathBuf`.
+    fn dossier_source(noms: &[&str]) -> (PathBuf, crate::download::DossierDeTest) {
+        let garde = temp_dir("import-src");
+        let dir = garde.chemin();
         for n in noms {
             cbz_lisible(&dir.join(n), 2);
         }
-        dir
+        (dir, garde)
     }
 
-    /// Titre d'import unique par test : la destination est
-    /// `downloads_root/IMPORT/<titre>`, donc deux tests parallèles avec le même
-    /// titre se marcheraient dessus — exactement la leçon AGENTS.md §14.
-    fn titre_unique(tag: &str) -> String {
-        let n = COMPTEUR.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        format!("tatami-import-{tag}-{}-{n}", std::process::id())
+    /// Titre d'import **unique par test et effacé à la fin**, comme `DossierDeTest`.
+    ///
+    /// `titre_unique` seul ne suffisait pas : un `nettoyer(&titre)` écrit en
+    /// fin de fonction est sauté par le `panic!` qui précède, et il est
+    /// **facile de l'oublier** — mesuré le 2026-10-06, un seul des treize tests
+    /// d'import appelait `nettoyer`, et `IMPORT/` contenait 48 sous-dossiers
+    /// `tatami-import-*` dans la bibliothèque de la personne. Rendre l'effacement
+    /// automatique rend l'oubli impossible.
+    ///
+    /// Le dossier est **retourné** pour que la garde reste vivante : écrire
+    /// `DossierDeTest::pour_import(…).titre()` seul ferait tomber la garde à la
+    /// fin de l'instruction, et l'import recréerait le dossier juste après.
+    fn import_de_test(tag: &str) -> (String, crate::download::DossierDeTest) {
+        let garde = crate::download::DossierDeTest::pour_import(tag);
+        let titre = garde
+            .chemin()
+            .file_name()
+            .expect("nom de dossier")
+            .to_string_lossy()
+            .to_string();
+        (titre, garde)
     }
 
     fn nettoyer(titre: &str) {
@@ -874,8 +903,8 @@ mod tests {
     /// être importé : `.txt`, sous-dossier, et `meta.json` d'origine.
     #[tokio::test]
     async fn un_import_copie_les_cbz_et_nimporte_que_ca() {
-        let titre = titre_unique("nominal");
-        let src = dossier_source(&["Chapitre 1.cbz", "Chapitre 2.cbz"]);
+        let (titre, _garde_import) = import_de_test("nominal");
+        let (src, _garde_src) = dossier_source(&["Chapitre 1.cbz", "Chapitre 2.cbz"]);
         // Du bruit dans le dossier : un seul import « naïf » le remonterait
         // comme un chapitre.
         std::fs::write(src.join("notes.txt"), b"rien a voir").unwrap();
@@ -904,12 +933,10 @@ mod tests {
         // L'index est la **seule** preuve que le résultat est lisible : on
         // relit par la vraie commande de bibliothèque, pas par le rapport que
         // l'import vient de remplir.
-        let items = lister(
-            &crate::download::downloads_root().to_string_lossy(),
-            &cache_de_test(),
-        )
-        .await
-        .unwrap();
+        let (cache, _garde_cache) = cache_de_test();
+        let items = lister(&crate::download::downloads_root().to_string_lossy(), &cache)
+            .await
+            .unwrap();
         let importe = items
             .iter()
             .find(|i| i.title == titre)
@@ -943,8 +970,8 @@ mod tests {
     /// compte, parce qu'un chapitre illisible s'affiche bien dans la liste.
     #[tokio::test]
     async fn un_cbz_illisible_est_refuse_et_non_copie() {
-        let titre = titre_unique("corrompu");
-        let src = dossier_source(&["Chapitre 1.cbz"]);
+        let (titre, _garde_import) = import_de_test("corrompu");
+        let (src, _garde_src) = dossier_source(&["Chapitre 1.cbz"]);
         // Un fichier nommé `.cbz` qui n'est pas un ZIP : c'est exactement ce
         // qu'un téléchargement interrompu ou une page HTML renommée laisse.
         std::fs::write(src.join("Chapitre 9.cbz"), b"<html>challenge</html>").unwrap();
@@ -1066,8 +1093,8 @@ mod tests {
 
     #[tokio::test]
     async fn un_cbz_sans_image_est_refuse() {
-        let titre = titre_unique("sans-image");
-        let src = dossier_source(&["Chapitre 1.cbz"]);
+        let (titre, _garde_import) = import_de_test("sans-image");
+        let (src, _garde_src) = dossier_source(&["Chapitre 1.cbz"]);
         let vide = src.join("Chapitre 7.cbz");
         zip_sans_image(&vide);
         // Le contrôle qui prouve que le fixture teste bien le cas voulu : si
@@ -1109,24 +1136,23 @@ mod tests {
     /// les annoncer absents serait un mensonge de la bibliothèque.
     #[tokio::test]
     async fn reimporter_un_dossier_plus_petit_ne_perd_pas_les_chapitres() {
-        let titre = titre_unique("reimport");
-        let grand = dossier_source(&["Chapitre 1.cbz", "Chapitre 2.cbz", "Chapitre 3.cbz"]);
+        let (titre, _garde_import) = import_de_test("reimport");
+        let (grand, _garde_src) =
+            dossier_source(&["Chapitre 1.cbz", "Chapitre 2.cbz", "Chapitre 3.cbz"]);
         import_webtoon(grand.to_string_lossy().to_string(), Some(titre.clone()))
             .await
             .expect("premier import");
 
-        let petit = dossier_source(&["Chapitre 1.cbz"]);
+        let (petit, _garde_src) = dossier_source(&["Chapitre 1.cbz"]);
         let rapport = import_webtoon(petit.to_string_lossy().to_string(), Some(titre.clone()))
             .await
             .expect("second import");
         assert_eq!(rapport.importes, 1, "un seul fichier fourni");
 
-        let items = lister(
-            &crate::download::downloads_root().to_string_lossy(),
-            &cache_de_test(),
-        )
-        .await
-        .unwrap();
+        let (cache, _garde_cache) = cache_de_test();
+        let items = lister(&crate::download::downloads_root().to_string_lossy(), &cache)
+            .await
+            .unwrap();
         let importe = items
             .iter()
             .find(|i| i.title == titre)
@@ -1152,8 +1178,8 @@ mod tests {
     /// fichier n'a pas été touché — la taille serait identique à l'octet près.
     #[tokio::test]
     async fn reimporter_ne_reecrit_pas_un_chapitre_deja_present() {
-        let titre = titre_unique("idempotent");
-        let src = dossier_source(&["Chapitre 1.cbz"]);
+        let (titre, _garde_import) = import_de_test("idempotent");
+        let (src, _garde_src) = dossier_source(&["Chapitre 1.cbz"]);
         import_webtoon(src.to_string_lossy().to_string(), Some(titre.clone()))
             .await
             .expect("premier import");
@@ -1176,12 +1202,10 @@ mod tests {
             "le fichier a été réécrit : le réimport coûte 43 Mo pour rien"
         );
 
-        let items = lister(
-            &crate::download::downloads_root().to_string_lossy(),
-            &cache_de_test(),
-        )
-        .await
-        .unwrap();
+        let (cache, _garde_cache) = cache_de_test();
+        let items = lister(&crate::download::downloads_root().to_string_lossy(), &cache)
+            .await
+            .unwrap();
         let importe = items
             .iter()
             .find(|i| i.title == titre)
@@ -1197,8 +1221,9 @@ mod tests {
     /// dans la liste et proposerait un lecteur vide.
     #[tokio::test]
     async fn un_dossier_sans_cbz_echoue_sans_laisser_de_dossier() {
-        let titre = titre_unique("vide");
-        let src = temp_dir("import-vide");
+        let (titre, _garde_import) = import_de_test("vide");
+        let garde = temp_dir("import-vide");
+        let src = garde.chemin();
         std::fs::write(src.join("lisezmoi.txt"), b"rien").unwrap();
 
         let err = import_webtoon(src.to_string_lossy().to_string(), Some(titre.clone()))
@@ -1224,8 +1249,9 @@ mod tests {
     /// import « réussi » et vide.
     #[tokio::test]
     async fn un_dossier_entierement_illisible_echoue_et_nettoie() {
-        let titre = titre_unique("tout-illisible");
-        let src = temp_dir("import-pDK");
+        let (titre, _garde_import) = import_de_test("tout-illisible");
+        let garde = temp_dir("import-pDK");
+        let src = garde.chemin();
         std::fs::write(src.join("a.cbz"), b"pas un zip").unwrap();
         std::fs::write(src.join("b.cbz"), b"pas un zip non plus").unwrap();
 
@@ -1253,7 +1279,8 @@ mod tests {
     /// sélectionné un fichier.
     #[tokio::test]
     async fn un_chemin_qui_nest_pas_un_dossier_est_refuse_clairement() {
-        let src = temp_dir("import-fichier");
+        let garde = temp_dir("import-fichier");
+        let src = garde.chemin();
         let fichier = src.join("un.cbz");
         cbz_lisible(&fichier, 1);
 
@@ -1272,11 +1299,11 @@ mod tests {
     /// mérite un test dédié et non une assertion greffée plus haut.
     #[tokio::test]
     async fn un_titre_hostile_ne_sort_pas_du_dossier_de_telechargements() {
-        let titre = titre_unique("hostile");
-        let src = dossier_source(&["Chapitre 1.cbz"]);
+        let (titre, _garde_import) = import_de_test("hostile");
+        let (src, _garde_src) = dossier_source(&["Chapitre 1.cbz"]);
         let toxique = format!("{titre}/../../../evil");
 
-        let rapport = import_webtoon(src.to_string_lossy().to_string(), Some(toxique))
+        let rapport = import_webtoon(src.to_string_lossy().to_string(), Some(toxique.clone()))
             .await
             .expect("import");
         assert_eq!(rapport.importes, 1);
@@ -1304,6 +1331,12 @@ mod tests {
         );
 
         nettoyer(&titre);
+        // Le titre **sanitisé** est `tatami-import-hostile-…_.._.._.._evil` :
+        // `sanitize` remplace `/` par `_`, donc le dossier réellement écrit n'a
+        // pas le nom que couvre le garde (qui connaît `{titre}`, pas le titre
+        // transformé). Sans cet effacement, chaque `cargo test` laissait un
+        // dossier derrière lui — mesuré le 2026-10-06.
+        nettoyer(&crate::download::sanitize(&toxique));
         let _ = std::fs::remove_dir_all(&src);
     }
 
@@ -1321,8 +1354,8 @@ mod tests {
     /// et point en tête.
     #[tokio::test]
     async fn un_nom_de_fichier_hostile_est_assaini_et_recorde_sous_son_nom_reel() {
-        let titre = titre_unique("assaini");
-        let src = dossier_source(&[]);
+        let (titre, _garde_import) = import_de_test("assaini");
+        let (src, _garde_src) = dossier_source(&[]);
         cbz_lisible(&src.join("Chapitre 4..cbz"), 3);
         cbz_lisible(&src.join("  Espaces  .cbz"), 1);
         cbz_lisible(&src.join("...et des points.cbz"), 1);
@@ -1332,12 +1365,10 @@ mod tests {
             .expect("import");
         assert_eq!(rapport.importes, 3, "les trois noms sont importables");
 
-        let items = lister(
-            &crate::download::downloads_root().to_string_lossy(),
-            &cache_de_test(),
-        )
-        .await
-        .unwrap();
+        let (cache, _garde_cache) = cache_de_test();
+        let items = lister(&crate::download::downloads_root().to_string_lossy(), &cache)
+            .await
+            .unwrap();
         let importe = items
             .iter()
             .find(|i| i.title == titre)
@@ -1398,8 +1429,8 @@ mod tests {
     /// la lecture avance de 2 à 10 et le lecteur croit à un saut de huit.
     #[tokio::test]
     async fn les_chapitres_sont_tries_par_numero_et_non_par_nom() {
-        let titre = titre_unique("tri");
-        let src = dossier_source(&[
+        let (titre, _garde_import) = import_de_test("tri");
+        let (src, _garde_src) = dossier_source(&[
             "Chapitre 10.cbz",
             "Chapitre 2.cbz",
             "Chapitre 1.cbz",
@@ -1411,12 +1442,10 @@ mod tests {
             .expect("import");
         assert_eq!(rapport.importes, 4);
 
-        let items = lister(
-            &crate::download::downloads_root().to_string_lossy(),
-            &cache_de_test(),
-        )
-        .await
-        .unwrap();
+        let (cache, _garde_cache) = cache_de_test();
+        let items = lister(&crate::download::downloads_root().to_string_lossy(), &cache)
+            .await
+            .unwrap();
         let importe = items
             .iter()
             .find(|i| i.title == titre)
@@ -1441,8 +1470,8 @@ mod tests {
     /// prouvent la copie et le `meta.json`, pas l'accès par le lecteur.
     #[tokio::test]
     async fn les_pages_d_un_chapitre_importe_sont_lisibles_par_le_lecteur() {
-        let titre = titre_unique("lecteur");
-        let src = dossier_source(&["Chapitre 1.cbz", "Chapitre 2.cbz"]);
+        let (titre, _garde_import) = import_de_test("lecteur");
+        let (src, _garde_src) = dossier_source(&["Chapitre 1.cbz", "Chapitre 2.cbz"]);
         import_webtoon(src.to_string_lossy().to_string(), Some(titre.clone()))
             .await
             .expect("import");
@@ -1481,8 +1510,8 @@ mod tests {
     /// 80 caractères, au-delà duquel deux noms distincts se confondent.
     #[tokio::test]
     async fn deux_fichiers_de_meme_nom_assaini_ne_produisent_qu_un_chapitre() {
-        let titre = titre_unique("collision");
-        let src = dossier_source(&[]);
+        let (titre, _garde_import) = import_de_test("collision");
+        let (src, _garde_src) = dossier_source(&[]);
         cbz_lisible(&src.join("sans-titre.cbz"), 1);
         cbz_lisible(&src.join("   .cbz"), 2);
         // Et le plafond de longueur : au-delà de 80 caractères, deux noms
@@ -1507,12 +1536,10 @@ mod tests {
             );
         }
 
-        let items = lister(
-            &crate::download::downloads_root().to_string_lossy(),
-            &cache_de_test(),
-        )
-        .await
-        .unwrap();
+        let (cache, _garde_cache) = cache_de_test();
+        let items = lister(&crate::download::downloads_root().to_string_lossy(), &cache)
+            .await
+            .unwrap();
         let importe = items
             .iter()
             .find(|i| i.title == titre)

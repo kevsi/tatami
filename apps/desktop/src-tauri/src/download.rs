@@ -108,6 +108,87 @@ pub fn downloads_root() -> PathBuf {
     racine().read().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
+/// Dossier de fixture **effacé à la fin du test**, quel qu'en soit le dénouement.
+///
+/// Pourquoi il vit dans la vraie racine des téléchargements : `list_library`
+/// n'accepte que cette racine, donc une fixture ailleurs ne prouverait rien du
+/// confinement. Pourquoi il faut donc le faire disparaître : mesuré le
+/// 2026-10-06, `%APPDATA%\Tatami\downloads` contenait **34 dossiers
+/// `tatami-test-*`** et un `IMPORT/`, tous laissés par des `cargo test`
+/// précédents. Ils sont dans la bibliothèque de la personne qui teste, et
+/// personne ne les nettoie à la main.
+///
+/// Le nettoyage passe par `Drop`, donc il a lieu **même si le test panique** —
+/// c'est tout l'intérêt d'un garde-fou plutôt que d'un `remove_dir_all` à la
+/// fin d'une fonction, qui serait sauté par le `panic!` juste avant.
+///
+/// Le dossier est unique par **pid + compteur** : les tests sont parallèles, et
+/// deux fixtures de même nom se marcheraient dessus.
+#[cfg(test)]
+pub(crate) struct DossierDeTest {
+    chemin: PathBuf,
+}
+
+#[cfg(test)]
+impl DossierDeTest {
+    /// Fixture de **source** : un dossier frère, directement sous la racine.
+    pub(crate) fn new(tag: &str) -> Self {
+        Self::creer(tag)
+    }
+
+    /// Destination d'un import : `import_webtoon` écrit dans
+    /// `downloads_root/IMPORT/<titre>`, donc la fixture doit être ce **titre**
+    /// sous `IMPORT/`, pas un dossier frère — sinon le garde effacerait une
+    /// fixture pendant que le dossier réellement écrit reste sur le disque.
+    ///
+    /// Le nom garde le préfixe `tatami-import-` que les tests attendent déjà, donc
+    /// un reliquat d'une version antérieure reste reconnaissable.
+    pub(crate) fn pour_import(tag: &str) -> Self {
+        Self::creer_import(tag)
+    }
+
+    /// Nom unique par **pid + compteur** : les tests sont parallèles, et deux
+    /// fixtures de même nom se marcheraient dessus.
+    fn nom_unique(prefixe: &str) -> String {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static COMPTEUR: AtomicUsize = AtomicUsize::new(0);
+        let n = COMPTEUR.fetch_add(1, Ordering::SeqCst);
+        format!("{prefixe}-{}-{n}", std::process::id())
+    }
+
+    /// Fixture de source : dossier frère, directement sous la racine.
+    fn creer(tag: &str) -> Self {
+        let chemin = downloads_root().join(Self::nom_unique(&format!("tatami-test-{tag}")));
+        let _ = std::fs::remove_dir_all(&chemin);
+        std::fs::create_dir_all(&chemin).expect("dossier de test");
+        DossierDeTest { chemin }
+    }
+
+    /// Destination d'import : `IMPORT/<titre>`. `IMPORT/` est créé par
+    /// `import_webtoon` lui-même, donc le garde ne le crée pas — il efface le
+    /// dossier du titre à la fin.
+    fn creer_import(tag: &str) -> Self {
+        let chemin = downloads_root()
+            .join(crate::library::SOURCE_IMPORT)
+            .join(Self::nom_unique(&format!("tatami-import-{tag}")));
+        let _ = std::fs::remove_dir_all(&chemin);
+        DossierDeTest { chemin }
+    }
+
+    pub(crate) fn chemin(&self) -> PathBuf {
+        self.chemin.clone()
+    }
+}
+
+#[cfg(test)]
+impl Drop for DossierDeTest {
+    fn drop(&mut self) {
+        // Un échec ici ne doit pas faire échouer le test : le dossier restant
+        // est inoffensif, contrairement à un `expect` dans un `Drop`.
+        let _ = std::fs::remove_dir_all(&self.chemin);
+    }
+}
+
 /// Change le dossier de téléchargements pour cette session.
 ///
 /// Le dossier doit déjà exister et être accessible en écriture : c'est
@@ -787,7 +868,8 @@ mod tests {
 
     #[test]
     fn la_reprise_voit_les_deux_chapitres_homonnes_comme_absents() {
-        let dir = dossier_de_test("homonymes");
+        let garde = dossier_de_test("homonymes");
+        let dir = garde.chemin();
         std::fs::create_dir_all(&dir).unwrap();
         let urls = vec!["c/1".to_string(), "c/1bis".to_string()];
         let titles = vec!["Chapitre 1".to_string(), "Chapitre 1".to_string()];
@@ -839,14 +921,9 @@ mod tests {
 
     /// Dossier de fixture sous la vraie racine des téléchargements, comme le
     /// fait `library.rs` : `%TEMP%` n'est pas expansé sur cette machine.
-    fn dossier_de_test(tag: &str) -> PathBuf {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static COMPTEUR: AtomicUsize = AtomicUsize::new(0);
-        let n = COMPTEUR.fetch_add(1, Ordering::SeqCst);
-        let dir = downloads_root().join(format!("tatami-test-{tag}-{}-{n}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("dossier de test");
-        dir
+    /// Le dossier est effacé à la sortie du test — voir `DossierDeTest`.
+    fn dossier_de_test(tag: &str) -> super::DossierDeTest {
+        super::DossierDeTest::new(tag)
     }
 
     #[test]

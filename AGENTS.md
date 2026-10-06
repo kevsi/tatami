@@ -607,15 +607,33 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   journal avant de chercher sur le disque** — un dossier réglé par l'utilisateur
   Prime sur le défaut du code, et « 0 fichier nouveau » dans le mauvais dossier
   est le pire des résultats, parce qu'il accuse le code.
-- **`cargo test` écrit dans la vraie bibliothèque de l'utilisateur.** Mesuré le
-  2026-10-05 : `%APPDATA%\Tatami\downloads` contenait **35 dossiers
-  `tatami-test-*`** (fixtures de téléchargement et d'import, 2.4) et un `IMPORT/`
-  avec des cas hostiles dont un nom `…\..\..\..\evil` — correctement contenu
-  dans `downloads\IMPORT\`, donc la traversée est bloquée, mais la fixture est
-  restée sur le disque de la machine. Les tests qui touchent au disque doivent
-  écrire dans un dossier temporaire à eux, pas dans `downloads_root()`. Point
-  signalé, **pas corrigé dans le même commit** : c'est un défaut de harness,
-  distinct du défaut d'interface que je venais de corriger.
+- **`cargo test` écrivait dans la vraie bibliothèque de l'utilisateur.** Mesuré
+  le 2026-10-06 : `%APPDATA%\Tatami\downloads` contenait **34 dossiers
+  `tatami-test-*`** et `IMPORT/` avec **48 sous-dossiers** `tatami-import-*`
+  (dont un cas hostile `…_.._.._.._evil`, correctement confiné). Les fixtures
+  vivent dans la vraie racine **délibérément** : `list_library` n'accepte que
+  cette racine, donc une fixture ailleurs ne prouverait rien. Le défaut n'était
+  donc pas l'emplacement, c'est l'**absence de nettoyage** : un
+  `remove_dir_all` en fin de test est sauté par le `panic!` juste avant, et il
+  était **facile à oublier** — 1 seul test d'import sur 13 appelait `nettoyer`.
+  Corrigé par un garde `DossierDeTest` dont le `Drop` efface, donc **même en cas
+  de panic**. Prouvé : `panic!` délibéré dans un test d'import → test rouge,
+  **0 dossier résiduel**.
+- **Un garde qui nettoie doit être *transporté* jusqu'à la fin du test, sinon il
+  nettoie trop tôt.** Mesuré le 2026-10-06 : `dossier_source()` retournait le
+  `PathBuf` et **jettait la garde** → le dossier était effacé avant le premier
+  `assert`, soit **14 tests en échec** sur `écrivain cbz: NotFound`, alors que
+  le code de production n'avait pas bougé. Le type qui empêche l'erreur est
+  `(PathBuf, DossierDeTest)`, pas `PathBuf`. Même famille pour l'import : le
+  titre **sanitisé** n'est pas le titre du garde (`sanitize` transforme `/` en
+  `_`), donc un dossier hostile restait sur disque malgré le garde.
+- **Un nom fixe partagé entre tests parallèles est un défaut invisible.**
+  `tatami-cache-test` n'était effacé par personne, et surtout **deux tests se
+  partageaient le même dossier** : le jeton écrit par l'un était lisible par
+  l'autre, donc un défaut de `list_library` pouvait être masqué par le contenu
+  du voisin. Le seul symptôme visible était le dossier vide qui traînait — la
+  moitié sérieuse du problème ne se voyait pas du tout. Règle : tout nom de
+  fixture porte **pid + compteur**.
 - **Un `.cbz` qui existe n'est pas un `.cbz` valide — et le lecteur strict se
   prouve d'abord sur un cas qui doit échouer.** `.mesures/verifier-cbz.py`
   ouvre l'archive, relit les **octets d'origine** de chaque entrée et vérifie

@@ -401,15 +401,24 @@ fn base64_decode(s: &str) -> Result<Vec<u8>, base64::DecodeError> {
 mod tests {
     use super::*;
 
-    fn cache() -> std::sync::Arc<PageCache> {
+    /// Le dossier du cache est une fixture : dossier unique (les tests sont
+    /// parallèles et un nom fixe les fait se marcher dessus) et effacé en fin
+    /// de test — mesuré le 2026-10-06, `tatami-cache-test` traînait dans la vraie
+    /// bibliothèque parce que son nom fixe le rendait invisible au nettoyage.
+    ///
+    /// Le cache est **étiqueté** pour qu'un jeton soit rejouable : le test
+    /// relit ses propres jetons, donc il faut le même dossier d'un test à
+    /// l'autre. D'où `label`, plutôt qu'une racine neuve par appel.
+    fn cache() -> (std::sync::Arc<PageCache>, crate::download::DossierDeTest) {
+        let garde = crate::download::DossierDeTest::new("cache");
         // Pas `env::temp_dir()` : sur cette machine TEMP n'est pas expansé et
         // résout un chemin littéral contre le dossier courant (leçon AGENTS.md).
-        PageCache::new(crate::download::downloads_root().join("tatami-cache-test"))
+        (PageCache::new(garde.chemin()), garde)
     }
 
     #[test]
     fn le_meme_url_redonne_le_meme_jeton() {
-        let c = cache();
+        let (c, _garde_cache) = cache();
         let a = c.register("MANGADEX", "https://x/1.jpg");
         let b = c.register("MANGADEX", "https://x/1.jpg");
         assert_eq!(a, b, "un URL identique doit réutiliser le jeton");
@@ -419,7 +428,7 @@ mod tests {
 
     #[test]
     fn une_couverture_ne_collisionne_pas_avec_une_page() {
-        let c = cache();
+        let (c, _garde_cache) = cache();
         let page = c.register("MANGADEX", "https://x/manga/cover.jpg");
         let couv = c.register_cover("MANGADEX", "https://x/manga/cover.jpg", None);
         assert_ne!(page, couv, "page et couverture ne partagent pas de jeton");
@@ -428,7 +437,7 @@ mod tests {
 
     #[test]
     fn le_cache_est_borne_et_evacue_les_anciens() {
-        let c = cache();
+        let (c, _garde_cache) = cache();
         let premier = c.register("MANGADEX", "https://x/0.jpg");
         for i in 1..(CAP_PAGE + 50) {
             c.register("MANGADEX", &format!("https://x/{i}.jpg"));
@@ -451,7 +460,7 @@ mod tests {
 
     #[test]
     fn les_couvertures_ont_leur_propre_plafond() {
-        let c = cache();
+        let (c, _garde_cache) = cache();
         for i in 0..(CAP_COVER + 50) {
             c.register_cover("MANGADEX", &format!("m{i}"), None);
         }

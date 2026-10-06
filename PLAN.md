@@ -2144,12 +2144,8 @@ retombe pas dedans.
   `http://tatami.localhost/page/<jeton>` **est** le protocole local, et le
   journal des requêtes ne montre aucun accès à un hôte du site.
 
-### Reste à faire, non fait
-
-- **`cargo test` écrit dans la vraie bibliothèque** : `%APPDATA%\Tatami\downloads`
-  contenait 35 dossiers `tatami-test-*` et un `IMPORT/` de fixtures, dont un nom
-  hostile `…\..\..\..\evil` correctement contenu. Les tests doivent écrire dans
-  un temporaire à eux. Défaut de harness, distinct : signalé, pas corrigé ici.
+- **`cargo test` écrivait dans la vraie bibliothèque** — **corrigé, voir la
+  section du 2026-10-06 ci-dessous.**
 - **2 appels `chapters` non attribués** (même manga, 160 ms d'écart, un seul
   `details`) : toujours sans explication.
 - **Le lecteur n'affiche aucun compteur de page** : signalé, pas traité.
@@ -2163,3 +2159,87 @@ retombe pas dedans.
 `cargo test` **152** (131 + 1 + 20) · `pnpm typecheck` 0 ·
 `pnpm lint` 4 warnings (les 4 antérieurs, 0 erreur) · `pnpm i18n:check` ·
 `pnpm hooks:check` · `pnpm chemins:check` : tous propres.
+
+---
+
+## 2026-10-06 — Les tests n'écrivent plus dans la bibliothèque
+
+Reprise du point laissé ouvert : `cargo test` laissait ses fixtures dans la
+bibliothèque de la personne.
+
+### Le mesure de départ
+
+`%APPDATA%\Tatami\downloads` contenait **34 dossiers `tatami-test-*`** et
+`IMPORT/` avec **48 sous-dossiers** `tatami-import-*`, dont un cas hostile
+`…_.._.._.._evil` — correctement confiné, mais présent. 71 Ko au total : ce
+n'est pas un problème de volume, c'est un principe : **la bibliothèque de
+l'utilisateur n'est pas un répertoire de travail pour les tests.**
+
+### Ce n'était pas l'emplacement, c'était le nettoyage
+
+Le code le disait déjà, et c'était une décision fondée :
+
+> Fixture **dans la vraie racine des téléchargements** : c'est la seule
+> racine que `list_library` accepte, donc un test qui vérifierait le
+> confinement avec une racine bidon ne prouverait rien.
+
+Donc les fixtures **restent** où elles sont. Ce qui manquait, c'était
+l'effacement — et il était absent pour trois raisons mesurées :
+
+1. un `remove_dir_all` écrit en fin de fonction est **sauté par le `panic!`**
+   juste avant ;
+2. il était **facile à oublier** : un seul des treize tests d'import appelait
+   `nettoyer` ;
+3. `cache_de_test()` portait un **nom fixe**, jamais effacé.
+
+### Le correctif : un garde dont le `Drop` efface
+
+`DossierDeTest` (`download.rs`, `#[cfg(test)]`) crée la fixture et l'efface à la
+chute. Le nettoyage a donc lieu **même si le test panique** — ce qui est tout
+l'intérêt d'un garde plutôt que d'un appel en fin de fonction.
+
+**Prouvé sur un panic délibéré** : `panic!("PANIC PROVOQUE")` inséré dans un
+test d'import → test **rouge**, et **0 dossier résiduel** après le run. Un
+garde qui nettoie « en temps normal » n'aurait rien laissé voir.
+
+### Le piège du garde qu'on ne transporte pas
+
+Première version : `dossier_source()` retournait le `PathBuf` et **jettait la
+garde** → le dossier était effacé avant le premier `assert`. Résultat :
+**14 tests en échec** sur `écrivain cbz: NotFound`, alors que le code de
+production n'avait pas bougé.
+
+Le type qui empêche l'erreur est `(PathBuf, DossierDeTest)` : le dossier et sa
+garde voyagent ensemble. Même famille pour l'import : le dossier réellement
+écrit porte le titre **sanitisé** (`sanitize` transforme `/` en `_`), donc
+`…_.._.._.._evil`, pas le nom du garde — un `nettoyer(sanitize(&toxique))`
+explicite a été nécessaire.
+
+Et `cache_de_test()` : le nom fixe ne laissait pas qu'un dossier traîner, il
+**partageait le même dossier entre tests parallèles** — donc le jeton écrit par
+l'un était lisible par l'autre, ce qui pouvait masquer un défaut de
+`list_library`. La moitié sérieuse de ce défaut ne se voyait pas du tout.
+
+### Mesure de sortie
+
+| | Avant | Après |
+|---|---|---|
+| dossiers `tatami-*` après `cargo test` | 34 + 48 | **0** |
+| tests verts | 152 | **152** |
+| 3 runs consécutifs | — | **0 résiduel à chaque fois** |
+| bibliothèque | 4 sources | **4 sources, intactes** |
+
+La porte est le décompte : un compteur de dossiers `tatami-*` avant et après
+chaque run. Un test qui passe ne prouve rien ici — **la propriété à prouver
+est l'absence de résidu**, pas le vert.
+
+Deux fichiers de fixtures ne se supprimaient pas par `Remove-Item` : ils
+contenaient un fichier nommé `Ch.1 ` (espace final), que Windows refuse par un
+chemin normal. Supprimés par la forme longue `\\?\`, seule voie.
+
+### Vérification
+
+`cargo fmt --check` 0 · `cargo clippy --all-targets -D warnings` 0 ·
+`cargo test` **152** (131 + 1 + 20), **3 runs consécutifs** sans résidu.
+Aucune modification du code de production : `DossierDeTest` est sous
+`#[cfg(test)]`, vérifié ligne à ligne dans le diff.

@@ -46,4 +46,5 @@ pub mod scheduler;
 pub mod shelf;
 pub mod store;
 pub mod supervisor;
+pub mod tray;
 pub mod zipread;

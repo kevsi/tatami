@@ -155,7 +155,7 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 - [x] **3.1** Planificateur Rust (tokio) : vérification périodique des nouveaux chapitres des favoris, avec limites de débit. **Livré** le 2026-10-05 : `scheduler.rs` + 19 tests, horloge et moteur injectés, débit par source avec retour arrière borné, état persisté en base, évènement `maj://nouveaux-chapitres`. Aucune dépendance ajoutée, aucun écran (3.2 décrit dans le journal, non implémenté). **Point ouvert mesuré le 2026-10-05 (session 1) :** le pire cas calculé de la passe est 20 sources × 20 s = **400 s**, et elle part **au démarrage**, en concurrence avec l'interface — alors que le moteur est séquentiel. Mesuré : `EXHENTAI` (la source qui « scanne tout son catalogue ») répond en **1 339 ms**, et une source rapide pendant/après répond en **620 ms** — donc les 20 s sont un **délai de politesse**, pas une durée d'appel, et le pire cas n'est pas 400 s de travail réel. **Décision : ne rien changer au code.** Le risque restant est `N × (durée réelle d'un appel)` avec un `timeoutSecs` de 60 s, à re-mesurer quand la bibliothèque comptera des centaines de favoris.
 - [x] **3.2** Flux « mises à jour » dans l'interface. **Livré et vérifié** le 2026-10-05. Écoute `maj://nouveaux-chapitres` (le planificateur est son seul producteur, et il n'émet **rien** quand il n'y a rien de neuf), fusionne par `(source, manga_url)` en cumulant les totaux — deux passes du même favori donnent des chapitres **différents**, pas les mêmes comptés deux fois. Persisté dans `localStorage` (plafonné à 200 entrées), donc visible après un redémarrage. **Le piège documenté par le moteur est vérifié explicitement** : un cas tronqué (`total` 47, 3 chapitres listés) affiche bien « 47 nouveaux chapitres » et « et 44 de plus » — donc l'écran lit `total`, jamais `chapitres.length`. Preuve : 2 entrées rendues, fusion 47 + 2 → 49 sans doublon, persistance vérifiée après rechargement, 0 erreur console, et les **singuliers** vérifiés à part dans les deux langues (1 mise / 1 chapitre / 1 autre). Ouvre la fiche par `loadChapters`, qui pose déjà `setOpenManga` et appelle `details` + `chapters` — un doublon écrit d'abord invoices un `setChapitresCharges` inexistant, que le compilateur a signalé.
 - [x] **3.3** Notifications système. **Livré et vérifié** le 2026-10-05. Une alerte par passage de la veille, jamais une par chapitre ; silencieuse tant que la fenêtre a le focus ; réglage dans l'écran Réglages ; texte dans les deux langues. **Ce que la doc a révélé** : sur desktop, `sendNotification` du plugin ne passe **pas** par l'IPC — c'est `new window.Notification(...)` (l'API Web Notifications de WebView2). Le plugin Rust n'intervient que pour la **requête** de permission, et seulement quand `window.Notification.permission === 'default'`. Conséquence appliquée : `notification:allow-notify` a été **retiré** de la capability, mobile étant hors v1 (AGENTS.md §7).
-- [ ] **3.4** Icône dans la zone de notification, fermeture dans la zone de notification, démarrage automatique optionnel.
+- [x] **3.4** Icône dans la zone de notification, fermeture dans la zone de notification, démarrage automatique optionnel. **Livré et vérifié** le 2026-10-05. Le tray est créé par **Rust** dans `setup()`, pas par l'interface : « fermer met dans la zone » et « l'icône existe » sont le même geste, donc une icône dépendant de la webview rendrait l'application **injoignable**. Les libellés du menu viennent de l'interface via `set_libelles`, qui **renvoie les textes relus depuis le menu** — ce qui donne la preuve sans ajouter `core:menu:allow-get-text`. Démarrage automatique = plugin officiel, état **relu depuis le système** après chaque écriture.
 - [x] **3.5** Réglages : fréquence, sources concernées, activation. **Livré et vérifié** le 2026-10-05. Deux commandes Tauri dans `scheduler.rs` (`reglages_planificateur`, `set_reglages_planificateur`) : le Rust avait déjà `Reglages` avec `bornes()`, et le commentaire sur le champ `actif` attendait explicitement cet écran. Écriture **partielle** — chaque paramètre est un `Option`, donc un champ omis garde sa valeur, mesuré : changer la période laisse les trois autres intacts. Les bornes affichées (`min`/`max`) **voyagent depuis Rust**, donc l'écran ne peut pas proposer une valeur que le moteur corrigerait en silence. Affiche aussi `dernier_pass`, parce que « actif » ne prouve rien : une veille active qui n'a pas tourné depuis trois jours semble active.
 
 **Critère de sortie** : un nouveau chapitre (simulé ou réel) déclenche une notification pendant que l'app est réduite dans la zone de notification.
@@ -683,6 +683,59 @@ jamais. Prouvée mordante après le changement.
 `cargo test` **121** (100 + 1 + 20) · `fmt` 0 · `clippy --all-targets -D
 warnings` 0 · `tsc` 0 · `lint` 0 erreur (4 warnings antérieurs) · `build` OK ·
 `i18n` 232 clés, aucune morte, aucun placeholder nu.
+
+### 2026-10-05 — Zone de notification et démarrage automatique (3.4) — fait
+
+**Le trait de fer de cette tâche** : on ne masque la fenêtre que si l'utilisateur
+a un moyen de la ramener. Trois issues, donc un verrou extrait dans une fonction
+pure `doit_cacher(quitte, tray_visible)` :
+
+```rust
+pub fn doit_cacher(quitte: bool, tray_visible: bool) -> bool { !quitte && tray_visible }
+```
+
+Le cas grave est mesuré dans le code du plugin : `TrayIconBuilder::icon()`
+attend une `Image` et **ne fait rien** si on ne lui en donne pas. Un tray sans
+icône existe mais n'a rien de cliquable — masquer la fenêtre dans ce cas
+interdirait à l'utilisateur de retrouver l'application autrement que par le
+gestionnaire de tâches. D'où `TRAY_VISIBLE`, mis à **vrai seulement** après un
+`build()` réussi avec icône.
+
+**Porte prouvée mordante** : remplacer `!quitte && tray_visible` par `!quitte`
+fait échouer `on_ne_masque_la_fenetre_que_si_le_tray_est_cliquable`, en nommant
+le scénario — « sans icone, masquer la fenetre rendrait l'application
+injoignable ».
+
+**Le tray est créé par Rust, les libellés par l'interface.** Même arbitrage que
+3.3 : Rust garantit l'existence, l'interface possède la langue. `set_libelles`
+renvoie les textes **relus depuis `MenuItem::text()`**, pas ceux reçus : c'est la
+seule preuve que le système a pris. Et cela évite d'ajouter
+`core:menu:allow-get-text` aux capabilities — que la règle « strict minimum »
+interdit d'ajouter pour les besoins d'une mesure.
+
+**Zéro capability ajoutée pour le tray.** Trois sondes ont été **refusées** par
+le moteur : `tray.get_by_id`, `menu.get`, `window.is_visible`. Ce refus est la
+preuve que la discipline tient — mon code n'a besoin de rien de tout cela, donc
+il n'est pas déclaré. Vérifié autrement : journal Rust « icone de zone creee », et
+la lecture du registre par `set_libelles`.
+
+**Démarrage automatique, état relu et jamais deviné.** Mesuré contre le système :
+`is_enabled` → `false`, `enable` → `true`, `disable` → `false`, registre de
+départ laissé intact. Un état `indisponible` existe pour le cas réel où le
+système refuse (Linux sans gestionnaire de bureau, politique d'entreprise) :
+l'interrupteur est alors **désactivé** et le dit, au lieu de rester coché pour
+rien.
+
+**Une sonde qui lisait la langue au mauvais endroit.** Je testais la langue via
+`document.documentElement.lang` — l'attribut que le script bloquant de
+`layout.tsx` laisse à `fr` (la régression signalée hors périmètre). La sonde
+envoyait donc toujours du français et concluait que l'anglais ne passait pas.
+Corrigée sur `localStorage`, avec l'onglet affiché comme preuve
+indépendante (« Home »).
+
+`cargo test` **125** (104 + 1 + 20), dont 4 nouveaux · `fmt` 0 · `clippy
+--all-targets -D warnings` 0 · `tsc` 0 · `lint` 0 erreur (4 warnings antérieurs) ·
+`build` OK · `i18n` 240 clés, aucune morte, aucun placeholder nu.
 
 ### 2026-10-05 — Notifications système (3.3) — mini-plan
 

@@ -92,6 +92,23 @@ const FR = {
   'notif.reglage.note2':
     'Tant que la fenêtre a le focus, l’alerte reste muette : le flux « mises à jour » de l’accueil montre déjà la même chose.',
 
+  // --- Démarrage automatique (tâche 3.4) ---
+  'demarrage.titre': 'Démarrage automatique',
+  'demarrage.reglage': 'Lancer Tatami à l’ouverture de ma session',
+  'demarrage.lecture': 'Lecture de l’état du système…',
+  'demarrage.indisponible':
+    'Le système refuse d’enregistrer un démarrage automatique ; l’option reste indisponible.',
+  'demarrage.note':
+    'Indépendant de « fermer met dans la zone » : les deux réglages n’ont pas la même conséquence.',
+
+  // --- Zone de notification (tâche 3.4) ---
+  //
+  // Ces libellés sont **appliqués par Rust** via `set_libelles` : le menu est
+  // créé par le cœur (pour qu'il existe même si la webview échoue), donc ses
+  // textes viennent d'ici.
+  'zone.ouvrir': 'Ouvrir Tatami',
+  'zone.quitter': 'Quitter',
+
   // --- Durées (partagées par les réglages du planificateur) ---
   'duree.min': '{n} min',
   'duree.heure1': '1 h',
@@ -408,6 +425,19 @@ const EN: Record<Cle, string> = {
     'One alert per run, never one per chapter. Turning this off does not stop the watch.',
   'notif.reglage.note2':
     'While the window has focus the alert stays quiet: the “updates” feed on the home screen already shows the same thing.',
+
+  // --- Autostart (task 3.4) ---
+  'demarrage.titre': 'Start on login',
+  'demarrage.reglage': 'Launch Tatami when I sign in',
+  'demarrage.lecture': 'Reading the system state…',
+  'demarrage.indisponible':
+    'The system refuses to register an autostart entry; the option stays unavailable.',
+  'demarrage.note':
+    'Independent from “closing hides to the notification area”: the two settings do not have the same consequence.',
+
+  // --- Notification area (task 3.4) ---
+  'zone.ouvrir': 'Open Tatami',
+  'zone.quitter': 'Quit',
 
   // --- Durations (shared with the scheduler settings) ---
   'duree.min': '{n} min',

@@ -18,7 +18,9 @@ use tauri::Manager;
 // « allow the macro to be resolved with the same path as the command function »).
 // L'import de `commands` ci-dessous n'est donc pas cosmétique : sans lui, le
 // chemin de `generate_handler!` ne se résout pas.
-use tatami_desktop::{challenge, commands, download, library, pagecache, scheduler, shelf, store};
+use tatami_desktop::{
+    challenge, commands, download, library, pagecache, scheduler, shelf, store, tray,
+};
 
 fn not_found() -> tauri::http::Response<Vec<u8>> {
     tauri::http::Response::builder()
@@ -130,6 +132,12 @@ fn main() {
         // plugin, et sans `init()` cette commande n'existe pas. Une capability
         // déclarée ne suffit donc pas — elle autorise une commande absente.
         .plugin(tauri_plugin_notification::init())
+        // Tâche 3.4 : démarrage automatique. Optionnel par construction — le
+        // plugin ne fait rien tant que l'interface ne l'a pas demandé.
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(sup.clone())
         .manage(Arc::new(store))
         .manage(cache.clone())
@@ -208,6 +216,7 @@ fn main() {
             shelf::reset_downloads_dir,
             shelf::forget_history,
             shelf::add_bookmark,
+            tray::set_libelles,
             challenge::open_challenge,
             challenge::solve_challenge,
             challenge::cancel_challenge
@@ -233,7 +242,16 @@ fn main() {
                 app.handle().clone(),
                 arret,
             ));
+
+            // Tâche 3.4 : l'icône de zone est créée **ici**, dans `setup()`, et
+            // non par l'interface — sinon « fermer » pourrait masquer la
+            // fenêtre alors qu'aucune icône n'existe, et l'application deviendrait
+            // injoignable. Rust la crée avant que la première requête ne parte.
+            tray::construire(app)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            tray::sur_evenement_fenetre(window, event);
         })
         .build(context)
         .expect("tauri build")

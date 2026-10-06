@@ -152,7 +152,7 @@ if (nonTraduites.length) {
 
 console.log(
   `clés FR : ${fr.length} | clés EN : ${en.length} | ` +
-    `t() et tables dans page.tsx : ${utilisees.size}`,
+    `littéraux trouvés dans app/ : ${utilisees.size}`,
 );
 
 if (echecs.length) {

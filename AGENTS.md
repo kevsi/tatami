@@ -339,6 +339,25 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   Ici `chapter_file_for` est la partie à risque (le décalage de chemin), et le
   reste de la chaîne est déjà couvert par les tests de 2.3.
 
+- **`TrayIconBuilder::icon()` ne fait rien si on ne lui donne pas d'image** :
+  le tray existe alors, sans rien de cliquable. Une icône de zone qui dépend de
+  la webview n'est donc pas une question de style : avec « fermer cache la
+  fenêtre », elle rend l'application **injoignable**. D'où un verrou en
+  fonction pure, testé sur ses quatre cas, et une porte qu'on casse pour la
+  prouver. Une commande qui renvoie `Ok` ne prouve rien : `set_libelles`
+  renvoie les textes **relus depuis le menu**, ce qui évite en prime d'ajouter
+  `core:menu:allow-get-text` aux capabilities — ce qu'interdit « strict
+  minimum ».
+- **Une sonde refusée par le moteur est une preuve.** `tray.get_by_id`,
+  `menu.get`, `window.is_visible` : trois « not allowed ». Ce refus dit que la
+  discipline tient, et oblige à trouver une autre voie plutôt qu'à élargir les
+  droits pour pouvoir mesurer.
+- **Lire la langue au mauvais endroit fait conclure à un bug inexistant.** Une
+  sonde lisait `document.documentElement.lang` — exactement l'attribut que le
+  script bloquant de `layout.tsx` laisse à `fr`. Elle envoyait donc toujours du
+  français et concluait que l'anglais ne passait pas. Le défaut était dans la
+  mesure.
+
 - **Tauri ignore silencieusement un paramètre d'écriture en `snake_case`.** Il
   convertit `camelCase` → `snake_case` côté Rust ; une clé déjà snake_case passe
   **sans erreur** et n'est pas prise. La commande répond normalement avec les

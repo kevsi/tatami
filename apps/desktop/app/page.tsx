@@ -13,6 +13,11 @@ import {
 import { useApparence } from './apparence';
 import { useI18n, type MessageKey } from './i18n';
 import { notifActive, notifie, setNotifActive, texteNotification } from './notification';
+import {
+  lireDemarrage,
+  reglerDemarrage,
+  type EtatDemarrage,
+} from './demarrage';
 
 type Source = { name: string; lang: string };
 type Manga = {
@@ -887,6 +892,10 @@ export default function Home() {
   // autre fenêtre (ou un walk de mesure) écrit la clé : l'interrupteur
   // afficherait alors « actif » pendant que plus rien n'est envoyé.
   const [notif, setNotif] = useState(notifActive());
+  // Tâche 3.4 — démarrage automatique. `inconnu` au premier rendu : afficher
+  // `inactif` avant la lecture du système ferait clignoter l'interrupteur à
+  // chaque ouverture de l'écran des réglages.
+  const [demarrage, setDemarrage] = useState<EtatDemarrage>('inconnu');
   // Ce qui n'a pas encore été regardé. Une valeur dérivée, pas un second état :
   // deux compteurs qui peuvent divergir sont deux bugs en attente.
   const majNonVus = maj.filter((m) => !m.vue).length;
@@ -1138,6 +1147,45 @@ export default function Home() {
    *  démarrage pour un écran rarement ouvert n'est pas un détail (le moteur est
    *  séquentiel, il sert d'abord l'utilisateur).
    */
+  /** Tâche 3.4 — écrit le démarrage automatique, puis **relit**.
+   *
+   *  `reglerDemarrage` renvoie déjà l'état obtenu ; on ne devine donc jamais le
+   *  résultat localement. Si le système refuse, l'interrupteur revient à sa
+   *  position réelle — coché pour rien serait le pire résultat.
+   */
+  const basculerDemarrage = useCallback(async (actif: boolean) => {
+    setDemarrage('inconnu');
+    setDemarrage(await reglerDemarrage(actif));
+  }, []);
+
+  /** Tâche 3.4 — pousse les libellés du menu de zone vers Rust.
+   *
+   *  Le menu est créé par le **cœur** (pour qu'il existe même si la webview
+   *  échoue), donc ses textes ne peuvent pas être traduits là-bas : ils viennent
+   *  d'ici. Envoyés au démarrage et à chaque changement de langue.
+   *
+   *  L'échec est **ignoré** : un menu resté en français vaut mieux qu'une
+   *  exception au montage qui empêcherait le reste de l'écran de s'afficher.
+   *
+   *  La commande **renvoie les textes relus depuis le menu** : un simple `Ok`
+   *  ne prouverait que la réception. Le retour va dans le journal, ce qui donne
+   *  un moyen de vérifier sans ajouter `core:menu:allow-get-text` aux
+   *  capabilities — que la règle « strict minimum » interdit d'ajouter pour les
+   *  besoins d'une mesure.
+   */
+  useEffect(() => {
+    invoke<[string, string]>('set_libelles', {
+      ouvrir: t('zone.ouvrir'),
+      quitter: t('zone.quitter'),
+    })
+      .then((lus) => console.info('menu de zone', { ouvrir: lus[0], quitter: lus[1] }))
+      .catch(() => {});
+    // Le démarrage automatique est relu à chaque ouverture de l'écran : il peut
+    // avoir été changé ailleurs (gestionnaire de tâches, Paramètres Windows), et
+    // un état figé au montage afficherait le contraire de la réalité.
+    void lireDemarrage().then(setDemarrage);
+  }, [t]);
+
   const chargerPlan = useCallback(() => {
     invoke<PlanReglages>('reglages_planificateur')
       .then((r) => {
@@ -3321,6 +3369,30 @@ useEffect(() => {
           </label>
           <p className="muted">{t('notif.reglage.note')}</p>
           <p className="muted">{t('notif.reglage.note2')}</p>
+        </section>
+
+        {/* Tâche 3.4 — démarrage automatique.
+         *
+         *  L'état affiché est celui que le **système** rapporte, relu après
+         *  chaque écriture. Optimistement cocher l'interrupteur donnerait un
+         *  écran qui ment : sous Linux sans gestionnaire de bureau, ou quand
+         *  une politique bloque le dossier d'auto-démarrage, l'appel échoue.
+         */}
+        <section className="panel">
+          <h2>{t('demarrage.titre')}</h2>
+          <label className="switch-row">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={demarrage === 'actif'}
+              disabled={demarrage === 'inconnu' || demarrage === 'indisponible'}
+              onChange={(e) => void basculerDemarrage(e.target.checked)}
+            />
+            <span>{t('demarrage.reglage')}</span>
+          </label>
+          {demarrage === 'indisponible' && <p className="error">{t('demarrage.indisponible')}</p>}
+          {demarrage === 'inconnu' && <p className="muted">{t('demarrage.lecture')}</p>}
+          <p className="muted">{t('demarrage.note')}</p>
         </section>
 
         <section className="panel">

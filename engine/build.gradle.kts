@@ -27,6 +27,7 @@ dependencies {
     // (0 fichier dans build/test-results), donc la porte `gradle test` passait
     // sans rien vérifier du tout.
     testImplementation(kotlin("test"))
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.1.0")
 }
 
 kotlin {

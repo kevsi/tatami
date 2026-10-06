@@ -48,6 +48,12 @@ internal class SessionCache {
     private val chapters = ConcurrentHashMap<String, MangaChapter>()
     private val pages = ConcurrentHashMap<String, MangaPage>()
 
+    // Cache pour les sources custom (valeurs JSON brutes).
+    private val customManga   = ConcurrentHashMap<String, JSONObject>()
+    private val customDetails = ConcurrentHashMap<String, JSONObject>()
+    private val customChapters = ConcurrentHashMap<String, JSONObject>()
+    private val customPages   = ConcurrentHashMap<String, JSONObject>()
+
     private fun key(source: String, url: String) = "$source|$url"
 
     fun putManga(source: String, m: Manga) {
@@ -67,6 +73,21 @@ internal class SessionCache {
     }
 
     fun getPage(source: String, url: String): MangaPage? = pages[key(source, url)]
+
+    // --- Custom sources ---
+    fun putCustomManga(source: String, url: String, m: JSONObject) {
+        customManga[key(source, url)] = m
+    }
+    fun putCustomDetails(source: String, url: String, d: JSONObject) {
+        customDetails[key(source, url)] = d
+    }
+    fun getCustomDetails(source: String, url: String): JSONObject? = customDetails[key(source, url)]
+    fun putCustomChapter(source: String, url: String, c: JSONObject) {
+        customChapters[key(source, url)] = c
+    }
+    fun putCustomPage(source: String, url: String, pg: JSONObject) {
+        customPages[key(source, url)] = pg
+    }
 }
 
 private fun JSONObject.reqString(name: String): String =
@@ -185,7 +206,11 @@ internal suspend fun requete(
     cache: SessionCache,
     method: String,
     params: JSONObject,
-): JSONObject = dispatch(context, pool, cache, method, params)
+): JSONObject = dispatch(
+    context, pool, cache,
+    ScriptedSourceLoader(java.io.File("."), context.httpClient),
+    method, params,
+)
 
 private fun err(id: String, code: String, message: String, url: String? = null): String {
     val e = JSONObject().put("code", code).put("message", message)
@@ -280,10 +305,22 @@ private fun fetch_octets(
     }
 }
 
+/** Préfixe des identifiants de sources personnalisées dans le contrat. */
+const val CUSTOM_PREFIX = "custom:"
+
 fun serve() {
     val context = EngineContext()
     val pool = ParserPool(context)
     val cache = SessionCache()
+
+    // Sources personnalisées (ADR 0010) : dossier $APPDATA/Tatami/sources/ ou
+    // dossier courant en dev. Le loader est démarré en daemon thread et surveille
+    // les changements de fichiers sans bloquer serve().
+    val appData = System.getenv("APPDATA") ?: System.getProperty("user.home")
+    val dossierId = java.io.File(appData, "Tatami${java.io.File.separator}sources")
+    val scriptLoader = ScriptedSourceLoader(dossierId, context.httpClient)
+    scriptLoader.demarrer()
+
     val stdin = System.`in`.bufferedReader()
     System.err.println("tatami-engine serve protocol=$PROTOCOL_VERSION engine=$ENGINE_VERSION parsers=$PARSERS_VERSION")
     // Une requête = un thread : une source lente ou morte ne doit pas figer les
@@ -316,7 +353,7 @@ fun serve() {
             enVol.incrementAndGet()
             val response = try {
                 val result = runBlocking {
-                    withTimeout(timeoutMs) { dispatch(context, pool, cache, method, params) }
+                    withTimeout(timeoutMs) { dispatch(context, pool, cache, scriptLoader, method, params) }
                 }
                 ok(id, result)
             } catch (e: TimeoutCancellationException) {
@@ -381,9 +418,142 @@ fun serve() {
         System.err.println("tatami-engine: ${enVol.get()} requete(s) en vol a la fermeture de stdin, abandon")
         workers.shutdownNow()
     }
+    scriptLoader.arreter()
 }
 
 private suspend fun dispatch(
+    context: EngineContext,
+    pool: ParserPool,
+    cache: SessionCache,
+    scriptLoader: ScriptedSourceLoader,
+    method: String,
+    p: JSONObject,
+): JSONObject = when (method) {
+    // ---- Routage vers les sources personnalisées (ADR 0010) ----
+    "listSources" -> {
+        val arr = JSONArray()
+        MangaParserSource.entries.forEach { src ->
+            val lang = inferLang(src.name, "")
+            arr.put(JSONObject().put("name", src.name).put("lang", lang).put("custom", false))
+        }
+        scriptLoader.sources().values.forEach { parser ->
+            arr.put(
+                JSONObject()
+                    .put("name", "$CUSTOM_PREFIX${parser.meta.id}")
+                    .put("lang", parser.meta.lang)
+                    .put("custom", true)
+                    .put("displayName", parser.meta.name),
+            )
+        }
+        JSONObject().put("sources", arr)
+    }
+    "search", "latest" -> {
+        val sourceName = p.optString("source", "")
+        if (sourceName.startsWith(CUSTOM_PREFIX)) {
+            dispatchCustom(scriptLoader, cache, sourceName, method, p)
+        } else {
+            dispatchNatif(context, pool, cache, method, p)
+        }
+    }
+    "details", "chapters", "pages", "fetchCover", "fetchImage" -> {
+        val sourceName = p.optString("source", "")
+        if (sourceName.startsWith(CUSTOM_PREFIX)) {
+            dispatchCustom(scriptLoader, cache, sourceName, method, p)
+        } else {
+            dispatchNatif(context, pool, cache, method, p)
+        }
+    }
+    else -> dispatchNatif(context, pool, cache, method, p)
+}
+
+/**
+ * Traite une commande pour une source personnalisée scriptée.
+ */
+private suspend fun dispatchCustom(
+    scriptLoader: ScriptedSourceLoader,
+    cache: SessionCache,
+    sourceName: String,
+    method: String,
+    p: JSONObject,
+): JSONObject {
+    val id = sourceName.removePrefix(CUSTOM_PREFIX)
+    val parser = scriptLoader.sources()[id]
+        ?: throw ParamException("unknown custom source: $id")
+
+    return when (method) {
+        "search", "latest" -> {
+            val query = p.optString("query", "")
+            val page = p.optInt("offset", 0) / maxOf(1, p.optInt("limit", 20)) + 1
+            val arr = parser.getList(page, query)
+            // Mettre en cache les résultats pour details/chapters/pages.
+            for (i in 0 until arr.length()) {
+                val m = arr.getJSONObject(i)
+                cache.putCustomManga(sourceName, m.optString("url", ""), m)
+            }
+            JSONObject().put("list", arr)
+        }
+        "details" -> {
+            val mangaUrl = p.reqString("url")
+            val result = parser.getDetails(mangaUrl)
+            cache.putCustomDetails(sourceName, mangaUrl, result)
+            JSONObject().put("manga", result)
+        }
+        "chapters" -> {
+            val mangaUrl = p.reqString("mangaUrl")
+            val details = cache.getCustomDetails(sourceName, mangaUrl)
+                ?: parser.getDetails(mangaUrl).also { cache.putCustomDetails(sourceName, mangaUrl, it) }
+            val chapters = details.optJSONArray("chapters") ?: JSONArray()
+            for (i in 0 until chapters.length()) {
+                val c = chapters.getJSONObject(i)
+                cache.putCustomChapter(sourceName, c.optString("url", ""), c)
+            }
+            JSONObject().put("chapters", chapters)
+        }
+        "pages" -> {
+            val chapterUrl = p.reqString("chapterUrl")
+            val pages = parser.getPages(chapterUrl)
+            for (i in 0 until pages.length()) {
+                val pg = pages.getJSONObject(i)
+                cache.putCustomPage(sourceName, pg.optString("url", ""), pg)
+            }
+            JSONObject().put("pages", pages)
+        }
+        "fetchCover" -> {
+            // Les sources custom servent les images directement par URL.
+            val mangaUrl = p.reqString("mangaUrl")
+            val coverUrl = p.optString("coverUrl", "")
+                .takeIf { it.startsWith("https://") }
+                ?: throw ParamException("no cover URL for custom source $id / $mangaUrl")
+            val req = okhttp3.Request.Builder().url(coverUrl).get().build()
+            val context2 = EngineContext()
+            context2.httpClient.newCall(req).execute().use { resp ->
+                val bytes = resp.body?.bytes() ?: throw IllegalStateException("empty cover body")
+                JSONObject()
+                    .put("data", java.util.Base64.getEncoder().encodeToString(bytes))
+                    .put("contentType", resp.body?.contentType()?.toString() ?: "image/jpeg")
+            }
+        }
+        "fetchImage" -> {
+            val pageUrl = p.reqString("pageUrl")
+            val req = okhttp3.Request.Builder().url(pageUrl).get().build()
+            val context2 = EngineContext()
+            context2.httpClient.newCall(req).execute().use { resp ->
+                val bytes = resp.body?.bytes() ?: throw IllegalStateException("empty image body")
+                JSONObject()
+                    .put("data", java.util.Base64.getEncoder().encodeToString(bytes))
+                    .put("contentType", resp.body?.contentType()?.toString() ?: "image/jpeg")
+            }
+        }
+        else -> throw ParamException("method $method not supported for custom sources")
+    }
+}
+
+/**
+ * Dispatch original pour les sources natives kotatsu-parsers-redo.
+ * Correspond au `when (method)` d'origine, sans les branches "search"/"latest"/etc.
+ * qui sont maintenant routées en amont.
+ */
+private suspend fun dispatchNatif(
     context: EngineContext,
     pool: ParserPool,
     cache: SessionCache,
@@ -397,15 +567,6 @@ private suspend fun dispatch(
         // Rust s'en sert pour donner à la fenêtre de résolution anti-bot le même
         // user-agent que le moteur : une clearance est émise pour un agent donné.
         .put("defaultUserAgent", context.getDefaultUserAgent())
-
-    "listSources" -> {
-        val arr = JSONArray()
-        MangaParserSource.entries.forEach { src ->
-            val lang = inferLang(src.name, "")
-            arr.put(JSONObject().put("name", src.name).put("lang", lang))
-        }
-        JSONObject().put("sources", arr)
-    }
 
     "filterOptions" -> pool.avec(parseSource(p.reqString("source"))) { parser ->
         val options = parser.getFilterOptions()

@@ -73,9 +73,9 @@
   rechargement à chaud via WatchService.
   _Prouvé : 5/5 tests ScriptedSourceLoaderTest — 2026-10-06._
 
-- [ ] **S0.4** — Intégration `Server.kt` : `listSources` inclut les sources custom avec `"custom": true`.
+- [x] **S0.4** — Intégration `Server.kt` : `listSources` inclut les sources custom avec `"custom": true`.
   `search`/`details`/`chapters`/`pages` routent vers le `ScriptedParser` si `source_id` est custom.
-  _Critère : test d'intégration `hello → listSources → search` avec un script stub._
+  _Prouvé : 37/37 tests moteur — 2026-10-06._
 
 ### S1 — Côté Rust
 

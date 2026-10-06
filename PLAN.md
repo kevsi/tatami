@@ -60,15 +60,23 @@ tatami/
 
 | Phase | Titre | Taille | Statut |
 |---|---|---|---|
-| 0 | Fondations et spike des risques | M | **En cours** — 0.1 à 0.11 faits, 0.12 partiel, 0.13 à 0.17 à faire |
+| 0 | Fondations et spike des risques | M | **Livrée** — 0.1 à 0.20. Deux réserves ouvertes, toutes deux documentées et non corrigeables chez nous : 0.11 attend une **vérification humaine** d'un vrai challenge Cloudflare (cf. `docs/smoke-test.md`), et 0.16 se termine sur une cause **externe** (serveur MANGAHAUS, deux autres hôtes morts en DNS) — décision de ne rien ajouter au magasin de confiance. |
 | 1 | Bibliothèque et lecteur | L | **Finie** — 1.1 à 1.10, dont 1.8 et 1.10 livrés le 2026-10-05 |
 | 2 | Hors ligne | M | **Faite** — file, reprise, CBZ, lecture hors ligne, assainissement et stats ; durcie le 2026-10-04 (un `.cbz` par chapitre, `sync_all`, verrou RAII) ; dossier de téléchargement au choix et pause de la file le 2026-10-05 |
-| 3 | Tâches de fond et notifications | M | **Commencée** — 3.1 livré le 2026-10-05 (planificateur tokio, 19 tests) ; reste 3.2 à 3.5 |
-| 4 | Comptes et synchronisation | L | **Pas commencée** |
-| 5 | Durcissement et distribution | M | **Partiellement entamée** — audit de code du 2026-10-04 (5 correctifs) ; **5.3 livré le 2026-10-05** : 16 réponses du moteur enregistrées + test de contrat (20 tests) + CI qui exécute les 9 commandes de AGENTS.md §8 ; **5.7 livré le 2026-10-05** : dépendances vérifiées par SHA-256 (74 composants) + job hebdomadaire de surveillance de l’amont + ADR 0005 |
+| 3 | Tâches de fond et notifications | M | **Faite** — 3.1 à 3.5, toutes livrées et vérifiées les 2026-10-05 |
+| 4 | Comptes et synchronisation | L | **Pas commencée** — différée par décision humaine. Le protocole du serveur de sync est **déjà lu** : voir §4 bis. |
+| 5 | Durcissement et distribution | M | **Presque finie** — 5.1, 5.3, 5.4, 5.5 et 5.7 livrées. Restent **5.2** (updater) et **5.6** (installeurs), volontairement **en dernier**. |
+| T | Traduction des webtoons EN → FR | L | **Plan écrit, rien commencé** — `PLAN-TRADUCTION.md`. Point d'entrée **T0** (audit des licences et évaluation), qui ne touche pas à l'application. |
 
-Phase en cours : **1 et 2 en parallèle**, la phase 2 ayant un manque bloquant.
-Prochaine tâche : 1.10 (thèmes clair/sombre), puis la dette de phase 0 (0.13 → 0.17).
+**Correction du 2026-10-06** : ce tableau disait « phase 0 : 0.13 à 0.17 à
+faire », « phase 3 : reste 3.2 à 3.5 » et « prochaine tâche : 1.10 ». Les trois
+étaient **faux** depuis le 2026-10-05, et les sections détaillées (§5) les
+montraient déjà toutes cochées. La règle qui suit vaut pour la suite : **un tableau
+de statut est un résumé, il dérive ; lire les sections détaillées avant de
+décider quoi faire.**
+
+Prochaine tâche : **aucune en cours**. Les deux seules choses non commencées et
+prévues sont 5.2 et 5.6, volontairement placées en dernier.
 
 **Correction du 2026-10-04** : le tableau disait « phase 2 pas commencée ». C'était
 faux, et c'est vérifiable dans le code — `download.rs` (file séquentielle,
@@ -160,9 +168,89 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
 **Critère de sortie** : un nouveau chapitre (simulé ou réel) déclenche une notification pendant que l'app est réduite dans la zone de notification.
 
+## 4 bis. Ce que Kotatsu-Redo peut réellement partager avec Tatami (2026-10-06)
+
+Étude demandée explicitement par l'humain : *peut-on synchroniser ses lectures et
+ses favoris entre son portable (Tatami) et son téléphone (Kotatsu-Redo) ?*
+
+Réponse courte : **oui pour les favoris, les catégories et l'historique ; pas pour
+la progression, sauf via un service de suivi tiers.** Vérifié dans le code des deux
+projets, pas dans leur documentation marketing.
+
+### Le fait décisif : les deux applications identifient un manga pareil
+
+`kotatsu-syncserver` identifie un manga par le couple **`(source, url)`** :
+
+```kotlin
+// KotatsuApp/kotatsu-syncserver — model/manga/Manga.kt
+@SerialName("url")    val url: String,   // relative url for internal use
+@SerialName("source") val source: String,
+```
+
+Tatami utilise **exactement** la même paire (`manga_url` + `source`), et
+l'identifie de la même façon dans ses favoris. Les deux lisent le même catalogue
+(les mêmes parseurs, donc les mêmes noms de sources et les mêmes URLs relatives).
+Il n'y a donc pas de « correspondance de titres à deviner » : **la clé est
+directement partageable.**
+
+### Trois voies, par ordre de coût
+
+**1. Import d'une sauvegarde — le plus simple, et probablement suffisant.**
+Kotatsu-Redo produit une sauvegarde qui est un **ZIP contenant des tableaux JSON**
+par section (`favourites`, `categories`, `history`). Tatami sait déjà lire un ZIP
+(son lecteur `.cbz`) et possède déjà une commande d'import de masse testée (2.4).
+Il faut donc lire trois fichiers JSON et les insérer en base. **Pas de serveur,
+pas de compte, aucun réseau.** C'est la voie que je recommande pour un premier
+résultat concret.
+
+**2. Client du serveur de synchronisation — le vrai bidirectionnel.**
+`KotatsuApp/kotatsu-syncserver` existe, est **GPL-3.0** et son API est lisible :
+
+| Route | Effet |
+|---|---|
+| `POST /auth/register`, `/auth/login` | JWT |
+| `GET` / `POST /resource/favourites` | `FavouritesPackage { favouriteCategories, favourites, timestamp }` |
+| `GET` / `POST /resource/history` | idem pour l'historique |
+| `GET` / `POST /resource/manga` | registre des mangas |
+
+Le serveur est **archivé depuis le 2026-02-20** (lecture seule), mais il est
+lançable : image Docker, MySQL, `JWT_SECRET`. **Ce n'est donc pas un blocage.**
+C'est ce que ferait la tâche 4.5.
+
+**3. Suivi tiers (AniList, MAL, Kitsu, Shikimori) — utile, mais pas ce que vous demandez.**
+Ces services ne synchronisent que la **progression par série**. Ils ne
+transporteront jamais vos favoris, vos catégories ni votre historique. Utile en
+complément, jamais à la place de la voie 1 ou 2.
+
+### Ce que je n'ai pas vérifié, et qui doit l'être avant de coder
+
+- **Le format exact de la sauvegarde Kotatsu-Redo** : « ZIP de tableaux JSON par
+  section » vient d'un module tiers (`mk-bkconv`) et de la documentation, **pas du
+  code de Kotatsu-Redo**. Il faut exporter une vraie sauvegarde et regarder, comme
+  pour les fixtures du moteur (5.3) : une fixture écrite à la main ne prouve que
+  sa propre conformité.
+- **Que Kotatsu-Redo (le fork) parle toujours à ce serveur** : le README du fork
+  mentionne « using your own sync server if you like », ce qui est un indice, pas
+  une preuve.
+- Le coût d'hébergement : faire tourner le serveur demande Docker **et** MySQL,
+  et le téléphone doit pouvoir l'atteindre (réseau local ou machine always-on).
+
+### Recommandation
+
+Découper 4.1 : **4.1a** = lire une vraie sauvegarde et écrire ce que Tatami sait
+en faire (petit, testable, aucun serveur). **4.1b** = décider si le serveur de
+sync mérite l'effort, une fois 4.1a livré et testé contre un vrai export. Ne pas
+commencer par le serveur : la voie 1 rend le même service pour une fraction du
+travail, et elle sert de **témoin** pour vérifier que la voie 2 fait la même
+chose.
+
+---
+
 ### Phase 4 — Comptes et synchronisation (L)
 
-- [ ] **4.1** Étude (docs/notes/) : protocole de `kotatsu-syncserver` (dépôt archivé, GPL-3.0) et format du backup mobile. Ne rien implémenter avant d'avoir lu le code.
+- [ ] **4.1** Étude (docs/notes/) : protocole de `kotatsu-syncserver` et format du backup mobile. Ne rien implémenter avant d'avoir lu le code.
+  **Déjà fait le 2026-10-06** : voir §4 bis. Le protocole est lu (`GET`/`POST /resource/{favourites,history,manga}`, JWT, clé `(source, url)`), le serveur est **archivé mais lançable**, et l'import d'une sauvegarde ZIP est la voie recommandée. **Reste à faire** : exporter une **vraie** sauvegarde depuis Kotatsu-Redo et vérifier le format sur les octets, au lieu de croire la documentation.
+  **Découpage proposé** : **4.1a** (lecture d'une vraie sauvegarde, aucun serveur) puis **4.1b** (décider si le serveur vaut l'effort, 4.1a servant de témoin).
 - [ ] **4.2** Suivi AniList (OAuth avec redirection locale ou deep link, à vérifier), stockage des jetons dans le trousseau OS.
 - [ ] **4.3** Suivi MyAnimeList, puis Shikimori, puis Kitsu.
 - [ ] **4.4** Synchronisation de la progression sur chaque chapitre lu.
@@ -189,31 +277,22 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
   Gesté par `tatami-moteur` (`etat`, `verifier`, `installer`, `activer`,
   `revenir`), qui appelle le **même** module et la **même** clé embarquée que
   l’application. Aucune permission Tauri ajoutée.
-  de hash, remplacement atomique, retour arrière si échec au démarrage.
-  **Partiellement livré le 2026-10-05** — voir ADR 0006. Ce qui manque est listé
-  plus bas, et c’est délibéré, pas oublié.
-  **Livré** : clé Ed25519 auto-gérée (publique dans le dépôt, privée **hors**
-  dépôt), `scripts/moteur-sign.mjs` (`cles`, `preparer`, `signer`, `verifier`),
-  signature vérifiée sur un **texte canonique** (jamais sur le JSON, qui a des
-  espaces libres), empreinte SHA-256 vérifiée **avant** extraction, extraction
-  dans `versions/<version>/.en-cours` puis renommage, pointeur `actif.json` écrit
-  par fichier temporaire + renommage, `precedente` mémorisée,
-  `sidecar_candidates()` en tête sur le moteur installé. `zipread` a reçu
-  `DEFLATE` (`flate2`) et la **normalisation des antislashs**.
-  **Mode manuel choisi par l’utilisateur le 2026-10-05** : pas de téléchargement,
-  tout est local. Gesté par `tatami-moteur` (`etat`, `verifier`, `installer`,
-  `activer`, `revenir`), qui appelle le **même** module et la **même** clé
-  embarquée que l’application.
-  **Manque** : la sonde de démarrage qui appelle `revenir_en_arriere()` — la
-  fonction existe et est testée, mais **rien ne l’appelle**, donc le retour
-  arrière n’est pas encore automatique. Et l’interface, qui viendra si tu la
-  veux.
-  humaine (d’où vient le manifeste ?) ; (2) la sonde de démarrage qui appelle
-  `revenir_en_arriere()` — la fonction existe et est testée, mais **rien ne
-  l’appelle**, donc le retour arrière n’est pas encore automatique ; (3)
-  l’interface. Aucune source de manifeste n’est configurée par défaut : rien ne
-  se télécharge tout seul.
+  **Ce qui reste réellement à faire** : l'interface de mise à jour du moteur (si tu la
+  veux), et une source de manifeste si tu veux un téléchargement automatique. **Aucune
+  n'est configurée par défaut** : rien ne se télécharge tout seul, c'est le mode
+  **manuel** choisi le 2026-10-05.
+
+  **Correction du 2026-10-06** : ce bloc contenait deux restes d'une version antérieure.
+  (a) La livraison était décrite **deux fois** de suite ; seul le second paragraphe est
+  conservé, il est plus détaillé. (b) Une phrase affirmait que la sonde de démarrage
+  **n'était pas branchée**, alors qu'elle l'est et qu'elle a été vérifiée dans les
+  deux sens (moteur sain, moteur cassé) — voir plus haut. La phrase a disparu : elle
+  ne décrivait pas la réalité, et c'est le risque de ce genre de reste.
 - [ ] **5.2** Mise à jour de l'app via l'updater Tauri.
+  **Vérifié le 2026-10-06 : il n'y a rien à reprendre.** `tauri.conf.json` n'a
+  même pas de section `plugins`, et `updater` est absent du fichier. Zéro ligne.
+  Placé **en dernier**, sur décision humaine : l'application doit d'abord être
+  complète.
 - [x] **5.3** Tests de contrat sur réponses enregistrées, exécutés en intégration continue.
 - [x] **5.4** Écran « état des sources » pour repérer ce qui est cassé. **Livré** le 2026-10-05 et **vérifié à l'écran**. Ce qui existait : un compteur « N sources signalées » et un bouton « Tout réessayer » — pas de liste, pas de date, donc impossible de savoir *quelle* source casse ni *depuis quand*. La donnée existait déjà (`noteHealth` enregistre `{code, message, at}` et persiste) : il n'y avait qu'à l'afficher. Regroupement par **code d'erreur** d'abord (3 sources en `CHALLENGE_REQUIRED` sont un problème Cloudflare, pas 3 pannes distinctes), puis le détail, du plus récent au plus ancien. `<time dateTime>` garde la date exploitable par une machine. **Corrigé au passage** : `sinceFr` était français en dur (contre `AGENTS.md` §7) — l'interface anglaise affichait « 3 mois ». Preuve : 7 pannes injectées, 4 chips de regroupement dont la somme vaut 7, 3 colonnes, 0 faute de français en mode `en`, bouton « Tout réessayer » ramène l'état à 0 et la table disparaît. **Non couvert** : la version du parser (exigée par la formulation d'origine) n'est pas affichée — elle vient du moteur et demanderait une commande Rust.
 - [x] **5.5** Journaux de diagnostic exportables, sans données personnelles. **Livré et
@@ -253,12 +332,43 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
 ## 6. Questions ouvertes / À VÉRIFIER
 
-- [ ] Coordonnées de dépendance exactes de `kotatsu-parsers-redo` (README du dépôt).
-- [ ] Ce que `MangaLoaderContext` exige (exécution de JS, recomposition d'images, config par source) et comment `kotatsu-dl` le gère.
-- [ ] API Tauri v2 pour : sidecar `externalBin` + permissions, protocole d'URI asynchrone, cookies d'une webview, notifications, deep link / redirection locale OAuth, updater.
-- [ ] Protocole de `kotatsu-syncserver` et format du backup mobile.
-- [ ] Disponibilité du nom "Tatami" (GitHub, stores, domaine) ; alternatives : Irori, Mikan.
-- [ ] Empreinte mémoire réelle du sidecar sur la machine cible (12 Go de RAM, outils de dev ouverts).
+**Reclassement du 2026-10-06.** Sur les 7 cases, **4 étaient périmées** : leur
+réponse se trouve déjà dans le dépôt, et les laisser ouvertes faisait croire à un
+travail non fait. Il en reste **3**.
+
+### Encore ouvertes
+
+- [ ] **Format réel de la sauvegarde Kotatsu-Redo.** Le protocole du serveur est
+  lu (§4 bis), mais « ZIP de tableaux JSON par section » vient de la
+  documentation et d'un module tiers, **pas du code de Kotatsu-Redo**. Il faut
+  exporter une vraie sauvegarde et regarder les octets. → phase 4, tâche 4.1a.
+- [ ] **Disponibilité du nom « Tatami »** (GitHub, stores, domaine) ;
+  alternatives : Irori, Mikan. Une décision qui vous appartient seule.
+- [ ] **0.11 de bout en bout** : confirmer sur un vrai site protégé que la
+  fenêtre de résolution + `setCookies` débloque la source. La mécanique est
+  prouvée ; la résolution humaine n'est pas automatisable. Écrit dans
+  `docs/smoke-test.md`. **C'est une tâche à vous, pas à l'agent.**
+
+### Répondu — closes le 2026-10-06 (le livrable existe)
+
+- [x] Coordonnées de dépendance exactes de `kotatsu-parsers-redo` → épinglées par
+  **SHA-256**, 74 composants vérifiés, job hebdomadaire (`amont.yml`), ADR 0005.
+  Une coordonnée non vérifiée n'existe plus : c'est une empreinte.
+- [x] Ce que `MangaLoaderContext` exige (exécution de JS, recomposition
+  d'images, config par source) et comment `kotatsu-dl` le gère → écrit dans
+  `docs/notes/loader-context.md` (tâche 0.3).
+- [x] API Tauri v2 pour le sidecar `externalBin` + permissions, le protocole
+  d'URI asynchrone et les cookies d'une webview → résolu en lisant le code
+  (0.8, 0.10, 0.11). **Piège mesuré** : la doc du plugin `notification` dit ce
+  qu'il expose, pas ce que fait le chunk — `sendNotification` ne fait
+  `new window.Notification(...)`, sans IPC (AGENTS.md §14).
+- [x] Empreinte mémoire réelle du sidecar sur la machine cible → mesurée en 0.12 :
+  **68 Mo** au démarrage, **136 Mo** après le premier appel réseau, puis plate.
+  Une réserve : le cache d'images est borné en nombre d'entrées (2048) et pas
+  en volume, soit ~521 Mo possibles pour 260 Ko de moyenne sur 12 Go (rejoint 2.5).
+- [x] Updater Tauri → la question reste à traiter (5.2), mais ce n'est plus une
+  incertitude technique : `tauri.conf.json` n'a pas de section `plugins`, donc rien
+  n'a été écrit et il n'y a rien à reprendre.
 - [ ] **0.11 de bout en bout** : confirmer sur un vrai site protege que la fenetre de resolution + `setCookies` debloque la source. Aucune source de l'echantillon (MANGALIB, BAOZIMH) ne renvoie `CHALLENGE_REQUIRED` (403 classiques). Vigilance : clearance liee a l'IP et expirante, empreinte TLS WebView2 differente d'OkHttp.
 
 ## 7. Risques

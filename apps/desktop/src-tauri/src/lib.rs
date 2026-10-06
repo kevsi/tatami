@@ -57,6 +57,7 @@ pub mod store;
 pub mod supervisor;
 pub mod tile;
 pub mod traduction;
+pub mod translator;
 pub mod tray;
 pub mod vision;
 pub mod zipread;

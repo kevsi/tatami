@@ -130,6 +130,7 @@ pub struct PageTranslation {
 // Traducteur
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Default)]
 pub struct Traducteur {
     http: reqwest::Client,
 }
@@ -215,7 +216,7 @@ impl Traducteur {
     }
 
     /// Traduit via le modèle local (stub — ONNX à brancher en T2).
-    async fn traduire_local(&self, _texte: &str) -> Result<String, ErreurTraduction> {
+    pub async fn traduire_local(&self, _texte: &str) -> Result<String, ErreurTraduction> {
         Err(ErreurTraduction::LocalIndisponible)
     }
 

@@ -60,6 +60,7 @@ flate2 = "1.1.10"
 thiserror = "1"
 keyring = "3"
 hex = "0.4"
+async-trait = "0.1"
 # Transitives de Tauri rendues explicites pour `pack.rs` :
 # - dunce : canonicalisation sans préfixe `\\?\` sur Windows
 # - windows-sys : GetDiskFreeSpaceExW pour la vérification d'espace disque

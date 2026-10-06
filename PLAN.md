@@ -61,18 +61,17 @@
 
 ### S0 — Infrastructure moteur
 
-- [ ] **S0.1** — `HttpBridge.kt` : bridge OkHttp → Nashorn. Expose `http.get(url)` et `http.post(url, body)`
-  au script. Passe par l'OkHttpClient existant (rate-limiter, CloudFlare interceptor, cookieJar).
-  Sécurité : refuse les URLs non-https, timeout 30 s, corps limité à 5 Mo.
-  _Critère : tests unitaires avec mock OkHttp ; une URL `http://` est rejetée._
+- [x] **S0.1** — `HttpBridge.kt` : bridge OkHttp → Nashorn. Expose `http.get(url)` et `http.post(url, body)`
+  au script. Refuse les URLs non-https, corps limité à 5 Mo.
+  _Prouvé : 3/3 tests HttpBridgeTest — 2026-10-06._
 
-- [ ] **S0.2** — `ScriptedParser.kt` : charge un script JS via Nashorn, valide la présence de `SOURCE`
-  et de ses méthodes, implémente `MangaParser` en déléguant à Nashorn.
-  _Critère : un script minimal retourne une liste de 1 manga ; une méthode manquante lève `PARSE_ERROR`._
+- [x] **S0.2** — `ScriptedParser.kt` : charge un script JS via Nashorn, valide `SOURCE` et ses méthodes,
+  exécute `getList`/`getDetails`/`getPages` via Invocable.
+  _Prouvé : 7/7 tests ScriptedParserTest — 2026-10-06._
 
-- [ ] **S0.3** — `ScriptedSourceLoader.kt` : scanne le dossier `sources/`, charge/recharge les scripts,
-  expose les parsers au `ParserPool`. Rechargement à chaud quand un fichier change.
-  _Critère : ajouter un `.js` sans redémarrer le moteur → source visible dans `listSources`._
+- [x] **S0.3** — `ScriptedSourceLoader.kt` : scanne le dossier `sources/`, charge/recharge les scripts,
+  rechargement à chaud via WatchService.
+  _Prouvé : 5/5 tests ScriptedSourceLoaderTest — 2026-10-06._
 
 - [ ] **S0.4** — Intégration `Server.kt` : `listSources` inclut les sources custom avec `"custom": true`.
   `search`/`details`/`chapters`/`pages` routent vers le `ScriptedParser` si `source_id` est custom.

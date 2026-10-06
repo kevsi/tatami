@@ -2149,9 +2149,14 @@ retombe pas dedans.
 - **2 appels `chapters` non attribués** (même manga, 160 ms d'écart, un seul
   `details`) : toujours sans explication.
 - **Le lecteur n'affiche aucun compteur de page** : signalé, pas traité.
-- **0.11** : le panneau d'état montre 7 sources en échec, dont **1
-  `AUTH_REQUIRED`** — le code qui manque au contrat (tâche 0.13) apparaît donc
-  pour de vrai, ce qui confirme la tâche.
+- **`AUTH_REQUIRED` : j'avais écrit qu'il manquait au contrat — c'était faux.**
+  Vérifié le 2026-10-06, la chaîne est **complète et testée** : `protocol.json`
+  déclare le code (l35), `Erreurs.kt:50` le détecte dans la chaîne des causes,
+  `Server.kt:343` l'émet, `supervisor.rs:66` le traite comme **non transitoire**,
+  `page.tsx:868` lui donne un libellé, et `ErreursTest.kt` compte **8 tests**
+  dont 2 sur l'auth (`tests=8 failures=0`, mesuré sur le XML de résultat, pas
+  sur la sortie Gradle). Réf. tâche 0.13, cochée et **livrée**. Je l'avais
+  déclarée manquante en lisant l'écran d'état des sources sans ouvrir le code.
 
 ### Vérification
 

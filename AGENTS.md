@@ -644,6 +644,21 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   la cause (« Overlapped entries… File name in directory and header differ »).
   Mesure obtenue : `The White Devil.cbz`, **20 128 668 o, 37 entrées, 37 tailles
   distinctes, 37 JPEG** — donc pas de page répétée, pas de HTML déguisé.
+- **Déclarer une tâche « manquante » en regardant un écran, c'est une
+  hypothèse.** Mesuré le 2026-10-06 : l'écran « état des sources » affichait
+  `AUTH_REQUIRED 1`, et j'ai conclu dans `PLAN.md` que « le code qui manque au
+  contrat apparaît donc pour de vrai, ce qui confirme la tâche ». J'avais donc
+  écrit que 0.13 était **à faire**. Le code disait l'inverse, à chaque étage :
+  `protocol.json` déclare le code, `Erreurs.kt:50` le détecte dans la chaîne des
+  causes, `Server.kt:343` l'émet, `supervisor.rs:66` le traite comme non
+  transitoire, `page.tsx:868` lui donne un libellé, et `ErreursTest.kt` compte
+  **8 tests** dont 2 sur l'auth (`tests=8 failures=0`). La tâche était **livrée**.
+  Corollaire : une case non cochée ou une phrase d'un journal plus ancien ne
+  prouvent rien — **ouvrir le code et lire le résultat de test**. Et l'inverse
+  vaut aussi : un bug d'affichage qu'on voit à l'écran peut être déjà corrigé
+  ailleurs. C'est la deuxième fois de la semaine (cf. « l'écran dit-on que les
+  images viennent d'un hôte ? ») où un écran a servi de preuve pour un code
+  absent.
 - **Une mesure qui doit montrer un *effet* doit d'abord prouver que l'effet a
   eu lieu.** Mesuré le 2026-10-06 : trois fois de suite la purge du cache a
   semblé ne pas fonctionner (« 400 entrées expirées → 400 »), alors que

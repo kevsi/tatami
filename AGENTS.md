@@ -146,6 +146,11 @@ Quatrième porte de l'interface, à lancer avec les trois autres :
 dépende d'une valeur recréée à chaque rendu. Voir la leçon « `t` dans les
 dépendances d'un effet » en §14.
 
+Cinquième porte de l'interface : `pnpm chemins:check`
+(`scripts/check-chemins.mjs`) refuse qu'un chemin soit affiché sans passer par
+`cheminLisible(...)`, c'est-à-dire sans retrait de la forme longue `\\?\`.
+Voir la leçon « la forme longue affichée telle quelle » en §14.
+
 **Commandes de vérification** (figées le 2026-10-05, tâche 0.12). Chacune
 précise son dossier, parce que la plupart échouent depuis la racine :
 
@@ -156,6 +161,7 @@ pnpm typecheck          # tsc --noEmit
 pnpm lint               # eslint ; 4 warnings exhaustive-deps connus, 0 erreur
 pnpm i18n:check         # aucune clé morte ni manquante (152 clés)
 pnpm hooks:check        # aucune dépendance d'effet recréée à chaque rendu
+pnpm chemins:check      # aucun chemin affiché sans cheminLisible(…)
 pnpm build              # next build
 
 # Cœur Rust — dossier apps\desktop\src-tauri
@@ -559,6 +565,76 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   qu'`ArrowRight` ne fasse rien est **le comportement correct**, pas un bug —
   il faut le lire avant de le signaler.
 
+- **Une correction peut être plus fausse que le défaut : le défaut était un
+  artefact du serveur de dev, pas de l'application.** Mesuré le 2026-10-05 : en
+  `pnpm tauri dev`, `data-apparence` restait `null` et `lang` restait `fr`, alors
+  que `localStorage` portait `sombre` et `en` et que **l'interface affichait
+  déjà l'anglais**. J'en ai conclu que le `<script>` bloquant de `layout.tsx`
+  ne s'exécutait pas, et j'ai remplacé le `<script>` nu par
+  `<Script strategy="beforeInteractive">`. Puis j'ai lu le **HTML servi** : le
+  script n'y existait que comme chaîne dans le payload RSC
+  (`self.__next_f.push([0,{"children":"(function(){…`), donc inerte — mais
+  **seulement en dev**. L'application livrée charge l'**export**, où le script
+  est une vraie balise dans le `<head>` : servi en statique avec `clair` et
+  `en` posés, il donne `data-apparence="clair"` et `lang="en"` **dès le
+  parsing**, thème clair peint (`rgb(244,244,246)` sur `rgb(22,24,29)`). Le
+  correctif était donc inutile — et j'ai dû le retirer. Règle : **un défaut
+  observé en dev se vérifie sur l'artefact livré** (`out/index.html` + un
+  `python -m http.server`) avant d'être cru ; et « l'interface affiche la
+  bonne langue alors que `<html lang>` ne suit pas » est déjà la preuve que le
+  cœur et l'état React sont bons, donc que le défaut est plus profond qu'un
+  attribut — ou alors qu'il n'existe que là où on regarde.
+- **La forme longue d'un chemin s'affiche, alors qu'elle est illisible.** Mesuré
+  le 2026-10-05 : l'écran affichait `\\?\C:\Users\alexanders\Documents\Tatami`
+  au lieu de `C:\Users\alexanders\Documents\Tatami`. Le préfixe vient de
+  `canonicalize`, c'est lui qui débloque les chemins de plus de 260 caractères —
+  donc il se retire **à l'affichage seulement**. Deux défauts distincts, mesurés
+  séparément : (a) la forme longue affichée telle quelle ; (b) le chemin n'était
+  affiché **dans aucun** panneau de réglage, seulement dans l'onglet
+  Téléchargements, alors que la note du panneau dit « les téléchargements
+  existants restent où ils sont » — sans le chemin sous les yeux, impossible de
+  savoir où sont ses 20 Mo. Porte `pnpm chemins:check`. Corollaire : le helper
+  `cheminLisible` **existait déjà** (l252) et n'était pas appelé — j'en ai écrit
+  un second, `tsc` l'a dit (`TS2393`), ce qui a évité de laisser deux versions
+  dans le dépôt.
+- **Un réglage peut être correct et invisible : chercher la valeur dans le
+  mauvais dossier de mesures.** Le dossier de téléchargement vaut
+  `C:\Users\alexanders\Documents\Tatami` (choisi par l'utilisateur), alors que
+  le **défaut** est `%APPDATA%\Tatami\downloads`. J'ai cherché le `.cbz` dans
+  le défaut, conclu « le téléchargement n'a rien écrit », et le journal a dit
+  l'inverse : `telechargements : \\?\C:\Users\alexanders\Documents\Tatami`. Le
+  téléchargementmarchait depuis le début. Règle : **lire le réglage dans le
+  journal avant de chercher sur le disque** — un dossier réglé par l'utilisateur
+  Prime sur le défaut du code, et « 0 fichier nouveau » dans le mauvais dossier
+  est le pire des résultats, parce qu'il accuse le code.
+- **`cargo test` écrit dans la vraie bibliothèque de l'utilisateur.** Mesuré le
+  2026-10-05 : `%APPDATA%\Tatami\downloads` contenait **35 dossiers
+  `tatami-test-*`** (fixtures de téléchargement et d'import, 2.4) et un `IMPORT/`
+  avec des cas hostiles dont un nom `…\..\..\..\evil` — correctement contenu
+  dans `downloads\IMPORT\`, donc la traversée est bloquée, mais la fixture est
+  restée sur le disque de la machine. Les tests qui touchent au disque doivent
+  écrire dans un dossier temporaire à eux, pas dans `downloads_root()`. Point
+  signalé, **pas corrigé dans le même commit** : c'est un défaut de harness,
+  distinct du défaut d'interface que je venais de corriger.
+- **Un `.cbz` qui existe n'est pas un `.cbz` valide — et le lecteur strict se
+  prouve d'abord sur un cas qui doit échouer.** `.mesures/verifier-cbz.py`
+  ouvre l'archive, relit les **octets d'origine** de chaque entrée et vérifie
+  la magie (JPEG/PNG/WEBP/…), refuse une entrée non-image, refuse toutes les
+  tailles identiques (donc la même page écrite N fois), refuse un `.part`. Avant
+  de lui faire confiance : il a **accepté** deux vrais téléchargements (4 et 11
+  entrées, toutes tailles distinctes) et **refusé** un ZIP malformé en nommant
+  la cause (« Overlapped entries… File name in directory and header differ »).
+  Mesure obtenue : `The White Devil.cbz`, **20 128 668 o, 37 entrées, 37 tailles
+  distinctes, 37 JPEG** — donc pas de page répétée, pas de HTML déguisé.
+- **`http://tatami.localhost` est un chemin LOCAL, et un classificateur naïf le
+  range dans le réseau.** J'ai conclu « la relecture hors ligne va chercher ses
+  pages sur https » alors que les quatre URL étaient
+  `http://tatami.localhost/page/<jeton>` : le protocole local, servi par Rust
+  depuis l'archive. Preuve que c'est réellement hors ligne : pendant la
+  navigation, les seules requêtes sont `tatami.localhost/page/…` et
+  `ipc.localhost/save_progress` — **aucun** accès à un hôte du site. Corollaire :
+  classer par expression régulière demande de connaître le protocole ; sinon
+  lister les URL et les lire.
 - **Le pluriel se teste avec une seule unité, jamais avec le nombre qu'on a
   sous la main.** Deux fois dans la journée : 5.4 avec 7 pannes et 3.2 avec 2
   entrées — les deux mesures « vert » laissaient le singulier **non testé**, et

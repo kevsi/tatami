@@ -3285,6 +3285,15 @@ useEffect(() => {
 
         <section className="panel">
           <h2>{t('telechargements.dossier')}</h2>
+          {/* Le chemin est affiché ICI, dans le panneau qui le change : mesuré le
+              2026-10-05, il n'était montré que dans un autre panneau (« Download »)
+              alors que la note d'ici prévient « les téléchargements existants
+              restent où ils sont ». Sans le chemin sous les yeux, on ne peut ni voir
+              où sont ses 20 Mo, ni vérifier que le changement a pris effet. */}
+          <p className="muted">
+            {t('telechargements.dossier.ligne')}
+            <code className="path">{cheminLisible(dossierTelechargements.chemin)}</code>
+          </p>
           <p className="muted">{t('telechargements.dossier.note')}</p>
           <div className="row-actions">
             <button className="btn btn-primary" onClick={parcourirDossier}>
@@ -3521,7 +3530,7 @@ useEffect(() => {
           </label>
           <p className="muted">
             {t('telechargements.dossier.ligne')}
-            <code className="path">{dossierTelechargements.chemin}</code>
+            <code className="path">{cheminLisible(dossierTelechargements.chemin)}</code>
           </p>
         </section>
 

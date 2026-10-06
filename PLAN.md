@@ -2069,3 +2069,97 @@ seule les aurait crus sans nom.
 `cargo test` **152** (131 + 1 + 20) · `pnpm typecheck` 0 ·
 `pnpm lint` 4 warnings (les 4 antérieurs, 0 erreur) · `pnpm i18n:check` propre ·
 `pnpm hooks:check` **rouge prouvée puis verte**.
+
+---
+
+## 2026-10-05 — Suite du pilotage : téléchargement hors ligne validé, dossier de téléchargement illisible
+
+Reprise du parcours là où il s'était arrêté. Relais :
+`.mesures/pilot-16` à `pilot-26`, plus `.mesures/verifier-cbz.py`.
+
+### Téléchargement de bout en bout : validé, et vérifié strictement
+
+| Étape | Mesure |
+|---|---|
+| clic sur « Télécharger » (chapitre 1 de *Mobile Suit Gundam: The battle tales of Flanagan Boone*) | 26 s, 0 erreur console |
+| moteur | ~30 `fetchImage`, ~19 Mo |
+| écriture sur disque | `The White Devil.cbz`, **20 128 668 o** |
+| **lecture stricte de l'archive** | **37 entrées, 37 tailles distinctes, 37 JPEG** |
+| `.part` restant | **0** |
+| relecture hors ligne dans l'app | lecteur monté, badge « Offline », 4 → 6 images, 0 cassée |
+| réseau pendant la relecture | `tatami.localhost/page/…` + `ipc.localhost/save_progress`, **aucun hôte du site** |
+
+Le contrôle négatif et le contrôle positif sont là : rien de mauvais n'a été
+écrit, **et** l'archive relue par un tiers est riche (37 tailles distinctes =
+37 pages différentes, pas la même répétée).
+
+Le vérificateur a été **prouvé avant d'être cru** : il accepte deux
+téléchargements connus et refuse un ZIP malformé en nommant la cause
+(« Overlapped entries… »). Deux bogues du vérificateur lui-même ont été
+corrigés au passage — il lisait les entrées hors du `with` (plantage), et sa
+détection de taille nulle était inepte.
+
+### Deux défauts corrigés : le chemin de téléchargement
+
+1. **La forme longue s'affichait telle quelle** :
+   `\\?\C:\Users\alexanders\Documents\Tatami` au lieu de
+   `C:\Users\alexanders\Documents\Tatami`. Le préfixe vient de `canonicalize`,
+   c'est lui qui débloque les chemins longs : il se retire **à l'affichage**.
+2. **Le chemin n'était affiché dans aucun panneau de réglage** — seulement dans
+   l'onglet Téléchargements. Or la note du panneau « Downloads folder » prévient
+   « les téléchargements existants restent où ils sont » : sans le chemin sous
+   les yeux, impossible de savoir où sont ses 20 Mo ni de vérifier qu'un
+   changement a pris effet.
+
+Le helper `cheminLisible` **existait déjà** (l252) et n'était pas appelé ;
+`tsc` a refusé mon doublon (`TS2393`) avant qu'il ne reste dans le dépôt.
+
+**Porte** `pnpm chemins:check` (`scripts/check-chemins.mjs`), **prouvée rouge**
+en remettant la valeur brute : elle nomme `page.tsx:3311` et `page.tsx:3549` —
+les deux emplacements. Verte après le correctif. Re-mesurée sur l'app vivante :
+`C:\Users\alexanders\Documents\Tatami`, présent dans le bon panneau.
+
+### Un défaut qui n'en était pas un
+
+Le « script bloquant de `layout.tsx` ne s'exécute plus » (connu, non traité)
+n'existe **qu'en dev**. En `next dev`, le script ne circule que comme chaîne
+dans le payload RSC, donc il est inerte ; l'application livrée charge
+l'**export**, où c'est une vraie balise. Vérifié le jour même sur
+`out/index.html` servi en statique, avec `clair` et `en` posés :
+`data-apparence="clair"` et `lang="en"` dès le parsing, thème clair peint
+(`rgb(244,244,246)` sur `rgb(22,24,29)`).
+
+J'avais remplacé le `<script>` nu par `<Script strategy="beforeInteractive">`
+avant de vérifier l'artefact ; le correctif était donc inutile et a été retiré.
+`layout.tsx` ne change plus que par **commentaires** (0 suppression), qui
+documentent la différence dev / export pour que la prochaine session ne
+retombe pas dedans.
+
+### Mesures qui se contredisaient, et pourquoi
+
+- « Le téléchargement n'a rien écrit » : faux. Le dossier réglé par
+  l'utilisateur est `C:\Users\alexanders\Documents\Tatami`, pas le défaut
+  `%APPDATA%\Tatami\downloads` où j'avais cherché.
+- « La relecture hors ligne va chercher ses pages sur https » : faux.
+  `http://tatami.localhost/page/<jeton>` **est** le protocole local, et le
+  journal des requêtes ne montre aucun accès à un hôte du site.
+
+### Reste à faire, non fait
+
+- **`cargo test` écrit dans la vraie bibliothèque** : `%APPDATA%\Tatami\downloads`
+  contenait 35 dossiers `tatami-test-*` et un `IMPORT/` de fixtures, dont un nom
+  hostile `…\..\..\..\evil` correctement contenu. Les tests doivent écrire dans
+  un temporaire à eux. Défaut de harness, distinct : signalé, pas corrigé ici.
+- **2 appels `chapters` non attribués** (même manga, 160 ms d'écart, un seul
+  `details`) : toujours sans explication.
+- **Le lecteur n'affiche aucun compteur de page** : signalé, pas traité.
+- **0.11** : le panneau d'état montre 7 sources en échec, dont **1
+  `AUTH_REQUIRED`** — le code qui manque au contrat (tâche 0.13) apparaît donc
+  pour de vrai, ce qui confirme la tâche.
+
+### Vérification
+
+`cargo fmt --check` 0 · `cargo clippy --all-targets -D warnings` 0 ·
+`cargo test` **152** (131 + 1 + 20) · `pnpm typecheck` 0 ·
+`pnpm lint` 4 warnings (les 4 antérieurs, 0 erreur) · `pnpm i18n:check` ·
+`pnpm hooks:check` · `pnpm chemins:check` : tous propres.

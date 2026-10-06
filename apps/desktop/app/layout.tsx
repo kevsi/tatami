@@ -23,6 +23,9 @@ export const metadata: Metadata = {
  * l'avertissement ignoré. Le module garde la responsabilité de l'état, il ne
  * pose plus l'attribut au chargement.
  *
+ * Attention : cette correction se **vérifie sur l'export**, pas en dev. Le
+ * commentaire du script, plus bas, explique pourquoi.
+ *
  * Les deux clés vivent dans `localStorage` : `tatami.apparence` pour le thème
  * (`apparence.ts`) et `tatami.lang` pour la langue (`i18n.ts`).
  */
@@ -39,7 +42,30 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // statique ne peut pas contenir (thème et langue sont sur la machine, pas
     // dans le build). Le script ci-dessus les pose avant React ; cet attribut
     // empêche React de signaler l'écart qui n'en est pas un.
+    // Il faut le garder même si le script s'exécute : React compare quand même
+    // `<html lang="fr">` (valeur du build) à `lang="en"` (valeur de la machine),
+    // et l'écart est réel.
     <html lang="fr" suppressHydrationWarning>
+      {/* Le `<script>` nu est correct pour l'application LIVRÉE — et ne pas
+          « corriger » sur la foi du seul serveur de dev.
+
+          Mesuré le 2026-10-05 : en `pnpm tauri dev`, `data-apparence` restait
+          `null` et `lang` restait `fr`, alors que `localStorage` portait
+          `sombre` et `en` et que l'interface affichait bien l'anglais. La
+          lecture du HTML **servi par le dev** donne la cause : le script n'y
+          existe que comme chaîne dans le payload RSC
+          (`self.__next_f.push([0,{"children":"(function(){…`), donc comme
+          balise inexécutable. Un `<Script strategy="beforeInteractive">` a le
+          même sort en dev : c'était le candidat « correctif », il ne l'était pas.
+
+          Or l'application livrée charge le HTML **exporté**, où le script est
+          une vraie balise dans le `<head>`. Vérifié le même jour sur
+          `out/index.html` servi en statique, avec `clair` et `en` posés :
+          `data-apparence="clair"` et `lang="en"` dès le parsing, et le thème
+          clair effectivement peint (`rgb(244,244,246)` sur `rgb(22,24,29)`).
+
+          Donc : **en dev, mesurer `data-apparence` ne prouve rien sur
+          l'application livrée.** La mesure à faire porte sur l'export. */}
       <head>
         <script dangerouslySetInnerHTML={{ __html: AVANT_HYDRATATION }} />
       </head>

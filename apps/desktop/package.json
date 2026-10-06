@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "i18n:check": "node scripts/check-i18n.mjs",
     "hooks:check": "node scripts/check-hooks.mjs",
+    "chemins:check": "node scripts/check-chemins.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

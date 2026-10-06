@@ -19,7 +19,8 @@ use tauri::Manager;
 // L'import de `commands` ci-dessous n'est donc pas cosmétique : sans lui, le
 // chemin de `generate_handler!` ne se résout pas.
 use tatami_desktop::{
-    challenge, commands, download, journal, library, pagecache, scheduler, shelf, store, tray,
+    challenge, commands, download, journal, library, moteur, pagecache, scheduler, shelf, store,
+    tray,
 };
 
 fn not_found() -> tauri::http::Response<Vec<u8>> {
@@ -45,7 +46,15 @@ fn not_found() -> tauri::http::Response<Vec<u8>> {
 ///   `resource_dir()/engine/tatami-engine`. C'est là que vit le moteur dans
 ///   une app installée (Windows : `C:\Program Files\Tatami\engine\tatami-engine`).
 fn sidecar_candidates(resource_dir: Option<&std::path::Path>) -> Vec<(PathBuf, String)> {
-    let mut candidats = vec![dev_sidecar_paths()];
+    // Tâche 5.1 : le moteur **installé** passe en tête, devant la ressource
+    // embarquée. C'est tout l'intérêt d'une mise à jour : si la ressource
+    // embarquée passait en premier, un moteur mis à jour ne serait jamais
+    // utilisé, et la fonction semblerait marcher sans jamais rien changer.
+    let mut candidats: Vec<(PathBuf, String)> = vec![];
+    if let Some((java, cp)) = moteur::installe() {
+        candidats.push((java, cp));
+    }
+    candidats.push(dev_sidecar_paths());
     if let Some(dir) = resource_dir {
         let dist = dir.join("engine").join("tatami-engine");
         candidats.push((

@@ -407,6 +407,32 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   règle manquait. Chercher les classes **utilisées** contre celles **définies**
   est un test de dix lignes qui trouve ce genre de trou.
 
+- **Restaurer un fichier ne prouve pas que le binaire a été reconstruit.**
+  `Move-Item` (et `Copy-Item`) **conservent le `mtime`** de la source : restaurer
+  un fichier sauvegardé *avant* un bris réinstalle un fichier dont la date est
+  plus ancienne que la construction du binaire cassé, donc cargo réutilise ce
+  binaire. Mesuré le 2026-10-05 : le test « rouge puis vert » restait rouge, et
+  la cause n’était pas le test mais le compilateur qui n’avait rien reconstruit.
+  Règle : après une restauration, **réécrire** le fichier (ou toucher son
+  `mtime`) et vérifier que le code restauré est bien celui compilé — relire la
+  source ne prouve pas que c’est elle qui tourne.
+- **« La lecture échoue quand j’abîme les données » ne prouve pas *quel*
+  contrôle l’a arrêtée.** Trois fois le même jour sur le `DEFLATE` : corrompre un
+  octet de la charge compressée fait échouer l’**inflate** avant le CRC, donc le
+  test passait même avec la vérification du CRC supprimée ; et localiser une
+  structure par scan de signature matchait **dans les données compressées**.
+  Règle : pour éprouver un contrôle, **corrompre la valeur attendue**, pas les
+  données — l’operation doit réussir et seul le contrôle doit refuser. Et pour
+  situer une structure dans un binaire, passer par ce qui est non ambigu
+  (l’EOCD en fin de fichier), jamais par un scan de signature.
+- **Une constante partagée entre deux langages a besoin d’un test qui lit
+  l’autre fichier.** La liste des champs signés existe dans `moteur.rs` et dans
+  `moteur-sign.mjs` ; aucun compilateur ne compare les deux, et un champ ajouté
+  d’un seul côté serait **silencieusement non protégé** — donc glissable par le
+  réseau. Règle : dès qu’une valeur doit rester identique entre Rust et un
+  script, le test lit le script et compare, comme
+  `les_champs_signes_concordent_avec_le_script`.
+
 - **Tauri ignore silencieusement un paramètre d'écriture en `snake_case`.** Il
   convertit `camelCase` → `snake_case` côté Rust ; une clé déjà snake_case passe
   **sans erreur** et n'est pas prise. La commande répond normalement avec les

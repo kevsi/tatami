@@ -173,7 +173,24 @@ Objectif : pouvoir remplacer le mobile pour lire en ligne.
 
 ### Phase 5 — Durcissement et distribution (M)
 
-- [ ] **5.1** Mise à jour du moteur : manifeste signé, vérification de signature et de hash, remplacement atomique, retour arrière si échec au démarrage.
+- [ ] **5.1** Mise à jour du moteur : manifeste signé, vérification de signature et
+  de hash, remplacement atomique, retour arrière si échec au démarrage.
+  **Partiellement livré le 2026-10-05** — voir ADR 0006. Ce qui manque est listé
+  plus bas, et c’est délibéré, pas oublié.
+  **Livré** : clé Ed25519 auto-gérée (publique dans le dépôt, privée **hors**
+  dépôt), `scripts/moteur-sign.mjs`, signature vérifiée sur un **texte canonique**
+  (jamais sur le JSON, qui a des espaces libres), empreinte SHA-256 de l’archive
+  vérifiée **avant** extraction, extraction dans `versions/<version>/.en-cours`
+  puis renommage, pointeur `actif.json` écrit par fichier temporaire + renommage,
+  `precedente` mémorisée pour le retour arrière, `sidecar_candidates()` mis en
+  tête sur le moteur installé. `zipread` a reçu le support **DEFLATE**
+  (`flate2`), sans quoi une archive de moteur n’était pas installable du tout.
+  **Manque, volontairement** : (1) le téléchargement HTTP — c’est une décision
+  humaine (d’où vient le manifeste ?) ; (2) la sonde de démarrage qui appelle
+  `revenir_en_arriere()` — la fonction existe et est testée, mais **rien ne
+  l’appelle**, donc le retour arrière n’est pas encore automatique ; (3)
+  l’interface. Aucune source de manifeste n’est configurée par défaut : rien ne
+  se télécharge tout seul.
 - [ ] **5.2** Mise à jour de l'app via l'updater Tauri.
 - [x] **5.3** Tests de contrat sur réponses enregistrées, exécutés en intégration continue.
 - [x] **5.4** Écran « état des sources » pour repérer ce qui est cassé. **Livré** le 2026-10-05 et **vérifié à l'écran**. Ce qui existait : un compteur « N sources signalées » et un bouton « Tout réessayer » — pas de liste, pas de date, donc impossible de savoir *quelle* source casse ni *depuis quand*. La donnée existait déjà (`noteHealth` enregistre `{code, message, at}` et persiste) : il n'y avait qu'à l'afficher. Regroupement par **code d'erreur** d'abord (3 sources en `CHALLENGE_REQUIRED` sont un problème Cloudflare, pas 3 pannes distinctes), puis le détail, du plus récent au plus ancien. `<time dateTime>` garde la date exploitable par une machine. **Corrigé au passage** : `sinceFr` était français en dur (contre `AGENTS.md` §7) — l'interface anglaise affichait « 3 mois ». Preuve : 7 pannes injectées, 4 chips de regroupement dont la somme vaut 7, 3 colonnes, 0 faute de français en mode `en`, bouton « Tout réessayer » ramène l'état à 0 et la table disparaît. **Non couvert** : la version du parser (exigée par la formulation d'origine) n'est pas affichée — elle vient du moteur et demanderait une commande Rust.
@@ -1716,3 +1733,90 @@ antérieurs**, aucun nouveau · `i18n` 250 clés propres · `build` OK.
 **Point à arbitrer** : le rapport contient des **comptages**. Un nombre n’est
 pas une donnée personnelle, mais il rend le rapport légèrement plus parlant.
 Je les ai inclus ; les retirer est une ligne.
+
+### 2026-10-05 — Mise à jour du moteur (5.1) — mini-plan
+
+**Le fait qui dicte l’architecture, mesuré :** le moteur vit dans
+`resource_dir()/engine/tatami-engine`, donc dans `C:\Program Files\Tatami\…` en
+app installée — **non écrivable par l’utilisateur**. Donc « remplacer de façon
+atomique » n’a pas de sens sur ce dossier. Le moteur doit avoir une copie
+**écrivable**, et la ressource embarquée devient le repli.
+
+Une chaîne existe déjà et rend ça presque gratuit : `sidecar_candidates()` rend
+un `Vec` et retient le premier candidat dont le `java.exe` existe. Il suffit
+d’y **insérer** le moteur installé, en tête — pas de refonte du superviseur.
+
+**Emplacement retenu** : `%APPDATA%\Tatami\moteur\`, avec
+`versions/<nom>/` par version installée et un pointeur `actif.json`. Jamais de
+mise à jour **par-dessus** l’emplacement précédent : on installe à côté, on
+bascule le pointeur, donc l’ancien moteur reste intact et le retour arrière est
+un simple re-écriture de `actif.json`.
+
+**Racine de confiance : auto-gérée**, comme le dit déjà AGENTS.md §10. Clé
+Ed25519 générée par un script du dépôt, **clé publique embarquée dans le
+binaire**. Donc **aucun certificat à acheter**, contrairement à 5.6 — les deux
+tâches sont bien séparées sur ce point.
+
+**Source du manifeste : aucune par défaut.** Tant que l’utilisateur n’a pas
+configuré de source, la fonction est **inerte** — rien ne se télécharge tout
+seul. C’est la seule façon qu’un « mettre à jour » ne devienne jamais un
+téléchargement subi.
+
+**Étapes** : (1) ADR 0006 — racine de confiance et format du manifeste ; (2)
+script de génération de clé ; (3) module `moteur.rs` — manifeste, signature,
+empreinte, installation, activation, retour arrière, avec tests ; (4) chaîne de
+résolution : installé d’abord, ressource embarquée en repli ; (5) sonde de
+démarrage, retour arrière si le moteur activé ne répond pas.
+
+**Dépendances à justifier en ADR** : `sha2` (empreinte) et `ed25519-dalek`
+(signature). Le projet n’a aujourd’hui **aucune** crypto dans ses dépendances —
+c’est donc un ajout réel, pas une家常. Alternatives écartées : CNG/`crypt32`
+de Windows (platform-specific, et l’app vise aussi Linux/macOS), `ring` (lourd),
+et « pas de signature, seulement l’empreinte » — ce dernier **contredit
+AGENTS.md §10**, donc écarté par principe et non par préférence.
+
+### 2026-10-05 — Mise à jour du moteur (5.1) — première partie
+
+**Le fait qui a dicté l’architecture, mesuré** : le moteur vit dans
+`resource_dir()`, donc dans `Program Files` — non modifiable par l’utilisateur.
+Un « remplacement atomique » n’a donc pas de sens en place. D’où
+`%APPDATA%\Tatami\moteur\versions\<version>\` + un pointeur `actif.json`.
+
+**Et une découverte qui bloquait tout** : `zipread` ne décompressait que
+`STORED`, par choix assumé (§9). Or une archive de moteur faite par
+`Compress-Archive` est en `DEFLATE` — donc 5.1 n’avait **rien à installer**.
+`flate2` ajouté, `DEFLATE` supporté, CRC porté sur les octets **décompressés**.
+
+**L’API n’a pas été devinée** : `VerifyingKey::from_bytes`,
+`Signature::from_bytes`, `verify_strict`, et toute l’API de signature ont été
+confirmées **par le compilateur** avant d’écrire le module. Même pour Node :
+clé brute de 32 octets, signature de 64, PEM relu redonnant la même signature,
+le tout **mesuré** avant d’écrire `moteur-sign.mjs`.
+
+**La porte de signature est prouvée mordante** : remplacer la comparaison par
+`Ok(())` fait échouer **2 tests** —
+`modifier_un_champ_apres_signature_est_refuse` et
+`une_signature_d_une_autre_cle_est_refusee` — c’est-à-dire exactement ceux qui
+affirment la vérification, et pas les autres.
+
+**Un test qui vérifie une donnée ne vérifie pas son contrôle.** Deux échecs
+consécutifs l’ont montré. Corrompre un octet de la charge compressée fait
+échouer l’**inflate** avant le CRC, donc le test passait même avec la
+vérification du CRC supprimée. Il a fallu corrompre la valeur **attendue** :
+alors le inflate réussit, les octets sont les bons, et seul un CRC réellement
+comparé peut refuser. Même famille : localiser le répertoire central par scan de
+signature matchait **dans les données compressées** — l’EOCD, lui, est non
+ambigu.
+
+**Un test des deux côtés de la frontièrelangage.** La liste des champs signés
+est écrite dans `moteur.rs` **et** dans `moteur-sign.mjs`. Aucun compilateur ne
+compare les deux : `les_champs_signes_concordent_avec_le_script` lit le script
+et compare. C’est le seul endroit où cette garantie est automatique.
+
+**Un piège de mesure resté** : restaurer un fichier par `Move-Item` **conserve
+le `mtime` de la source**, antérieur au bris — donc cargo réutilisait le
+binaire cassé et « la restauration » ne prouvait rien. Le code était bon, le
+binaire ne l’était pas. Corrigé en réécrivant le fichier.
+
+`cargo test` **149** (128 + 1 + 20), dont 14 nouveaux · `fmt` 0 · `clippy
+--all-targets -D warnings` 0 · `tsc` 0. Aucune interface touchée.

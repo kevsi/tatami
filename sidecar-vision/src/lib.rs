@@ -17,8 +17,13 @@
 //!
 //! - `dico` : dictionnaire et décodage CTC — **fait et testé**, avec le défaut
 //!   d'espace mesuré le 2026-10-07 couvert par une régression.
-//! - `ocr` : lecture d'une ligne — **fait**, pré-traitement testé sans poids.
-//! - `lignes`, `detect`, `inpaint`, protocole NDJSON : à faire.
+//! - `ocr` : lecture d'une ligne, pré-traitement testé sans poids.
+//! - `lignes` : découpe d'une bulle en lignes — seuils mesurés.
+//! - `detect` : bulles et texte libre — la classification de T2.3.
+//! - `pack` : ouverture d'un pack, avec les fichiers manquants nommés.
+//! - `proto` : NDJSON, codes d'erreur du contrat.
+//! - `inpaint` : **pas fait**, et le sidecar le dit (`MODEL_MISSING`) plutôt
+//!   que de faire semblant.
 //!
 //! Les poids ne sont **jamais** dans le dépôt : ils arrivent par packs
 //! versionnés et vérifiés (`pack.rs` côté application).
@@ -27,3 +32,5 @@ pub mod detect;
 pub mod dico;
 pub mod lignes;
 pub mod ocr;
+pub mod pack;
+pub mod proto;

@@ -79,13 +79,15 @@
 
 ### S1 — Côté Rust
 
-- [ ] **S1.1** — Migration SQLite v9 : table `custom_sources (id TEXT PK, name TEXT, lang TEXT, path TEXT,
+- [x] **S1.1** — Migration SQLite v9 : table `custom_sources (id TEXT PK, name TEXT, lang TEXT, path TEXT,
   installed_at INTEGER)`. Sauvegarde avant migration, test de migration v8→v9.
+  _Prouvé : `migration_v8_vers_v9_cree_custom_sources` ok, 185/185 tests passés — 2026-10-06._
 
-- [ ] **S1.2** — Commandes Tauri : `importer_source(path)` (copie le `.js` dans le dossier sources,
+- [x] **S1.2** — Commandes Tauri : `importer_source(path)` (copie le `.js` dans le dossier sources,
   enregistre en base), `lister_sources_custom()`, `supprimer_source_custom(id)` (efface le fichier + la
   ligne). Validation : nom de fichier assaini (anti path-traversal), taille ≤ 256 Ko.
   _Critère : `cargo test` couvre les cas limites (traversée, taille, doublon)._
+  _Prouvé : cargo test 185/185, clippy 0 warnings, fmt propre — 2026-10-06._
 
 ### S2 — Interface
 

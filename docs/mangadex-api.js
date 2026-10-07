@@ -177,8 +177,22 @@ var SOURCE = {
                         // groupe de scanlation et ne correspond pas au nombre de
                         // fichiers que `/at-home` renvoie ensuite — mesuré le
                         // 2026-07 : « 9 p. » affiché pour 36 pages réelles.
-                        title: "Ch. " + (ch.chapter || "?") +
-                            (volume.volume ? " — vol. " + volume.volume : ""),
+                        //
+                        // Le titre n'est la ligne du dessous que s'il apporte
+                        // autre chose que le numéro : l'interface écrit déjà
+                        // « Ch. 1 » dans la colonne de gauche, alors un titre
+                        // « Ch. 1 — vol. 1 » donnait « Ch. 1Ch. 1 — vol. 1 »
+                        // (mesuré dans l'app). Les sources natives
+                        // renseignent `uploadDate`, qui passe avant le titre ;
+                        // ce script n'a pas cette donnée, donc le titre ne
+                        // porte que le volume.
+                        //
+                        // MangaDex nomme le volume `none` quand la série n'en a
+                        // pas (mesuré sur « Versus ») : sans ce garde, la ligne
+                        // affichait « Ch. 1vol. none ».
+                        title: volume.volume && volume.volume !== "none" && volume.volume !== "0"
+                            ? "vol. " + volume.volume
+                            : "",
                         // Le moteur et l'interface attendent un nombre ; un
                         // chapitre « 12.5 » est réel, donc on ne floor pas.
                         number: isNaN(numero) ? 0 : numero,

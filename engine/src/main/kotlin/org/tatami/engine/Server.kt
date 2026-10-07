@@ -509,6 +509,14 @@ internal suspend fun dispatchCustom(
         "details" -> {
             val mangaUrl = p.reqString("url")
             val result = parser.getDetails(mangaUrl)
+            // Le contrat nomme le statut `state` (mangaToJson) ; les scripts, eux,
+            // écrivent `status` — c'est le nom que portent les API JSON. Sans
+            // cette normalisation, la ligne « Statut » de la fiche disparaît pour
+            // toute source scriptée (mesuré le 2026-07 : Auteur, Genres et Source
+            // présents, Statut absent).
+            if (!result.has("state") && result.has("status")) {
+                result.put("state", result.get("status"))
+            }
             cache.putCustomDetails(sourceName, mangaUrl, result)
             JSONObject().put("manga", result)
         }

@@ -251,6 +251,28 @@ class DispatchPersonnaliseeTest {
     }
 
     @Test
+    fun `details normalise status en state`() = runBlocking {
+        val dossier = Files.createTempDirectory("tatami-test-dispatch4").toFile()
+        try {
+            val loader = ScriptedSourceLoader(dossier, client)
+            // `scriptMinimal` renvoie déjà `status` dans getDetails et pas de
+            // `state` : c'est exactement la forme d'un script réel, donc aucune
+            // injection n'est nécessaire — injecter `status` dans SOURCE n'aurait
+            // rien changé, le script fabriquant sa réponse lui-même.
+            loader.charger(File(dossier, "ma-source.js").also { it.writeText(scriptMinimal("ma-source")) })
+            val r = dispatchCustom(
+                loader, SessionCache(), "custom:ma-source", "details",
+                JSONObject().put("url", "/manga/1"),
+            )
+            val manga = r.getJSONObject("manga")
+            assertTrue(manga.has("status"), "précondition : le script renvoie status")
+            assertEquals(manga.getString("status"), manga.getString("state"))
+        } finally {
+            dossier.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `une source inconnue est refusee`() = runBlocking {
         val dossier = Files.createTempDirectory("tatami-test-dispatch3").toFile()
         try {

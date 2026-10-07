@@ -283,14 +283,159 @@ impl Traducteur {
         Err(ErreurTraduction::LocalIndisponible)
     }
 
+    /// Clé API OpenRouter, dans l'ordre : trousseau, variable d'environnement.
+    ///
+    /// La variable `OPENROUTER_API_KEY` existe pour le développement en ligne de
+    /// commande : le service OpenCode ne voit pas les `setx` (leçon AGENTS.md §8),
+    /// mais un `cargo run` lancé dans le même shell la voit. La production passe
+    /// par le trousseau, comme Gemini.
+    fn cle_openrouter() -> Result<Option<String>, String> {
+        let entree = Entry::new("tatami", "openrouter-api-key").map_err(|e| e.to_string())?;
+        match entree.get_password() {
+            Ok(cle) if !cle.is_empty() => return Ok(Some(cle)),
+            _ => {}
+        }
+        match std::env::var("OPENROUTER_API_KEY") {
+            Ok(cle) if !cle.is_empty() => Ok(Some(cle)),
+            _ => Ok(None),
+        }
+    }
+
+    /// Traduit via l'API OpenRouter (mêmes URL et corps que Gemini : OpenAI
+    /// chat/completions). Mesuré le 2026-10-07 : sur les modèles gratuits,
+    /// `cohere/north-mini-code:free` est le seul, parmi six testés, à avoir
+    /// répondu une traduction française correcte en gardant les retours à la
+    /// ligne du bulle — `google/gemma-4-*:free` et `nemotron-*` étaient saturés,
+    /// `dots-3-note-preview` aplatissait les sauts de ligne.
+    async fn traduire_openrouter(
+        &self,
+        texte: &str,
+        cle: &str,
+    ) -> Result<String, ErreurTraduction> {
+        const MODELE: &str = "cohere/north-mini-code:free";
+        let systeme = "You are a manga/webtoon translator. \
+            Translate English speech bubbles to French. \
+            Preserve the speaker's tone. Keep it short. \
+            Output ONLY the French translation, nothing else.";
+
+        let url = "https://openrouter.ai/api/v1/chat/completions";
+        let corps = serde_json::json!({
+            "model": MODELE,
+            "messages": [
+                { "role": "system", "content": systeme },
+                { "role": "user", "content": texte }
+            ],
+            "temperature": 0.3,
+            "max_tokens": 200,
+            // Mesuré le 2026-10-07 : `cohere/north-mini-code:free` est un modèle
+            // **à raisonnement** — sans ce drapeau, les 200 tokens partent dans
+            // `reasoning` et `content` revient `null` (`finish_reason: "length"`).
+            "reasoning": { "enabled": false }
+        });
+
+        let mut dernier_code = None;
+        let mut corps_reponse = None;
+        for essai in 0..3 {
+            if essai > 0 {
+                tokio::time::sleep(std::time::Duration::from_secs(2 * essai)).await;
+            }
+            let reponse = self
+                .http
+                .post(url)
+                .header("Authorization", format!("Bearer {cle}"))
+                .header("Content-Type", "application/json")
+                .json(&corps)
+                .send()
+                .await
+                .map_err(|e| ErreurTraduction::Reseau(e.to_string()))?;
+
+            let status = reponse.status();
+            if status.is_success() {
+                corps_reponse = Some(
+                    reponse
+                        .json()
+                        .await
+                        .map_err(|e| ErreurTraduction::Reponse(e.to_string()))?,
+                );
+                dernier_code = None;
+                break;
+            }
+            let body = reponse.text().await.unwrap_or_default();
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                return Err(ErreurTraduction::Quota);
+            }
+            // `cohere/*` et `nemotron-*` renvoient tous deux « Upstream error »
+            // 503 quand le serveur est saturé — même famille que Gemini.
+            if status != reqwest::StatusCode::SERVICE_UNAVAILABLE
+                && !body.contains("Upstream error")
+                && status != reqwest::StatusCode::BAD_GATEWAY
+            {
+                return Err(ErreurTraduction::Reseau(format!(
+                    "HTTP {}: {}",
+                    status,
+                    body.chars().take(200).collect::<String>()
+                )));
+            }
+            dernier_code = Some(format!(
+                "HTTP {}: {}",
+                status,
+                body.chars().take(200).collect::<String>()
+            ));
+        }
+        let json: serde_json::Value = match corps_reponse {
+            Some(j) => j,
+            None => {
+                return Err(ErreurTraduction::Reseau(
+                    dernier_code.unwrap_or_else(|| "aucun corps".into()),
+                ))
+            }
+        };
+
+        let Some(texte_reponse) = json
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .and_then(|m| m.get("content"))
+            .and_then(|t| t.as_str())
+        else {
+            return Err(ErreurTraduction::Reponse(
+                "pas de texte dans la réponse OpenRouter".into(),
+            ));
+        };
+
+        Ok(texte_reponse.trim().to_string())
+    }
+
     /// Traduit un texte anglais vers le français.
     ///
     /// Ordre des fournisseurs :
-    /// 1. Gemini (si une clé est configurée).
-    /// 2. opus-mt local (quand le modèle sera chargé).
+    /// 1. OpenRouter, modèle gratuit (si une clé est configurée).
+    /// 2. Gemini (si une clé est configurée).
+    /// 3. opus-mt local (quand le modèle sera chargé).
     pub async fn traduire(&self, texte: &str) -> Result<String, ErreurTraduction> {
         if texte.trim().is_empty() {
             return Ok(texte.to_string());
+        }
+
+        if let Ok(Some(cle)) = Self::cle_openrouter() {
+            if !cle.is_empty() {
+                match self.traduire_openrouter(texte, &cle).await {
+                    Ok(trad) => {
+                        tracing::debug!(
+                            "traduction openrouter: {} chars -> {} chars",
+                            texte.len(),
+                            trad.len()
+                        );
+                        return Ok(trad);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "OpenRouter a échoué pour « {}… » : {e}, repli sur Gemini/local",
+                            &texte.chars().take(40).collect::<String>()
+                        );
+                    }
+                }
+            }
         }
 
         if let Ok(Some(cle)) = Self::cle_gemini() {
@@ -385,6 +530,30 @@ pub async fn traduire_texte(
 ) -> Result<String, String> {
     let traducteur = Traducteur::new();
     traducteur.traduire(&texte).await.map_err(|e| e.to_string())
+}
+
+/// Enregistre la clé API OpenRouter fournie par l'utilisateur dans le trousseau.
+///
+/// Une chaîne vide supprime la clé (retour au mode hors ligne uniquement).
+#[tauri::command]
+pub async fn definir_cle_openrouter(cle: String) -> Result<(), String> {
+    if cle.is_empty() {
+        let entree = Entry::new("tatami", "openrouter-api-key").map_err(|e| e.to_string())?;
+        entree.delete_credential().ok();
+        return Ok(());
+    }
+    let entree = Entry::new("tatami", "openrouter-api-key").map_err(|e| e.to_string())?;
+    entree.set_password(&cle).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Indique si une clé OpenRouter est configurée (trousseau ou variable d'env).
+#[tauri::command]
+pub async fn cle_openrouter_configuree() -> Result<bool, String> {
+    match Traducteur::cle_openrouter()? {
+        Some(cle) => Ok(!cle.is_empty()),
+        None => Ok(false),
+    }
 }
 
 /// Enregistre la clé API Gemini fournie par l'utilisateur dans le trousseau.

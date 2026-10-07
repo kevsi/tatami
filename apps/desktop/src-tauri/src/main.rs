@@ -319,6 +319,8 @@ fn main() {
             challenge::cancel_challenge,
             vision_pipeline::analyser_page,
             traduction::traduire_texte,
+            traduction::definir_cle_openrouter,
+            traduction::cle_openrouter_configuree,
             traduction::traduire_page,
             traduction::definir_cle_gemini,
             traduction::cle_gemini_configuree,
@@ -457,6 +459,8 @@ mod tests {
             "supprimer_pack",
             "traduire_texte",
             "resume_traduction_page",
+            "definir_cle_openrouter",
+            "cle_openrouter_configuree",
         ];
 
         let mortes: Vec<&&str> = enregistrees

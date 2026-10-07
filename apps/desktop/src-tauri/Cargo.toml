@@ -63,6 +63,7 @@ hex = "0.4"
 dirs-next = "2"
 async-trait = "0.1"
 jsonschema = "0.17"
+rand = "0.9"
 # Transitives de Tauri rendues explicites pour `pack.rs` :
 # - dunce : canonicalisation sans préfixe `\\?\` sur Windows
 # - windows-sys : GetDiskFreeSpaceExW pour la vérification d'espace disque

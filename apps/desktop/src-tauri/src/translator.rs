@@ -5,9 +5,8 @@
 //! (`Traducteur`). Le modèle local (ADR 0008) sera ajouté en T3.1
 //! quand le runtime ONNX sera branché.
 
-use super::prompt::{construire_prompt, schema_traduction};
+use super::prompt::{construire_prompt, schema_traduction, GlossaryEntry};
 use super::traduction::{ErreurTraduction, PageTranslation, StatutBloc, Traducteur};
-use std::collections::HashMap;
 
 /// Trait de traduction EN → FR.
 ///
@@ -79,31 +78,48 @@ impl Translator for LocalTranslator {
 }
 
 // ---------------------------------------------------------------------------
-// Traduction par page avec validation et réessais (T3.2)
+// Traduction par page avec validation, backoff et repli (T3.2 + T3.5)
 // ---------------------------------------------------------------------------
 
 /// Nombre maximum de tentatives de traduction par page.
 const TENTATIVES_MAX: usize = 3;
 
+/// Délai de backoff initial en millisecondes.
+const BACKOFF_INITIAL_MS: u64 = 500;
+
+/// Délai de backoff maximum en millisecondes.
+const BACKOFF_MAX_MS: u64 = 10_000;
+
+/// Calcule un délai de backoff exponentiel avec jitter.
+///
+/// # Formule
+/// `delay = min(BACKOFF_MAX_MS, BACKOFF_INITIAL_MS * 2^tentative) + random(0, 250ms)`
+fn calculer_backoff(tentative: usize) -> u64 {
+    let base = BACKOFF_INITIAL_MS * 2u64.saturating_pow(tentative as u32);
+    let delai = base.min(BACKOFF_MAX_MS);
+    let jitter = (rand::random::<u64>() % 250).saturating_add(1);
+    delai.saturating_add(jitter)
+}
+
 /// Traduit une page complète.
 ///
 /// # Algorithme
 /// 1. Construire le prompt avec tous les blocs, leur budget et le glossaire.
-/// 2. Appeler le fournisseur de traduction.
-/// 3. Valider la réponse JSON contre le schéma.
-/// 4. Vérifier que le nombre de blocs en sortie == nombre en entrée.
-/// 5. Si échec : réessayer (jusqu'à `TENTATIVES_MAX` fois).
-/// 6. Si toujours échec : marquer tous les blocs en `Fallback`.
+/// 2. Essayer le traducteur en ligne avec backoff exponentiel.
+/// 3. Si quota atteint (429) : basculer immédiatement sur le traducteur local.
+/// 4. Si échec après toutes les tentatives : marquer tous les blocs en `Fallback`.
 ///
 /// # Retour
 /// La page mise à jour avec les traductions, ou les blocs en `Fallback`.
-pub async fn traduire_page<T>(
+pub async fn traduire_page<T, F>(
     translator: &T,
+    fallback: &F,
     page: &PageTranslation,
-    glossaire: &HashMap<String, String>,
+    glossaire: &[GlossaryEntry<'_>],
 ) -> Result<PageTranslation, ErreurTraduction>
 where
     T: Translator,
+    F: Translator,
 {
     let prompt = construire_prompt(page, glossaire);
     let schema = schema_traduction();
@@ -113,16 +129,59 @@ where
             Ok(reponse) => match valider_reponse(&reponse, page, &schema) {
                 Ok(page_traduite) => return Ok(page_traduite),
                 Err(e) => {
-                    tracing::warn!("tentative {} : réponse invalide : {e}", tentative + 1);
+                    tracing::warn!(
+                        "tentative {} : réponse invalide : {e}",
+                        tentative + 1
+                    );
                 }
             },
-            Err(e) => {
-                tracing::warn!("tentative {} : traduction échouée : {e}", tentative + 1);
+            Err(ErreurTraduction::Quota) => {
+                tracing::warn!("quota Gemini atteint, bascule sur le mode hors ligne");
+                return traduire_avec_fallback(fallback, page, glossaire).await;
             }
+            Err(e) => {
+                tracing::warn!(
+                    "tentative {} : traduction échouée : {e}",
+                    tentative + 1
+                );
+            }
+        }
+
+        if tentative < TENTATIVES_MAX - 1 {
+            let delai = calculer_backoff(tentative);
+            tokio::time::sleep(tokio::time::Duration::from_millis(delai)).await;
         }
     }
 
-    // Échec après toutes les tentatives : repli.
+    // Échec après toutes les tentatives : repli sur le traducteur local.
+    traduire_avec_fallback(fallback, page, glossaire).await
+}
+
+/// Essaie le traducteur de secours (local) pour la page entière.
+async fn traduire_avec_fallback<F>(
+    fallback: &F,
+    page: &PageTranslation,
+    glossaire: &[GlossaryEntry<'_>],
+) -> Result<PageTranslation, ErreurTraduction>
+where
+    F: Translator,
+{
+    let prompt = construire_prompt(page, glossaire);
+    let schema = schema_traduction();
+
+    match fallback.translate(&prompt).await {
+        Ok(reponse) => match valider_reponse(&reponse, page, &schema) {
+            Ok(page_traduite) => return Ok(page_traduite),
+            Err(e) => {
+                tracing::warn!("traducteur local : réponse invalide : {e}");
+            }
+        },
+        Err(e) => {
+            tracing::warn!("traducteur local indisponible : {e}");
+        }
+    }
+
+    // Échec du fallback : marquer tous les blocs en Fallback.
     let mut page_fallback = page.clone();
     for bloc in &mut page_fallback.blocks {
         bloc.translated_text = None;
@@ -313,5 +372,155 @@ mod tests {
         let schema = schema_traduction();
         let result = valider_reponse(reponse, &page, &schema);
         assert!(result.is_err());
+    }
+
+    // ---------------------------------------------------------------------------
+    // Tests T3.5 — résilience
+    // ---------------------------------------------------------------------------
+
+    /// Traducteur factice pour les tests de résilience.
+    #[derive(Debug, Default)]
+    struct FakeTranslator {
+        responses: Vec<Result<String, ErreurTraduction>>,
+        call_count: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl Translator for FakeTranslator {
+        async fn translate(&self, _text: &str) -> Result<String, ErreurTraduction> {
+            let idx = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.responses.get(idx).cloned().unwrap_or(Err(
+                ErreurTraduction::Reseau("pas de réponse factice".into())
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn traduire_page_utilise_le_fallback_si_quota() {
+        let online = FakeTranslator {
+            responses: vec![Err(ErreurTraduction::Quota)],
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+        };
+        let offline = FakeTranslator {
+            responses: vec![Ok(r#"[{"id":"b1","translatedText":"Bonjour","status":"ok"}]"#.into())],
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+        };
+
+        let page = PageTranslation {
+            page_id: "p1".into(),
+            manga_url: None,
+            chapter_url: "c".into(),
+            source: "S".into(),
+            width: 100,
+            height: 100,
+            blocks: vec![BlocTraduction {
+                id: "b1".into(),
+                type_bloc: TypeBloc::Dialogue,
+                bbox: Bbox { x: 0, y: 0, w: 10, h: 10 },
+                original_text: Some("Hello".into()),
+                translated_text: None,
+                reading_order: 0,
+                status: StatutBloc::Ok,
+                confidence: Some(1.0),
+            }],
+        };
+
+        let result = traduire_page(&online, &offline, &page, &[]).await;
+        assert!(result.is_ok());
+        let page_traduite = result.unwrap();
+        assert_eq!(
+            page_traduite.blocks[0].translated_text,
+            Some("Bonjour".into())
+        );
+        assert_eq!(page_traduite.blocks[0].status, StatutBloc::Ok);
+    }
+
+    #[tokio::test]
+    async fn traduire_page_fallback_si_toutes_tentatives_echouent() {
+        let online = FakeTranslator {
+            responses: vec![
+                Err(ErreurTraduction::Reseau("timeout".into())),
+                Err(ErreurTraduction::Reseau("timeout".into())),
+                Err(ErreurTraduction::Reseau("timeout".into())),
+            ],
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+        };
+        let offline = FakeTranslator {
+            responses: vec![Ok(r#"[{"id":"b1","translatedText":"Salut","status":"ok"}]"#.into())],
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+        };
+
+        let page = PageTranslation {
+            page_id: "p1".into(),
+            manga_url: None,
+            chapter_url: "c".into(),
+            source: "S".into(),
+            width: 100,
+            height: 100,
+            blocks: vec![BlocTraduction {
+                id: "b1".into(),
+                type_bloc: TypeBloc::Dialogue,
+                bbox: Bbox { x: 0, y: 0, w: 10, h: 10 },
+                original_text: Some("Hello".into()),
+                translated_text: None,
+                reading_order: 0,
+                status: StatutBloc::Ok,
+                confidence: Some(1.0),
+            }],
+        };
+
+        let result = traduire_page(&online, &offline, &page, &[]).await;
+        assert!(result.is_ok());
+        let page_traduite = result.unwrap();
+        assert_eq!(
+            page_traduite.blocks[0].translated_text,
+            Some("Salut".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn traduire_page_fallback_marque_fallback_si_tout_echoue() {
+        let online = FakeTranslator {
+            responses: vec![Err(ErreurTraduction::Reseau("timeout".into()))],
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+        };
+        let offline = FakeTranslator {
+            responses: vec![Err(ErreurTraduction::LocalIndisponible)],
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+        };
+
+        let page = PageTranslation {
+            page_id: "p1".into(),
+            manga_url: None,
+            chapter_url: "c".into(),
+            source: "S".into(),
+            width: 100,
+            height: 100,
+            blocks: vec![BlocTraduction {
+                id: "b1".into(),
+                type_bloc: TypeBloc::Dialogue,
+                bbox: Bbox { x: 0, y: 0, w: 10, h: 10 },
+                original_text: Some("Hello".into()),
+                translated_text: None,
+                reading_order: 0,
+                status: StatutBloc::Ok,
+                confidence: Some(1.0),
+            }],
+        };
+
+        let result = traduire_page(&online, &offline, &page, &[]).await;
+        assert!(result.is_ok());
+        let page_traduite = result.unwrap();
+        assert_eq!(page_traduite.blocks[0].translated_text, None);
+        assert_eq!(page_traduite.blocks[0].status, StatutBloc::Fallback);
+    }
+
+    #[test]
+    fn calculer_backoff_est_borne() {
+        // Le backoff ne doit pas dépasser BACKOFF_MAX_MS.
+        for tentative in 0..10 {
+            let delai = calculer_backoff(tentative);
+            assert!(delai <= BACKOFF_MAX_MS + 250, "backoff {} = {} ms", tentative, delai);
+        }
     }
 }

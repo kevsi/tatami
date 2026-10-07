@@ -24,7 +24,7 @@ use crate::store::Store;
 // Erreurs
 // ---------------------------------------------------------------------------
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum ErreurTraduction {
     #[error("clé API Gemini non configurée")]
     CleManquante,
@@ -36,6 +36,8 @@ pub enum ErreurTraduction {
     LocalIndisponible,
     #[error("trousseau indisponible : {0}")]
     Trousseau(String),
+    #[error("quota Gemini atteint (429)")]
+    Quota,
 }
 
 // ---------------------------------------------------------------------------
@@ -61,8 +63,7 @@ pub enum TypeBloc {
 }
 
 /// Résultat du pipeline sur un bloc.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum StatutBloc {
     Ok,
     Review,
@@ -186,6 +187,9 @@ impl Traducteur {
         if !reponse.status().is_success() {
             let status = reponse.status();
             let body = reponse.text().await.unwrap_or_default();
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                return Err(ErreurTraduction::Quota);
+            }
             return Err(ErreurTraduction::Reseau(format!(
                 "HTTP {}: {}",
                 status,
@@ -267,7 +271,7 @@ pub async fn traduire_page(
     series_key: String,
 ) -> Result<PageTranslation, String> {
     use crate::prompt::GlossaryEntry;
-    use crate::translator::{traduire_page, GeminiTranslator};
+    use crate::translator::{traduire_page, GeminiTranslator, LocalTranslator};
 
     // Récupérer le glossaire de la série.
     let entries = store.list_glossary(&series_key).map_err(|e| e.to_string())?;
@@ -281,7 +285,8 @@ pub async fn traduire_page(
         .collect();
 
     let translator = GeminiTranslator::new();
-    traduire_page(&translator, &page, &glossaire)
+    let fallback = LocalTranslator::new();
+    traduire_page(&translator, &fallback, &page, &glossaire)
         .await
         .map_err(|e| e.to_string())
 }

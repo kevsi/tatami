@@ -30,6 +30,7 @@
 
 pub mod detect;
 pub mod dico;
+pub mod efface;
 pub mod lignes;
 pub mod ocr;
 pub mod pack;

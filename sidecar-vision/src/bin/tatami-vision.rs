@@ -18,7 +18,9 @@
 use std::io::{BufRead, Write};
 
 use tatami_vision::detect::DetecteurBulles;
+use tatami_vision::efface::Effaceur;
 use tatami_vision::lignes::DetecteurLignes;
+use tatami_vision::lignes::Rectangle;
 use tatami_vision::ocr::Lecteur;
 use tatami_vision::pack::Pack;
 use tatami_vision::proto::{
@@ -36,6 +38,9 @@ struct Moteurs {
     bulles: DetecteurBulles,
     lignes: DetecteurLignes,
     lecteur: Lecteur,
+    /// Effacement : chargé seulement si le pack contient LaMa. Son absence est
+    /// un état propre (`inpaint` indisponible), pas une panne.
+    effaceur: Option<Effaceur>,
 }
 
 fn main() {
@@ -203,7 +208,20 @@ fn repondre(requete: &Requete, moteurs: &mut Option<Moteurs>) -> Reponse {
             };
             // Une boîte restreint la lecture à une zone de l'image. C'est ainsi
             // que l'application lit une bulle précise sans retailler l'image.
+            //
+            // Les boîtes rendues sont **dans le repère de l'image reçue**, pas
+            // dans celui de la culture. Mesuré le 2026-10-07 : en renvoyant des
+            // coordonnées de culture, l'effacement masquait au mauvais endroit —
+            // le texte restait intact et des artefacts apparaissaient ailleurs,
+            // sans qu'aucune erreur ne soit levée. Un appelant ne doit pas avoir
+            // à savoir de quel crop vient quelle boîte pour regrouper des blocs
+            // d'une même page.
+            let mut decalage = (0i64, 0i64);
             if let Some(boite) = requete.params.get("bbox") {
+                decalage = (
+                    boite.get("x").and_then(|v| v.as_i64()).unwrap_or(0),
+                    boite.get("y").and_then(|v| v.as_i64()).unwrap_or(0),
+                );
                 match cropper(&image, boite) {
                     Ok(c) => image = c,
                     Err((code, message)) => return Reponse::echec(id, code, message),
@@ -226,8 +244,8 @@ fn repondre(requete: &Requete, moteurs: &mut Option<Moteurs>) -> Reponse {
                     Ok(texte) if !texte.trim().is_empty() => resultat.push(serde_json::json!({
                         "text": texte,
                         "bbox": {
-                            "x": b.x.round() as i64,
-                            "y": b.y.round() as i64,
+                            "x": b.x.round() as i64 + decalage.0,
+                            "y": b.y.round() as i64 + decalage.1,
                             "w": b.largeur.round() as i64,
                             "h": b.hauteur.round() as i64,
                         },
@@ -238,12 +256,64 @@ fn repondre(requete: &Requete, moteurs: &mut Option<Moteurs>) -> Reponse {
             }
             Reponse::succes(id, serde_json::json!({ "lines": resultat }))
         }
-        "inpaint" => Reponse::echec(
-            id,
-            Code::ModelMissing,
-            "effacement non intégré : le modèle LaMa n'est pas dans le pack \
-             (T2.5 non fait, décision du 2026-10-07)",
-        ),
+        "inpaint" => {
+            let Some(m) = moteurs.as_mut() else {
+                return Reponse::echec(
+                    id,
+                    Code::ModelMissing,
+                    "aucun pack chargé : `loadPack` d'abord",
+                );
+            };
+            let Some(effaceur) = m.effaceur.as_mut() else {
+                return Reponse::echec(
+                    id,
+                    Code::ModelMissing,
+                    "effacement indisponible : le modèle LaMa n'est pas dans le pack \
+                     (inpaint/lama.onnx). `capabilities` le dit aussi.",
+                );
+            };
+            let Some(image) = lire_image(requete) else {
+                return Reponse::echec(
+                    id,
+                    Code::ParseError,
+                    "`inpaint` attend un paramètre `image` en base64",
+                );
+            };
+            // Les boîtes sont facultatives : sans elles, rien à effacer et
+            // l'image revient telle quelle, sans lancer le modèle.
+            let boites = lire_boites(requete);
+            let debut = std::time::Instant::now();
+            match effaceur.effacer(&image, &boites) {
+                Ok(sortie) => {
+                    let mut buffer = std::io::Cursor::new(Vec::new());
+                    // Toujours du PNG : un JPEG repasserait par une compression
+                    // qui bavouille précisément les bords de texte qu'on vient
+                    // d'effacer.
+                    if sortie
+                        .write_to(&mut buffer, image::ImageFormat::Png)
+                        .is_err()
+                    {
+                        return Reponse::echec(id, Code::Internal, "image de sortie non encodable");
+                    }
+                    let octets = buffer.into_inner();
+                    Reponse::succes(
+                        id,
+                        serde_json::json!({
+                            "data": base64_encode(&octets),
+                            "contentType": "image/png",
+                            "tiles": tatami_vision::efface::tuiles_couvrantes(
+                                &boites,
+                                sortie.width(),
+                                sortie.height(),
+                                tatami_vision::efface::COTE_TUILE,
+                            ).len(),
+                            "ms": debut.elapsed().as_millis(),
+                        }),
+                    )
+                }
+                Err(e) => Reponse::echec(id, Code::Internal, e.to_string()),
+            }
+        }
         "shutdown" => Reponse::succes(id, serde_json::json!({ "ok": true })),
         autre => Reponse::echec(id, Code::ParseError, format!("méthode inconnue : {autre}")),
     }
@@ -265,12 +335,75 @@ fn charger(pack: &Pack) -> Result<Moteurs, (Code, String)> {
     })?;
     let lecteur = Lecteur::ouvrir(&pack.reconnaissance, &dico)
         .map_err(|e| (Code::ModelMissing, e.to_string()))?;
+    // L'effacement est le poste dominant (8 à 14 s par tuile de 512, mesuré) :
+    // on ne le charge que si le pack le contient, et son absence laisse
+    // `inpaint` indisponible plutôt que de faire échouer le pack entier.
+    let effaceur = match &pack.effacement {
+        Some(chemin) => match Effaceur::ouvrir(chemin) {
+            Ok(e) => Some(e),
+            Err(e) => {
+                tracing::warn!("effacement présent mais inutilisable : {e}");
+                None
+            }
+        },
+        None => None,
+    };
     Ok(Moteurs {
         pack: pack.clone(),
         bulles,
         lignes,
         lecteur,
+        effaceur,
     })
+}
+
+/// Les boîtes de texte à effacer, lues de `params.boxes`.
+fn lire_boites(requete: &Requete) -> Vec<Rectangle> {
+    let Some(liste) = requete.params.get("boxes").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    liste
+        .iter()
+        .filter_map(|b| {
+            let g = |k: &str| b.get(k).and_then(|v| v.as_i64()).unwrap_or(0) as f32;
+            if g("w") <= 0.0 || g("h") <= 0.0 {
+                return None;
+            }
+            Some(Rectangle {
+                x: g("x"),
+                y: g("y"),
+                largeur: g("w"),
+                hauteur: g("h"),
+            })
+        })
+        .collect()
+}
+
+/// Base64 standard, pour renvoyer l'image nettoyée.
+fn base64_encode(octets: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(octets.len().div_ceil(3) * 4);
+    for groupe in octets.chunks(3) {
+        let b = [
+            groupe[0],
+            *groupe.get(1).unwrap_or(&0),
+            *groupe.get(2).unwrap_or(&0),
+        ];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+        out.push(ALPHABET[(n >> 18) as usize & 63] as char);
+        out.push(ALPHABET[(n >> 12) as usize & 63] as char);
+        out.push(if groupe.len() > 1 {
+            ALPHABET[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if groupe.len() > 2 {
+            ALPHABET[n as usize & 63] as char
+        } else {
+            '='
+        });
+    }
+    out
 }
 
 /// Décode l'image d'une requête. Le type vient des **octets** : le contrat

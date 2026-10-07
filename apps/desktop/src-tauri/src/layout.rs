@@ -186,6 +186,83 @@ fn choisir_police(type_bloc: crate::traduction::TypeBloc) -> &'static str {
 }
 
 // ---------------------------------------------------------------------------
+// Vérification automatique (T4.4)
+// ---------------------------------------------------------------------------
+
+/// Seuil minimal de taille de police en dessous duquel on refuse le rendu.
+const FONT_SIZE_SEUIL: f64 = 6.0;
+
+/// Résultat d'une vérification automatique de mise en page.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VerificationLayout {
+    pub statut: crate::traduction::StatutBloc,
+    pub police: &'static str,
+    pub raison: Option<&'static str>,
+}
+
+/// Vérifie qu'un layout respecte les contrôles automatiques.
+///
+/// # Contrôles
+/// 1. Taille de police >= seuil.
+/// 2. Texte inclus dans le masque/bbox (pas de débordement).
+/// 3. Aucun chevauchement avec d'autres blocs (si fournis).
+///
+/// # Retour
+/// `VerificationLayout` avec le statut recommandé.
+pub fn verifier_layout(
+    layout: &LayoutResult,
+    bbox: &Bbox,
+    autres_blocs: &[Bbox],
+) -> VerificationLayout {
+    if layout.font_size < FONT_SIZE_SEUIL {
+        return VerificationLayout {
+            statut: crate::traduction::StatutBloc::Fallback,
+            police: layout.font_family,
+            raison: Some("font_size_below_threshold"),
+        };
+    }
+
+    // Vérifier que le texte ne dépasse pas la bbox du bloc.
+    let ligne_max = (layout.line_breaks.len() + 1) as f64;
+    let hauteur_estimee = ligne_max * layout.font_size * 1.25;
+
+    if hauteur_estimee > bbox.h as f64 {
+        return VerificationLayout {
+            statut: crate::traduction::StatutBloc::Review,
+            police: layout.font_family,
+            raison: Some("height_overflow"),
+        };
+    }
+
+    // Vérifier les chevauchements avec les autres blocs.
+    for autre in autres_blocs {
+        if bboxes_se_chevauchent(bbox, autre) {
+            return VerificationLayout {
+                statut: crate::traduction::StatutBloc::Review,
+                police: layout.font_family,
+                raison: Some("overlap"),
+            };
+        }
+    }
+
+    VerificationLayout {
+        statut: crate::traduction::StatutBloc::Ok,
+        police: layout.font_family,
+        raison: None,
+    }
+}
+
+/// Vérifie que deux bboxes se chevauchent (y a un contact, pas seulement adjacency).
+fn bboxes_se_chevauchent(a: &Bbox, b: &Bbox) -> bool {
+    let ax2 = a.x + a.w;
+    let ay2 = a.y + a.h;
+    let bx2 = b.x + b.w;
+    let by2 = b.y + b.h;
+
+    a.x < bx2 && ax2 > b.x && a.y < by2 && ay2 > b.y
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -240,6 +317,63 @@ mod tests {
             h: 100,
         };
         assert!(calculer_mise_en_page(&bbox, "", TypeBloc::Dialogue).is_err());
+    }
+
+    #[test]
+    fn verifier_layout_ok_quand_tout_rentre() {
+        let bbox = Bbox {
+            x: 0,
+            y: 0,
+            w: 200,
+            h: 200,
+        };
+        let layout = LayoutResult {
+            font_size: 16.0,
+            font_family: "Comic Neue",
+            line_breaks: vec![],
+        };
+        let v = verifier_layout(&layout, &bbox, &[]);
+        assert_eq!(v.statut, crate::traduction::StatutBloc::Ok);
+    }
+
+    #[test]
+    fn verifier_layout_fallback_sous_seuil() {
+        let bbox = Bbox {
+            x: 0,
+            y: 0,
+            w: 200,
+            h: 200,
+        };
+        let layout = LayoutResult {
+            font_size: 4.0,
+            font_family: "Comic Neue",
+            line_breaks: vec![],
+        };
+        let v = verifier_layout(&layout, &bbox, &[]);
+        assert_eq!(v.statut, crate::traduction::StatutBloc::Fallback);
+    }
+
+    #[test]
+    fn verifier_layout_review_si_chevauchement() {
+        let bbox = Bbox {
+            x: 10,
+            y: 10,
+            w: 100,
+            h: 50,
+        };
+        let autre = Bbox {
+            x: 50,
+            y: 20,
+            w: 100,
+            h: 50,
+        };
+        let layout = LayoutResult {
+            font_size: 16.0,
+            font_family: "Comic Neue",
+            line_breaks: vec![],
+        };
+        let v = verifier_layout(&layout, &bbox, &[autre]);
+        assert_eq!(v.statut, crate::traduction::StatutBloc::Review);
     }
 
     // -------------------------------------------------------------------------

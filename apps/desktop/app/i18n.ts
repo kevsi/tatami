@@ -226,6 +226,14 @@ const FR = {
     'La traduction est asynchrone : l’original s’affiche d’abord, le français apparaît ensuite en surcouche.',
   'reglages.traduction.cle_ok': 'Clé Gemini enregistrée.',
   'reglages.traduction.cle_supprimee': 'Clé Gemini supprimée.',
+  'reglages.traduction.consentement': 'Consentement à la traduction en ligne',
+  'reglages.traduction.consentement.description':
+    'Autoriser l’envoi du texte des bulles vers le fournisseur en ligne. Les images ne sont pas envoyées.',
+  'reglages.traduction.resume.nbBlocs': '{n} bloc{s}',
+  'reglages.traduction.resume.nbBlocsTexte': '{n} bloc{s} avec texte',
+  'reglages.traduction.resume.taille': '{n} caractères',
+  'reglages.traduction.resume.fournisseur': 'Fournisseur : {fournisseur}',
+  'reglages.traduction.resume.horsLigne': 'Mode hors ligne disponible',
 
   // --- Catalogue
   'catalogue.sources.disponibles': '{n} sources disponibles',
@@ -601,6 +609,14 @@ const EN: Record<Cle, string> = {
     'Translation is asynchronous: the original shows first, then the French appears as an overlay.',
   'reglages.traduction.cle_ok': 'Gemini key saved.',
   'reglages.traduction.cle_supprimee': 'Gemini key deleted.',
+  'reglages.traduction.consentement': 'Online translation consent',
+  'reglages.traduction.consentement.description':
+    'Allow sending bubble text to the online provider. Images are not sent.',
+  'reglages.traduction.resume.nbBlocs': '{n} block{s}',
+  'reglages.traduction.resume.nbBlocsTexte': '{n} block{s} with text',
+  'reglages.traduction.resume.taille': '{n} characters',
+  'reglages.traduction.resume.fournisseur': 'Provider: {fournisseur}',
+  'reglages.traduction.resume.horsLigne': 'Offline mode available',
 
   'catalogue.sources.disponibles': '{n} sources available',
   'catalogue.sources.desactivees': '{n} disabled',

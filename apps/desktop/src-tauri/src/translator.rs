@@ -129,10 +129,7 @@ where
             Ok(reponse) => match valider_reponse(&reponse, page, &schema) {
                 Ok(page_traduite) => return Ok(page_traduite),
                 Err(e) => {
-                    tracing::warn!(
-                        "tentative {} : réponse invalide : {e}",
-                        tentative + 1
-                    );
+                    tracing::warn!("tentative {} : réponse invalide : {e}", tentative + 1);
                 }
             },
             Err(ErreurTraduction::Quota) => {
@@ -140,10 +137,7 @@ where
                 return traduire_avec_fallback(fallback, page, glossaire).await;
             }
             Err(e) => {
-                tracing::warn!(
-                    "tentative {} : traduction échouée : {e}",
-                    tentative + 1
-                );
+                tracing::warn!("tentative {} : traduction échouée : {e}", tentative + 1);
             }
         }
 
@@ -388,10 +382,15 @@ mod tests {
     #[async_trait::async_trait]
     impl Translator for FakeTranslator {
         async fn translate(&self, _text: &str) -> Result<String, ErreurTraduction> {
-            let idx = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            self.responses.get(idx).cloned().unwrap_or(Err(
-                ErreurTraduction::Reseau("pas de réponse factice".into())
-            ))
+            let idx = self
+                .call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.responses
+                .get(idx)
+                .cloned()
+                .unwrap_or(Err(ErreurTraduction::Reseau(
+                    "pas de réponse factice".into(),
+                )))
         }
     }
 
@@ -402,7 +401,9 @@ mod tests {
             call_count: std::sync::atomic::AtomicUsize::new(0),
         };
         let offline = FakeTranslator {
-            responses: vec![Ok(r#"[{"id":"b1","translatedText":"Bonjour","status":"ok"}]"#.into())],
+            responses: vec![Ok(
+                r#"[{"id":"b1","translatedText":"Bonjour","status":"ok"}]"#.into(),
+            )],
             call_count: std::sync::atomic::AtomicUsize::new(0),
         };
 
@@ -416,7 +417,12 @@ mod tests {
             blocks: vec![BlocTraduction {
                 id: "b1".into(),
                 type_bloc: TypeBloc::Dialogue,
-                bbox: Bbox { x: 0, y: 0, w: 10, h: 10 },
+                bbox: Bbox {
+                    x: 0,
+                    y: 0,
+                    w: 10,
+                    h: 10,
+                },
                 original_text: Some("Hello".into()),
                 translated_text: None,
                 reading_order: 0,
@@ -446,7 +452,9 @@ mod tests {
             call_count: std::sync::atomic::AtomicUsize::new(0),
         };
         let offline = FakeTranslator {
-            responses: vec![Ok(r#"[{"id":"b1","translatedText":"Salut","status":"ok"}]"#.into())],
+            responses: vec![Ok(
+                r#"[{"id":"b1","translatedText":"Salut","status":"ok"}]"#.into(),
+            )],
             call_count: std::sync::atomic::AtomicUsize::new(0),
         };
 
@@ -460,7 +468,12 @@ mod tests {
             blocks: vec![BlocTraduction {
                 id: "b1".into(),
                 type_bloc: TypeBloc::Dialogue,
-                bbox: Bbox { x: 0, y: 0, w: 10, h: 10 },
+                bbox: Bbox {
+                    x: 0,
+                    y: 0,
+                    w: 10,
+                    h: 10,
+                },
                 original_text: Some("Hello".into()),
                 translated_text: None,
                 reading_order: 0,
@@ -499,7 +512,12 @@ mod tests {
             blocks: vec![BlocTraduction {
                 id: "b1".into(),
                 type_bloc: TypeBloc::Dialogue,
-                bbox: Bbox { x: 0, y: 0, w: 10, h: 10 },
+                bbox: Bbox {
+                    x: 0,
+                    y: 0,
+                    w: 10,
+                    h: 10,
+                },
                 original_text: Some("Hello".into()),
                 translated_text: None,
                 reading_order: 0,
@@ -520,7 +538,12 @@ mod tests {
         // Le backoff ne doit pas dépasser BACKOFF_MAX_MS.
         for tentative in 0..10 {
             let delai = calculer_backoff(tentative);
-            assert!(delai <= BACKOFF_MAX_MS + 250, "backoff {} = {} ms", tentative, delai);
+            assert!(
+                delai <= BACKOFF_MAX_MS + 250,
+                "backoff {} = {} ms",
+                tentative,
+                delai
+            );
         }
     }
 }

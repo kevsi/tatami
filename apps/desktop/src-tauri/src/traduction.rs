@@ -38,6 +38,8 @@ pub enum ErreurTraduction {
     Trousseau(String),
     #[error("quota Gemini atteint (429)")]
     Quota,
+    #[error("consentement refusé par l'utilisateur")]
+    ConsentementRefuse,
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +265,26 @@ impl Traducteur {
 // Commandes Tauri
 // ---------------------------------------------------------------------------
 
+/// Clé du réglage de consentement à la traduction en ligne.
+const REGLAGE_CONSENTEMENT_TRADUCTION: &str = "consentement_traduction_en_ligne";
+
+/// Vérifie si l'utilisateur a consenti à la traduction en ligne.
+///
+/// Par défaut (réglage absent), le consentement est considéré comme donné
+/// pour préserver la rétrocompatibilité. L'utilisateur peut le retirer
+/// explicitement via `definir_consentement_traduction`.
+fn consentement_traduction_en_ligne(store: &Store) -> Result<bool, String> {
+    match store.get_setting(REGLAGE_CONSENTEMENT_TRADUCTION) {
+        Ok(Some(valeur)) => match valeur.as_str() {
+            "false" => Ok(false),
+            "true" => Ok(true),
+            _ => Ok(true),
+        },
+        Ok(None) => Ok(true),
+        Err(e) => Err(e),
+    }
+}
+
 /// Traduit une page complète en utilisant le glossaire de la série.
 #[tauri::command]
 pub async fn traduire_page(
@@ -270,11 +292,18 @@ pub async fn traduire_page(
     page: PageTranslation,
     series_key: String,
 ) -> Result<PageTranslation, String> {
-    use crate::prompt::GlossaryEntry;
     use crate::translator::{traduire_page, GeminiTranslator, LocalTranslator};
 
+    // Vérifier le consentement avant tout appel en ligne.
+    if !consentement_traduction_en_ligne(store.inner())? {
+        return Err(ErreurTraduction::ConsentementRefuse.to_string());
+    }
+
     // Récupérer le glossaire de la série.
-    let entries = store.list_glossary(&series_key).map_err(|e| e.to_string())?;
+    use crate::prompt::GlossaryEntry;
+    let entries = store
+        .list_glossary(&series_key)
+        .map_err(|e| e.to_string())?;
     let glossaire: Vec<GlossaryEntry<'_>> = entries
         .iter()
         .map(|e| GlossaryEntry {
@@ -324,4 +353,96 @@ pub async fn cle_gemini_configuree() -> Result<bool, String> {
         Ok(cle) => Ok(!cle.is_empty()),
         Err(_) => Ok(false),
     }
+}
+
+/// Lit le consentement à la traduction en ligne.
+///
+/// Retourne `true` si l'utilisateur a accepté l'envoi de texte vers le
+/// fournisseur en ligne. En l'absence de réglage explicite, la valeur par
+/// défaut est `true` (rétrocompatibilité).
+#[tauri::command]
+pub async fn obtenir_consentement_traduction(store: State<'_, Arc<Store>>) -> Result<bool, String> {
+    consentement_traduction_en_ligne(store.inner())
+}
+
+/// Écrit le consentement à la traduction en ligne.
+///
+/// # Paramètre
+/// - `valeur` : `true` pour accepter, `false` pour refuser.
+#[tauri::command]
+pub async fn definir_consentement_traduction(
+    store: State<'_, Arc<Store>>,
+    valeur: bool,
+) -> Result<(), String> {
+    store.set_setting(
+        REGLAGE_CONSENTEMENT_TRADUCTION,
+        if valeur { "true" } else { "false" },
+    )?;
+    Ok(())
+}
+
+/// Résumé de ce qui serait envoyé au fournisseur pour une page donnée.
+///
+/// Ce résumé est affiché à l'utilisateur pour qu'il puisse donner ou
+/// retirer son consentement en connaissance de cause.
+#[tauri::command]
+pub async fn resume_traduction_page(
+    _store: State<'_, Arc<Store>>,
+    page: PageTranslation,
+    series_key: String,
+) -> Result<ResumeTraduction, String> {
+    use crate::prompt::{construire_prompt, GlossaryEntry};
+
+    let entries = _store
+        .list_glossary(&series_key)
+        .map_err(|e| e.to_string())?;
+    let glossaire: Vec<GlossaryEntry<'_>> = entries
+        .iter()
+        .map(|e| GlossaryEntry {
+            term: e.term.as_str(),
+            translation: e.translation.as_str(),
+            register: e.register.as_deref(),
+        })
+        .collect();
+
+    let prompt = construire_prompt(&page, &glossaire);
+    let nb_blocs = page.blocks.len();
+    let nb_caracteres = prompt.chars().count();
+
+    // Compter les blocs contenant du texte original.
+    let nb_blocs_texte = page
+        .blocks
+        .iter()
+        .filter(|b| {
+            b.original_text
+                .as_ref()
+                .is_some_and(|t| !t.trim().is_empty())
+        })
+        .count();
+
+    Ok(ResumeTraduction {
+        nb_blocs,
+        nb_blocs_texte,
+        nb_caracteres_prompt: nb_caracteres,
+        envoi_images: false,
+        fournisseur: "Gemini".into(),
+        mode_hors_ligne_possible: true,
+    })
+}
+
+/// Résumé de ce qui serait envoyé au fournisseur.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResumeTraduction {
+    /// Nombre total de blocs sur la page.
+    pub nb_blocs: usize,
+    /// Nombre de blocs contenant du texte à traduire.
+    pub nb_blocs_texte: usize,
+    /// Taille du prompt en caractères.
+    pub nb_caracteres_prompt: usize,
+    /// Indique si des images seraient envoyées.
+    pub envoi_images: bool,
+    /// Nom du fournisseur en ligne.
+    pub fournisseur: String,
+    /// Indique si un mode hors ligne est disponible.
+    pub mode_hors_ligne_possible: bool,
 }

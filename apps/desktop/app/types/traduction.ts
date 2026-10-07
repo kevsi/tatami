@@ -30,3 +30,12 @@ export interface PageTranslation {
   height: number;
   blocks: BlocTraduction[];
 }
+
+export interface ResumeTraduction {
+  nbBlocs: number;
+  nbBlocsTexte: number;
+  nbCaracteresPrompt: number;
+  envoiImages: boolean;
+  fournisseur: string;
+  modeHorsLignePossible: boolean;
+}

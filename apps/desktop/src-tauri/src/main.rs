@@ -269,8 +269,12 @@ fn main() {
             challenge::solve_challenge,
             challenge::cancel_challenge,
             traduction::traduire_texte,
+            traduction::traduire_page,
             traduction::definir_cle_gemini,
             traduction::cle_gemini_configuree,
+            traduction::obtenir_consentement_traduction,
+            traduction::definir_consentement_traduction,
+            traduction::resume_traduction_page,
             pack::liste_packs,
             pack::charger_pack,
             pack::supprimer_pack,
@@ -389,7 +393,7 @@ mod tests {
         ];
 
         // Commandes enregistrées mais dont l'interface n'a pas encore été
-        // implémentée (pre-S2 : packs de modèles T1.4, traduction T3.1).
+        // implémentée (pre-S2 : packs de modèles T1.4, traduction T3.1/T3.6).
         // À retirer au fur et à mesure que l'interface les appelle.
         let liste_blanche_preexistante: &[&str] = &[
             "charger_pack",
@@ -397,6 +401,8 @@ mod tests {
             "liste_packs",
             "supprimer_pack",
             "traduire_texte",
+            "traduire_page",
+            "resume_traduction_page",
         ];
 
         let mortes: Vec<&&str> = enregistrees

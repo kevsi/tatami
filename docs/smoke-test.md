@@ -495,13 +495,21 @@ apparaître à côté de `tatami.db` (`store.rs:284-295`) — c'est la sauvegard
 
 ## §S. Sources personnalisées (S2)
 
-Écrit le 2026-10-07, **après** le commit `c83e56f`. **Non exécuté à la rédaction** : c'est
-la preuve qui manque à S2.2 et au critère de sortie de la phase S.
+Écrit le 2026-10-07, **après** le commit `c83e56f`, puis révisé après le correctif
+d'identité (le nom de fichier fait foi, pas `SOURCE.id` — voir ADR 0010).
+**Non exécuté à la rédaction** : c'est la preuve qui manque à S2.2 et au critère de
+sortie de la phase S.
 
 Le chemin critique est le **dossier** : Rust copie le script dans
 `%APPDATA%\Tatami\sources\` (`custom_source.rs:26`) et le moteur scanne
 `File(appData, "Tatami/sources")` (`Server.kt:319-321`). Si les deux divergent, l'import
 répond « ok » et la source n'apparaît jamais — c'est le défaut à chercher en premier.
+
+Le second chemin critique est l'**identité** : la base enregistre la ligne sous le nom
+du fichier (`exemple-source`), le moteur doit donc indexer son registre sur le même
+nom. Le script livré déclare `id: "exemple-fr"` — s'il servait de clé, la suppression
+de `exemple-source.js` ne déchargerait rien et la source resterait fantôme dans la
+grille. C'est vérifié à l'étape 14.
 
 ### §S.1 Import
 
@@ -510,15 +518,17 @@ répond « ok » et la source n'apparaît jamais — c'est le défaut à cherche
 | 1 | Réglages → section « Sources perso » | panneau présent, liste vide, message « Aucune source personnalisée. » | `page.tsx` section `sources.perso.titre` ; clés `sources.perso.vide` |
 | 2 | Bouton « Importer un script… » | dialogue natif ouvert, filtre `*.js` | `open({ filters: [{ extensions: ['js'] }] })` ; capability `dialog:allow-open` |
 | 3 | **Annuler** le dialogue | aucun message, aucun fichier créé, bouton non bloqué | le `return` sur annulation remet `importPersoEnCours` à faux |
-| 4 | Choisir `docs/exemple-source.js` | toast « Source "…" importée. », la ligne apparaît (nom, langue `JA`, date du jour) | `invoke('importer_source', { path })` |
+| 4 | Choisir `docs/exemple-source.js` | toast « Source "…" importée. », la ligne apparaît (nom `exemple-source`, date du jour). **La langue n'est pas affichée** : la colonne est écrite en dur à `fr` par la commande d'import (`custom_source.rs`, TODO S2). | `invoke('importer_source', { path })` |
 | 5 | `%APPDATA%\Tatami\sources\` | un `.js` présent, base `custom_sources` à 1 ligne | `custom_source.rs` §Commandes |
+| 6 | Copier `exemple-source.js` en `exemple-source-2.js`, l'importer | **deux** lignes : `exemple-source` et `exemple-source-2`. Le nom de fichier fait foi — `SOURCE.id` vaut `exemple-fr` dans les deux et ne crée pas de collision | `identiteDe` (`ScriptedSourceLoader.kt`) |
+| 7 | Réimporter le **même** fichier | toujours 1 seule ligne pour cet id, horodatage mis à jour — pas de doublon | `ON CONFLICT(id) DO UPDATE` (`store.rs:1066`) |
 
 ### §S.2 Le moteur la voit-elle
 
 | # | Geste | Attendu |
 |---|---|---|
-| 6 | Catalogues | la source apparaît dans la grille, **badge « Perso »**, nom lisible (pas `custom:<id>`) |
-| 7 | Ouvrir la source, faire une recherche | résultats réels — le script est exécuté par Nashorn |
+| 8 | Catalogues | la source apparaît dans la grille, **badge « Perso »**, nom lisible. La tuile porte l'**identifiant** `custom:exemple-source` et la langue du script (`fr`) |
+| 9 | Ouvrir la source, faire une recherche | résultats réels — le script est exécuté par Nashorn |
 
 Un défaut ici n'est pas un défaut d'import : c'est le `ScriptedSourceLoader` (dossier,
 WatchService) ou le script lui-même.
@@ -527,11 +537,11 @@ WatchService) ou le script lui-même.
 
 | # | Geste | Attendu |
 |---|---|---|
-| 8 | Interrupteur de la tuile | source grisée, comme une source native (même code, clé `s.name`) |
-| 9 | Réglages → ✕ sur la ligne | la ligne bascule sur « Supprimer {nom} » + « Annuler » — **pas** de dialogue natif |
-| 10 | « Annuler » | la ligne revient à son état initial, rien n'est effacé |
-| 11 | « Supprimer {nom} » | toast « Source "…" supprimée. », ligne disparue, `.js` absent du dossier |
-| 12 | Catalogues | la source a disparu de la grille |
+| 10 | Interrupteur de la tuile | source grisée, comme une source native (même code, clé `custom:exemple-source`) |
+| 11 | Réglages → ✕ sur la ligne | la ligne bascule sur « Supprimer {nom} » + « Annuler » — **pas** de dialogue natif |
+| 12 | « Annuler » | la ligne revient à son état initial, rien n'est effacé |
+| 13 | « Supprimer {nom} » | toast « Source "…" supprimée. », ligne disparue, `.js` absent du dossier |
+| 14 | Catalogues | **la source a disparu de la grille** — c'est l'étape qui manquait avant le correctif d'identité du 2026-10-07 (le moteur cherchait `exemple-fr.js` et ne déchargeait rien) |
 
 Le dialogue natif de l'étape 2 n'est **pas** testable par CDP (leçon `AGENTS.md` §14) :
 l'étape 4 se vérifie à l'œil, ou par la présence du fichier sur le disque.

@@ -111,10 +111,28 @@
 - [ ] **S2.2** — Intégration dans l'écran Sources : les sources custom apparaissent dans la grille avec
   un badge « Perso ». Désactivation possible comme les sources natives.
   _Critère : smoke test manuel (docs/smoke-test.md §S)._
-  _Code écrit et commité (`c83e56f`) : badge « Perso », nom affiché via `displayName` (le
-  moteur nomme une source perso `custom:<id>`, `Server.kt:442`), désactivation par
-  `s.name` donc sans cas particulier. **Reste** : exécuter `docs/smoke-test.md` §S —
-  la section est écrite, jamais jouée._
+  _Code écrit et commité (`c83e56f`) : badge « Perso », nom affiché via `displayName`,
+  désactivation par `s.name` donc sans cas particulier. **Reste** : exécuter
+  `docs/smoke-test.md` §S — la section est écrite, jamais jouée._
+
+### Audit de bout en bout (2026-10-07)
+
+Trois défauts trouvés en relisant les 4 couches, tous deux commits :
+1. **Identité divergente** (`6fe11bf`) : base = nom de fichier, moteur = `SOURCE.id`.
+   Une source supprimée restait fantôme dans la grille et ses favoris pointaient vers un
+   identifiant inconnu de la base. Corrigé : le nom de fichier fait foi (ADR 0010 révisée),
+   2 tests de régression, porte prouvée en la cassant. Trouvé **grâce à** l'exemple
+   `docs/exemple-source.js`, dont `id` (`exemple-fr`) diffère de son nom de fichier.
+2. **Langue codée en dur** : `custom_sources.lang` vaut toujours `fr` (TODO S2). Le panneau
+   ne l'affiche plus. Le TODO reste ouvert, listé en next steps.
+3. **Watcher non testé** : `boucleWatcher` (`ENTRY_CREATE`/`ENTRY_DELETE`) n'était exercé par
+   aucun test — c'est pourquoi 1 et 2 étaient invisibles. Couvrir par les deux tests
+   ajoutés (chargement + déchargement par nom de fichier) ; le thread lui-même reste non
+   testé (poll à 2 s).
+
+Vérifié correct : dossier `%APPDATA%\Tatami\sources` aligné des deux côtés · anti
+path-traversal avec canonicalisation et test · limite 256 Ko des deux côtés · `HttpBridge`
+refuse le non-https · capability minimale (`dialog:allow-open` seule).
 
 ### Critère de sortie de la phase S
 

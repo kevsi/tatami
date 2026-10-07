@@ -1076,6 +1076,7 @@ export default function Home() {
   const [onePageOnly, setOnePageOnly] = useState(false);
   const [listTimeout, setListTimeout] = useState(60);
   const [cleGemini, setCleGemini] = useState('');
+  const [consentementTraduction, setConsentementTraduction] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<LibraryItem | null>(null);
   // Sélecteur de chapitre d'un webtoon téléchargé : avant, « Lire » ouvrait
   // toujours le premier chapitre, ce qui est inutilisable sur une série de 137.
@@ -1384,6 +1385,20 @@ export default function Home() {
       })
       .catch(() => {});
   }, []);
+
+  // T3.6 — charge le consentement à la traduction en ligne au démarrage.
+  const chargerConsentementTraduction = useCallback(async () => {
+    try {
+      const valeur = await invoke<boolean>('obtenir_consentement_traduction');
+      setConsentementTraduction(valeur);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void chargerConsentementTraduction();
+  }, [chargerConsentementTraduction]);
 
   const chargerPlan = useCallback(() => {
     invoke<PlanReglages>('reglages_planificateur')
@@ -2590,6 +2605,15 @@ export default function Home() {
     }
   }
 
+  async function definirConsentementTraduction(valeur: boolean) {
+    try {
+      await invoke('definir_consentement_traduction', { valeur });
+      setConsentementTraduction(valeur);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function restaurerDossier() {
     try {
       const chemin = await invoke<string>('reset_downloads_dir');
@@ -3560,6 +3584,22 @@ useEffect(() => {
               </button>
             )}
           </div>
+          <p className="muted">{t('reglages.traduction.consentement.description')}</p>
+          <label className="field">
+            {t('reglages.traduction.consentement')}
+            <input
+              type="checkbox"
+              checked={consentementTraduction}
+              onChange={(e) => definirConsentementTraduction(e.target.checked)}
+            />
+          </label>
+          <p className="muted">
+            {t('reglages.traduction.resume.nbBlocs', { n: 0 })} ·{' '}
+            {t('reglages.traduction.resume.nbBlocsTexte', { n: 0 })} ·{' '}
+            {t('reglages.traduction.resume.taille', { n: 0 })} ·{' '}
+            {t('reglages.traduction.resume.fournisseur', { fournisseur: 'Gemini' })} ·{' '}
+            {t('reglages.traduction.resume.horsLigne')}
+          </p>
         </section>
 
         <section className="panel">
@@ -3963,7 +4003,6 @@ useEffect(() => {
               {sourcesPerso.map((cs) => (
                 <li className="custom-row" key={cs.id}>
                   <span className="custom-row-name">{cs.name}</span>
-                  <span className="custom-row-lang">{cs.lang}</span>
                   <span className="muted">
                     {new Date(cs.installed_at).toLocaleDateString(langue)}
                   </span>

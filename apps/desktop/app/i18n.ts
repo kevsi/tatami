@@ -243,6 +243,27 @@ const FR = {
   'catalogue.desactiver': 'Désactiver la source {nom}',
   'catalogue.reactiver': 'Réactiver la source {nom}',
 
+  // --- Sources personnalisées (S2) ---
+  // Panneau dans les réglages : importer, lister, supprimer des scripts .js.
+  'sources.perso.titre': 'Sources personnalisées',
+  'sources.perso.note':
+    "Importez un script JavaScript (.js, max 256 Ko) qui s'adapte à un site non couvert par les sources intégrées. Le moteur le charge au démarrage.",
+  'sources.perso.importer': 'Importer un script…',
+  'sources.perso.en.cours': 'Import en cours…',
+  'sources.perso.vide': 'Aucune source personnalisée.',
+  'sources.perso.supprimer': 'Supprimer la source {nom}',
+  'sources.perso.ok': 'Source « {nom} » importée.',
+  'sources.perso.erreur': 'Import impossible : {raison}',
+  'sources.perso.suppr.ok': 'Source « {nom} » supprimée.',
+  'sources.perso.suppr.erreur': 'Suppression impossible : {raison}',
+  // Confirmation en deux temps : le bouton de suppression s'intègre par
+  // « Confirmer », avec une issue (Annuler). Pas de dialogue natif : la
+  // capability ne vaut que `dialog:allow-open` (AGENTS.md §7, strict minimum).
+  'sources.perso.confirmer': 'Supprimer {nom}',
+  'sources.perso.annuler': 'Annuler',
+  // Badge affiché dans la grille du catalogue sur les cartes custom.
+  'catalogue.perso': 'Perso',
+
   // --- Liste des titres
 
   // --- Fiche
@@ -595,6 +616,22 @@ const EN: Record<Cle, string> = {
   'catalogue.ouvrir': 'Open source {nom}',
   'catalogue.desactiver': 'Disable source {nom}',
   'catalogue.reactiver': 'Enable source {nom}',
+
+  // --- Custom sources (S2) ---
+  'sources.perso.titre': 'Custom sources',
+  'sources.perso.note':
+    'Import a JavaScript script (.js, max 256 KB) that adapts to a site not covered by built-in sources. The engine loads it on startup.',
+  'sources.perso.importer': 'Import a script…',
+  'sources.perso.en.cours': 'Importing…',
+  'sources.perso.vide': 'No custom sources.',
+  'sources.perso.supprimer': 'Delete source {nom}',
+  'sources.perso.ok': 'Source "{nom}" imported.',
+  'sources.perso.erreur': 'Import failed: {raison}',
+  'sources.perso.suppr.ok': 'Source "{nom}" deleted.',
+  'sources.perso.suppr.erreur': 'Deletion failed: {raison}',
+  'sources.perso.confirmer': 'Delete {nom}',
+  'sources.perso.annuler': 'Cancel',
+  'catalogue.perso': 'Custom',
 
 
   'fiche.ajouter.favori': '♡ Add to favourites',

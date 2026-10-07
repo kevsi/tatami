@@ -2603,3 +2603,52 @@ button:disabled {
 .reader-bar .seg[aria-label] {
   flex: none;
 }
+
+/* ---------------- Sources personnalisées (S2) ---------------- */
+
+/* Liste des sources custom dans le panneau Réglages. */
+.custom-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--s3) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.custom-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+}
+
+.custom-row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-row-lang {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* Badge « Perso » dans la grille du catalogue.
+   Variante de .badge : même forme, couleur d'accent pour se distinguer
+   du badge de langue (text-3/surface-2) et du dead-badge (danger). */
+.custom-badge {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--accent-dim);
+}

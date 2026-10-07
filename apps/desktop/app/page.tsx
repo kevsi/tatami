@@ -20,7 +20,24 @@ import {
 } from './demarrage';
 import { exporterRapport, purgerJournal } from './diagnostic';
 
-type Source = { name: string; lang: string };
+type Source = {
+  name: string;
+  lang: string;
+  /** Vrai pour les sources importées par l'utilisateur (`.js` local). */
+  custom?: boolean;
+  /** Nom d'affichage libre, distinct de l'identifiant `name`. */
+  displayName?: string;
+};
+
+/** Reflète `CustomSource` de `store.rs`. Retourné par `lister_sources_custom`
+ *  et `importer_source`. */
+type CustomSource = {
+  id: string;
+  name: string;
+  lang: string;
+  path: string;
+  installed_at: number;
+};
 type Manga = {
   url: string;
   title: string;
@@ -1033,6 +1050,13 @@ export default function Home() {
   // préférence d'affichage : elle vit en base, cf. AGENTS.md §6).
   const [sourcesOff, setSourcesOff] = useState<string[]>([]);
   const [voirDesactives, setVoirDesactives] = useState(false);
+  // Phase S, S2.1 : sources personnalisées (scripts `.js` importés par
+  // l'utilisateur). Liste vide au premier rendu — le panneau des réglages la
+  // charge à son ouverture (effet sur `tab`).
+  const [sourcesPerso, setSourcesPerso] = useState<CustomSource[]>([]);
+  const [importPersoEnCours, setImportPersoEnCours] = useState(false);
+  // Identifiant de la source en attente de confirmation. `null` = aucune.
+  const [aSupprimerPerso, setASupprimerPerso] = useState<string | null>(null);
   // Tâche 1.7 : signets. Un signet = une page précise d'un chapitre.
   const [signets, setSignets] = useState<Bookmark[]>([]);
   // Tâche 1.5 : catégories de favoris. Une seule par favori (choix humain,
@@ -1449,6 +1473,67 @@ export default function Home() {
       setError(t('import.erreur', { raison: String(e) }));
     } finally {
       setImportEnCours(false);
+    }
+  }
+
+  /** S2.1 — charge les scripts importés. Mémorisée **sans dépendance** : l'effet
+   *  qui suit s'en sert, et une identité recréée à chaque rendu le relancerait
+   *  en boucle (leçon AGENTS.md §14 sur les dépendances d'effet recréées).
+   */
+  const chargerSourcesPerso = useCallback(() => {
+    invoke<CustomSource[]>('lister_sources_custom')
+      .then((cs) => setSourcesPerso(cs ?? []))
+      .catch(() => setSourcesPerso([]));
+  }, []);
+
+  // Le panneau n'existe que dans la vue Réglages : on charge à son ouverture.
+  // On dépend du **primitif** `tab`, jamais de `t` (même raison).
+  useEffect(() => {
+    if (tab !== 'settings') return;
+    void chargerSourcesPerso();
+  }, [tab, chargerSourcesPerso]);
+
+  /** S2.1 — importe un script `.js` choisi par le dialogue natif.
+   *
+   *  Le dialogue ne fait que choisir un chemin : c'est Rust qui valide la
+   *  taille (256 Ko), assainit le nom et décide de la destination — même
+   *  contrat que l'import de dossiers `.cbz` ci-dessus.
+   */
+  async function importerSourcePerso() {
+    setImportPersoEnCours(true);
+    try {
+      const choisi = await open({
+        multiple: false,
+        title: t('sources.perso.importer'),
+        filters: [{ name: 'JavaScript', extensions: ['js'] }],
+      });
+      if (typeof choisi !== 'string') return; // annulé
+      const cs = await invoke<CustomSource>('importer_source', { path: choisi });
+      setNotice(t('sources.perso.ok', { nom: cs.name }));
+      chargerSourcesPerso();
+    } catch (e) {
+      setError(t('sources.perso.erreur', { raison: String(e) }));
+    } finally {
+      setImportPersoEnCours(false);
+      setASupprimerPerso(null);
+    }
+  }
+
+  /** S2.1 — supprime une source après confirmation.
+   *
+   *  Pas de mise à jour optimiste, contrairement aux catégories : la commande
+   *  efface le `.js` du disque. Retirer la ligne avant l'appel afficherait un
+   *  état qui n'existe pas.
+   */
+  async function supprimerSourcePerso(cs: CustomSource) {
+    try {
+      await invoke('supprimer_source_custom', { id: cs.id });
+      setNotice(t('sources.perso.suppr.ok', { nom: cs.name }));
+    } catch (e) {
+      setError(t('sources.perso.suppr.erreur', { raison: String(e) }));
+    } finally {
+      setASupprimerPerso(null);
+      chargerSourcesPerso();
     }
   }
 
@@ -3846,13 +3931,71 @@ useEffect(() => {
                   aria-pressed={on}
                   onClick={() => toggleSourceEnabled(s.name)}
                 >
-                  {s.name}
+                  {s.displayName ?? s.name}
                 </button>
               );
             })}
           </div>
           {sources.length > 200 && (
             <p className="muted">200 premiers catalogues sur {sources.length}. Utilise la recherche pour les autres.</p>
+          )}
+        </section>
+
+        {/* S2.1 — sources personnalisées. La confirmation de suppression est
+            en deux temps dans la ligne : la capability ne vaut que
+            `dialog:allow-open`, un dialogue natif exigerait de l'élargir. */}
+        <section className="panel">
+          <h2>{t('sources.perso.titre')}</h2>
+          <p className="muted">{t('sources.perso.note')}</p>
+          <div className="setting-bar">
+            <button
+              className="btn"
+              disabled={importPersoEnCours}
+              onClick={() => void importerSourcePerso()}
+            >
+              {importPersoEnCours ? t('sources.perso.en.cours') : t('sources.perso.importer')}
+            </button>
+          </div>
+          {sourcesPerso.length === 0 ? (
+            <p className="muted">{t('sources.perso.vide')}</p>
+          ) : (
+            <ul className="custom-list">
+              {sourcesPerso.map((cs) => (
+                <li className="custom-row" key={cs.id}>
+                  <span className="custom-row-name">{cs.name}</span>
+                  <span className="custom-row-lang">{cs.lang}</span>
+                  <span className="muted">
+                    {new Date(cs.installed_at).toLocaleDateString(langue)}
+                  </span>
+                  {aSupprimerPerso === cs.id ? (
+                    <>
+                      <button
+                        className="btn"
+                        aria-label={t('sources.perso.confirmer', { nom: cs.name })}
+                        onClick={() => void supprimerSourcePerso(cs)}
+                      >
+                        {t('sources.perso.confirmer', { nom: cs.name })}
+                      </button>
+                      <button
+                        className="btn btn-ghost"
+                        onClick={() => setASupprimerPerso(null)}
+                      >
+                        {t('sources.perso.annuler')}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="btn btn-ghost"
+                      aria-label={t('sources.perso.supprimer', { nom: cs.name })}
+                      title={t('sources.perso.supprimer', { nom: cs.name })}
+                      onClick={() => setASupprimerPerso(cs.id)}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       </main>
@@ -5554,11 +5697,20 @@ if (reader) {
                     title={dead ? `${t('catalogue.hors.service')} : ${dead.message}` : undefined}
                     aria-label={t('catalogue.ouvrir', { nom: s.name })}
                   >
-                    <span className="name">{s.name}</span>
+                    {/* Le moteur nomme une source perso `custom:<id>` (Server.kt) :
+                        c'est `displayName` qui porte le nom lisible. La clé de
+                        désactivation reste `s.name` — c'est cet identifiant que
+                        le moteur attend. */}
+                    <span className="name">{s.displayName ?? s.name}</span>
                     {dead ? (
                       <span className="badge dead-badge">{t('catalogue.hors.service')}</span>
                     ) : null}
                     {lang === 'all' && <span className="badge">{s.lang}</span>}
+                    {/* S2.2 — source importée par l'utilisateur. La
+                        désactivation ci-dessous est la même que pour les sources
+                        natives : elle est indexée sur le nom, donc sans cas
+                        particulier. */}
+                    {s.custom ? <span className="badge custom-badge">{t('catalogue.perso')}</span> : null}
                   </button>
                   <button
                     className="slot-switch"

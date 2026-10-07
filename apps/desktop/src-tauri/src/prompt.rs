@@ -9,9 +9,14 @@
 //! - Un contexte minimal (source, langue)
 //! - Une consigne de sortie JSON strict
 
-use std::collections::HashMap;
-
 use super::traduction::PageTranslation;
+
+/// Entrée de glossaire pour le prompt de traduction.
+pub struct GlossaryEntry<'a> {
+    pub term: &'a str,
+    pub translation: &'a str,
+    pub register: Option<&'a str>,
+}
 
 /// Construit le prompt de traduction pour une page.
 ///
@@ -20,9 +25,10 @@ use super::traduction::PageTranslation;
 /// Le prompt est structuré en sections :
 /// 1. Rôle et consignes générales
 /// 2. Contexte de la page
-/// 3. Liste des blocs à traduire (ordre de lecture)
-/// 4. Contrainte de budget par bulle
-/// 5. Format de sortie JSON attendu
+/// 3. Glossaire (termes spécifiques à la série)
+/// 4. Liste des blocs à traduire (ordre de lecture)
+/// 5. Contrainte de budget par bulle
+/// 6. Format de sortie JSON attendu
 ///
 /// # Paramètres
 /// - `page` : page de webtoon avec ses blocs
@@ -30,7 +36,7 @@ use super::traduction::PageTranslation;
 ///
 /// # Retour
 /// Le prompt complet en anglais (la consigne demande une sortie en français).
-pub fn construire_prompt(page: &PageTranslation, glossaire: &HashMap<String, String>) -> String {
+pub fn construire_prompt(page: &PageTranslation, glossaire: &[GlossaryEntry<'_>]) -> String {
     let mut prompt = String::new();
 
     // Section 1 : Rôle et consignes générales.
@@ -54,8 +60,15 @@ pub fn construire_prompt(page: &PageTranslation, glossaire: &HashMap<String, Str
     // Section 3 : Glossaire.
     if !glossaire.is_empty() {
         prompt.push_str("## Glossary\n");
-        for (terme, traduction) in glossaire {
-            prompt.push_str(&format!("- {} → {}\n", terme, traduction));
+        prompt.push_str("Use these translations for the corresponding terms:\n");
+        for entree in glossaire {
+            match entree.register {
+                Some(registre) => prompt.push_str(&format!(
+                    "- {} → {} (register: {})\n",
+                    entree.term, entree.translation, registre
+                )),
+                None => prompt.push_str(&format!("- {} → {}\n", entree.term, entree.translation)),
+            }
         }
         prompt.push('\n');
     }
@@ -173,7 +186,7 @@ mod tests {
                 bloc_test("b2", "World", 200, 100),
             ],
         };
-        let glossaire = HashMap::new();
+        let glossaire: Vec<GlossaryEntry<'_>> = vec![];
         let prompt = construire_prompt(&page, &glossaire);
         assert!(prompt.contains("Total blocks: 2"));
         assert!(prompt.contains("id=b1"));
@@ -183,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn prompt_inclut_glossaire() {
+    fn prompt_inclut_glossaire_avec_registre() {
         let page = PageTranslation {
             page_id: "p1".into(),
             manga_url: None,
@@ -193,10 +206,21 @@ mod tests {
             height: 1200,
             blocks: vec![bloc_test("b1", "Hello", 100, 50)],
         };
-        let mut glossaire = HashMap::new();
-        glossaire.insert("Naruto".into(), "Naruto".into());
+        let glossaire = vec![
+            GlossaryEntry {
+                term: "Naruto",
+                translation: "Naruto",
+                register: Some("tu"),
+            },
+            GlossaryEntry {
+                term: "Sasuke",
+                translation: "Sasuke",
+                register: None,
+            },
+        ];
         let prompt = construire_prompt(&page, &glossaire);
-        assert!(prompt.contains("Naruto → Naruto"));
+        assert!(prompt.contains("Naruto → Naruto (register: tu)"));
+        assert!(prompt.contains("Sasuke → Sasuke"));
     }
 
     #[test]

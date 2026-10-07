@@ -259,6 +259,33 @@ impl Traducteur {
 // Commandes Tauri
 // ---------------------------------------------------------------------------
 
+/// Traduit une page complète en utilisant le glossaire de la série.
+#[tauri::command]
+pub async fn traduire_page(
+    store: State<'_, Arc<Store>>,
+    page: PageTranslation,
+    series_key: String,
+) -> Result<PageTranslation, String> {
+    use crate::prompt::GlossaryEntry;
+    use crate::translator::{traduire_page, GeminiTranslator};
+
+    // Récupérer le glossaire de la série.
+    let entries = store.list_glossary(&series_key).map_err(|e| e.to_string())?;
+    let glossaire: Vec<GlossaryEntry<'_>> = entries
+        .iter()
+        .map(|e| GlossaryEntry {
+            term: e.term.as_str(),
+            translation: e.translation.as_str(),
+            register: e.register.as_deref(),
+        })
+        .collect();
+
+    let translator = GeminiTranslator::new();
+    traduire_page(&translator, &page, &glossaire)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Traduit un texte anglais vers le français.
 #[tauri::command]
 pub async fn traduire_texte(

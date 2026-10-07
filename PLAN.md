@@ -147,6 +147,13 @@
   `custom_sources.lang` du panneau Réglages : celle-ci est écrite en dur à `fr` et
   n'est donc pas affichée._
 
+  _Corrigé après pilotage de l'app réelle (2026-07) : la card était **placée après** la
+  grille des langues et tombait sous la ligne de flottaison — la sonde DOM la trouvait, l'œil
+  ne la voyait pas. Elle est désormais **avant** les tuiles ; mesuré : `haut 201, bas 391`
+  pour une fenêtre de 749. Ajouts au passage : `data-tab` sur les onglets et `data-lang` sur
+  les tuiles de langue (un onglet ne se cible plus par son libellé traduit), et `nomSource()`
+  pour le nom affiché — la fiche affichait `custom:mangadex-api`._
+
 ### Audit de bout en bout (2026-10-07)
 
 Trois défauts trouvés en relisant les 4 couches, tous deux commits :

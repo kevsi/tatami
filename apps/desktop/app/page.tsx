@@ -521,6 +521,10 @@ function AppBar({
             key={tabule.id}
             className="tab"
             role="tab"
+            // Attribut stable : un onglet se cible par son id, jamais par son
+            // libellé — qui change avec la langue et casse toute sonde (leçon
+            // AGENTS.md §14).
+            data-tab={tabule.id}
             aria-selected={tab === tabule.id}
             onClick={() => onTab(tabule.id)}
           >
@@ -2093,8 +2097,21 @@ export default function Home() {
     }
   }
 
+  /** Nom **affiché** d'une source. Le moteur nomme une source scriptée
+ *  `custom:<id du fichier>` et porte le vrai nom dans `displayName` ; les
+ *  sources natives n'ont pas ce champ.
+ *
+ *  Mesuré le 2026-07 : la fiche d'une source importée s'affichait
+ *  « custom:mangadex-api » — l'identifiant, pas le nom. Les **clés** (désactivation,
+ *  cookies, requêtes au moteur) doivent garder `name` : c'est cet identifiant
+ *  que le moteur attend.
+ */
+function nomSource(s: Source): string {
+  return s.displayName ?? s.name;
+}
+
   async function openSource(s: Source) {
-    setSelected(s);
+  setSelected(s);
     setActiveTags([]);
     setTags([]);
     setMangaQuery('');
@@ -2690,7 +2707,7 @@ export default function Home() {
         source: selected.name,
         url: challenge,
       });
-      setNotice(`${n} cookie(s) transmis à ${selected.name}.`);
+      setNotice(`${n} cookie(s) transmis à ${nomSource(selected)}.`);
       setChallenge(null);
       await loadSource(selected, 0);
     } catch (e) {
@@ -4637,11 +4654,11 @@ if (reader) {
       <main>
         <AppBar tab={tab} onTab={goTab} />{renderSuperpositions()}
         <button className="crumb" onClick={backToSource}>
-          {'←'} {selected?.name}
+          {'←'} {selected ? nomSource(selected) : ''}
         </button>
         <header className="page-head">
           <h1>{openManga.title}</h1>
-          <span className="sub">{selected?.name}</span>
+          <span className="sub">{selected ? nomSource(selected) : ''}</span>
           <button
             className={`btn fav-toggle${isFavorite(fiche) ? ' on' : ''}`}
             aria-pressed={isFavorite(fiche)}
@@ -4870,7 +4887,7 @@ if (reader) {
           {'←'} Catalogues
         </button>
         <header className="page-head">
-          <h1>{selected.name}</h1>
+          <h1>{nomSource(selected)}</h1>
           <span className="sub">{selected.lang.toUpperCase()}</span>
         </header>
 
@@ -5163,7 +5180,7 @@ if (reader) {
 
         {onePageOnly && (
           <p className="muted note">
-            {selected?.name} ne renvoie qu&apos;une seule page : son catalogue est plus
+            {selected ? nomSource(selected) : ''} ne renvoie qu&apos;une seule page : son catalogue est plus
             court qu&apos;il n&apos;y paraît (limite du site, pas de l&apos;application).
           </p>
         )}
@@ -5686,34 +5703,18 @@ if (reader) {
               langs: langCounts.length,
             })}
           </p>
-          <div className="lang-grid">
-            {langCounts.map(([code, n]) => (
-              <button
-                key={code}
-                className="lang-tile"
-                onClick={() => {
-                  setLang(code);
-                  setShownSources(48);
-                }}
-              >
-                <b>{code.toUpperCase()}</b>
-                <span className="lang-nom">{NOMS_LANGUE[code] ?? code.toUpperCase()}</span>
-                <span className="muted">
-                  {n} source{n > 1 ? 's' : ''}
-                </span>
-              </button>
-            ))}
-          </div>
 
-          {/* S2.3 — card « Sources importées », dans la grille des langues
-              parce que c'est l'écran d'entrée du catalogue : elle reste visible
-              même sans source installée, et sans passer par un filtre de langue.
+          {/* S2.3 — card « Sources importées », AVANT les tuiles de langues.
+              Mesuré le 2026-07 : placée après la grille, elle tombait sous la
+              ligne de flottaison (19 tuiles de langues, 4 rangées) et son
+              existence ne se voyait pas — c'est le retour utilisateur qui l'a
+              révélé, la sonde DOM la trouvait sans la voir.
 
               C'est un <section> et non une tuile <button> : elle contient des
               boutons (ouvrir une source, importer), et deux <button> imbriqués
               seraient du HTML invalide — cf. AGENTS.md §14. */}
           <div className="lang-grid">
-            <section className="lang-tile import-card">
+            <section className="lang-tile import-card" data-card-import="">
               <b>{t('sources.perso.titre')}</b>
               <span className="muted">
                 {t('catalogue.import.compte', {
@@ -5747,6 +5748,26 @@ if (reader) {
                 {importPersoEnCours ? t('sources.perso.en.cours') : t('sources.perso.importer')}
               </button>
             </section>
+          </div>
+
+          <div className="lang-grid">
+            {langCounts.map(([code, n]) => (
+              <button
+                key={code}
+                className="lang-tile"
+                data-lang={code}
+                onClick={() => {
+                  setLang(code);
+                  setShownSources(48);
+                }}
+              >
+                <b>{code.toUpperCase()}</b>
+                <span className="lang-nom">{NOMS_LANGUE[code] ?? code.toUpperCase()}</span>
+                <span className="muted">
+                  {n} source{n > 1 ? 's' : ''}
+                </span>
+              </button>
+            ))}
           </div>
         </>
       ) : (

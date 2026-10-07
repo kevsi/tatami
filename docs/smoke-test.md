@@ -535,6 +535,21 @@ Chaîne déjà mesurée contre le moteur réel le 2026-07 (NDJSON, `serve`) : `l
 137 chapitres ; `chapters` → 137 ; `pages` → 36 URLs ; la 1ʳᵉ page téléchargée en
 `HTTP 200 image/jpeg 347 159 o`.
 
+Puis dans **l'application** (pilotage CDP du 2026-07, moteur reconstruit) : `list_sources:
+1371 sources` (1370 natives + 1 perso) ; `latest source=custom:mangadex-api` → `latest ok:
+20 items` ; les 20 couvertures sont téléchargées (141 Ko à **20 Mo** pour la plus grande) ;
+la fiche affiche « MangaDex (API) » et non `custom:mangadex-api`.
+
+Deux choses à savoir avant de jouer cette section :
+- **Le moteur doit avoir été reconstruit** (`pnpm engine`) ET aucun moteur installé ne doit
+  passer devant : `main.rs` donne la priorité à `%APPDATA%\Tatami\moteur\actif.json`. Avec un
+  moteur installé antérieur à la phase S, l'import « marche » (c'est Rust qui copie le
+  fichier) mais rien n'apparaît dans le catalogue — c'est ce qui a été observé le premier
+  jour.
+- **Une couverture MangaDex peut peser 20 Mo** : l'API ne sert pas de variante `.256.jpg`
+  (404 mesuré, seules `.jpg` et le nom brut répondent 200). Un script qui veut des
+  vignettes légères doit passer par un CDN qui propose des tailles.
+
 | # | Geste | Attendu |
 |---|---|---|
 | 8 | Catalogues | la source apparaît dans la grille, **badge « Perso »**, nom lisible. La tuile porte l'**identifiant** `custom:mangadex-api` et la langue du script (`ja`) |

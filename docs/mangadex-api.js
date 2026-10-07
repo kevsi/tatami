@@ -56,8 +56,14 @@ function couverture(manga) {
     for (var i = 0; i < rels.length; i++) {
         var r = rels[i];
         if (r.type === "cover_art" && r.attributes && r.attributes.fileName) {
-            var base = String(r.attributes.fileName).replace(/\.[A-Za-z0-9]+$/, "");
-            return CDN + "/covers/" + manga.id + "/" + base + ".256.jpg";
+            // Mesuré le 2026-07 : MangaDex sert `…/<hash>.jpg` (200, 266 663 o).
+            // Les variantes `.256.jpg` et `.512.jpg` répondent **404** — j'avais
+            // d'abord ajouté un suffixe de taille, et toutes les vignettes
+            // échouaient ("ce n'est pas une image"). Donc : le `fileName` tel
+            // quel, extension comprise ; `.jpg` seulement s'il n'en a pas.
+            var f = String(r.attributes.fileName);
+            if (!/\.[A-Za-z0-9]+$/.test(f)) f = f + ".jpg";
+            return CDN + "/covers/" + manga.id + "/" + f;
         }
     }
     return null;

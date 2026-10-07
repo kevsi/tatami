@@ -144,7 +144,7 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 ### T3 — Traduction (M)
 
 - [x] **T3.1** Trait `Translator` côté Rust. Fournisseurs : LLM en ligne (clé de l'utilisateur dans le trousseau de l'OS) et modèle local si l'ADR 0008 le retient.
-- [ ] **T3.2** Prompt par page : tous les blocs dans l'ordre de lecture, contexte, glossaire, **budget de caractères par bulle**.
+- [x] **T3.2** Prompt par page : tous les blocs dans l'ordre de lecture, contexte, glossaire, **budget de caractères par bulle**. Sortie en JSON strict, validée par schéma. Le nombre de blocs en sortie doit égaler le nombre en entrée ; en cas d'écart, nouvel essai puis repli. Jamais de blocs inventés.
 - [ ] **T3.3** Glossaire par série (SQLite) : noms propres, termes récurrents, registre (tutoiement ou vouvoiement). Interface minimale, injection dans les prompts, cohérence entre chapitres.
 - [ ] **T3.4** Boucle de raccourcissement : si la mise en page échoue, redemander une version plus courte avec le budget exact, avec un nombre maximal d'essais.
 - [ ] **T3.5** Résilience : file d'attente, backoff, gestion des quotas et du mode hors ligne.

@@ -1217,3 +1217,31 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   modèle — qui n'était pas en cause. La vraie question n'était pas « qui a
   faux ? » mais « les deux ont-ils vu la même image ? », et ça se répond en
   exportant les cultures, pas en comparant des chaînes.
+- **Un `Option::None` sérialisé en `null` casse un schéma qui ne l'autorise
+  pas.** Mesuré le 2026-10-07 : `BlocTraduction` sortait `"originalText": null`,
+  `"confidence": null`, `"lineBreaks": null`, et `contract/translation/schema.json`
+  déclarait `"type": "string"` sans `null` — donc `PageTranslation` était
+  **invalide**. Le défaut est invisible depuis T1.1 (juin) parce que rien ne
+  sérialisait encore un vrai `PageTranslation` : il est apparu au moment du
+  branchement, pas au moment de l'écriture du type. Corollaire : **un défaut de
+  forme ne se révèle qu'à l'intégration** ; « tous les tests passent » ne dit
+  pas « le type est juste », et le test de schéma validait la *fixture* sans
+  passer par serde.
+- **`rename_all = "lowercase"` manquant fait diverger l'enum et le schéma sans
+  bruit.** Même mesure : `StatutBloc::Ok` sortait en `"Ok"`, le schéma attendait
+  `"ok"`. `cargo clippy` n'a rien dit, `tsc` n'aurait rien dit, et le validateur
+  de fixture — qui teste la fixture, pas le sérialiseur — est resté vert. Il a
+  fallu une seconde porte qui sérialise le type Rust lui-même
+  (`les_enums_rust_sont_serialisees_comme_le_schema_les_attend`).
+- **Une fixture enregistrée comble la porte, mais une méthode du contrat sans
+  réponse la fait crier.** Le test `chaque_methode_du_schema_a_une_reponse_enregistree`
+  et son inverse `chaque_reponse_enregistree_decrit_une_methode_du_schema`
+  formaient une paire : j'ai enregistré `capabilities` sans l'ajouter à l'`enum`
+  `method`, et le second l'a nommé. C'est exactement l'écart
+  `latest`/`fetchCover` du 2026-10-04, en miroir — et ces deux tests ensemble
+  valent mieux qu'un seul.
+- **Le nombre de fixtures est une porte à lui-même.** `le_nombre_de_reponses_enregistrees_est_stable`
+  attendait 16 ; j'en ai ajouté 6 et il a échoué en nommant 22. Le message
+  demande de noter le changement dans `fixtures/README.md` — c'est fait, avec
+  un tableau de ce que chaque fixture vision prouve, dont le fait que
+  `inpaint` est une **erreur volontaire**.

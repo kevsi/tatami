@@ -13,6 +13,7 @@ import {
 import { useApparence } from './apparence';
 import { useI18n, type MessageKey } from './i18n';
 import { notifActive, notifie, setNotifActive, texteNotification } from './notification';
+import type { PageTranslation } from './types/traduction';
 import {
   lireDemarrage,
   reglerDemarrage,
@@ -1094,7 +1095,12 @@ export default function Home() {
   const [reader, setReader] = useState<Reader | null>(null);
   const [readerLoading, setReaderLoading] = useState(false);
   const [blocsTraduction, setBlocsTraduction] = useState<Record<number, PageTranslation>>({});
+  const afficherTraductionRef = useRef(false);
   const [afficherTraduction, setAfficherTraduction] = useState(false);
+  const setAfficherTraductionComputed = (v: boolean) => {
+    afficherTraductionRef.current = v;
+    setAfficherTraduction(v);
+  };
   const [challenge, setChallenge] = useState<string | null>(null);
   const [challengeBusy, setChallengeBusy] = useState(false);
   // Vérification demandée par un TÉLÉCHARGEMENT (et non par une lecture).
@@ -2037,6 +2043,16 @@ export default function Home() {
     );
   }, [chapters, chapterQuery]);
 
+  // Changer de vue repart du haut. Mesuré le 2026-07 : le défilement de la vue
+  // précédente était conservé — scrollY 787 sur la grille des mangas, 432 après
+  // le clic sur un webtoon, entête hors champ. Avec une longue liste de
+  // chapitres on atterrit au milieu, et la fiche (résumé, genres) n'est jamais
+  // vue : l'utilisateur a l'impression que les chapitres se sont affichés à la
+  // place des webtoons.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [openManga?.url, selected?.name, tab]);
+
   // Défile vers la première case cochée quand la sélection en masse le demande.
   useEffect(() => {
     if (reveal === 0) return;
@@ -2915,10 +2931,37 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
       mangaUrl: openManga?.url,
       coverUrl: openManga?.coverUrl ?? null,
     });
+    setBlocsTraduction({});
+    afficherTraductionRef.current = false;
+    setAfficherTraduction(false);
   } catch (e) {
     setError(t('erreur.lecture', { raison: String(e) }));
   } finally {
     setReaderLoading(false);
+  }
+}
+
+/** Charge la traduction d'une page du chapitre courant, si la surcouche est activée. */
+async function chargerTraductionPage(index: number, page: Page) {
+  if (!afficherTraduction) return;
+  if (blocsTraduction[index]) return; // déjà chargée
+
+  try {
+    const pageTranslation: PageTranslation = {
+      pageId: page.token,
+      chapterUrl: reader?.chapter.url ?? '',
+      source: reader?.source ?? '',
+      width: page.largeur ?? 0,
+      height: page.hauteur ?? 0,
+      blocks: [],
+    };
+    const resultat = await invoke<PageTranslation>('traduire_page', { page: pageTranslation });
+    setBlocsTraduction((prev) => {
+      if (prev[index]) return prev; // évite les races
+      return { ...prev, [index]: resultat };
+    });
+  } catch {
+    // silencieux : la traduction est optionnelle, le lecteur fonctionne sans.
   }
 }
 
@@ -3419,6 +3462,17 @@ useEffect(() => {
       if (meilleure) {
         const { i } = meilleure;
         setReader((r) => (r && r.index !== i ? { ...r, index: i } : r));
+        // T4.6 — précharger la traduction de la page visible et de ses voisines.
+        const page = reader?.pages[i];
+        if (page && afficherTraductionRef.current) {
+          void chargerTraductionPage(i, page);
+          if (reader.pages[i + 1]) {
+            void chargerTraductionPage(i + 1, reader.pages[i + 1]);
+          }
+          if (i > 0 && reader.pages[i - 1]) {
+            void chargerTraductionPage(i - 1, reader.pages[i - 1]);
+          }
+        }
       }
     },
     // `threshold: 0`, et non 0.6 : dans une fenêtre de 627 px, une page webtoon
@@ -4530,6 +4584,15 @@ if (reader) {
               {marque ? t('lecteur.signet.actif') : t('lecteur.signet')}
             </button>
 
+            <button
+              className={`seg-btn${afficherTraduction ? ' on' : ''}`}
+              aria-pressed={afficherTraduction}
+              onClick={() => setAfficherTraductionComputed(!afficherTraduction)}
+              title={t('lecteur.traduction.toggle')}
+            >
+              {afficherTraduction ? 'FR' : '原文'}
+            </button>
+
             {/* Navigation du bandeau, dans la barre du lecteur (demande
                 explicite). En mode webtoon, la navigation vivait sous la
                 barre : changer de page imposait de remonter en haut de
@@ -4677,6 +4740,53 @@ if (reader) {
                   />
                 );
               })}
+              {afficherTraductionRef.current && (
+                <div className="traduction-overlay" aria-live="polite">
+                  {fenetre.map((i) => {
+                    const p = pages[i];
+                    const blocs = blocsTraduction[i];
+                    if (!p || !blocs?.blocks?.length) return null;
+                    const hauteur = hauteurs[i] || 0;
+                    const top = bandeVirtualisable ? (offsets[i] ?? 0) : undefined;
+                    return (
+                      <div
+                        key={`t-${p.token}`}
+                        data-page={i}
+                        style={
+                          bandeVirtualisable
+                            ? {
+                                width: `${zoom}%`,
+                                position: 'absolute',
+                                top,
+                                height: hauteur ? `${hauteur}px` : undefined,
+                              }
+                            : { width: `${zoom}%`, position: 'relative' }
+                        }
+                      >
+                        {blocs.blocks
+                          .filter((b) => b.status === 'ok' && b.translatedText)
+                          .map((b) => (
+                            <div
+                              key={b.id}
+                              className="bubble-text"
+                              style={{
+                                left: `${b.bbox.x}px`,
+                                top: `${b.bbox.y}px`,
+                                width: `${b.bbox.w}px`,
+                                height: `${b.bbox.h}px`,
+                                fontFamily: b.fontFamily ?? 'Comic Neue',
+                                fontSize: `${b.fontSize ?? 16}px`,
+                                lineHeight: 1.25,
+                              }}
+                            >
+                              {b.translatedText}
+                            </div>
+                          ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
       </main>

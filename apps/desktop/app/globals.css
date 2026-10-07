@@ -1590,6 +1590,14 @@ button:disabled {
   user-select: none;
 }
 
+/* T4.6 — conteneur de surcouche de traduction sur chaque page webtoon. */
+.traduction-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
 .reader-stage {
   flex: 1;
   min-height: 0;

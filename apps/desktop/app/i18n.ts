@@ -414,6 +414,7 @@ const FR = {
   // --- Lecteur
   'lecteur.signet': 'Signet',
   'lecteur.signet.actif': 'Signet ✓',
+  'lecteur.traduction.toggle': 'Afficher la traduction',
 
   // --- Erreurs
   'erreur.lecture': 'Lecture impossible : {raison}',
@@ -782,6 +783,7 @@ const EN: Record<Cle, string> = {
 
   'lecteur.signet': 'Bookmark',
   'lecteur.signet.actif': 'Bookmark ✓',
+  'lecteur.traduction.toggle': 'Show translation',
 
   'erreur.lecture': 'Cannot read: {raison}',
   'erreur.chapitres': 'Chapters unavailable: {raison}',

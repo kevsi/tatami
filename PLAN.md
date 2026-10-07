@@ -66,13 +66,13 @@
 21. **Phase T4.1 — Polices embarquées** — 8 polices libres (OFL 1.1 / Apache-2.0) téléchargées dans `public/fonts/`, déclarées en `@font-face` dans `globals.css`, classe `.bubble-text` ajoutée pour le rendu des traductions.
     - Portes passées : `pnpm typecheck/lint/i18n:check/hooks/check/chemins/build`.
 
-**Phase T4 en cours** — mise en page et rendu.
+**Phase T4 livrée** — mise en page et rendu.
 
 ### Next steps
 1. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
 2. **Retirer la liste blanche S2** de `main.rs:387-393` : les trois commandes sont maintenant
    appelées par l'interface, la porte « commande morte » doit de nouveau mordre.
-3. **T4.6** — rendu en surcouche dans le lecteur webtoon : alignement au pixel avec l'image nettoyée, zoom, redimensionnement, affichage progressif (original puis français), préchargement guidé par le défilement, annulation quand on change de chapitre.
+3. **T5.1** — éditeur de bloc : modifier le texte, déplacer/redimensionner, retoucher le masque, relancer l'effacement local, régler la taille de police.
 
 ---
 

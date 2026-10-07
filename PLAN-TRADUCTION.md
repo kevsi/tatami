@@ -158,8 +158,8 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 - [x] **T4.2** Algorithme de remplissage : largeur disponible par ligne calculée à partir du masque **érodé d'une marge**, césure, recherche dichotomique de la plus grande taille de police qui tient. Retours à la ligne stockés explicitement dans le JSON.
 - [x] **T4.3** Tests de propriétés : pour de nombreuses bulles synthétiques de formes variées (ellipse, nuage, rectangle arrondi, forme irrégulière) et des textes aléatoires, **le texte ne sort jamais du masque**.
 - [x] **T4.4** Contrôles automatiques : polygone du texte inclus dans le masque, aucun bloc ne touche un autre, taille de police au-dessus du seuil, contraste suffisant. Résultat : `ok`, `review` ou `fallback`.
-- [ ] **T4.5** Replis : afficher l'original avec la traduction en infobulle, plus une touche pour basculer entre l'original et le français. **Ne jamais réduire la police sous le seuil pour "faire passer".** _(Bloqué par T4.6 : le rendu des bulles n'existe pas encore.)_
-- [ ] **T4.6** Rendu en surcouche dans le lecteur webtoon : alignement au pixel avec l'image nettoyée, zoom, redimensionnement, affichage progressif (original puis français), préchargement guidé par le défilement, annulation quand on change de chapitre.
+- [x] **T4.6** Rendu en surcouche dans le lecteur webtoon : alignement au pixel avec l'image nettoyée, zoom, redimensionnement, affichage progressif (original puis français), préchargement guidé par le défilement, annulation quand on change de chapitre.
+- [x] **T4.5** Replis : afficher l'original avec la traduction en infobulle, plus une touche pour basculer entre l'original et le français. **Ne jamais réduire la police sous le seuil pour "faire passer".** _(Débloqué par T4.6 : toggle FR/原文 et infobulle disponibles.)_
 
 **Critère de sortie** : sur le corpus, **zéro débordement parmi les blocs marqués `ok`**, proportion de blocs `review` et `fallback` sous le seuil validé en T0, tests de propriétés verts.
 
@@ -489,7 +489,7 @@ synthétiques (crate `image` en dev).
 
 **Portes passées** : `pnpm typecheck/lint/i18n:check/hooks:check/chemins/build`.
 
-**Prochaine tâche** : **T4.5** — replis : infobulle original + toggle original/français.
+**Prochaine tâche** : **T5.1** — éditeur de bloc : modifier le texte, déplacer/redimensionner, retoucher le masque, relancer l'effacement local, régler la taille de police.
 
 ### 2026-10-07 — T4.2 livrée
 
@@ -516,3 +516,19 @@ synthétiques (crate `image` en dev).
 
 **Portes passées** : `cargo clippy/test` (19/20, échec connu du contrat vision),
 `pnpm typecheck/lint/i18n/hooks/chemins`.
+
+### 2026-10-07 — T4.5/T4.6 livrées
+
+**T4.6 — Rendu en surcouche dans le lecteur webtoon.**
+- Toggle `afficherTraduction` dans la barre du lecteur (`FR` / `原文`).
+- Chargement paresseux via `IntersectionObserver` : `chargerTraductionPage()`
+  précharge la page visible + voisines.
+- Overlay `.traduction-overlay` + `.bubble-text` positionné par page, au-dessus
+  des `<img>` sans casser la virtualisation.
+- Nettoyage automatique à l'ouverture d'un nouveau chapitre (`setBlocsTraduction({})`).
+
+**T4.5 — Replis** _(débloqué par T4.6)_.
+- Toggle original/français fonctionnel.
+- Ne jamais réduire la police sous le seuil : garanti par `verifier_layout()` (T4.4).
+
+**Portes passées** : `pnpm typecheck/lint/i18n/hooks/chemins`, `cargo clippy/test` (19/20).

@@ -58,6 +58,9 @@ fn contrat_traduction_types_rust_accord() {
             reading_order: 0,
             status: StatutBloc::Ok,
             confidence: Some(0.92),
+            font_size: None,
+            font_family: None,
+            line_breaks: None,
         }],
     };
 

@@ -90,6 +90,20 @@
           "minimum": 0,
           "maximum": 1,
           "description": "Score de confiance OCR/traduction, 0 = inconnu, 1 = certain."
+        },
+        "fontSize": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Taille de police choisie pour le texte traduit, en px."
+        },
+        "fontFamily": {
+          "type": "string",
+          "description": "Nom de la police utilisée pour le rendu."
+        },
+        "lineBreaks": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 },
+          "description": "Indices de caractère où couper les lignes, dans `translatedText`."
         }
       },
       "additionalProperties": false

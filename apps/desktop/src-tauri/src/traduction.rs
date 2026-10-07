@@ -105,6 +105,15 @@ pub struct BlocTraduction {
     pub status: StatutBloc,
     /// Score de confiance OCR/traduction, 0 = inconnu, 1 = certain.
     pub confidence: Option<f64>,
+    /// Taille de police choisie pour le rendu, en px.
+    #[serde(rename = "fontSize")]
+    pub font_size: Option<f64>,
+    /// Nom de la police utilisée.
+    #[serde(rename = "fontFamily")]
+    pub font_family: Option<String>,
+    /// Indices de coupure dans `translated_text`, triés croissants.
+    #[serde(rename = "lineBreaks")]
+    pub line_breaks: Option<Vec<usize>>,
 }
 
 /// Page de webtoon prête à être traduite / affichée.

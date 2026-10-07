@@ -322,6 +322,9 @@ mod tests {
                 reading_order: 0,
                 status: StatutBloc::Ok,
                 confidence: Some(1.0),
+                font_size: None,
+                font_family: None,
+                line_breaks: None,
             }],
         };
 
@@ -359,6 +362,9 @@ mod tests {
                 reading_order: 0,
                 status: StatutBloc::Ok,
                 confidence: Some(1.0),
+                font_size: None,
+                font_family: None,
+                line_breaks: None,
             }],
         };
 
@@ -428,6 +434,9 @@ mod tests {
                 reading_order: 0,
                 status: StatutBloc::Ok,
                 confidence: Some(1.0),
+                font_size: None,
+                font_family: None,
+                line_breaks: None,
             }],
         };
 
@@ -479,6 +488,9 @@ mod tests {
                 reading_order: 0,
                 status: StatutBloc::Ok,
                 confidence: Some(1.0),
+                font_size: None,
+                font_family: None,
+                line_breaks: None,
             }],
         };
 
@@ -523,6 +535,9 @@ mod tests {
                 reading_order: 0,
                 status: StatutBloc::Ok,
                 confidence: Some(1.0),
+                font_size: None,
+                font_family: None,
+                line_breaks: None,
             }],
         };
 

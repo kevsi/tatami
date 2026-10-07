@@ -19,6 +19,9 @@ export interface BlocTraduction {
   readingOrder: number;
   status: StatutBloc;
   confidence?: number;
+  fontSize?: number;
+  fontFamily?: string;
+  lineBreaks?: number[];
 }
 
 export interface PageTranslation {

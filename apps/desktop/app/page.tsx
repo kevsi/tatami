@@ -13,7 +13,7 @@ import {
 import { useApparence } from './apparence';
 import { useI18n, type MessageKey } from './i18n';
 import { notifActive, notifie, setNotifActive, texteNotification } from './notification';
-import type { PageTranslation } from './types/traduction';
+import type { BlocTraduction, PageTranslation } from './types/traduction';
 import {
   lireDemarrage,
   reglerDemarrage,
@@ -2956,6 +2956,42 @@ function cleSerie(): string {
   return manga ? `${source}${manga}` : `${source}${reader?.chapter.url ?? ''}`;
 }
 
+/** Convertit une longueur en pixels **source** vers l'unité qui suit l'image.
+ *
+ * Les boîtes viennent du modèle dans les pixels de l'image d'origine, alors que
+ * l'image est affichée à une taille choisie par l'utilisateur — et à la taille
+ * du bandeau. Les deux n'ont aucun rapport.
+ *
+ * Mesuré le 2026-10-07 (`.mesures/mesure-surchouche.cjs`, 6 cas : bandeau
+ * 900/1400 px × zoom 100/120/200 %) : en posant `left: 538px`, l'écart avec la
+ * position réelle de la bulle atteint **1345 px** — et il est déjà de 67 px à
+ * zoom 100 %, parce que la page source (800 px) n'a pas la taille du bandeau.
+ * La surcouche n'était donc alignée à **aucun** zoom.
+ *
+ * Le conteneur devient une référence de largeur (`container-type`), et toutes
+ * les longueurs — position, taille **et police** — passent en `cqw`. Le même
+ * facteur sert donc à tout : plus rien à calculer côté JavaScript, et le zoom
+ * cesse d'être une donnée du code de rendu.
+ */
+function enCqw(pixelsSource: number, largeurPage: number): string {
+  return `${(pixelsSource / largeurPage) * 100}cqw`;
+}
+
+/** Taille de police du bloc, en pixels source.
+ *
+ * `fontSize` n'est pas encore produit par la mise en page (T4.4). En attendant,
+ * on **mesure** : la hauteur du bloc divisée par le nombre de lignes du texte
+ * source. Sur la page du corpus, 107 px pour 5 lignes donnent 21 px par ligne,
+ * et 12 px pour une ligne unique donnent 12 px. C'est une estimation, pas une
+ * garantie — mais c'est une valeur tirée de la mesure, là où `16px` en dur
+ * n'était qu'un souhait qui ne suivait pas le zoom.
+ */
+function taillePoliceSource(b: BlocTraduction): number {
+  if (b.fontSize) return b.fontSize;
+  const lignes = (b.originalText ?? '').split('\n').filter(Boolean).length || 1;
+  return Math.max(10, b.bbox.h / lignes);
+}
+
 /** Charge la traduction d'une page du chapitre courant, si la surcouche est activée.
  *
  * Deux étapes, et l'ordre est mesuré :
@@ -4787,22 +4823,28 @@ if (reader) {
                     const p = pages[i];
                     const blocs = blocsTraduction[i];
                     if (!p || !blocs?.blocks?.length) return null;
+                    // Sans la largeur source de la page, aucune longueur en
+                    // pixels source n'est rapportable à l'image affichée.
+                    // Mieux vaut ne rien poser que poser n'importe où.
+                    if (!p.largeur) return null;
                     const hauteur = hauteurs[i] || 0;
                     const top = bandeVirtualisable ? (offsets[i] ?? 0) : undefined;
                     return (
                       <div
                         key={`t-${p.token}`}
                         data-page={i}
-                        style={
-                          bandeVirtualisable
+                        style={{
+                          ...(bandeVirtualisable
                             ? {
                                 width: `${zoom}%`,
-                                position: 'absolute',
+                                position: 'absolute' as const,
                                 top,
                                 height: hauteur ? `${hauteur}px` : undefined,
                               }
-                            : { width: `${zoom}%`, position: 'relative' }
-                        }
+                            : { width: `${zoom}%`, position: 'relative' as const }),
+                          // La référence de largeur qui rend les `cqw` possibles.
+                          containerType: 'inline-size',
+                        }}
                       >
                         {blocs.blocks
                           .filter((b) => b.status === 'ok' && b.translatedText)
@@ -4811,12 +4853,17 @@ if (reader) {
                               key={b.id}
                               className="bubble-text"
                               style={{
-                                left: `${b.bbox.x}px`,
-                                top: `${b.bbox.y}px`,
-                                width: `${b.bbox.w}px`,
-                                height: `${b.bbox.h}px`,
+                                // `container-type: inline-size` rend ce
+                                // conteneur en référence de largeur : d'ici les
+                                // `cqw`, qui suivent l'image affichée sans
+                                // qu'aucune mesure en JavaScript soit
+                                // nécessaire. Voir `enCqw`.
+                                left: enCqw(b.bbox.x, p.largeur!),
+                                top: enCqw(b.bbox.y, p.largeur!),
+                                width: enCqw(b.bbox.w, p.largeur!),
+                                height: enCqw(b.bbox.h, p.largeur!),
                                 fontFamily: b.fontFamily ?? 'Comic Neue',
-                                fontSize: `${b.fontSize ?? 16}px`,
+                                fontSize: enCqw(taillePoliceSource(b), p.largeur!),
                                 lineHeight: 1.25,
                               }}
                             >

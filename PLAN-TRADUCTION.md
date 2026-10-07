@@ -158,7 +158,7 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 - [x] **T4.2** Algorithme de remplissage : largeur disponible par ligne calculée à partir du masque **érodé d'une marge**, césure, recherche dichotomique de la plus grande taille de police qui tient. Retours à la ligne stockés explicitement dans le JSON.
 - [x] **T4.3** Tests de propriétés : pour de nombreuses bulles synthétiques de formes variées (ellipse, nuage, rectangle arrondi, forme irrégulière) et des textes aléatoires, **le texte ne sort jamais du masque**.
 - [x] **T4.4** Contrôles automatiques : polygone du texte inclus dans le masque, aucun bloc ne touche un autre, taille de police au-dessus du seuil, contraste suffisant. Résultat : `ok`, `review` ou `fallback`.
-- [ ] **T4.5** Replis : afficher l'original avec la traduction en infobulle, plus une touche pour basculer entre l'original et le français. **Ne jamais réduire la police sous le seuil pour "faire passer".**
+- [ ] **T4.5** Replis : afficher l'original avec la traduction en infobulle, plus une touche pour basculer entre l'original et le français. **Ne jamais réduire la police sous le seuil pour "faire passer".** _(Bloqué par T4.6 : le rendu des bulles n'existe pas encore.)_
 - [ ] **T4.6** Rendu en surcouche dans le lecteur webtoon : alignement au pixel avec l'image nettoyée, zoom, redimensionnement, affichage progressif (original puis français), préchargement guidé par le défilement, annulation quand on change de chapitre.
 
 **Critère de sortie** : sur le corpus, **zéro débordement parmi les blocs marqués `ok`**, proportion de blocs `review` et `fallback` sous le seuil validé en T0, tests de propriétés verts.

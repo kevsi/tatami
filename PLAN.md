@@ -72,7 +72,7 @@
 1. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
 2. **Retirer la liste blanche S2** de `main.rs:387-393` : les trois commandes sont maintenant
    appelées par l'interface, la porte « commande morte » doit de nouveau mordre.
-3. **T4.5** — replis : afficher l'original avec la traduction en infobulle, plus une touche pour basculer entre l'original et le français.
+3. **T4.6** — rendu en surcouche dans le lecteur webtoon : alignement au pixel avec l'image nettoyée, zoom, redimensionnement, affichage progressif (original puis français), préchargement guidé par le défilement, annulation quand on change de chapitre.
 
 ---
 

@@ -1195,3 +1195,25 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   : **regarder l'image** avant d'accuser un modèle ; et « la page contient-elle ce
   qu'on lui demande de trouver ? » est une question distincte de « le modèle
   trouve-t-il ? ».
+- **Une culture d'image ne prend pas un coin, elle prend une largeur et une
+  hauteur.** `image::imageops::crop_imm(img, x, y, largeur, hauteur)` : passer
+  `x + largeur` en quatrième argument donne une culture plusieurs fois trop
+  grande, qui écrase le texte et le rend illisible. Mesuré le 2026-10-07 : des
+  cultures de 230×370 px au lieu de 123×14 donnaient « - » et « H » là où le
+  texte réel était « PROBABLY » / « THE SAME PLACE ». Corollaire : **écrire les
+  cultures sur disque et les relire avec l'autre implémentation** tranche en une
+  mesure — sans cela j'ai conclu que les deux implémentations divergeaient, alors
+  qu'elles concordaient parfaitement et que le défaut était dans le découpage. Et
+  comme rien ne vérifiait la taille de la culture, aucun test ne l'a vu.
+- **Une tuile sert à détecter, pas à découper.** Mesuré le 2026-10-07 : sur une
+  page de 800×1000, la meilleure bulle va jusqu'à x=819 — donc **aucune** bulle
+  n'est entièrement contenue dans une fenêtre de 640, et la culture bornée à la
+  fenêtre est tronquée sans le moindre signe. La culture se prend sur la page,
+  la tuile ne sert qu'à trouver la boîte.
+- **Un test qui compare deux chemins d'exécution différents ne prouve pas la
+  parité.** Mesuré le 2026-10-07 : la sonde Python cultivait la bulle depuis la
+  page (641×640 px), mon port Rust depuis la fenêtre (462×491 px). Les textes
+  divergeaient, et j'ai d'abord cherché la faute dans le redimensionnement du
+  modèle — qui n'était pas en cause. La vraie question n'était pas « qui a
+  faux ? » mais « les deux ont-ils vu la même image ? », et ça se répond en
+  exportant les cultures, pas en comparant des chaînes.

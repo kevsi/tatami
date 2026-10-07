@@ -4,10 +4,11 @@
   "id": "vision-capacites-enregistrees",
   "ok": true,
   "result": {
-    "inpaintDisponible": false,
+    "inpaintDisponible": true,
     "methods": [
       "detect",
-      "ocr"
+      "ocr",
+      "inpaint"
     ],
     "packId": "vision-fr",
     "version": "0.1.0"

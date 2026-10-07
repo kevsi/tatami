@@ -162,10 +162,57 @@ impl std::fmt::Display for Violation {
     }
 }
 
+/// Le schéma de `result` de chaque méthode, quand il existe.
+///
+/// **Trou trouvé le 2026-10-07** : `detectResult`, `ocrResult`,
+/// `inpaintResult`, `loadPackResult` et `healthResult` étaient déclarés dans
+/// `$defs` et **référencés par rien** — `response.result` est un simple
+/// `{type: object}`. La validation passait donc la forme de ces résultats sans
+/// jamais la juger. Le contre-exemple « score de détection au-dessus du maximum »
+/// l'a rendu visible : il était accepté.
+///
+/// L'association méthode → schéma est donc écrite ici, et une porte vérifie
+/// qu'elle couvre tout schéma de résultat du contrat — sinon un nouveau `$defs`
+/// serait ajouté sans être appliqué, en silence.
+const RESULTATS_PAR_METHODE: &[(&str, &str)] = &[
+    ("health", "healthResult"),
+    ("capabilities", "capabilitiesResult"),
+    ("detect", "detectResult"),
+    ("ocr", "ocrResult"),
+    ("inpaint", "inpaintResult"),
+    ("loadPack", "loadPackResult"),
+];
+
+/// Le nom du `$defs` qui décrit le `result` d'une méthode, s'il existe.
+fn schema_de_resultat(methode: &str) -> Option<&'static str> {
+    RESULTATS_PAR_METHODE
+        .iter()
+        .find(|(m, _)| *m == methode)
+        .map(|(_, d)| *d)
+}
+
 fn valider(valeur: &Value, schema: &Value) -> Vec<Violation> {
     let defs = schema.get("$defs").cloned().unwrap_or(Value::Null);
     let mut out = Vec::new();
     valider_dans(valeur, schema, "$", &defs, &mut out);
+    out
+}
+
+/// Valide une enveloppe **et** la forme de son `result` pour la méthode
+/// déclarée. Sans le second temps, la validation est structurelle seulement.
+fn valider_enveloppe(methode: &str, enveloppe: &Value, schema: &Value) -> Vec<Violation> {
+    let mut out = valider(enveloppe, schema);
+    let (Some(nom), Some(resultat)) = (
+        schema_de_resultat(methode),
+        enveloppe.get("result").filter(|v| v.is_object()),
+    ) else {
+        return out;
+    };
+    let defs = schema.get("$defs").cloned().unwrap_or(Value::Null);
+    let sous_schema = defs
+        .get(nom)
+        .unwrap_or_else(|| panic!("$defs/{nom} absent du schéma"));
+    valider_dans(resultat, sous_schema, "$.result", &defs, &mut out);
     out
 }
 
@@ -263,6 +310,22 @@ fn valider_dans(
         }
     }
 
+    // `maximum` est le pendant de `minimum` : ajouté le 2026-10-07 avec
+    // `detectResult` (score dans [0, 1], classe dans [0, 2]). La porte
+    // `le_validateur_couvre_tout_le_schema_du_contrat` l'a nommé — et son avertissement
+    // est le bon : un mot-clé non géré rend la validation silencieuse, donc
+    // elle passe toujours.
+    if let Some(max) = schema.get("maximum").and_then(Value::as_f64) {
+        if let Some(n) = valeur.as_f64() {
+            if n > max {
+                out.push(Violation {
+                    chemin: chemin.into(),
+                    message: format!("{n} > maximum {max}"),
+                });
+            }
+        }
+    }
+
     if let (Some(obj), Some(props)) = (
         valeur.as_object(),
         schema.get("properties").and_then(Value::as_object),
@@ -337,6 +400,7 @@ fn le_validateur_couvre_tout_le_schema_du_contrat() {
         "description",
         "enum",
         "items",
+        "maximum",
         "minimum",
         "oneOf",
         "properties",
@@ -383,6 +447,46 @@ fn collecter_mots_cles<'a>(valeur: &'a Value, out: &mut BTreeSet<&'a str>) {
     }
 }
 
+/// Chaque schéma de résultat du contrat est **appliqué** par une méthode.
+///
+/// Le trou du 2026-10-07 : `detectResult` et consorts étaient dans `$defs`
+/// sans que rien ne les référence. Cette porte empêche qu'un `$defs` de résultat
+/// soit ajouté puis oublié — il passerait inaperçu, et la validation donnerait
+/// l'illusion de juger.
+#[test]
+fn chaque_schema_de_resultat_est_attribue_a_une_methode() {
+    let s = schema();
+    let defs = s.get("$defs").and_then(Value::as_object).expect("$defs");
+    // Un `$defs` nommé `*Result` est, par convention du contrat, la forme d'un
+    // `result`. Le nom est donc la convention ; la porte la vérifie.
+    let resultats: Vec<&str> = defs
+        .keys()
+        .filter(|k| k.ends_with("Result"))
+        .map(String::as_str)
+        .collect();
+    let attribues: BTreeSet<&str> = RESULTATS_PAR_METHODE.iter().map(|(_, d)| *d).collect();
+
+    let orphans: Vec<&&str> = resultats
+        .iter()
+        .filter(|r| !attribues.contains(*r))
+        .collect();
+    assert!(
+        orphans.is_empty(),
+        "schémas de résultat jamais appliqués : {orphans:?}. Un `$defs` de résultat \
+         non référencé passe la validation sans être jugée — c'est exactement le trou \
+         du 2026-10-07 sur `detectResult`."
+    );
+
+    // Et l'inverse : une attribution qui pointe un `$defs` absent planterait
+    // chaque validation, donc on le vérifie ici, une fois, avec un message clair.
+    for (methode, nom) in RESULTATS_PAR_METHODE {
+        assert!(
+            defs.contains_key(*nom),
+            "`{methode}` pointe vers `$defs/{nom}`, absent du schéma"
+        );
+    }
+}
+
 // ===========================================================================
 // Porte 2 — chaque réponse enregistrée est valide contre le schéma
 // ===========================================================================
@@ -391,7 +495,7 @@ fn collecter_mots_cles<'a>(valeur: &'a Value, out: &mut BTreeSet<&'a str>) {
 fn chaque_reponse_enregistree_valide_le_schema() {
     let s = schema();
     for f in charger() {
-        let violations = valider(&f.enveloppe, &s);
+        let violations = valider_enveloppe(&f.methode, &f.enveloppe, &s);
         assert!(
             violations.is_empty(),
             "{} (méthode {}) n'est pas valide contre contract/protocol.json :\n  - {}",
@@ -466,10 +570,42 @@ fn le_validateur_refuse_les_reponses_invalides() {
             "`result` qui n'est pas un objet",
             serde_json::json!({ "id": "x", "ok": true, "result": [] }),
         ),
+        // Contre-exemple du mot-clé `maximum` (ajouté le 2026-10-07 avec
+        // `detectResult`) : sans lui, le validateur laisserait passer un score
+        // de 1,5 — donc une porte qui aurait l'air verte et ne jugerait rien.
+        (
+            "score de détection au-dessus du maximum",
+            serde_json::json!({
+                "id": "x", "ok": true,
+                "result": { "detections": [{
+                    "bbox": { "x": 0, "y": 0, "w": 10, "h": 10 },
+                    "classe": 0, "score": 1.5
+                }] }
+            }),
+        ),
+        (
+            "classe de détection hors de l'enum 0..2",
+            serde_json::json!({
+                "id": "x", "ok": true,
+                "result": { "detections": [{
+                    "bbox": { "x": 0, "y": 0, "w": 10, "h": 10 },
+                    "classe": 7, "score": 0.9
+                }] }
+            }),
+        ),
     ];
 
     for (nom, enveloppe) in cas {
-        let violations = valider(&enveloppe, &s);
+        // Les deux derniers cas concernent la forme d'un `result` : ils
+        // passent par `valider_enveloppe`, sinon la méthode serait inconnue et
+        // le schéma de résultat ne s'appliquerait pas — donc le contre-exemple
+        // ne prouverait rien du tout.
+        let methode = if nom.contains("détection") {
+            "detect"
+        } else {
+            ""
+        };
+        let violations = valider_enveloppe(methode, &enveloppe, &s);
         assert!(
             !violations.is_empty(),
             "le validateur a ACCEPTÉ « {nom} ». Le test de contrat ne prouve donc rien : \

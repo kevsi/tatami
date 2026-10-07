@@ -175,18 +175,27 @@ fn repondre(requete: &Requete, moteurs: &mut Option<Moteurs>) -> Reponse {
                 .unwrap_or(tatami_vision::detect::SCORE_MINIMAL);
             match m.bulles.detecter(&image, seuil) {
                 Ok(detections) => {
-                    let boxes: Vec<serde_json::Value> = detections
+                    // Les classes voyagent **avec** les boîtes. Les perdre ici
+                    // alors que le modèle les calcule (T2.3 : `bubble`,
+                    // `text_bubble`, `text_free`) ferait_deviner le type de bloc
+                    // côté application, alors qu'il est mesuré. Et
+                    // `type_bloc` est obligatoire au schéma de traduction.
+                    let detections_json: Vec<serde_json::Value> = detections
                         .iter()
                         .map(|d| {
                             serde_json::json!({
-                                "x": d.boite.x.round() as i64,
-                                "y": d.boite.y.round() as i64,
-                                "w": d.boite.largeur.round() as i64,
-                                "h": d.boite.hauteur.round() as i64,
+                                "bbox": {
+                                    "x": d.boite.x.round() as i64,
+                                    "y": d.boite.y.round() as i64,
+                                    "w": d.boite.largeur.round() as i64,
+                                    "h": d.boite.hauteur.round() as i64,
+                                },
+                                "classe": d.classe.id(),
+                                "score": (d.score * 1000.0).round() / 1000.0,
                             })
                         })
                         .collect();
-                    Reponse::succes(id, serde_json::json!({ "boxes": boxes }))
+                    Reponse::succes(id, serde_json::json!({ "detections": detections_json }))
                 }
                 Err(e) => Reponse::echec(id, Code::Internal, e.to_string()),
             }

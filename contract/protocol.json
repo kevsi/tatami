@@ -169,14 +169,38 @@
       },
       "additionalProperties": false
     },
+    "capabilitiesResult": {
+      "type": "object",
+      "description": "Forme de `result` pour `capabilities` (sidecar vision). `inpaintDisponible` est `false` tant que le modèle d'effacement n'est pas dans le pack : l'application peut alors l'afficher au lieu d'appeler une méthode qui échouera.",
+      "required": ["packId", "version", "methods", "inpaintDisponible"],
+      "properties": {
+        "packId": { "type": "string" },
+        "version": { "type": "string" },
+        "methods": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["detect", "ocr", "inpaint"] }
+        },
+        "inpaintDisponible": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
     "detectResult": {
       "type": "object",
-      "description": "Forme de `result` pour `detect`.",
-      "required": ["boxes"],
+      "description": "Forme de `result` pour `detect`. Une détection porte sa boîte, sa classe et son score. La classe est la classification de T2.3 (0 bubble, 1 text_bubble, 2 text_free) : elle est mesurée par le modèle, donc la jeter ici obligerait l'application à deviner un `type_bloc` que le schéma de traduction exige.",
+      "required": ["detections"],
       "properties": {
-        "boxes": {
+        "detections": {
           "type": "array",
-          "items": { "$ref": "#/$defs/bbox" }
+          "items": {
+            "type": "object",
+            "required": ["bbox", "classe", "score"],
+            "properties": {
+              "bbox": { "$ref": "#/$defs/bbox" },
+              "classe": { "type": "integer", "minimum": 0, "maximum": 2 },
+              "score": { "type": "number", "minimum": 0, "maximum": 1 }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false
@@ -245,19 +269,33 @@
       "additionalProperties": false
     },
     "healthResult": {
-      "type": "object",
-      "description": "Forme de `result` pour `health` (vision).",
-      "required": ["ok"],
-      "properties": {
-        "ok": { "type": "boolean" },
-        "packId": { "type": "string" },
-        "version": { "type": "string" },
-        "models": {
-          "type": "array",
-          "items": { "type": "string" }
+      "description": "Forme de `result` pour `health`. Cette méthode a **deux formes réelles**, et une seule était décrite jusqu'au 2026-10-07 : `health` global (`ok` + version du moteur ou du pack vision) et `health` par source (`source` + `reachable`, sans `ok`). La seconde était invisible parce qu'aucun `$defs` de résultat n'était appliqué par la validation — le trou que le contre-exemple « score de détection au-dessus du maximum » a fait apparaître. Les deux branches sont exclusives : chacune interdit les champs de l'autre.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["ok"],
+          "properties": {
+            "ok": { "type": "boolean" },
+            "engineVersion": { "type": "string" },
+            "packId": { "type": "string" },
+            "version": { "type": "string" },
+            "models": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["source", "reachable"],
+          "properties": {
+            "source": { "type": "string" },
+            "reachable": { "type": "boolean" }
+          },
+          "additionalProperties": false
         }
-      },
-      "additionalProperties": false
+      ]
     }
   }
 }

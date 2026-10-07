@@ -5,7 +5,7 @@
   "ok": false,
   "error": {
     "code": "MODEL_MISSING",
-    "message": "effacement non intégré : le modèle LaMa n'est pas dans le pack (T2.5 non fait, décision du 2026-10-07)"
+    "message": "aucun pack chargé : `loadPack` d'abord"
   },
   "_note": "Effacement non intégré (T2.5). Le sidecar le dit au lieu de faire semblant. Erreur définitive : rejouer ne changera rien tant que le modèle est absent."
 }

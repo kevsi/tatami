@@ -1245,3 +1245,33 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   demande de noter le changement dans `fixtures/README.md` — c'est fait, avec
   un tableau de ce que chaque fixture vision prouve, dont le fait que
   `inpaint` est une **erreur volontaire**.
+- **Un schéma déclaré et jamais référencé valide tout.** Mesuré le 2026-10-07 :
+  `detectResult`, `ocrResult`, `inpaintResult`, `loadPackResult` et
+  `healthResult` étaient dans `$defs` de `contract/protocol.json`, et **rien**
+  ne les référençait — `response.result` est un simple `{type: object}`. La
+  validation de contrat jugeait donc la forme de ces résultats **sans jamais la
+  regarder**, et le test était vert. Comment je l'ai vu : j'ai ajouté
+  `maximum` au schéma pour borner le score de détection, la porte
+  `le_validateur_couvre_tout_le_schema_du_contrat` a nommé le mot-clé non géré,
+  et le **contre-exemple** correspondant (« score 1.5 ») a été **accepté**.
+  Corollaire : un contre-exemple qui est accepté n'est pas un test raté, c'est un
+  test qui vient de prouver que la porte ne mordait pas. Et une association
+  « méthode → schéma de résultat » écrite dans le test est fragile : il y a
+  maintenant une porte qui refuse tout `$defs` en `*Result` non attribué.
+- **Une méthode peut avoir deux formes réelles, et le schéma n'en décrivait
+  qu'une.** Toujours mesuré le 2026-10-07, par le même trou : `health` rend
+  `{ok, engineVersion}` pour le global et `{source, reachable}` — **sans `ok`**
+  — pour le test d'une source. Les deux réponses sont authentiques et
+  enregistrées depuis le 2026-10-05. Le contrat décrit maintenant les deux
+  branches en `oneOf`, exclusives par `additionalProperties: false`. Une
+  incohérence de contrat peut dormir des mois si personne ne valide le résultat
+  correspondant.
+- **Perdre une information mesurée à la frontière du contrat, c'est la refaire
+  ailleurs.** Mesuré le 2026-10-07 : le détecteur de bulles rend trois classes
+  (`bubble`, `text_bubble`, `text_free`), c'est-à-dire **la classification de
+  T2.3**, et `detectResult` ne portait que `{boxes}`. L'application aurait donc
+  dû deviner `type_bloc` — que le schéma de traduction exige. Le contrat rend
+  désormais `detections: [{bbox, classe, score}]`. Corollaire : quand un modèle
+  calcule quelque chose, vérifier **jusqu'où** cette information voyage avant
+  d'écrire le reste ; une donnée perdue au `$defs` se retrouve réinventée en
+  heuristique trois fichiers plus loin.

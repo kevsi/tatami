@@ -1148,3 +1148,23 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   conclure « ces lignes ont disparu » ni « mon commit les a mangées » sans
   relire `git diff` **à l'instant de la conclusion**, et avertir l'humain quand
   deux sessions partagent le même dossier de travail.
+- **L'exemple d'un document est un cas de test qui ne tourne jamais.** Mesuré le
+  2026-10-07 : le défaut d'identité des sources perso (base = nom de fichier,
+  moteur = `SOURCE.id`) a été trouvé **grâce à** `docs/exemple-source.js`, qui
+  déclare `id: "exemple-fr"` dans un fichier `exemple-source.js` — l'exemple
+  lui-même violait la convention que le code supposait. Règle : écrire
+  l'exemple **avant** le reste, puis le faire passer par le chemin réel ; et
+  dans un audit, **lire les fixtures et les exemples avant le code**, parce
+  qu'ils sont les seules données qui traversent vraiment toutes les couches.
+  Corollaire : deux couches qui doivent s'accorder sur un nom ne doivent pas
+  le reconstruire chacune de leur côté (le moteur recalculait
+  `${meta.id}.js` pour retrouver un fichier supprimé) — elles doivent partager
+  la clé qu'elles ont réellement.
+- **`:test FROM-CACHE` est un vert qui n'a rien exécuté, et `cleanTest` ne
+  suffit pas.** Mesuré le 2026-10-07 : `gradle test` → `BUILD SUCCESSFUL in 5s`
+  avec `:test FROM-CACHE` ; `gradle cleanTest test` → toujours `FROM-CACHE` (le
+  cache build est actif, il restaure le résultat). La preuve d'exécution est
+  `--rerun-tasks` (ou les XML frais) : `gradle test --rerun-tasks` →
+  `6 actionable tasks: 6 executed`, 43 tests listés par leur nom, 8 XML
+  réécrits. Corollaire : une porte qui rend le même verdict en 3 s qu'en
+  1 min 14 n'a rien mesuré.

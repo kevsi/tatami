@@ -47,7 +47,12 @@ pub enum ErreurTraduction {
 // ---------------------------------------------------------------------------
 
 /// Modèle Gemini utilisé pour la traduction.
-const MODELE_GEMINI: &str = "gemini-3.5-flash";
+// Le 2026-10-07, ce modèle a changé deux fois dans la même journée. Mesuré :
+// `gemini-2.5-flash` listé mais 404 « no longer available to new users » (le
+// message nomme son remplaçant), et `gemini-3.5-flash` a 404 silencieusement.
+// **Liste ≠ utilisable** : un modèle listé par `/v1beta/models` peut refuser de
+// répondre. `gemini-3.8-flash` est le remplaçant nommé par l'API elle-même.
+const MODELE_GEMINI: &str = "gemini-3.8-flash";
 
 // ---------------------------------------------------------------------------
 // Types du contrat de traduction
@@ -200,32 +205,61 @@ impl Traducteur {
             }
         });
 
-        let reponse = self
-            .http
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .json(&corps)
-            .send()
-            .await
-            .map_err(|e| ErreurTraduction::Reseau(e.to_string()))?;
+        // Une bulle par requête. `503` est documenté comme **transitoire** —
+        // mesuré le 2026-10-07, l'API renvoie 503 « high demand » sur trois
+        // modèles différents en même temps, ce qui n'est ni le quota (429) ni
+        // une faute du client. Donc on retente deux fois, pas une.
+        let mut dernier_code = None;
+        let mut json = None;
+        for essai in 0..3 {
+            if essai > 0 {
+                tokio::time::sleep(std::time::Duration::from_secs(2 * essai)).await;
+            }
+            let reponse = self
+                .http
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .json(&corps)
+                .send()
+                .await
+                .map_err(|e| ErreurTraduction::Reseau(e.to_string()))?;
 
-        if !reponse.status().is_success() {
             let status = reponse.status();
+            if status.is_success() {
+                json = Some(
+                    reponse
+                        .json()
+                        .await
+                        .map_err(|e| ErreurTraduction::Reponse(e.to_string()))?,
+                );
+                dernier_code = None;
+                break;
+            }
             let body = reponse.text().await.unwrap_or_default();
             if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 return Err(ErreurTraduction::Quota);
             }
-            return Err(ErreurTraduction::Reseau(format!(
-                "HTTP {}: {}",
-                status,
+            // 503 Service Unavailable : laisser retenter, pas abandonner.
+            if status != reqwest::StatusCode::SERVICE_UNAVAILABLE {
+                return Err(ErreurTraduction::Reseau(format!(
+                    "HTTP {}: {}",
+                    status,
+                    body.chars().take(200).collect::<String>()
+                )));
+            }
+            dernier_code = Some(format!(
+                "HTTP 503: {}",
                 body.chars().take(200).collect::<String>()
-            )));
+            ));
         }
-
-        let json: serde_json::Value = reponse
-            .json()
-            .await
-            .map_err(|e| ErreurTraduction::Reponse(e.to_string()))?;
+        let json: serde_json::Value = match json {
+            Some(j) => j,
+            None => {
+                return Err(ErreurTraduction::Reseau(
+                    dernier_code.unwrap_or_else(|| "aucun corps".into()),
+                ))
+            }
+        };
 
         let Some(texte_reponse) = json
             .get("candidates")

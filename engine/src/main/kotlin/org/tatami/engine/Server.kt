@@ -436,10 +436,13 @@ private suspend fun dispatch(
             val lang = inferLang(src.name, "")
             arr.put(JSONObject().put("name", src.name).put("lang", lang).put("custom", false))
         }
-        scriptLoader.sources().values.forEach { parser ->
+        scriptLoader.sources().forEach { (cle, parser) ->
             arr.put(
                 JSONObject()
-                    .put("name", "$CUSTOM_PREFIX${parser.meta.id}")
+                    // La clé du registre EST le nom de fichier sans `.js`
+                    // (identiteDe) : c'est elle que la base connaît, donc celle
+                    // que l'interface renvoie et supprime.
+                    .put("name", "$CUSTOM_PREFIX$cle")
                     .put("lang", parser.meta.lang)
                     .put("custom", true)
                     .put("displayName", parser.meta.name),

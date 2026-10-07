@@ -43,6 +43,22 @@ Cloudflare interceptor, cookies de session) — le script ne fait jamais de requ
 **Stockage** : les sources perso sont enregistrées dans SQLite (`custom_sources`) comme les sources
 normales. Les favoris, l'historique et les téléchargements référencent le `source_id` du script.
 
+**Identité — le nom de fichier fait foi (révisé le 2026-10-07)** : l'identifiant d'une source
+scriptée est le **nom du fichier sans `.js`**, pas `SOURCE.id`. Rust dérive déjà son id de
+cette façon (`custom_source.rs`, `id = nom sans .js`), et le moteur indexe son registre de la
+même (`identiteDe`, `ScriptedSourceLoader.kt`). Les deux doivent concorder par construction.
+
+`SOURCE.id` reste lu et validé — un script qui ne le déclare pas est refusé — mais il ne sert
+plus de clé : c'est un champ documentaire du script. L'interface voit la source sous
+`custom:<nom de fichier>`, son nom lisible vient de `SOURCE.name` (champ `displayName`).
+
+Mesuré le 2026-10-07, sur l'exemple que livre ce dépôt : `docs/exemple-source.js` déclare
+`id: "exemple-fr"`. Avec un registre indexé sur `SOURCE.id`, la clé devenait `exemple-fr`,
+le handler de suppression cherchait `exemple-fr.js` — un fichier qui n'a jamais existé — et
+la source disparaissait de Réglages (base + fichier) tout en restant **fantôme** dans la
+grille du catalogue. Les favoris et l'historique, eux, référençaient `custom:exemple-fr`, un
+identifiant que la base ne connaît pas. Trois tests de régression couvrent ce cas.
+
 **Sécurité** :
 - Le script s'exécute dans un contexte Nashorn restreint (pas d'accès fichier, pas de `java.lang.Runtime`).
 - `http.get` et `http.post` n'acceptent que des URLs `https://` (pas d'accès réseau local).

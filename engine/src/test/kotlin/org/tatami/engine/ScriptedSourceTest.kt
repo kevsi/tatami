@@ -230,6 +230,70 @@ class ScriptedSourceLoaderTest {
     }
 
     @Test
+    fun `l identite vient du nom de fichier meme si le script declare autre chose`() {
+        // Régression du 2026-10-07 : le registre indexait sur `meta.id`, donc un
+        // script nommé `exemple-source.js` qui déclare `id: "exemple-fr"` était
+        // enregistré sous `exemple-fr` — un identifiant que la base (elle, dérive
+        // du nom de fichier) ne connaît pas. Le nom de fichier fait foi.
+        val dossier = Files.createTempDirectory("tatami-test-loader6").toFile()
+        try {
+            val loader = ScriptedSourceLoader(dossier, client)
+            val fichier = File(dossier, "exemple-source.js")
+                .also { it.writeText(scriptMinimal("exemple-fr")) }
+            loader.charger(fichier)
+            assertTrue(
+                loader.sources().containsKey("exemple-source"),
+                "le registre doit être indexé sur le nom de fichier"
+            )
+            assertFalse(
+                loader.sources().containsKey("exemple-fr"),
+                "SOURCE.id ne doit plus servir de clé"
+            )
+        } finally {
+            dossier.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `supprimer le fichier decharge le parser par son nom`() {
+        // Les deux moitiés que le bug désaccordait : `charger` indexe sur
+        // identiteDe(fichier), et le handler ENTRY_DELETE décharge par
+        // identiteDe(fichier). On vérifie l'appariement sans démarrer le thread
+        // du watcher (poll à 2 s, non testable de façon fiable).
+        val dossier = Files.createTempDirectory("tatami-test-loader7").toFile()
+        try {
+            val loader = ScriptedSourceLoader(dossier, client)
+            val fichier = File(dossier, "exemple-source.js")
+                .also { it.writeText(scriptMinimal("exemple-fr")) }
+            loader.charger(fichier)
+            assertTrue(loader.sources().containsKey("exemple-source"))
+            // Ce que fait la boucleWatcher sur ENTRY_DELETE.
+            fichier.delete()
+            loader.decharger(identiteDe(fichier))
+            assertTrue(
+                loader.sources().isEmpty(),
+                "après suppression, le registre ne doit plus rien contenir : " +
+                    loader.sources().keys
+            )
+        } finally {
+            dossier.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `un fichier sans identifiant est refuse`() {
+        val dossier = Files.createTempDirectory("tatami-test-loader8").toFile()
+        try {
+            val loader = ScriptedSourceLoader(dossier, client)
+            val sansId = File(dossier, ".js").also { it.writeText(scriptMinimal("peu-importe")) }
+            assertFailsWith<IllegalArgumentException> { loader.charger(sansId) }
+            assertTrue(loader.sources().isEmpty())
+        } finally {
+            dossier.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `un fichier trop gros est rejete`() {
         val dossier = Files.createTempDirectory("tatami-test-loader4").toFile()
         try {

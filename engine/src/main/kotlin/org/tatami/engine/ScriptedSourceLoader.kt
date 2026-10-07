@@ -9,6 +9,25 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Logger
 
 /**
+ * Identité d'une source scriptée : le **nom du fichier** sans `.js`.
+ *
+ * C'est le nom de fichier qui fait foi, pas `SOURCE.id`. Rust enregistre la
+ * ligne en base sous ce même nom (`custom_source.rs`, `id = nom sans .js`) :
+ * les deux doivent concorder **par construction**, pas par chance.
+ *
+ * Mesuré le 2026-10-07 : `docs/exemple-source.js` déclare `id: "exemple-fr"`, et
+ * le registre indexé sur `meta.id` faisait échouer la suppression — le handler
+ * cherchait `exemple-fr.js`, un fichier qui n'a jamais existé. Résultat : la
+ * source disparaissait de Réglages (base + fichier) et restait **fantôme** dans
+ * la grille du catalogue jusqu'au redémarrage, et les favoris/historique
+ * référençaient `custom:exemple-fr` — un identifiant que la base ignore.
+ *
+ * `SOURCE.id` reste lu et validé (un script qui ne le déclare pas est refusé) :
+ * il documente le script, il n'identifie plus la source.
+ */
+fun identiteDe(fichier: File): String = fichier.nameWithoutExtension
+
+/**
  * Scanne un dossier pour les scripts de sources personnalisées (*.js),
  * les charge via ScriptedParser, et maintient un registre rechargeable à chaud.
  *
@@ -74,8 +93,13 @@ class ScriptedSourceLoader(
         // meta est lazy — on force l'évaluation ici pour valider le script
         // avant d'annoncer le succès.
         val meta = parser.meta
-        parsers[meta.id] = parser
-        log.info("Source personnalisée chargée : ${meta.id} (${meta.name}, ${meta.lang})")
+        val cle = identiteDe(fichier)
+        require(cle.isNotBlank()) { "nom de fichier sans identifiant : ${fichier.name}" }
+        parsers[cle] = parser
+        log.info(
+            "Source personnalisée chargée : $cle " +
+                "(déclarée « ${meta.id} », ${meta.name}, ${meta.lang})"
+        )
         return parser
     }
 
@@ -131,13 +155,12 @@ class ScriptedSourceLoader(
                             }
                         }
                         ENTRY_DELETE -> {
-                            // Trouver l'id correspondant au fichier supprimé.
-                            val id = parsers.entries
-                                .firstOrNull { (_, p) ->
-                                    dossier.resolve("${p.meta.id}.js").canonicalPath ==
-                                        fichier.canonicalPath
-                                }?.key
-                            if (id != null) decharger(id)
+                            // Le registre est indexé sur le nom de fichier : la
+                            // clé est directe. L'ancien code reconstruisait
+                            // `${meta.id}.js` et comparait des `canonicalPath`,
+                            // donc une suppression ne déchargeait rien si le
+                            // script déclarait un `id` ≠ son nom de fichier.
+                            decharger(identiteDe(fichier))
                         }
                     }
                 }

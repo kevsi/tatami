@@ -489,7 +489,7 @@ synthétiques (crate `image` en dev).
 
 **Portes passées** : `pnpm typecheck/lint/i18n:check/hooks:check/chemins/build`.
 
-**Prochaine tâche** : **T4.3** — tests de propriétés de l'algorithme de mise en page.
+**Prochaine tâche** : **T4.4** — sélection de police par type de bulle et amélioration de la césure.
 
 ### 2026-10-07 — T4.2 livrée
 
@@ -502,6 +502,17 @@ synthétiques (crate `image` en dev).
   - césure simple aux espaces,
   - sélecteur de police (pour l'instant `Comic Neue`).
 - 4 tests unitaires : texte court, texte long, bbox trop étroite, texte vide.
+
+**Portes passées** : `cargo clippy/test` (19/20, échec connu du contrat vision),
+`pnpm typecheck/lint/i18n/hooks/chemins`.
+
+### 2026-10-07 — T4.3 livrée
+
+**T4.3 — Tests de propriétés de l'algorithme de mise en page.**
+- Dépendance `proptest` ajoutée en dev.
+- `prop_ligne_respecte_budget` : budget respecté, pas de ligne vide.
+- `prop_coupures_croissantes` : indices strictement croissants.
+- Corrections : trim start/end, saut des espaces en début de ligne, césure propre.
 
 **Portes passées** : `cargo clippy/test` (19/20, échec connu du contrat vision),
 `pnpm typecheck/lint/i18n/hooks/chemins`.

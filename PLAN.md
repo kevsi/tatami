@@ -72,7 +72,7 @@
 1. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
 2. **Retirer la liste blanche S2** de `main.rs:387-393` : les trois commandes sont maintenant
    appelées par l'interface, la porte « commande morte » doit de nouveau mordre.
-3. **T4.2** — algorithme de remplissage : largeur disponible par ligne calculée à partir du masque érodé d'une marge, césure, recherche dichotomique de la plus grande taille de police qui tient. Retours à la ligne stockés explicitement dans le JSON.
+3. **T4.3** — tests de propriétés de l'algorithme de mise en page.
 
 ---
 
@@ -195,6 +195,7 @@ refuse le non-https · capability minimale (`dialog:allow-open` seule).
   `c6f7dc9` T3.1 trait Translator, `48e7c0a` T3.2 prompt par page + validation, `c375c8c` T3.3 glossaire SQLite v10,
   `de53744` T3.4 injection glossaire dans le prompt, `5b2edf8` T3.5 résilience backoff/quota/fallback,
   `c83e56f` S2.1+S2.2 écran « Sources perso » et badge « Perso »
+- 21 commits : ajouts T3.6 (confidentialité), T4.1 (polices embarquées), T4.2 (layout).
 - Toutes les vérifications passent (clippy, typecheck, lint, i18n, hooks, chemins).
 - Prochaines tâches : S2.2 (jouer `docs/smoke-test.md` §S), retrait de la liste blanche S2 dans
   `main.rs`, puis T3.6 — Confidentialité.

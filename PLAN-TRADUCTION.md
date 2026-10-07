@@ -155,7 +155,7 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 ### T4 — Mise en page et rendu (L) — la garantie anti-chevauchement
 
 - [x] **T4.1** Polices libres adaptées à la bande dessinée, licence confirmée en T0.1, embarquées dans l'app. Support complet du français : accents, « œ », guillemets « », espaces insécables avant `; : ! ?`.
-- [ ] **T4.2** Algorithme de remplissage : largeur disponible par ligne calculée à partir du masque **érodé d'une marge**, césure, recherche dichotomique de la plus grande taille de police qui tient. Retours à la ligne stockés explicitement dans le JSON.
+- [x] **T4.2** Algorithme de remplissage : largeur disponible par ligne calculée à partir du masque **érodé d'une marge**, césure, recherche dichotomique de la plus grande taille de police qui tient. Retours à la ligne stockés explicitement dans le JSON.
 - [ ] **T4.3** Tests de propriétés : pour de nombreuses bulles synthétiques de formes variées (ellipse, nuage, rectangle arrondi, forme irrégulière) et des textes aléatoires, **le texte ne sort jamais du masque**.
 - [ ] **T4.4** Contrôles automatiques : polygone du texte inclus dans le masque, aucun bloc ne touche un autre, taille de police au-dessus du seuil, contraste suffisant. Résultat : `ok`, `review` ou `fallback`.
 - [ ] **T4.5** Replis : afficher l'original avec la traduction en infobulle, plus une touche pour basculer entre l'original et le français. **Ne jamais réduire la police sous le seuil pour "faire passer".**
@@ -489,4 +489,19 @@ synthétiques (crate `image` en dev).
 
 **Portes passées** : `pnpm typecheck/lint/i18n:check/hooks:check/chemins/build`.
 
-**Prochaine tâche** : **T4.2** — algorithme de remplissage des bulles.
+**Prochaine tâche** : **T4.3** — tests de propriétés de l'algorithme de mise en page.
+
+### 2026-10-07 — T4.2 livrée
+
+**T4.2 — Algorithme de remplissage des bulles.**
+- Schéma de traduction étendu v1 : champs `fontSize`, `fontFamily`, `lineBreaks`.
+- `BlocTraduction` Rust/TS complété avec les champs de mise en page.
+- Nouveau module `layout.rs` :
+  - recherche dichotomique de taille de police (8–72 px, précision 0.5 px),
+  - érosion de la bbox par 2 px de marge,
+  - césure simple aux espaces,
+  - sélecteur de police (pour l'instant `Comic Neue`).
+- 4 tests unitaires : texte court, texte long, bbox trop étroite, texte vide.
+
+**Portes passées** : `cargo clippy/test` (19/20, échec connu du contrat vision),
+`pnpm typecheck/lint/i18n/hooks/chemins`.

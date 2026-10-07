@@ -133,11 +133,19 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 
 - [x] **T2.1** Assemblage de la bande virtuelle et découpe en tuiles aux **lignes uniformes** (espaces entre cases), avec fusion des détections aux jonctions. Tests sur des images **synthétiques** générées par script.
 - [x] **T2.2** Détection et segmentation des bulles et du texte, avec masque précis de l'intérieur.
-- [x] **T2.3** Classification des blocs : dialogue, narration, sfx, texte libre, à ignorer (filigranes, crédits, logos).
-- [x] **T2.4** OCR de l'anglais, regroupement des lignes d'une même bulle, ordre de lecture (haut vers bas, gauche vers droite).
-- [x] **T2.5** Effacement du texte dans les bulles de dialogue et de narration ; politique pour le texte hors bulles selon l'ADR 0010.
-- [x] **T2.6** Contrôle de résidu : second passage d'OCR sur la zone nettoyée, qui doit ne rien trouver. Sinon, le bloc passe en `review`.
-- [x] **T2.7** Non-régression contre les mesures de T0, budget mémoire respecté sur la machine cible.
+- [ ] **T2.3** Classification des blocs : dialogue, narration, sfx, texte libre, à ignorer (filigranes, crédits, logos).
+- [ ] **T2.4** OCR de l'anglais, regroupement des lignes d'une même bulle, ordre de lecture (haut vers bas, gauche vers droite).
+- [ ] **T2.5** Effacement du texte dans les bulles de dialogue et de narration ; politique pour le texte hors bulles selon l'ADR 0010.
+- [ ] **T2.6** Contrôle de résidu : second passage d'OCR sur la zone nettoyée, qui doit ne rien trouver. Sinon, le bloc passe en `review`.
+- [ ] **T2.7** Non-régression contre les mesures de T0, budget mémoire respecté sur la machine cible.
+
+> **Cases remises à l'état réel le 2026-10-07.** T2.3 à T2.7 étaient cochées
+> alors qu'aucun journal ne les mentionnait et qu'aucune inférence ne tournait :
+> le cœur de la phase était déclaré livré sans l'avoir été. Ce qui existe
+> réellement : la **logique pure** (`tile.rs`, `mask.rs`, `ocr.rs` pour le
+> regroupement et l'ordre de lecture, `residuel.rs`, `layout.rs`) et les **types**
+> du contrat (`vision.rs`). Ce qui manquait : l'**inférence**. Elle est désormais
+> mesurée faisable (`docs/spike-traduction.md` §9) et reste à intégrer.
 
 **Critère de sortie** : sur le corpus, détection et OCR au niveau des seuils validés en T0, résidu d'anglais sous le seuil, aucune tuile ne dépasse le budget mémoire.
 
@@ -532,3 +540,55 @@ synthétiques (crate `image` en dev).
 - Ne jamais réduire la police sous le seuil : garanti par `verifier_layout()` (T4.4).
 
 **Portes passées** : `pnpm typecheck/lint/i18n/hooks/chemins`, `cargo clippy/test` (19/20).
+
+### 2026-10-07 — T2 : ce qui marche, mesuré (aucune case cochée)
+
+**Décision de l'humain** : « Combler T2 », c'est-à-dire brancher l'inférence de
+vision qui manquait. Rappel de l'état trouvé, lu dans le code et non dans les
+cases : `cargo test` est **rouge** sur un test, et ce test nomme le trou.
+
+```
+contrat_moteur > chaque_methode_du_schema_a_une_reponse_enregistree FAILED
+méthodes du contrat sans réponse enregistrée : ["detect", "ocr", "inpaint", "loadPack"]
+```
+
+Tout le reste est vert (198 + 1 tests). Et la chaîne était rompue à l'interface :
+`chargerTraductionPage()` envoie `blocks: []` — personne ne produisait de blocs,
+donc la surcouche ne pouvait afficher que du vide.
+
+**Ce qui a été mesuré aujourd'hui** (détail : `docs/spike-traduction.md` §9) :
+
+1. **Runtime validé.** `ort 2.0.0-rc.13` en `load-dynamic` avec le
+   `onnxruntime.dll` déjà sur la machine. Parité Python/Rust : texte décodé
+   **identique**, 51 ms contre 193 ms. ADR 0007 passe de « proposée » à
+   « acceptée ». Toutes les versions 1.x d'`ort` sont *yanked* sur crates.io.
+2. **Détecteur de bulles sain.** RT-DETR-V2 à 0,98 sur les pages de dialogue,
+   0,33 sur une page d'illustration — la première mesure enflammée
+   (« il ne détecte rien sur les webtoons ») était **fausse**, la page n'a aucun
+   texte. int8 ≈ fp32 (0,332 contre 0,350).
+3. **L'étage manquant est la détection de lignes.** Un CTC ne lit qu'une ligne ;
+   sur une bulle entière il rend `LE` / `pe`. `manga_det_v0.2.onnx` (1,7 Mo,
+   Apache-2.0) découpe la bulle en 7 lignes et le texte réel est relu :
+   `PROBABLY` / `THE SAME PLACE` / `YOU GOT TO GET` / `CLOTHES FOR` / `DOGS`.
+4. **Un dictionnaire court d'une entrée supprimait chaque espace.** Le modèle a
+   18 710 classes, le `.txt` 18 708 caractères : l'indice 18709 — **l'espace** —
+   n'était mappé par rien, et la garde `i < len(DICT)` le jetait. Le texte
+   arrivait `YOUGOTTOGET`. Le contrôle de T0 comparait *après avoir retiré les
+   espaces*, donc il ne pouvait pas le voir.
+
+**Ce que cela change pour la suite** : la classification de **T2.3 est fournie
+par le détecteur** (`bubble`, `text_bubble`, `text_free`), le regroupement et
+l'ordre de lecture de **T2.4 sont déjà écrits** (`ocr.rs`), et le contrôle de
+résidu de **T2.6 aussi** (`residuel.rs`). Le travail restant est donc
+**l'inférence et son câblage**, pas l'algorithmique.
+
+**Prochaine tâche** : **T2.4 en premier** — parce que c'est le premier étage dont
+la sortie est visible par l'utilisateur. Sidecar vision (binaire Rust, NDJSON,
+méthodes `detect` / `ocr` / `inpaint` / `loadPack` du contrat de T1.3), puis
+client Rust, puis arbitrage `blocks: []` → blocs réels. **T2.5** (effacement
+LaMa, 8–11 s par tuile, poste dominant) vient après et reste le plus cher.
+
+**Réserves maintenues** : les seuils S1–S11 ne sont pas validés, le rapport ne
+conclut pas GO, et le contrôle positif de la détection (pages mangadex, score
+0,98) **n'est plus sur le disque** — à reconstruire avant toute affirmation de
+qualité.

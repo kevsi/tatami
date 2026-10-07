@@ -399,3 +399,115 @@ python traduire-bulles.py  # opus-mt par bulle : lisible, mediane 214 ms
 python comparatif-t05.py   # T0.5 : Gemini 3.5 (6/12 bulles) vs opus-mt ;
                            # Mistral 429 des le 1er appel ; quota Gemini ~14/j
 ```
+---
+
+## 9. T2 (2026-10-07) — la reconnaissance, enfin mesurée
+
+Cette section ne mesure pas la qualité : elle mesure **ce qui fonctionne**, sur
+la machine cible, avec les poids réels. Les seuils S1 à S11 restent non validés
+et le rapport ne conclut toujours pas GO.
+
+### 9.1 Le runtime d'ADR 0007 est validé, pas seulement choisi
+
+`ort 2.0.0-rc.13` (toutes les versions 1.x sont *yanked* sur crates.io, vérifié
+sur l'index sparse), en `load-dynamic`, avec le `onnxruntime.dll` déjà présent sur
+la machine. Parité Python/Rust sur la même image et les même bandes : **texte
+décodé identique**, inférence 51 ms en Rust contre 193 ms en Python. Détail et
+justification du choix de version : `docs/decisions/0007-runtime-vision-onnx.md`.
+
+### 9.2 Le détecteur de bulles fonctionne — mais il ne voit que ce qu'il y a
+
+`detector_int8.onnx` (RT-DETR-V2, 3 classes : `bubble`, `text_bubble`,
+`text_free`) sur les pages du corpus :
+
+| page | meilleur score | ce que c'est |
+|---|---|---|
+| `2-webtoonsen/p072.jpg` | **0,983** | page de dialogue |
+| `2-webtoonsen/p081.jpg` | **0,332** | page **d'illustration, sans texte** |
+
+La première mesure enflammée était « le détecteur ne détecte rien sur les
+webtoons ». Elle était fausse : `p081` a été choisie parce que la sonde d'OCR de
+T0 l'utilisait, pas parce qu'elle contient du texte ; à l'œil, c'est un plan de
+supermarché sans une seule bulle. La boîte `(-177,-41)-(177,40)` rendue à 0,33
+est une boîte dégénérée, pas une détection.
+
+Deux causes écartées par la mesure, et non par le raisonnement :
+
+- **la quantification int8** : fp32 0,350 contre int8 0,332 sur la même fenêtre,
+  soit la même précision à 3,8× le poids. La phrase de T0 « précision
+  identique » se confirme.
+- **l'échelle** : agrandir la fenêtre ×2 puis ×3 ne change rien (0,308 → 0,364).
+
+Le triage des 36 pages du corpus (une fenêtre de 640 px par tranche) donne six
+pages à plus de 0,97 : le détecteur est sain sur les pages qui ont du texte.
+
+### 9.3 L'étage qui manquait : la détection de LIGNES
+
+Le reconnaissance PP-OCRv6 est un CTC : **il ne lit qu'une ligne**. Appliqué à une
+bulle entière de 641×640 px, il rend des fragments (`LE`, `pe`) — mesuré. Il
+falait donc un troisième modèle, absent du dispositif de T0.
+
+`manga_det_v0.2.onnx` (1,7 Mo, Apache-2.0, même dépôt que le reconnaisseur déjà
+évalué) sort une carte de probabilité style DBNet. Recette PP-OCR standard
+(hauteur multiple de 32, division par 255, centrage, seuil 0,3, composantes
+connexes) sur la bulle `(178,149)-(819,789)` de `p072` : **7 composantes**, dont
+des lignes de 119 à 188 px de large, et le texte réel relu :
+
+```
+PROBABLY
+THE SAME PLACE
+YOU GOT TO GET
+CLOTHES FOR
+DOGS
+```
+
+Le troisième modèle n'était donc pas optionnel : sans détecteur de lignes, la
+chaîne ne produit que des fragments.
+
+### 9.4 Un dictionnaire court d'une entrée supprimeait chaque espace
+
+Le modèle a **18 710 classes**. Le fichier `PP-OCRv6_small_rec.txt` fournit
+**18 708 caractères**, plus l'entrée 0 réservée au blanc CTC. L'indice **18709**
+n'est donc mappé par rien.
+
+Cet indice est **l'espace**, et il est émis entre chaque mot. Mesuré sur du texte
+rendu dont on connaît la réponse :
+
+```
+attendu : 'YOU GOT TO GET CLOTHES'
+ids     : [67, 57, 63, 18709, 49, 57, 62, 18709, 62, 57, 18709, ...]
+```
+
+Le décodage de T0 (`if i != prev and i > 0 and i < len(DICT)`) **supprimait
+systématiquement 18709**, et le texte arrivait `YOUGOTTOGETCLOSHESFORDOGS`. Le
+contrôle de T0 ne pouvait pas le voir : sa comparaison se faisait **après avoir
+retiré les espaces des deux côtés**.
+
+Deux pièges voisins, pour qu'ils ne se reproduisent pas :
+
+- l'entrée 1748 du dictionnaire est **U+3000** (espace idéographique), pas une
+  espace ASCII. En Powershell elle s'affiche comme une espace : la console
+  convinced le contraire. Une normalisation `\u3000` → `' '` reste nécessaire,
+  mais elle ne suffit pas — c'est l'entrée manquante qui compte ;
+- `cargo` utilise `CARGO_HOME` (`...\scoop\persist\rustup\.cargo`), **pas**
+  `%USERPROFILE%\.cargo`. Chercher le crate au mauvais endroit donne un
+  « INTROUVABLE » qui ressemble à un réseau coupé.
+
+### 9.5 Latences mesurées sur la machine cible (i5-6200U, 2 cœurs, CPU seul)
+
+| étape | charge | par exécution |
+|---|---|---|
+| `detector_int8` (640×640) | 4,6–5,1 s | **2,1–2,5 s** |
+| `manga_det_v0.2` (lignes) | < 1 s | **100 ms** |
+| `PP-OCRv6_small_rec` (une ligne) | 846 ms | **51 ms** |
+
+Chargement des trois sessions simultanément : à mesurer (T0 annonçait 1 342 Mo
+pour le pic, jamais revérifié depuis).
+
+### 9.6 État du corpus
+
+Les pages **mangadex** qui portaient les mesures de détection de T0 (score max
+0,98 dans `logs/detection-reelle.json`) **ne sont plus sur le disque**. Il ne
+reste que les trois séries WEBTOONS, 36 pages. Le contrôle positif de la
+détection a donc disparu au même moment où il aurait servi : à reconstruire
+avant toute conclusion sur la qualité.

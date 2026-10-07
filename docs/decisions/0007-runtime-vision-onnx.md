@@ -1,7 +1,8 @@
 # 0007 — Runtime vision : ONNX Runtime, pas Python
 
 - Date : 2026-10-06
-- Statut : **proposée** — décide de la piste technique, à valider par l'humain
+- Statut : **acceptée** (2026-10-07) — l'humain a lancé T2 sur cette piste, et la
+  parité ONNX ↔ Python est mesurée (voir « Preuve de parité » plus bas)
 
 ## Contexte
 
@@ -67,3 +68,29 @@ poids, mais aucun interpréteur Python n'est requis par l'application.
 
 Ni la **qualité** (aucune métrique S2 à S8 n'est mesurée : pas de corpus), ni le
 **choix définitif des modèles**. Elle ne fixe que le runtime.
+
+## Preuve de parité (2026-10-07)
+
+La décision exigeait une « vérification de parité ONNX contre PyTorch ». Elle est
+faite, sur la machine cible, avec les poids réels de l'évaluation.
+
+- **crate** : `ort` **2.0.0-rc.13**, `default-features = false` +
+  `["std", "ndarray", "load-dynamic"]`. Toutes les versions **1.x sont yanked**
+  sur crates.io (vérifié sur l'index sparse : `1.15.2` → `1.16.3`, toutes
+  `yanked=True`), donc la ligne stable est inutilisable et la 2.0 est inevitable.
+- **DLL** : `ORT_DYLIB_PATH` pointant sur un `onnxruntime.dll` déjà présent sur la
+  machine (`onnxruntime` du venv d'évaluation). Pas de téléchargement de 400 Mo,
+  et `load-dynamic` évite le « shared library hell » décrit par la doc du crate
+  pour Windows.
+- **parité** : même image, mêmes bandes, même recette que la sonde Python de T0 :
+
+  | | chargement | lecture d'une bande | texte |
+  |---|---|---|---|
+  | Python (référence) | — | 193 ms | `y=0 : SSS1` |
+  | Rust (`ort`) | 846 ms | 51 ms | `y=0 : SSS1` |
+
+  Le texte décodé est **identique**, et Rust est 3,8× plus rapide sur l'inférence.
+
+Cette preuve porte sur le **runtime et la recette**, pas sur la qualité : un
+modèle qui rend du charabia rend le même charabia dans les deux langages. La
+qualité reste non mesurée, et les seuils S1–S11 toujours non validés.

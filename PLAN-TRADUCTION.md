@@ -148,7 +148,7 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 - [x] **T3.3** Glossaire par série (SQLite) : noms propres, termes récurrents, registre (tutoiement ou vouvoiement). Interface minimale, injection dans les prompts, cohérence entre chapitres.
 - [x] **T3.4** Boucle de raccourcissement : si la mise en page échoue, redemander une version plus courte avec le budget exact, avec un nombre maximal d'essais.
 - [x] **T3.5** Résilience : file d'attente, backoff, gestion des quotas et du mode hors ligne.
-- [ ] **T3.6** Confidentialité : afficher ce qui est envoyé au fournisseur (le texte, et l'image **seulement** si l'utilisateur l'active), consentement explicite, aucune clé ni texte dans les journaux.
+- [x] **T3.6** Confidentialité : afficher ce qui est envoyé au fournisseur (le texte, et l'image **seulement** si l'utilisateur l'active), consentement explicite, aucune clé ni texte dans les journaux.
 
 **Critère de sortie** : traductions qui respectent le nombre de blocs et le budget de caractères sur le corpus, glossaire appliqué de façon cohérente sur plusieurs chapitres, qualité au niveau du seuil validé en T0.
 
@@ -463,3 +463,15 @@ synthétiques (crate `image` en dev).
 `cargo test -- --test-threads=1` (189/189), `pnpm typecheck/lint/i18n:check/hooks:check/chemins`.
 
 **Prochaine tâche** : **T3.6** — confidentialité : affichage du contenu envoyé, consentement, aucune clé ni texte dans les journaux.
+
+### 2026-10-06 — T3.6 livrée
+
+**T3.6 — Confidentialité : consentement, résumé d'envoi, pas de fuite dans les journaux.**
+- `ErreurTraduction::ConsentementRefuse` + garde dans `traduire_page` : si le consentement est retiré, la traduction en ligne est refusée avant tout appel réseau.
+- `obtenir_consentement_traduction`, `definir_consentement_traduction`, `resume_traduction_page` exposés en Tauri.
+- `ResumeTraduction` : nombre de blocs, blocs avec texte, taille du prompt, fournisseur, mode hors ligne possible, `envoi_images=false` par défaut.
+- Fuite de journal corrigée : le warning d'échec Gemini logge le nombre de caractères, jamais un extrait du texte.
+- Frontend : checkbox de consentement, chargement au démarrage, aperçu des compteurs d'envoi, clés i18n FR/EN branchées.
+- Type TS `ResumeTraduction` ajouté dans `app/types/traduction.ts`.
+
+**Portes passées** : `cargo fmt/clippy/test` (189/189 + 1 commande morte), `pnpm typecheck/lint/i18n:check/hooks:check/chemins/build`.

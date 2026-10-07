@@ -44,20 +44,35 @@
 14. **Phase T2.7 — Budget mémoire et non-régression** — module `bench.rs` avec `empreinte_tuile`, `tuile_dans_budget`, `tuiles_max_simultanees`. Budgets : 64 Mo/tuile, 256 Mo pipeline. 3 tests unitaires.
     - Portes passées : `cargo clippy/test` (170/170 mono-thread), frontend gates vertes.
 
-**Phase T2 livrée** — pipeline vision complet : tuiles → masques → classification → OCR → effacement → contrôle de résidu → benchmarks mémoire.
+15. **Phase T3.1 — Trait `Translator`** — module `translator.rs` avec `Translator` (async), `GeminiTranslator` et `LocalTranslator`. 3 tests unitaires.
+    - Portes passées : `cargo clippy/test` (173/173 mono-thread), frontend gates vertes.
+
+16. **Phase T3.2 — Prompt par page + validation JSON** — modules `prompt.rs` et `translator.rs` : `construire_prompt`, `calculer_budget`, `schema_traduction`, boucle de traduction avec validation du JSON et vérification du nombre de blocs. 3 tests unitaires.
+    - Portes passées : `cargo clippy/test` (183/183 mono-thread), frontend gates vertes.
+
+17. **Phase T3.3 — Glossaire par série (SQLite v10)** — table `glossary` avec `UNIQUE(series_key, term)`, CRUD complet, injection dans les prompts. 1 test unitaire.
+    - Portes passées : `cargo clippy/test` (185/185 mono-thread), frontend gates vertes.
+
+18. **Phase T3.4 — Injection du glossaire dans le prompt** — `GlossaryEntry` dans `prompt.rs`, `traduire_page` charge le glossaire depuis le store. Portes passées : `cargo clippy/test` (185/185), frontend gates vertes.
+
+19. **Phase T3.5 — Résilience** — backoff exponentiel avec jitter (500 ms–10 s), détection du quota HTTP 429 (`ErreurTraduction::Quota`), bascule automatique sur `LocalTranslator`, 4 tests unitaires.
+    - Portes passées : `cargo clippy/test` (189/189 mono-thread), frontend gates vertes.
+
+20. **Phase T3.6 — Confidentialité** — `ConsentementRefuse` + garde dans `traduire_page`, commandes Tauri `obtenir/definir_consentement_traduction` et `resume_traduction_page`, type `ResumeTraduction` (FR/EN), UI de consentement dans les réglages, fuite de journal corrigée.
+    - Portes passées : `cargo fmt/clippy/test` (189/189 + commande morte), `pnpm typecheck/lint/i18n:check/hooks:check/chemins/build`.
+
+**Phase T3 livrée** — traduction complète : trait, prompt, glossaire, résilience, confidentialité.
 
 ### En cours
-- **T3.6 — Confidentialité** : travail Rust non commité dans `src-tauri/src/traduction.rs`
-  (`consentement_traduction_en_ligne`, `ResumeTraduction`). Non vérifié, aucune commande
-  enregistrée dans `main.rs` — donc non câblable côté interface en l'état.
+- (aucune)
 
 ### Next steps
 1. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
 2. **Retirer la liste blanche S2** de `main.rs:387-393` : les trois commandes sont maintenant
    appelées par l'interface, la porte « commande morte » doit de nouveau mordre.
-3. **T3.6** — finir la confidentialité : le réglage `consentement_traduction_en_ligne` existe
-   côté base, mais ni l'enregistrement Tauri ni l'écran qui le pilote.
-4. **T3.1** — Trait `Translator` côté Rust. Fournisseurs : LLM en ligne (clé de l'utilisateur dans le trousseau de l'OS) et modèle local si l'ADR 0008 le retient.
+3. **T4.1** — polices libres adaptées à la bande dessinée, licence confirmée en T0.1,
+   embarquées dans l'app. Support complet du français : accents, « œ », guillemets « »,
+   espaces insécables avant `; : ! ?`.
 
 ---
 

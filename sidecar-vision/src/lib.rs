@@ -24,4 +24,5 @@
 //! versionnés et vérifiés (`pack.rs` côté application).
 
 pub mod dico;
+pub mod lignes;
 pub mod ocr;

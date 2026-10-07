@@ -130,15 +130,14 @@ impl Lecteur {
         let (forme, valeurs) = sortie[0]
             .try_extract_tensor::<f32>()
             .map_err(|e| ErreurLecture::Modele(e.to_string()))?;
-        let dims: &[i64] = &forme[..];
         // [1, pas_de_temps, classes]
-        if dims.len() != 3 {
+        if forme.len() != 3 {
             return Err(ErreurLecture::FormeSortie {
-                trouve: dims.len(),
+                trouve: forme.len(),
                 attendu: 3,
             });
         }
-        let (temps, classes) = (dims[1] as usize, dims[2] as usize);
+        let (temps, classes) = (forme[1] as usize, forme[2] as usize);
         let ids: Vec<i64> = (0..temps)
             .map(|t| {
                 let ligne = &valeurs[t * classes..(t + 1) * classes];
@@ -165,14 +164,13 @@ fn mesurer_classes(session: &mut Session) -> Result<usize, ErreurLecture> {
     let (forme, _) = sortie[0]
         .try_extract_tensor::<f32>()
         .map_err(|e| ErreurLecture::Modele(e.to_string()))?;
-    let dims: &[i64] = &forme[..];
-    if dims.len() != 3 {
+    if forme.len() != 3 {
         return Err(ErreurLecture::FormeSortie {
-            trouve: dims.len(),
+            trouve: forme.len(),
             attendu: 3,
         });
     }
-    Ok(dims[2] as usize)
+    Ok(forme[2] as usize)
 }
 
 #[cfg(test)]

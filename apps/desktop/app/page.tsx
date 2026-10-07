@@ -330,6 +330,8 @@ type Reader = {
    *  la progression, sans dépendre d'une fiche ouverte. */
   mangaUrl?: string;
   coverUrl?: string | null;
+  /** Blocs de traduction par index de page, quand la surcouche est activée. */
+  blocsParPage?: Record<number, PageTranslation>;
 };
 type Tag = { key: string; title: string };
 type LibraryItem = {
@@ -1091,6 +1093,8 @@ export default function Home() {
   const [chapitresVisibles, setChapitresVisibles] = useState<LibraryItem | null>(null);
   const [reader, setReader] = useState<Reader | null>(null);
   const [readerLoading, setReaderLoading] = useState(false);
+  const [blocsTraduction, setBlocsTraduction] = useState<Record<number, PageTranslation>>({});
+  const [afficherTraduction, setAfficherTraduction] = useState(false);
   const [challenge, setChallenge] = useState<string | null>(null);
   const [challengeBusy, setChallengeBusy] = useState(false);
   // Vérification demandée par un TÉLÉCHARGEMENT (et non par une lecture).
@@ -3319,13 +3323,23 @@ function onScrollBande() {
       setScrollY(y);
     });
   }
-  // Le compteur de pages suit la page réellement visible.
-  let i = 0;
-  for (let k = 0; k < offsets.length; k += 1) {
-    if ((offsets[k] ?? 0) <= y + 8) i = k;
-    else break;
+  // Le compteur de pages suit la page réellement visible — mais seulement quand
+  // `offsets` est calculable, c'est-à-dire quand la bande est virtualisable.
+  //
+  // Mesuré le 2026-07 : une source scriptée ne renvoie que `{id, url}`, donc
+  // `hauteurs` est une suite de zéros, `offsets` aussi, et la boucle ci-dessous
+  // retenait `offsets.length - 1` — soit « 73 / 73 » à chaque défilement, alors
+  // que la page visible était la 3ᵉ. Même raison que pour le positionnement de
+  // la bande (effet suivant) : en flux normal, c'est la géométrie réelle du DOM
+  // qui fait foi, donc c'est l'observateur d'intersection qui suit la page.
+  if (bandeVirtualisable) {
+    let i = 0;
+    for (let k = 0; k < offsets.length; k += 1) {
+      if ((offsets[k] ?? 0) <= y + 8) i = k;
+      else break;
+    }
+    if (reader && i !== reader.index) setReader((r) => (r ? { ...r, index: i } : r));
   }
-  if (reader && i !== reader.index) setReader((r) => (r ? { ...r, index: i } : r));
 }
 
 /** Place la bande sur la page courante à l'ouverture d'un chapitre.
@@ -3378,13 +3392,42 @@ useEffect(() => {
   if (!root) return;
   const observer = new IntersectionObserver(
     (entries) => {
+      // Parmi les entrées intersectées, on retient **la plus visible**, pas la
+      // dernière du lot.
+      //
+      // Mesuré le 2026-10-07 : une source scriptée ne renvoie que `{id, url}`,
+      // donc `hauteurs` est vide de zéros, `bandeVirtualisable` vaut `false` et
+      // la bande s'affiche en flux normal. Au montage, les images n'ont pas
+      // encore de taille : elles sont toutes empilées en haut, et le premier
+      // rappel de l'observateur les déclare **toutes** intersectées. La boucle
+      // gardait la dernière → le compteur affichait la dernière page alors que
+      // la bande était au début. Les sources natives, elles, ont des
+      // dimensions : une seule image dépasse le seuil, le symptôme n'existe pas.
+      let meilleure: { i: number; visible: number } | null = null;
+      const borne = root.getBoundingClientRect();
       for (const entry of entries) {
         if (!entry.isIntersecting) continue;
+        const r = entry.boundingClientRect;
+        // Pas encore mise en page : elle ne peut pas être « la page visible ».
+        if (r.height <= 0) continue;
+        const visible = Math.min(r.bottom, borne.bottom) - Math.max(r.top, borne.top);
+        if (visible <= 0) continue;
         const i = stripImages.current.indexOf(entry.target as HTMLImageElement);
-        if (i >= 0) setReader((r) => (r && r.index !== i ? { ...r, index: i } : r));
+        if (i < 0) continue;
+        if (!meilleure || visible > meilleure.visible) meilleure = { i, visible };
+      }
+      if (meilleure) {
+        const { i } = meilleure;
+        setReader((r) => (r && r.index !== i ? { ...r, index: i } : r));
       }
     },
-    { root, threshold: 0.6 },
+    // `threshold: 0`, et non 0.6 : dans une fenêtre de 627 px, une page webtoon
+    // de 913 px ne peut jamais être visible à 60 % — le seuil était donc
+    // inatteignable et l'observateur ne déclenchait plus jamais (mesuré le
+    // 2026-07 : le compteur restait figé à « 1 / 73 » pendant tout le
+    // défilement). Comme c'est le callback qui choisit la page la plus
+    // visible, un seuil bas ne fait qu'élargir le lot de candidats.
+    { root, threshold: 0 },
   );
   for (const el of stripImages.current) if (el) observer.observe(el);
   return () => observer.disconnect();

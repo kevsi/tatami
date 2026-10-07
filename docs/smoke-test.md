@@ -493,13 +493,58 @@ apparaître à côté de `tatami.db` (`store.rs:284-295`) — c'est la sauvegard
 
 ---
 
+## §S. Sources personnalisées (S2)
+
+Écrit le 2026-10-07, **après** le commit `c83e56f`. **Non exécuté à la rédaction** : c'est
+la preuve qui manque à S2.2 et au critère de sortie de la phase S.
+
+Le chemin critique est le **dossier** : Rust copie le script dans
+`%APPDATA%\Tatami\sources\` (`custom_source.rs:26`) et le moteur scanne
+`File(appData, "Tatami/sources")` (`Server.kt:319-321`). Si les deux divergent, l'import
+répond « ok » et la source n'apparaît jamais — c'est le défaut à chercher en premier.
+
+### §S.1 Import
+
+| # | Geste | Attendu | Preuve dans le code |
+|---|---|---|---|
+| 1 | Réglages → section « Sources perso » | panneau présent, liste vide, message « Aucune source personnalisée. » | `page.tsx` section `sources.perso.titre` ; clés `sources.perso.vide` |
+| 2 | Bouton « Importer un script… » | dialogue natif ouvert, filtre `*.js` | `open({ filters: [{ extensions: ['js'] }] })` ; capability `dialog:allow-open` |
+| 3 | **Annuler** le dialogue | aucun message, aucun fichier créé, bouton non bloqué | le `return` sur annulation remet `importPersoEnCours` à faux |
+| 4 | Choisir `docs/exemple-source.js` | toast « Source "…" importée. », la ligne apparaît (nom, langue `JA`, date du jour) | `invoke('importer_source', { path })` |
+| 5 | `%APPDATA%\Tatami\sources\` | un `.js` présent, base `custom_sources` à 1 ligne | `custom_source.rs` §Commandes |
+
+### §S.2 Le moteur la voit-elle
+
+| # | Geste | Attendu |
+|---|---|---|
+| 6 | Catalogues | la source apparaît dans la grille, **badge « Perso »**, nom lisible (pas `custom:<id>`) |
+| 7 | Ouvrir la source, faire une recherche | résultats réels — le script est exécuté par Nashorn |
+
+Un défaut ici n'est pas un défaut d'import : c'est le `ScriptedSourceLoader` (dossier,
+WatchService) ou le script lui-même.
+
+### §S.3 Désactivation et suppression
+
+| # | Geste | Attendu |
+|---|---|---|
+| 8 | Interrupteur de la tuile | source grisée, comme une source native (même code, clé `s.name`) |
+| 9 | Réglages → ✕ sur la ligne | la ligne bascule sur « Supprimer {nom} » + « Annuler » — **pas** de dialogue natif |
+| 10 | « Annuler » | la ligne revient à son état initial, rien n'est effacé |
+| 11 | « Supprimer {nom} » | toast « Source "…" supprimée. », ligne disparue, `.js` absent du dossier |
+| 12 | Catalogues | la source a disparu de la grille |
+
+Le dialogue natif de l'étape 2 n'est **pas** testable par CDP (leçon `AGENTS.md` §14) :
+l'étape 4 se vérifie à l'œil, ou par la présence du fichier sur le disque.
+
+---
+
 ## 12. Récapitulatif à coller dans le rapport de jalon
 
 ```text
 Smoke test — Tatami — <date> — <agent / personne>
 Environnement : Windows <version>, <RAM>, JDK <version>, Rust <version>, Node <version>, pnpm <version>
 Source de référence utilisée : <NOM_SOURCE>
-Étapes jouées : T01 … T11 (+ T09 : non déclenchable)
+Étapes jouées : T01 … T11 (+ T09 : non déclenchable) + §S
 Résultat : <n> réussites / <n> échecs
 Chaque échec : n° d'étape, clic exact, attendu, obtenu, capture
 Nettoyage effectué : favoris / historique / signets / file / sources désactivées / réglages

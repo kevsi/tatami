@@ -47,10 +47,17 @@
 **Phase T2 livrée** — pipeline vision complet : tuiles → masques → classification → OCR → effacement → contrôle de résidu → benchmarks mémoire.
 
 ### En cours
-- (aucune)
+- **T3.6 — Confidentialité** : travail Rust non commité dans `src-tauri/src/traduction.rs`
+  (`consentement_traduction_en_ligne`, `ResumeTraduction`). Non vérifié, aucune commande
+  enregistrée dans `main.rs` — donc non câblable côté interface en l'état.
 
 ### Next steps
-1. **T3.1** — Trait `Translator` côté Rust. Fournisseurs : LLM en ligne (clé de l'utilisateur dans le trousseau de l'OS) et modèle local si l'ADR 0008 le retient.
+1. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
+2. **Retirer la liste blanche S2** de `main.rs:387-393` : les trois commandes sont maintenant
+   appelées par l'interface, la porte « commande morte » doit de nouveau mordre.
+3. **T3.6** — finir la confidentialité : le réglage `consentement_traduction_en_ligne` existe
+   côté base, mais ni l'enregistrement Tauri ni l'écran qui le pilote.
+4. **T3.1** — Trait `Translator` côté Rust. Fournisseurs : LLM en ligne (clé de l'utilisateur dans le trousseau de l'OS) et modèle local si l'ADR 0008 le retient.
 
 ---
 
@@ -91,14 +98,23 @@
 
 ### S2 — Interface
 
-- [ ] **S2.1** — Écran « Sources perso » : bouton « Importer un script (.js) » (dialogue natif), liste
+- [x] **S2.1** — Écran « Sources perso » : bouton « Importer un script (.js) » (dialogue natif), liste
   des sources installées (nom, langue, date), bouton supprimer avec confirmation.
   i18n FR + EN. Clés à ajouter dans `i18n.ts`.
   _Critère : `pnpm typecheck/lint/i18n:check/hooks:check/chemins:check` vertes._
+  _Prouvé : commit `c83e56f`. typecheck 0 erreur ; lint 0 erreur (4 warnings
+  `exhaustive-deps` préexistants) ; `i18n:check` vert (281 clés FR = 281 EN) ; `hooks:check`
+  et `chemins:check` verts ; `next build` OK — 2026-10-07._
+  _Confirmation de suppression en deux temps dans la ligne : la capability ne vaut que
+  `dialog:allow-open`, un dialogue natif de confirmation aurait exigé de l'élargir._
 
 - [ ] **S2.2** — Intégration dans l'écran Sources : les sources custom apparaissent dans la grille avec
   un badge « Perso ». Désactivation possible comme les sources natives.
   _Critère : smoke test manuel (docs/smoke-test.md §S)._
+  _Code écrit et commité (`c83e56f`) : badge « Perso », nom affiché via `displayName` (le
+  moteur nomme une source perso `custom:<id>`, `Server.kt:442`), désactivation par
+  `s.name` donc sans cas particulier. **Reste** : exécuter `docs/smoke-test.md` §S —
+  la section est écrite, jamais jouée._
 
 ### Critère de sortie de la phase S
 
@@ -127,6 +143,12 @@
   `5758ff3` T2.1 tuiles, `539d3ef` T2.2 masques, `02f63a5` T2.3 classification, `b541844` T2.4 OCR/ordre de lecture,
   `ed2d745` T2.5 stratégie d'effacement, `a8fb87a` T2.6 contrôle de résidu, `d6b9121` T2.7 benchmarks mémoire,
   `c6f7dc9` T3.1 trait Translator, `48e7c0a` T3.2 prompt par page + validation, `c375c8c` T3.3 glossaire SQLite v10,
-  `de53744` T3.4 injection glossaire dans le prompt, `5b2edf8` T3.5 résilience backoff/quota/fallback
+  `de53744` T3.4 injection glossaire dans le prompt, `5b2edf8` T3.5 résilience backoff/quota/fallback,
+  `c83e56f` S2.1+S2.2 écran « Sources perso » et badge « Perso »
 - Toutes les vérifications passent (clippy, typecheck, lint, i18n, hooks, chemins).
-- Prochaine phase : **T3.6 — Confidentialité** (affichage du contenu envoyé, consentement, aucune clé ni texte dans les journaux).
+- Prochaines tâches : S2.2 (jouer `docs/smoke-test.md` §S), retrait de la liste blanche S2 dans
+  `main.rs`, puis T3.6 — Confidentialité.
+- Note d'hygiène : `main.rs` était modifié (+4 lignes) au début de la session du 2026-10-07 et
+  ne l'est plus, sans commit ni crochet git ni hook qui l'expliquerait (`.git/hooks` = samples
+  seuls). Le contenu est identique à `HEAD`. À surveiller : si T3.6 attendait un
+  enregistrement de commande dans `main.rs`, il manque.

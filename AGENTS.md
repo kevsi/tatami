@@ -1120,3 +1120,31 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   processus héritent de l'environnement de démarrage d'OpenCode ; la clé se
   lit alors dans `HKCU:\Environment` et s'injecte dans le seul processus du
   script — jamais affichée, jamais journalisée.
+- **Le nom qu'une source porte n'est pas son identifiant, et la tuile
+  affiche le mauvais des deux.** Mesuré le 2026-10-07 : le moteur nomme une
+  source personnalisée `custom:<id>` (`Server.kt:442`) et porte le nom lisible
+  dans un champ séparé, `displayName`. Une tuile qui affiche `s.name` affiche
+  donc `custom:mon-source` — et la désactivation, indexée sur ce même nom, doit
+  **garder** `s.name` : c'est cet identifiant que le moteur attend en entrée.
+  Corollaire : à l'intégration, lire le producteur (`listSources`) avant de
+  choisir le champ affiché ; « le nom de la source » n'est pas un champ unique.
+- **Des clés i18n déclarées et jamais branchées prouvent qu'un écran manque,
+  elles ne prouvent pas qu'une clé est oubliée.** `pnpm i18n:check` sortait les
+  **11 noms** de `sources.perso.*` + `catalogue.perso` : ce n'était pas une
+  chasse à la clé morte, c'était la mesure exacte de S2.1 (0 composant, 0 appel
+  de commande) alors que le type TS et le CSS existaient déjà. Une clé morte
+  dans un lot en cours = l'écran n'est pas écrit.
+- **Une porte qui compte les clés ne dit pas si l'écran existe.** Corollaire du
+  précédent : 281 clés FR = 281 EN et « aucune clé morte » ne disent rien sur
+  la moitié fonctionnelle — l'effet, la commande, le clic. C'est le smoke test
+  (§S) qui la dit, d'où une section de smoke test écrite **avec** la tâche et
+  laissée « jamais exécutée » tant qu'elle ne l'a pas été.
+- **Un arbre de travail peut changer sous vous pendant la session.** Mesuré le
+  2026-10-07 : `main.rs` est passé *modifié (+4)* → *propre* → *modifié (+4,
+  mais 4 autres lignes)* entre deux commandes, sans commit, sans
+  `git checkout`, sans stash et sans crochet (`.git/hooks` = 14 `.sample`).
+  Explication trouvée : une **autre session** écrivait T3.6 dans le dépôt
+  (`traduire_page`, `obtenir_consentement_traduction`…). Règle : ne jamais
+  conclure « ces lignes ont disparu » ni « mon commit les a mangées » sans
+  relire `git diff` **à l'instant de la conclusion**, et avertir l'humain quand
+  deux sessions partagent le même dossier de travail.

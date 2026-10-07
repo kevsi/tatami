@@ -501,6 +501,52 @@ pub async fn traduire_page(
         return Err(ErreurTraduction::ConsentementRefuse.to_string());
     }
 
+    // 1. Vérifier le cache d'abord.
+    if let Ok(Some((cached_page, cached_blocks))) = store.get_page_translation(&page.page_id) {
+        // Convertir les données du cache vers PageTranslation.
+        let blocks: Vec<BlocTraduction> = cached_blocks
+            .into_iter()
+            .map(|b| BlocTraduction {
+                id: b.id,
+                type_bloc: match b.type_bloc.as_str() {
+                    "dialogue" => TypeBloc::Dialogue,
+                    "narration" => TypeBloc::Narration,
+                    "sfx" => TypeBloc::Sfx,
+                    "free_text" => TypeBloc::FreeText,
+                    _ => TypeBloc::Ignore,
+                },
+                bbox: Bbox {
+                    x: b.bbox_x,
+                    y: b.bbox_y,
+                    w: b.bbox_w,
+                    h: b.bbox_h,
+                },
+                original_text: b.original_text,
+                translated_text: b.translated_text,
+                reading_order: b.reading_order,
+                status: match b.status.as_str() {
+                    "review" => StatutBloc::Review,
+                    "fallback" => StatutBloc::Fallback,
+                    _ => StatutBloc::Ok,
+                },
+                confidence: b.confidence,
+                font_size: None,
+                font_family: None,
+                line_breaks: None,
+            })
+            .collect();
+
+        return Ok(PageTranslation {
+            page_id: cached_page.page_id,
+            manga_url: cached_page.manga_url,
+            chapter_url: cached_page.chapter_url,
+            source: cached_page.source,
+            width: cached_page.width,
+            height: cached_page.height,
+            blocks,
+        });
+    }
+
     // Récupérer le glossaire de la série.
     use crate::prompt::GlossaryEntry;
     let entries = store
@@ -517,9 +563,61 @@ pub async fn traduire_page(
 
     let translator = GeminiTranslator::new();
     let fallback = LocalTranslator::new();
-    traduire_page(&translator, &fallback, &page, &glossaire)
+    let page_traduite = traduire_page(&translator, &fallback, &page, &glossaire)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // 2. Sauvegarder en cache si la traduction a réussi (au moins un bloc OK).
+    if page_traduite.blocks.iter().any(|b| b.status == StatutBloc::Ok) {
+        // Convertir PageTranslation vers PageTranslationRow + BlockRow pour le cache.
+        use crate::store::{PageTranslationRow, BlockRow};
+        let now = crate::store::now_ms();
+
+        let page_row = PageTranslationRow {
+            page_id: page_traduite.page_id.clone(),
+            manga_url: page_traduite.manga_url.clone(),
+            chapter_url: page_traduite.chapter_url.clone(),
+            source: page_traduite.source.clone(),
+            width: page_traduite.width,
+            height: page_traduite.height,
+            pipeline_version: "0.1".into(), // TODO: version réelle du pipeline
+            models: "gemini-3.8-flash".into(), // TODO: modèle réel utilisé
+            source_lang: "en".into(),
+            target_lang: "fr".into(),
+            clean_image_ref: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let block_rows: Vec<BlockRow> = page_traduite
+            .blocks
+            .iter()
+            .map(|b| BlockRow {
+                id: b.id.clone(),
+                page_id: page_traduite.page_id.clone(),
+                type_bloc: format!("{:?}", b.type_bloc).to_lowercase(),
+                bbox_x: b.bbox.x,
+                bbox_y: b.bbox.y,
+                bbox_w: b.bbox.w,
+                bbox_h: b.bbox.h,
+                original_text: b.original_text.clone(),
+                translated_text: b.translated_text.clone(),
+                reading_order: b.reading_order,
+                status: format!("{:?}", b.status).to_lowercase(),
+                confidence: b.confidence,
+                overrides: None,
+                created_at: now,
+                updated_at: now,
+            })
+            .collect();
+
+        // Sauvegarder sans bloquer la réponse si erreur.
+        if let Err(e) = store.save_page_translation(&page_row, &block_rows) {
+            tracing::warn!("échec sauvegarde traduction en cache : {e}");
+        }
+    }
+
+    Ok(page_traduite)
 }
 
 /// Traduit un texte anglais vers le français.

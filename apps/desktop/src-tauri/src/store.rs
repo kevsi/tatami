@@ -933,6 +933,94 @@ impl Store {
         Ok(())
     }
 
+    /// Récupère une page traduite et ses blocs depuis la base.
+    ///
+    /// Retourne `None` si la page n'est pas en cache.
+    pub fn get_page_translation(
+        &self,
+        page_id: &str,
+    ) -> Result<Option<(PageTranslationRow, Vec<BlockRow>)>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+
+        // Récupérer la page
+        let mut stmt = conn
+            .prepare(
+                r#"SELECT page_id, manga_url, chapter_url, source, width, height,
+                          pipeline_version, models, source_lang, target_lang, clean_image_ref,
+                          created_at, updated_at
+                     FROM page_translations
+                     WHERE page_id = ?1"#,
+            )
+            .map_err(|e| format!("select page_translation : {e}"))?;
+
+        let page: Option<PageTranslationRow> = stmt
+            .query_row(rusqlite::params![page_id], |row| {
+                Ok(PageTranslationRow {
+                    page_id: row.get(0)?,
+                    manga_url: row.get(1)?,
+                    chapter_url: row.get(2)?,
+                    source: row.get(3)?,
+                    width: row.get(4)?,
+                    height: row.get(5)?,
+                    pipeline_version: row.get(6)?,
+                    models: row.get(7)?,
+                    source_lang: row.get(8)?,
+                    target_lang: row.get(9)?,
+                    clean_image_ref: row.get(10)?,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
+                })
+            })
+            .optional()
+            .map_err(|e| format!("query page_translation : {e}"))?;
+
+        let page = match page {
+            Some(p) => p,
+            None => return Ok(None),
+        };
+
+        // Récupérer les blocs
+        let mut stmt = conn
+            .prepare(
+                r#"SELECT id, page_id, type, bbox_x, bbox_y, bbox_w, bbox_h,
+                          original_text, translated_text, reading_order, status,
+                          confidence, overrides, created_at, updated_at
+                     FROM blocks
+                     WHERE page_id = ?1
+                     ORDER BY reading_order"#,
+            )
+            .map_err(|e| format!("select blocks : {e}"))?;
+
+        let blocks: Vec<BlockRow> = stmt
+            .query_map(rusqlite::params![page_id], |row| {
+                Ok(BlockRow {
+                    id: row.get(0)?,
+                    page_id: row.get(1)?,
+                    type_bloc: row.get(2)?,
+                    bbox_x: row.get(3)?,
+                    bbox_y: row.get(4)?,
+                    bbox_w: row.get(5)?,
+                    bbox_h: row.get(6)?,
+                    original_text: row.get(7)?,
+                    translated_text: row.get(8)?,
+                    reading_order: row.get(9)?,
+                    status: row.get(10)?,
+                    confidence: row.get(11)?,
+                    overrides: row.get(12)?,
+                    created_at: row.get(13)?,
+                    updated_at: row.get(14)?,
+                })
+            })
+            .map_err(|e| format!("query blocks : {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("collect blocks : {e}"))?;
+
+        Ok(Some((page, blocks)))
+    }
+
     /// Does this page already carry a bookmark? Derived on the interface side
     /// from `list_bookmarks`: one call feeds both the reader button state and
     /// the chapter grid badges, so an extra command would be dead weight.

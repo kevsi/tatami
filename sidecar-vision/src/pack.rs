@@ -40,6 +40,18 @@ pub struct Pack {
     pub dictionnaire: PathBuf,
     /// Effacement, absent tant que T2.5 n'est pas fait.
     pub effacement: Option<PathBuf>,
+    /// Traduction EN→FR (opus-mt), optionnelle (T3).
+    pub traduction: Option<TraductionPack>,
+}
+
+/// Modèles de traduction EN→FR.
+#[derive(Debug, Clone)]
+pub struct TraductionPack {
+    pub encoder: PathBuf,
+    pub decoder: PathBuf,
+    pub decoder_with_past: PathBuf,
+    pub vocab_json: PathBuf,
+    pub tokenizer_model: PathBuf,
 }
 
 impl Pack {
@@ -49,6 +61,9 @@ impl Pack {
         let mut c = vec!["detect", "ocr"];
         if self.effacement.is_some() {
             c.push("inpaint");
+        }
+        if self.traduction.is_some() {
+            c.push("translate");
         }
         c
     }
@@ -119,6 +134,32 @@ impl Pack {
             }
         };
 
+        let traduction = {
+            let trad_dir = racine.join("traduction");
+            let encoder = trad_dir.join("encoder.onnx");
+            let decoder = trad_dir.join("decoder.onnx");
+            let decoder_with_past = trad_dir.join("decoder_with_past.onnx");
+            let vocab_json = trad_dir.join("vocab.json");
+            let tokenizer_model = trad_dir.join("tokenizer.model");
+
+            if encoder.is_file()
+                && decoder.is_file()
+                && decoder_with_past.is_file()
+                && vocab_json.is_file()
+                && tokenizer_model.is_file()
+            {
+                Some(TraductionPack {
+                    encoder,
+                    decoder,
+                    decoder_with_past,
+                    vocab_json,
+                    tokenizer_model,
+                })
+            } else {
+                None
+            }
+        };
+
         Ok(Pack {
             racine: racine.to_path_buf(),
             id,
@@ -128,6 +169,7 @@ impl Pack {
             reconnaissance: racine.join("ocr").join("rec.onnx"),
             dictionnaire: racine.join("ocr").join("rec.txt"),
             effacement,
+            traduction,
         })
     }
 }

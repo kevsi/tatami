@@ -35,3 +35,4 @@ pub mod lignes;
 pub mod ocr;
 pub mod pack;
 pub mod proto;
+pub mod traduction;

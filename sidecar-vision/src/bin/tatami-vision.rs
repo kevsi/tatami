@@ -13,6 +13,7 @@
 //! - `ocr` : texte d'une culture, ligne par ligne, avec les boîtes.
 //! - `inpaint` : **indisponible tant que T2.5 n'est pas fait** — répond
 //!   `MODEL_MISSING`, ce qui est une réponse honnête et non un silence.
+//! - `translate` : traduction EN→FR (opus-mt), indisponible sans pack traduction.
 //! - `shutdown` : sort proprement.
 
 use std::io::{BufRead, Write};
@@ -26,6 +27,7 @@ use tatami_vision::pack::Pack;
 use tatami_vision::proto::{
     Code, ImageParams, Reponse, Requete, VERSION_MOTEUR, VERSION_PROTOCOLE,
 };
+use tatami_vision::traduction::TraducteurLocal;
 
 /// Côté maximal d'une image acceptée par `detect` : au-delà, le détecteur
 /// déforme et rend des boîtes absurdes. On refuse donc en nommant la cause,
@@ -41,6 +43,8 @@ struct Moteurs {
     /// Effacement : chargé seulement si le pack contient LaMa. Son absence est
     /// un état propre (`inpaint` indisponible), pas une panne.
     effaceur: Option<Effaceur>,
+    /// Traduction : chargée seulement si le pack contient opus-mt.
+    traducteur: Option<TraducteurLocal>,
 }
 
 fn main() {
@@ -323,6 +327,41 @@ fn repondre(requete: &Requete, moteurs: &mut Option<Moteurs>) -> Reponse {
                 Err(e) => Reponse::echec(id, Code::Internal, e.to_string()),
             }
         }
+        "translate" => {
+            let Some(m) = moteurs.as_mut() else {
+                return Reponse::echec(
+                    id,
+                    Code::ModelMissing,
+                    "aucun pack chargé : `loadPack` d'abord",
+                );
+            };
+            let Some(traducteur) = m.traducteur.as_ref() else {
+                return Reponse::echec(
+                    id,
+                    Code::ModelMissing,
+                    "traduction indisponible : le modèle opus-mt n'est pas dans le pack \
+                     (traduction/). `capabilities` le dit aussi.",
+                );
+            };
+            let Some(texte) = requete.params.get("text").and_then(|v| v.as_str()) else {
+                return Reponse::echec(
+                    id,
+                    Code::ParseError,
+                    "`translate` attend un paramètre `text` (chaîne)",
+                );
+            };
+            let debut = std::time::Instant::now();
+            match traducteur.traduire(texte) {
+                Ok(traduit) => Reponse::succes(
+                    id,
+                    serde_json::json!({
+                        "translatedText": traduit,
+                        "ms": debut.elapsed().as_millis(),
+                    }),
+                ),
+                Err(e) => Reponse::echec(id, Code::Internal, e.to_string()),
+            }
+        }
         "shutdown" => Reponse::succes(id, serde_json::json!({ "ok": true })),
         autre => Reponse::echec(id, Code::ParseError, format!("méthode inconnue : {autre}")),
     }
@@ -357,12 +396,24 @@ fn charger(pack: &Pack) -> Result<Moteurs, (Code, String)> {
         },
         None => None,
     };
+    // Traduction : optionnelle, comme l'effacement.
+    let traducteur = match &pack.traduction {
+        Some(traduction_pack) => match TraducteurLocal::ouvrir(traduction_pack) {
+            Ok(t) => Some(t),
+            Err(e) => {
+                tracing::warn!("traduction présente mais inutilisable : {e}");
+                None
+            }
+        },
+        None => None,
+    };
     Ok(Moteurs {
         pack: pack.clone(),
         bulles,
         lignes,
         lecteur,
         effaceur,
+        traducteur,
     })
 }
 

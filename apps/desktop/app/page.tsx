@@ -1097,6 +1097,14 @@ export default function Home() {
   const [blocsTraduction, setBlocsTraduction] = useState<Record<number, PageTranslation>>({});
   const afficherTraductionRef = useRef(false);
   const [afficherTraduction, setAfficherTraduction] = useState(false);
+  // Ref miroir, mais à jour pour les callbacks capturés — même raison que
+  // `afficherTraductionRef`. Sans elle, le garde « déjà chargée » de
+  // `chargerTraductionPage` lit un état figé du montage et l'analyse repart
+  // à chaque intersection observée.
+  const blocsTraductionRef = useRef<Record<number, PageTranslation>>({});
+  useEffect(() => {
+    blocsTraductionRef.current = blocsTraduction;
+  }, [blocsTraduction]);
   const setAfficherTraductionComputed = (v: boolean) => {
     afficherTraductionRef.current = v;
     setAfficherTraduction(v);
@@ -3009,8 +3017,8 @@ function taillePoliceSource(b: BlocTraduction): number {
  * refuse l'appel, et l'erreur était avalée par un `catch {}` vide.
  */
 async function chargerTraductionPage(index: number, page: Page) {
-  if (!afficherTraduction) return;
-  if (blocsTraduction[index]) return; // déjà chargée
+  if (!afficherTraductionRef.current) return;
+  if (blocsTraductionRef.current[index]) return; // déjà chargée
 
   try {
     const analysee = await invoke<PageTranslation>('analyser_page', {
@@ -3041,6 +3049,25 @@ async function chargerTraductionPage(index: number, page: Page) {
     console.warn(`traduction page ${index} : ${String(e)}`);
   }
 }
+
+// Déclenchement au basculement : sans cet effet, rien n'est analysé tant que
+// l'utilisateur ne défile pas — le callback d'IntersectionObserver est la
+// seule autre voie (mesuré le 2026-10-07 : basculer sur FR sur une page
+// statique ne produisait rien, et le porteur d'état — le setState updater en
+// charge — n'était jamais seul à déclencher l'overlay).
+// Même motif que l'effet de chargement des préférences au-dessous : les
+// `setState` de `chargerTraductionPage` arrivent tous après un `await` (et le
+// règle `set-state-in-effect` ne voit pas la frontière d'attente). Faux
+// positif vérifié : le chargement initial des préférences. On désactive la
+// règle pour CET effet uniquement, comme le fait le fichier au § préférences.
+/* eslint-disable react-hooks/set-state-in-effect */
+useEffect(() => {
+  if (!afficherTraduction || !reader) return;
+  const i = reader.index ?? 0;
+  const page = reader.pages[i];
+  if (page) void chargerTraductionPage(i, page);
+}, [afficherTraduction, reader?.index]);
+/* eslint-enable react-hooks/set-state-in-effect */
 
 /**
  * Les surcouches de l'application : panneau de vérification et notifications.
@@ -4823,10 +4850,10 @@ if (reader) {
                     const p = pages[i];
                     const blocs = blocsTraduction[i];
                     if (!p || !blocs?.blocks?.length) return null;
-                    // Sans la largeur source de la page, aucune longueur en
-                    // pixels source n'est rapportable à l'image affichée.
-                    // Mieux vaut ne rien poser que poser n'importe où.
-                    if (!p.largeur) return null;
+                    // Les dimensions viennent de l'analyse (blocs.width/height)
+                    // — elles n'existent pas dans Page quand la page vient du
+                    // moteur distant.
+                    const sourceWidth = blocs.width > 0 ? blocs.width : 1;
                     const hauteur = hauteurs[i] || 0;
                     const top = bandeVirtualisable ? (offsets[i] ?? 0) : undefined;
                     return (
@@ -4858,12 +4885,12 @@ if (reader) {
                                 // `cqw`, qui suivent l'image affichée sans
                                 // qu'aucune mesure en JavaScript soit
                                 // nécessaire. Voir `enCqw`.
-                                left: enCqw(b.bbox.x, p.largeur!),
-                                top: enCqw(b.bbox.y, p.largeur!),
-                                width: enCqw(b.bbox.w, p.largeur!),
-                                height: enCqw(b.bbox.h, p.largeur!),
+                                left: enCqw(b.bbox.x, sourceWidth),
+                                top: enCqw(b.bbox.y, sourceWidth),
+                                width: enCqw(b.bbox.w, sourceWidth),
+                                height: enCqw(b.bbox.h, sourceWidth),
                                 fontFamily: b.fontFamily ?? 'Comic Neue',
-                                fontSize: enCqw(taillePoliceSource(b), p.largeur!),
+                                fontSize: enCqw(taillePoliceSource(b), sourceWidth),
                                 lineHeight: 1.25,
                               }}
                             >

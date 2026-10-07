@@ -63,5 +63,6 @@ pub mod traduction;
 pub mod translator;
 pub mod tray;
 pub mod vision;
+pub mod vision_pipeline;
 pub mod vision_superviseur;
 pub mod zipread;

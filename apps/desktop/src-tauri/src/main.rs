@@ -20,7 +20,7 @@ use tauri::Manager;
 // chemin de `generate_handler!` ne se résout pas.
 use tatami_desktop::{
     challenge, commands, custom_source, download, journal, library, moteur, pack, pagecache,
-    scheduler, shelf, store, traduction, tray,
+    scheduler, shelf, store, traduction, tray, vision_pipeline, vision_superviseur,
 };
 
 fn not_found() -> tauri::http::Response<Vec<u8>> {
@@ -170,6 +170,54 @@ fn main() {
     let packs_dir = data_dir.join("packs");
     let pack_manager = pack::PackManager::nouveau(packs_dir);
 
+    // Superviseur du sidecar vision (T2). Démarré **à la demande** : personne
+    // ne traduit par défaut, et les poids pèsent 361 Mo — les charger au
+    // lancement serait du gaspillage pour une fonction que l'utilisateur n'a
+    // pas demandée.
+    //
+    // Le binaire est cherché à côté de l'exécutable en installation, et dans
+    // `sidecar-vision/target/release` en développement. Le runtime ONNX vient
+    // d'un `ORT_DYLIB_PATH` : sans lui, `ort` ne trouve pas sa DLL (ADR 0007).
+    let vision_supervisor = {
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+        let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("sidecar-vision")
+            .join("target")
+            .join("release")
+            .join("tatami-vision.exe");
+        let binaire = match &exe_dir {
+            Some(d) => {
+                let installe = d.join("tatami-vision.exe");
+                if installe.is_file() {
+                    installe
+                } else {
+                    dev.clone()
+                }
+            }
+            None => dev.clone(),
+        };
+        // Le pack vision est celui que le gestionnaire de packs a installé.
+        // Son absence ne bloque rien : le sidecar démarre sans pack et répond
+        // `MODEL_MISSING`, ce qui est un état propre et pas une panne.
+        let pack = pack_manager.pack_installe("vision-fr");
+        tracing::info!(
+            binaire = %binaire.display(),
+            pack = %pack.as_ref().map_or_else(|| "<aucun>".into(), |p| p.display().to_string()),
+            runtime = ?vision_superviseur::runtime_onnx(),
+            "sidecar vision configuré"
+        );
+        vision_superviseur::SuperviseurVision::new(
+            binaire,
+            vision_superviseur::runtime_onnx(),
+            pack,
+        )
+    };
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         // Tâche 3.3. L'enregistrement est indispensable même si l'envoi part de
@@ -187,6 +235,7 @@ fn main() {
         .manage(Arc::new(store))
         .manage(cache.clone())
         .manage(pack_manager)
+        .manage(vision_supervisor)
         .register_asynchronous_uri_scheme_protocol("tatami", move |_ctx, request, responder| {
             let sup = sup.clone();
             let cache = cache.clone();
@@ -268,6 +317,7 @@ fn main() {
             challenge::open_challenge,
             challenge::solve_challenge,
             challenge::cancel_challenge,
+            vision_pipeline::analyser_page,
             traduction::traduire_texte,
             traduction::traduire_page,
             traduction::definir_cle_gemini,
@@ -395,13 +445,17 @@ mod tests {
         // Commandes enregistrées mais dont l'interface n'a pas encore été
         // implémentée (pre-S2 : packs de modèles T1.4, traduction T3.1/T3.6).
         // À retirer au fur et à mesure que l'interface les appelle.
+        //
+        // `traduire_page` et `analyser_page` ne sont **plus** ici : l'interface
+        // les appelle depuis le raccordement de la chaîne de vision. C'est à ça
+        // que sert cette liste — une commande qui sort de la liste doit l'être
+        // parce qu'on l'appelle, pas parce qu'on a oublié.
         let liste_blanche_preexistante: &[&str] = &[
             "charger_pack",
             "etat_pack",
             "liste_packs",
             "supprimer_pack",
             "traduire_texte",
-            "traduire_page",
             "resume_traduction_page",
         ];
 

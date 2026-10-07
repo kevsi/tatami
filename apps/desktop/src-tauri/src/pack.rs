@@ -78,6 +78,38 @@ impl PackManager {
         }
     }
 
+    /// Le dossier du pack installé, s'il y en a un.
+    ///
+    /// Renvoie la version **la plus élevée**, donc le tri est sémantique et
+    /// pas alphabétique : `0.10.0` doit gagner sur `0.9.0`, et l'ordre des
+    /// chaînes les ferait passer dans l'autre sens.
+    ///
+    /// `None` quand rien n'est installé : c'est l'état normal d'une
+    /// installation fraîche, et l'appelant doit pouvoir le distinguer d'une
+    /// erreur. Le sidecar vision démarre alors sans pack et répond
+    /// `MODEL_MISSING` — un état propre, pas une panne.
+    pub fn pack_installe(&self, pack_id: &str) -> Option<PathBuf> {
+        let mut versions = self.versions_installees(pack_id);
+        versions.sort_by(|a, b| PackManager::comparer_versions(a, b));
+        versions
+            .pop()
+            .map(|v| self.racine.join(format!("{pack_id}-{v}")))
+    }
+    /// Compare deux versions sémantiques segment par segment.
+    ///
+    /// Le piège que cette fonction évite : un tri **alphabétique** met
+    /// `0.9.0` avant `0.10.0`, donc « la dernière version installée » serait la
+    /// plus ancienne. Les segments non numériques (`-rc1`) passent à 0, ce qui
+    /// les classe avant la version finale — un choix, et non un oubli.
+    fn comparer_versions(a: &str, b: &str) -> std::cmp::Ordering {
+        let segments = |v: &str| -> Vec<u64> {
+            v.split(['.', '-'])
+                .map(|s| s.parse::<u64>().unwrap_or(0))
+                .collect()
+        };
+        segments(a).cmp(&segments(b))
+    }
+
     /// Liste les versions installées pour un `pack_id`.
     pub fn versions_installees(&self, pack_id: &str) -> Vec<String> {
         let mut versions = Vec::new();

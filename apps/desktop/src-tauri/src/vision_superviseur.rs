@@ -273,6 +273,30 @@ impl SuperviseurVision {
 
 /// Identifiant de requête. Le moteur a son `unique_id` ; celui-ci est local au
 /// sidecar vision et n'a pas à être globally unique.
+/// Le chemin de la DLL ONNX, ou `None` pour que `ort` la cherche seul.
+///
+/// `ort` est compilé en `load-dynamic` (ADR 0007) : sans `ORT_DYLIB_PATH`, il
+/// cherche `onnxruntime.dll` **dans le dossier de l'exécutable** — ce qui est
+/// exactement là que l'installeur la pose. Donc :
+///
+/// - une variable qui pointe vers un fichier **inexistant** est ignorée, avec un
+///   avertissement : elle ferait échouer le chargement alors que la DLL est à
+///   côté ;
+/// - sinon `None`, et le sidecar se débrouille.
+///
+/// Une seule décision, un seul endroit : le sidecar ne résout rien lui-même,
+/// sinon les deux chercheraient à des moments différents.
+pub fn runtime_onnx() -> Option<PathBuf> {
+    if let Ok(v) = std::env::var("ORT_DYLIB_PATH") {
+        let p = PathBuf::from(&v);
+        if p.is_file() {
+            return Some(p);
+        }
+        tracing::warn!("ORT_DYLIB_PATH pointe vers {v}, qui n'existe pas : ignoré");
+    }
+    None
+}
+
 fn uuid_lite() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

@@ -2958,27 +2958,40 @@ function cleSerie(): string {
 
 /** Charge la traduction d'une page du chapitre courant, si la surcouche est activée.
  *
+ * Deux étapes, et l'ordre est mesuré :
+ *
+ * 1. `analyser_page` — la vision lit la page : tuiles, détection de bulles,
+ *    lecture, regroupement. C'est **lent** (détection ~2,2 s par tuile, lecture
+ *    ~0,5 s par bulle sur la machine cible), donc c'est du travail de fond.
+ * 2. `traduire_page` — la traduction des blocs trouvés.
+ *
+ * L'analyse de page ne fait AUCUNE requête réseau : elle lit les octets depuis le
+ * cache, donc elle analyse exactement l'image affichée.
+ *
  * Le glossaire est **par série** : la clé reprend la convention de fusion déjà
- * employée pour les favoris (`source` + séparateur + `manga_url`). Elle est
- * obligatoire côté Rust — sans elle, Tauri refuse l'appel, et l'erreur était
- * avalée par un `catch {}` vide : la traduction ne s'affichait jamais et rien
- * ne le disait.
+ * employée pour les favoris. Elle est obligatoire côté Rust — sans elle, Tauri
+ * refuse l'appel, et l'erreur était avalée par un `catch {}` vide.
  */
 async function chargerTraductionPage(index: number, page: Page) {
   if (!afficherTraduction) return;
   if (blocsTraduction[index]) return; // déjà chargée
 
   try {
-    const pageTranslation: PageTranslation = {
-      pageId: page.token,
+    const analysee = await invoke<PageTranslation>('analyser_page', {
+      token: page.token,
       chapterUrl: reader?.chapter.url ?? '',
       source: reader?.source ?? '',
-      width: page.largeur ?? 0,
-      height: page.hauteur ?? 0,
-      blocks: [],
-    };
+    });
+    if (!analysee.blocks?.length) {
+      // Une page d'illustration, ou une page dont le texte n'a pas été détecté.
+      // Ce n'est pas une erreur : c'est le résultat. On l'affiche quand même
+      // pour que la surcouche ait une entrée et ne redemande pas à chaque
+      // défilement.
+      setBlocsTraduction((prev) => (prev[index] ? prev : { ...prev, [index]: analysee }));
+      return;
+    }
     const resultat = await invoke<PageTranslation>('traduire_page', {
-      page: pageTranslation,
+      page: analysee,
       seriesKey: cleSerie(),
     });
     setBlocsTraduction((prev) => {

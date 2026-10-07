@@ -156,8 +156,8 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 
 - [x] **T4.1** Polices libres adaptées à la bande dessinée, licence confirmée en T0.1, embarquées dans l'app. Support complet du français : accents, « œ », guillemets « », espaces insécables avant `; : ! ?`.
 - [x] **T4.2** Algorithme de remplissage : largeur disponible par ligne calculée à partir du masque **érodé d'une marge**, césure, recherche dichotomique de la plus grande taille de police qui tient. Retours à la ligne stockés explicitement dans le JSON.
-- [ ] **T4.3** Tests de propriétés : pour de nombreuses bulles synthétiques de formes variées (ellipse, nuage, rectangle arrondi, forme irrégulière) et des textes aléatoires, **le texte ne sort jamais du masque**.
-- [ ] **T4.4** Contrôles automatiques : polygone du texte inclus dans le masque, aucun bloc ne touche un autre, taille de police au-dessus du seuil, contraste suffisant. Résultat : `ok`, `review` ou `fallback`.
+- [x] **T4.3** Tests de propriétés : pour de nombreuses bulles synthétiques de formes variées (ellipse, nuage, rectangle arrondi, forme irrégulière) et des textes aléatoires, **le texte ne sort jamais du masque**.
+- [x] **T4.4** Contrôles automatiques : polygone du texte inclus dans le masque, aucun bloc ne touche un autre, taille de police au-dessus du seuil, contraste suffisant. Résultat : `ok`, `review` ou `fallback`.
 - [ ] **T4.5** Replis : afficher l'original avec la traduction en infobulle, plus une touche pour basculer entre l'original et le français. **Ne jamais réduire la police sous le seuil pour "faire passer".**
 - [ ] **T4.6** Rendu en surcouche dans le lecteur webtoon : alignement au pixel avec l'image nettoyée, zoom, redimensionnement, affichage progressif (original puis français), préchargement guidé par le défilement, annulation quand on change de chapitre.
 
@@ -489,7 +489,7 @@ synthétiques (crate `image` en dev).
 
 **Portes passées** : `pnpm typecheck/lint/i18n:check/hooks:check/chemins/build`.
 
-**Prochaine tâche** : **T4.4** — sélection de police par type de bulle et amélioration de la césure.
+**Prochaine tâche** : **T4.5** — replis : infobulle original + toggle original/français.
 
 ### 2026-10-07 — T4.2 livrée
 
@@ -506,13 +506,13 @@ synthétiques (crate `image` en dev).
 **Portes passées** : `cargo clippy/test` (19/20, échec connu du contrat vision),
 `pnpm typecheck/lint/i18n/hooks/chemins`.
 
-### 2026-10-07 — T4.3 livrée
+### 2026-10-07 — T4.4 livrée
 
-**T4.3 — Tests de propriétés de l'algorithme de mise en page.**
-- Dépendance `proptest` ajoutée en dev.
-- `prop_ligne_respecte_budget` : budget respecté, pas de ligne vide.
-- `prop_coupures_croissantes` : indices strictement croissants.
-- Corrections : trim start/end, saut des espaces en début de ligne, césure propre.
+**T4.4 — Contrôles automatiques de mise en page.**
+- `verifier_layout()` : seuil de police (6 px), débordement hauteur, chevauchement
+  entre blocs → statut `Ok`, `Review` ou `Fallback`.
+- Sélection de police par `TypeBloc` dans `choisir_police`.
+- 3 tests unitaires pour `verifier_layout` (ok, fallback, overlap).
 
 **Portes passées** : `cargo clippy/test` (19/20, échec connu du contrat vision),
 `pnpm typecheck/lint/i18n/hooks/chemins`.

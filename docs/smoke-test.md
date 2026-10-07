@@ -518,17 +518,28 @@ grille. C'est vérifié à l'étape 14.
 | 1 | Réglages → section « Sources perso » | panneau présent, liste vide, message « Aucune source personnalisée. » | `page.tsx` section `sources.perso.titre` ; clés `sources.perso.vide` |
 | 2 | Bouton « Importer un script… » | dialogue natif ouvert, filtre `*.js` | `open({ filters: [{ extensions: ['js'] }] })` ; capability `dialog:allow-open` |
 | 3 | **Annuler** le dialogue | aucun message, aucun fichier créé, bouton non bloqué | le `return` sur annulation remet `importPersoEnCours` à faux |
-| 4 | Choisir `docs/exemple-source.js` | toast « Source "…" importée. », la ligne apparaît (nom `exemple-source`, date du jour). **La langue n'est pas affichée** : la colonne est écrite en dur à `fr` par la commande d'import (`custom_source.rs`, TODO S2). | `invoke('importer_source', { path })` |
+| 4 | Choisir `docs/mangadex-api.js` | toast « Source "…" importée. », la ligne apparaît (nom `mangadex-api`, date du jour). **La langue n'est pas affichée** : la colonne est écrite en dur à `fr` par la commande d'import (`custom_source.rs`, TODO S2). | `invoke('importer_source', { path })` |
 | 5 | `%APPDATA%\Tatami\sources\` | un `.js` présent, base `custom_sources` à 1 ligne | `custom_source.rs` §Commandes |
-| 6 | Copier `exemple-source.js` en `exemple-source-2.js`, l'importer | **deux** lignes : `exemple-source` et `exemple-source-2`. Le nom de fichier fait foi — `SOURCE.id` vaut `exemple-fr` dans les deux et ne crée pas de collision | `identiteDe` (`ScriptedSourceLoader.kt`) |
+| 6 | Copier le script en `autre-source.js` (contenu identique), l'importer | **deux** lignes : `mangadex-api` et `autre-source`. Le nom de fichier fait foi — le même `SOURCE.id` ne crée pas de collision | `identiteDe` (`ScriptedSourceLoader.kt`) |
 | 7 | Réimporter le **même** fichier | toujours 1 seule ligne pour cet id, horodatage mis à jour — pas de doublon | `ON CONFLICT(id) DO UPDATE` (`store.rs:1066`) |
 
 ### §S.2 Le moteur la voit-elle
 
+`docs/mangadex-api.js` est le script de démonstration : il appelle l'API JSON de MangaDex
+(sans clé, sans compte) et sert de **vraies** pages. Le gabarit `docs/exemple-source.js` sert
+à écrire le sien, mais il pointe vers `https://exemple-site.fr`, qui n'existe pas : il se charge
+et s'affiche, mais toute recherche renvoie une erreur réseau. Ce n'est pas un défaut du moteur.
+
+Chaîne déjà mesurée contre le moteur réel le 2026-07 (NDJSON, `serve`) : `listSources` →
+`custom:mangadex-api` ; `search "hinamatsuri"` → 2 résultats avec couvertures ; `details` →
+137 chapitres ; `chapters` → 137 ; `pages` → 36 URLs ; la 1ʳᵉ page téléchargée en
+`HTTP 200 image/jpeg 347 159 o`.
+
 | # | Geste | Attendu |
 |---|---|---|
-| 8 | Catalogues | la source apparaît dans la grille, **badge « Perso »**, nom lisible. La tuile porte l'**identifiant** `custom:exemple-source` et la langue du script (`fr`) |
-| 9 | Ouvrir la source, faire une recherche | résultats réels — le script est exécuté par Nashorn |
+| 8 | Catalogues | la source apparaît dans la grille, **badge « Perso »**, nom lisible. La tuile porte l'**identifiant** `custom:mangadex-api` et la langue du script (`ja`) |
+| 9 | Ouvrir la source, rechercher `hinamatsuri` | 2 résultats, couvertures visibles, « Hinamatsuri » en tête |
+| 10 | Ouvrir la fiche | titre, résumé, 4 genres, auteur « Ootake Masao », **137 chapitres** ; le lecteur d'un chapitre affiche **36 pages** |
 
 Un défaut ici n'est pas un défaut d'import : c'est le `ScriptedSourceLoader` (dossier,
 WatchService) ou le script lui-même.
@@ -537,11 +548,11 @@ WatchService) ou le script lui-même.
 
 | # | Geste | Attendu |
 |---|---|---|
-| 10 | Interrupteur de la tuile | source grisée, comme une source native (même code, clé `custom:exemple-source`) |
-| 11 | Réglages → ✕ sur la ligne | la ligne bascule sur « Supprimer {nom} » + « Annuler » — **pas** de dialogue natif |
-| 12 | « Annuler » | la ligne revient à son état initial, rien n'est effacé |
-| 13 | « Supprimer {nom} » | toast « Source "…" supprimée. », ligne disparue, `.js` absent du dossier |
-| 14 | Catalogues | **la source a disparu de la grille** — c'est l'étape qui manquait avant le correctif d'identité du 2026-10-07 (le moteur cherchait `exemple-fr.js` et ne déchargeait rien) |
+| 11 | Interrupteur de la tuile | source grisée, comme une source native (même code, clé `custom:mangadex-api`) |
+| 12 | Réglages → ✕ sur la ligne | la ligne bascule sur « Supprimer {nom} » + « Annuler » — **pas** de dialogue natif |
+| 13 | « Annuler » | la ligne revient à son état initial, rien n'est effacé |
+| 14 | « Supprimer {nom} » | toast « Source "…" supprimée. », ligne disparue, `.js` absent du dossier |
+| 15 | Catalogues | **la source a disparu de la grille** — c'est l'étape qui manquait avant le correctif d'identité du 2026-10-07 (le moteur cherchait `exemple-fr.js` et ne déchargeait rien) |
 
 Le dialogue natif de l'étape 2 n'est **pas** testable par CDP (leçon `AGENTS.md` §14) :
 l'étape 4 se vérifie à l'œil, ou par la présence du fichier sur le disque.
@@ -579,6 +590,7 @@ Toutes mesurées, donc à vérifier avant de conclure qu'une étape échoue.
 | **Pas de catégories de favoris** | `PLAN.md` 1.5 non coché : les favoris sont une liste plate | `page.tsx:2901-2942` |
 | **Message `CHALLENGE_REQUIRED` encore affiché « pas encore gérée »** | `describeError` (`page.tsx:403`) n'a pas été mis à jour après 0.11 ; le bloc de résolution existe pourtant (`page.tsx:2566-2592`). À signaler, pas à contourner. | `page.tsx:403` |
 | **Titres sans date de publication** | certaines sources ne renvoient pas `uploadDate` : la cellule affiche alors le libellé du chapitre (`page.tsx:2401`) | `page.tsx:2401` |
+| **Chapitres sous licence, sans images** | MangaDex répond `200 OK` avec `data: []` pour un chapitre non servi (mesuré : Naruto ch.1) — `pages` renvoie 0 URL et le lecteur s'ouvre vide. Ce n'est pas un défaut du script : le chapitre n'existe pas en ligne. Hinamatsuri ch.1, lui, rend 36 pages. | sonde NDJSON du 2026-07, `/at-home/server` |
 
 ---
 

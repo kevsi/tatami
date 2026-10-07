@@ -2757,9 +2757,16 @@ button:disabled {
   white-space: nowrap;
 }
 
-/* La langue d'une source perso n'est pas affichée : `custom_sources.lang` est
-   écrit en dur à "fr" par la commande d'import (TODO S2), donc la colonne
-   mentirait. La langue réelle est celle du moteur, visible dans la grille. */
+/* La langue affichée ici est celle du MOTEUR (`listSources` → `lang`), pas la
+   colonne `custom_sources.lang` du panneau Réglages : celle-ci est écrite en dur
+   à "fr" par la commande d'import (TODO S2) et n'est donc pas affichée. */
+.custom-row-lang {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
 
 /* Badge « Perso » dans la grille du catalogue.
    Variante de .badge : même forme, couleur d'accent pour se distinguer

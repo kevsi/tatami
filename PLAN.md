@@ -63,8 +63,10 @@
 
 **Phase T3 livrée** — traduction complète : trait, prompt, glossaire, résilience, confidentialité.
 
-### En cours
-- (aucune)
+21. **Phase T4.1 — Polices embarquées** — 8 polices libres (OFL 1.1 / Apache-2.0) téléchargées dans `public/fonts/`, déclarées en `@font-face` dans `globals.css`, classe `.bubble-text` ajoutée pour le rendu des traductions.
+    - Portes passées : `pnpm typecheck/lint/i18n:check/hooks/check/chemins/build`.
+
+**Phase T4 en cours** — mise en page et rendu.
 
 ### Next steps
 1. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
@@ -130,18 +132,22 @@
   désactivation par `s.name` donc sans cas particulier. **Reste** : exécuter
   `docs/smoke-test.md` §S — la section est écrite, jamais jouée._
 
-- [x] **S2.3** — Point d'entrée de l'import dans l'écran Catalogue : une barre
-  « n source importée(s) » + bouton « Importer un script… » (même dialogue que
-  Réglages). Demande explicite de l'humain le 2026-10-07, hors périmètre initial :
-  ajoutée ici avant d'écrire le code (§11, anti-dérive).
+- [x] **S2.3** — Card « Sources importées » dans l'écran Catalogue : dans la grille des
+  langues (l'écran d'entrée), une card pleine largeur qui **contient la liste des sources
+  importées** — chaque ligne cliquable pour ouvrir la source — et le bouton
+  « Importer un script… ». Demande explicite de l'humain le 2026-10-07, hors périmètre
+  initial : ajoutée ici avant d'écrire le code (§11, anti-dérive).
   _Prouvé : `chargerSources` extrait en `useCallback` sans dépendance et appelé au
   montage + après import ; après import la liste est rechargée **3 fois** (0, 1,5 s,
   4 s) parce que le moteur ne voit le fichier que ~580 ms après la copie (mesuré :
   WatchService, 1ʳᵉ tentative refusée car le fichier s'écrit encore). typecheck 0
   erreur ; lint 0 erreur ; i18n/hooks/chemins verts ; `next build` OK._
-  _Le compte vient de la liste du moteur, pas de la base : une source dont le script
-  n'a pas pu être exécuté par le moteur n'apparaît pas dans la grille, donc n'est pas
-  comptée — elle reste visible dans Réglages._
+  _La card est un `<section>` et non une tuile `<button>` : elle contient des boutons,
+  et deux `<button>` imbriqués seraient du HTML invalide (§14). Style : `.lang-tile`
+  réutilisée (fond, bordure, rayon) + `.import-*` ; aucune nouvelle couleur._
+  _Les lignes affichent la langue du **moteur** (`sourcesImportees`), pas la colonne
+  `custom_sources.lang` du panneau Réglages : celle-ci est écrite en dur à `fr` et
+  n'est donc pas affichée._
 
 ### Audit de bout en bout (2026-10-07)
 

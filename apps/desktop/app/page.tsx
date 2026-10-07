@@ -1057,6 +1057,10 @@ export default function Home() {
   const [importPersoEnCours, setImportPersoEnCours] = useState(false);
   // Identifiant de la source en attente de confirmation. `null` = aucune.
   const [aSupprimerPerso, setASupprimerPerso] = useState<string | null>(null);
+  // S2.3 — les sources importées **telles que le moteur les voit** (donc
+  // filtrables par langue, avec leur nom lisible), à distinguer de
+  // `sourcesPerso` qui est la liste de la base, celle des réglages.
+  const sourcesImportees = useMemo(() => sources.filter((s) => s.custom), [sources]);
   // Tâche 1.7 : signets. Un signet = une page précise d'un chapitre.
   const [signets, setSignets] = useState<Bookmark[]>([]);
   // Tâche 1.5 : catégories de favoris. Une seule par favori (choix humain,
@@ -5674,26 +5678,6 @@ if (reader) {
         </div>
       )}
 
-      {/* S2.3 — point d'entrée de l'import dans le catalogue. Le compte vient
-          de la liste du moteur, pas de la base : c'est ce que la grille
-          affiche, donc une source dont le script n'a pas pu être exécuté par
-          le moteur n'est pas comptée (elle reste visible dans Réglages). */}
-      <div className="row-actions">
-        <span className="muted">
-          {t('catalogue.import.compte', {
-            n: sources.filter((s) => s.custom).length,
-            s: sources.filter((s) => s.custom).length > 1 ? 's' : '',
-          })}
-        </span>
-        <button
-          className="btn"
-          disabled={importPersoEnCours}
-          onClick={() => void importerSourcePerso()}
-        >
-          {importPersoEnCours ? t('sources.perso.en.cours') : t('sources.perso.importer')}
-        </button>
-      </div>
-
       {enTiles ? (
         <>
           <p className="count">
@@ -5719,6 +5703,50 @@ if (reader) {
                 </span>
               </button>
             ))}
+          </div>
+
+          {/* S2.3 — card « Sources importées », dans la grille des langues
+              parce que c'est l'écran d'entrée du catalogue : elle reste visible
+              même sans source installée, et sans passer par un filtre de langue.
+
+              C'est un <section> et non une tuile <button> : elle contient des
+              boutons (ouvrir une source, importer), et deux <button> imbriqués
+              seraient du HTML invalide — cf. AGENTS.md §14. */}
+          <div className="lang-grid">
+            <section className="lang-tile import-card">
+              <b>{t('sources.perso.titre')}</b>
+              <span className="muted">
+                {t('catalogue.import.compte', {
+                  n: sourcesImportees.length,
+                  s: sourcesImportees.length > 1 ? 's' : '',
+                })}
+              </span>
+              {sourcesImportees.length === 0 ? (
+                <p className="muted">{t('sources.perso.vide')}</p>
+              ) : (
+                <ul className="import-list">
+                  {sourcesImportees.map((s) => (
+                    <li key={s.name}>
+                      <button
+                        className="custom-row import-row"
+                        onClick={() => openSource(s)}
+                      >
+                        <span className="custom-row-name">{s.displayName ?? s.name}</span>
+                        <span className="custom-row-lang">{s.lang}</span>
+                        <span className="badge custom-badge">{t('catalogue.perso')}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button
+                className="btn"
+                disabled={importPersoEnCours}
+                onClick={() => void importerSourcePerso()}
+              >
+                {importPersoEnCours ? t('sources.perso.en.cours') : t('sources.perso.importer')}
+              </button>
+            </section>
           </div>
         </>
       ) : (

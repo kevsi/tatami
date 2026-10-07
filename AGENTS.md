@@ -1168,3 +1168,30 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   `6 actionable tasks: 6 executed`, 43 tests listés par leur nom, 8 XML
   réécrits. Corollaire : une porte qui rend le même verdict en 3 s qu'en
   1 min 14 n'a rien mesuré.
+
+- **Un test qui nettoie ce qu'il veut mesurer ne peut plus crier.** Mesuré le
+  2026-10-07 : le contrôle OCR de T0 comparait l'attendu et le lu **après avoir
+  retiré les espaces et la ponctuation des deux côtés**. Le modèle, lui, lisait
+  `YOUGOTTOGETCLOSHESFORDOGS` au lieu de `YOU GOT TO GET CLOTHES FOR DOGS` — et
+  le contrôle disait vert. Le défaut n'était pas subtil : il supprimeait chaque
+  espace. Corollaire : quand une comparaison « passe », vérifier **qu'elle
+  distingue vraiment** les deux cas ; le moyen le plus rapide est de regarder ce
+  que le test **retire** avant de comparer.
+- **Le nombre de classes du modèle est la vérité, pas le fichier de
+  caractères.** Mesuré le 2026-10-07 : `PP-OCRv6_small_rec` a **18 710 classes**,
+  le `.txt` qui l'accompagne n'en nomme que **18 708**. L'indice 0 étant le
+  blanc CTC, la classe **18709** n'était mappée par rien — et c'est **l'espace**,
+  émis entre chaque mot. Corollaire : lire la dimension de sortie du modèle
+  (une passe sur une entrée vide suffit) et refuser tout dictionnaire qui ne
+  concorde pas, plutôt que de tronquer des indices en silence. Une garde
+  `i < len(DICT)` est un suppresseur de caractères.
+- **Une page de test sans texte fait accuser le code.** Mesuré le 2026-10-07 : le
+  détecteur de bulles rendait 0,33 sur `2-webtoonsen/p081.jpg`, et j'allais
+  conclure « le détecteur ne voit rien sur les webtoons ». La page est un plan de
+  supermarché **sans une seule bulle** ; elle venait de la sonde d'OCR de T0,
+  qui l'utilisait pour une autre raison. Le contrôle positif — une page de
+  dialogue, 0,98 — est arrivé ensuite, et le détecteur était sain : int8 vaut
+  fp32 (0,332 contre 0,350), l'agrandissement ×2 et ×3 ne change rien. Corollaire
+  : **regarder l'image** avant d'accuser un modèle ; et « la page contient-elle ce
+  qu'on lui demande de trouver ? » est une question distincte de « le modèle
+  trouve-t-il ? ».

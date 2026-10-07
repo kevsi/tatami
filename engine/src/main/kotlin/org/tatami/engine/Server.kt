@@ -517,6 +517,16 @@ internal suspend fun dispatchCustom(
             if (!result.has("state") && result.has("status")) {
                 result.put("state", result.get("status"))
             }
+            // Idem pour `url` : c'est la clé du cache de couverture côté Rust
+            // (`porter_jeton` sort sans elle), et les natives l'ont toujours
+            // (mangaToJson). Le gabarit `docs/exemple-source.js` ne demande pas
+            // d'`url` dans `getDetails` — donc tout script conforme s'en
+            // passait. Mesuré le 2026-07 : la fiche d'une source scriptée
+            // n'affichait aucune couverture, alors que la grille, elle, les
+            // montrait (là, la réponse de `search` porte bien `url`).
+            if (!result.has("url") || result.isNull("url")) {
+                result.put("url", mangaUrl)
+            }
             cache.putCustomDetails(sourceName, mangaUrl, result)
             JSONObject().put("manga", result)
         }

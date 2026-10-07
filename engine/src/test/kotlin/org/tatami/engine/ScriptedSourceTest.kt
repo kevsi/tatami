@@ -235,6 +235,10 @@ class DispatchPersonnaliseeTest {
                 JSONObject().put("url", "/manga/1"),
             )
             assertEquals("Manga 1", details.getJSONObject("manga").getString("title"))
+            // `scriptMinimal` ne renvoie pas d'`url` dans getDetails : c'est la
+            // forme du gabarit livré. Sans cette remise en place, Rust ne crée
+            // pas de jeton de couverture et la fiche n'affiche pas d'image.
+            assertEquals("/manga/1", details.getJSONObject("manga").getString("url"))
             val chapitres = dispatchCustom(
                 loader, cache, sourceName, "chapters",
                 JSONObject().put("mangaUrl", "/manga/1"),

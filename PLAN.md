@@ -72,9 +72,7 @@
 1. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
 2. **Retirer la liste blanche S2** de `main.rs:387-393` : les trois commandes sont maintenant
    appelées par l'interface, la porte « commande morte » doit de nouveau mordre.
-3. **T4.1** — polices libres adaptées à la bande dessinée, licence confirmée en T0.1,
-   embarquées dans l'app. Support complet du français : accents, « œ », guillemets « »,
-   espaces insécables avant `; : ! ?`.
+3. **T4.2** — algorithme de remplissage : largeur disponible par ligne calculée à partir du masque érodé d'une marge, césure, recherche dichotomique de la plus grande taille de police qui tient. Retours à la ligne stockés explicitement dans le JSON.
 
 ---
 

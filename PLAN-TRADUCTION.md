@@ -154,7 +154,7 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 
 ### T4 — Mise en page et rendu (L) — la garantie anti-chevauchement
 
-- [ ] **T4.1** Polices libres adaptées à la bande dessinée, licence confirmée en T0.1, embarquées dans l'app. Support complet du français : accents, « œ », guillemets « », espaces insécables avant `; : ! ?`.
+- [x] **T4.1** Polices libres adaptées à la bande dessinée, licence confirmée en T0.1, embarquées dans l'app. Support complet du français : accents, « œ », guillemets « », espaces insécables avant `; : ! ?`.
 - [ ] **T4.2** Algorithme de remplissage : largeur disponible par ligne calculée à partir du masque **érodé d'une marge**, césure, recherche dichotomique de la plus grande taille de police qui tient. Retours à la ligne stockés explicitement dans le JSON.
 - [ ] **T4.3** Tests de propriétés : pour de nombreuses bulles synthétiques de formes variées (ellipse, nuage, rectangle arrondi, forme irrégulière) et des textes aléatoires, **le texte ne sort jamais du masque**.
 - [ ] **T4.4** Contrôles automatiques : polygone du texte inclus dans le masque, aucun bloc ne touche un autre, taille de police au-dessus du seuil, contraste suffisant. Résultat : `ok`, `review` ou `fallback`.
@@ -475,3 +475,18 @@ synthétiques (crate `image` en dev).
 - Type TS `ResumeTraduction` ajouté dans `app/types/traduction.ts`.
 
 **Portes passées** : `cargo fmt/clippy/test` (189/189 + 1 commande morte), `pnpm typecheck/lint/i18n:check/hooks:check/chemins/build`.
+
+### 2026-10-07 — T4.1 livrée
+
+**T4.1 — Polices embarquées pour la surcouche de traduction.**
+- 8 polices libres sélectionnées en T0.1 téléchargées depuis `google/fonts` :
+  Comic Neue (Regular + Bold), Bangers, Patrick Hand, Architects Daughter,
+  Caveat, Kalam, Luckiest Guy, Permanent Marker.
+- Licences : OFL 1.1 ou Apache-2.0, couverture FR 24/24 caractères mesurée.
+- Déclarées dans `globals.css` via `@font-face` + classe `.bubble-text` pour le rendu
+  des traductions (text-shadow, centrage, retour à la ligne).
+- `.gitignore` : exception pour `apps/desktop/public/fonts/`.
+
+**Portes passées** : `pnpm typecheck/lint/i18n:check/hooks:check/chemins/build`.
+
+**Prochaine tâche** : **T4.2** — algorithme de remplissage des bulles.

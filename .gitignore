@@ -41,7 +41,7 @@ downloads/
 *.pth
 *.tflite
 *.bin
-*.ttf
-*.otf
-*.woff
-*.woff2
+
+# Exception T4.1 : polices de surcouche de traduction, embarquees dans l'app.
+!apps/desktop/public/fonts/
+!apps/desktop/public/fonts/*

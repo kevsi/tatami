@@ -45,3 +45,8 @@ downloads/
 # Exception T4.1 : polices de surcouche de traduction, embarquees dans l'app.
 !apps/desktop/public/fonts/
 !apps/desktop/public/fonts/*
+
+# Cibles Cargo de travail annexes (mesures, clippy isole) : plusieurs Go
+# qui ne doivent jamais joins le depot.
+target-*/
+sidecar-vision/target*/

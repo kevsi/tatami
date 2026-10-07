@@ -1,0 +1,30 @@
+[package]
+name = "tatami-vision"
+version = "0.1.0"
+edition = "2021"
+description = "Sidecar vision de Tatami : detect -> ocr -> inpaint (ADR 0007, ONNX Runtime)"
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+ort = { version = "=2.0.0-rc.13", default-features = false, features = [
+    "std",
+    "ndarray",
+    "load-dynamic",
+] }
+ndarray = "0.16"
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+    "webp",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+    "webp",
+] }

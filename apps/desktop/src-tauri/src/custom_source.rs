@@ -112,6 +112,9 @@ pub fn importer_source_impl(
 
     // --- 6. Enregistrement en base ---
     // `lang` est fixé à "fr" par défaut ; l'interface pourra l'exposer en S2.
+    // TODO S2 : ajouter un paramètre `lang: Option<String>` à la commande
+    // `importer_source` et le propager ici. Sans ce paramètre, toutes les
+    // sources personnalisées importées avant S2 auront `lang = "fr"` en base.
     store.add_custom_source(&id, &id, "fr", &dest_str)?;
 
     // --- 7. Lecture du résultat depuis la base ---
@@ -246,6 +249,52 @@ mod tests {
             "un chemin hostile doit être rejeté : {err}"
         );
         let _ = fs::remove_dir_all(&dest);
+    }
+
+    /// Complémentaire à `importer_refuse_traversee` : exerce la logique
+    /// anti-traversal avec un fichier `.js` **réellement existant** dont le
+    /// chemin source remonte via `..`.
+    ///
+    /// Ce test couvre le vecteur noté dans la review (finding 2) : un
+    /// attaquant fournirait un chemin qui remonte (`dir_a/../dir_a/real.js`)
+    /// pour pointer vers un fichier existant, dans l'espoir que la copie
+    /// atterrisse hors de `dest_dir`. Le code extrait le nom via
+    /// `Path::file_name()` (section 2) puis reconstruit la destination à
+    /// partir de `dest_dir_canon.join(filename)` (section 4) — donc la copie
+    /// atterrit toujours dans `dest_dir`, jamais ailleurs.
+    ///
+    /// Ce test prouve que l'import réussit (le fichier est légitime) et que
+    /// la copie est dans `dest_dir`, pas à l'endroit désigné par le `..`.
+    #[test]
+    fn importer_chemin_avec_remonter_copie_dans_dest_dir() {
+        let store = store_memoire();
+        // Créer un vrai fichier .js.
+        let (src, _garde_src) = tmp_js("real.js", 64);
+        let dest_dir = std::env::temp_dir().join(format!(
+            "tatami-cs-dest-{}-{}-avec-remonter",
+            std::process::id(),
+            COMPTEUR.fetch_add(1, Ordering::Relaxed)
+        ));
+
+        // Construire un chemin avec `..` qui pointe vers le même fichier.
+        // `src` est dans `tatami-cs-test-PID-N-real_js/real.js` ; on peut
+        // passer `tatami-cs-test-PID-N-real_js/../tatami-cs-test-PID-N-real_js/real.js`.
+        let src_parent = src.parent().unwrap();
+        let src_avec_remonter = src_parent
+            .join("..")
+            .join(src_parent.file_name().unwrap())
+            .join("real.js");
+
+        let cs = importer_source_impl(&store, src_avec_remonter.to_str().unwrap(), &dest_dir)
+            .expect("un fichier .js existant doit s'importer même si le chemin source contient ..");
+
+        // La copie doit être dans dest_dir, pas ailleurs.
+        assert_eq!(cs.id, "real");
+        assert!(
+            dest_dir.join("real.js").exists(),
+            "le fichier doit être copié dans dest_dir"
+        );
+        let _ = fs::remove_dir_all(&dest_dir);
     }
 
     #[test]

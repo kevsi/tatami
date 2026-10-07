@@ -8,14 +8,14 @@
 //! Les migrations sont **forward-only** et versionnées par `PRAGMA user_version`.
 //! Le fichier de base est sauvegardé avant toute migration appliquée.
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Version du schéma attendue par ce binaire.
-const SCHEMA_VERSION: i64 = 9;
+const SCHEMA_VERSION: i64 = 10;
 
 #[derive(Serialize)]
 pub struct Favorite {
@@ -160,6 +160,17 @@ pub struct CustomSource {
     pub lang: String,
     pub path: String,
     pub installed_at: i64,
+}
+
+/// Entrée du glossaire par série.
+///
+/// Stocke un terme source et sa traduction attendue, avec un registre
+/// optionnel (tutoiement / vouvoiement).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlossaryEntry {
+    pub term: String,
+    pub translation: String,
+    pub register: Option<String>,
 }
 
 pub struct Store {
@@ -424,6 +435,28 @@ impl Store {
                 "#,
             )
             .map_err(|e| format!("migration v9 : {e}"))?;
+        }
+        // v10 : glossaire par série. Stocke les termes spécifiques (noms propres,
+        // locutions, registre) associés à une clé de série. Un même terme peut
+        // apparaître plusieurs fois avec des traductions différentes selon la série.
+        if current < 10 {
+            tx.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS glossary (
+                    id           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    series_key   TEXT    NOT NULL,
+                    term         TEXT    NOT NULL,
+                    translation  TEXT    NOT NULL,
+                    register     TEXT,
+                    created_at   INTEGER NOT NULL,
+                    updated_at   INTEGER NOT NULL,
+                    UNIQUE (series_key, term)
+                );
+                CREATE INDEX IF NOT EXISTS glossary_series
+                    ON glossary (series_key);
+                "#,
+            )
+            .map_err(|e| format!("migration v10 : {e}"))?;
         }
         if current < SCHEMA_VERSION {
             tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
@@ -1228,6 +1261,112 @@ impl Store {
             .map_err(|e| format!("historique : {e}"))?;
         Ok(())
     }
+
+    // ---------- Glossaire ----------
+
+    /// Ajoute ou met à jour une entrée de glossaire pour une série.
+    ///
+    /// # Paramètres
+    /// - `series_key` : identifiant stable de la série (ex. URL manga)
+    /// - `term` : terme anglais à traduire
+    /// - `translation` : traduction française attendue
+    /// - `register` : registre optionnel ("tu" / "vous" / None)
+    pub fn upsert_glossary_entry(
+        &self,
+        series_key: &str,
+        term: &str,
+        translation: &str,
+        register: Option<&str>,
+    ) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let now = now_ms();
+        conn.execute(
+            "INSERT INTO glossary (series_key, term, translation, register, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+             ON CONFLICT(series_key, term) DO UPDATE SET
+                translation = excluded.translation,
+                register = excluded.register,
+                updated_at = excluded.updated_at",
+            params![series_key, term, translation, register, now],
+        )
+        .map_err(|e| format!("glossaire upsert impossible : {e}"))?;
+        Ok(())
+    }
+
+    /// Supprime une entrée du glossaire.
+    pub fn remove_glossary_entry(&self, series_key: &str, term: &str) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute(
+            "DELETE FROM glossary WHERE series_key = ?1 AND term = ?2",
+            params![series_key, term],
+        )
+        .map_err(|e| format!("glossaire suppression impossible : {e}"))?;
+        Ok(())
+    }
+
+    /// Liste les entrées du glossaire pour une série.
+    ///
+    /// Retourne les entrées triées par ordre alphabétique de terme.
+    pub fn list_glossary(&self, series_key: &str) -> Result<Vec<GlossaryEntry>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT term, translation, register FROM glossary
+                 WHERE series_key = ?1
+                 ORDER BY term COLLATE NOCASE ASC",
+            )
+            .map_err(|e| format!("glossaire liste impossible : {e}"))?;
+        let entries = stmt
+            .query_map(params![series_key], |row| {
+                Ok(GlossaryEntry {
+                    term: row.get(0)?,
+                    translation: row.get(1)?,
+                    register: row.get(2)?,
+                })
+            })
+            .map_err(|e| format!("glossaire lecture impossible : {e}"))?;
+        entries
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("glossaire collecte impossible : {e}"))
+    }
+
+    /// Recherche une entrée de glossaire par série et terme.
+    pub fn get_glossary_entry(
+        &self,
+        series_key: &str,
+        term: &str,
+    ) -> Result<Option<GlossaryEntry>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT translation, register FROM glossary
+                 WHERE series_key = ?1 AND term = ?2",
+            )
+            .map_err(|e| format!("glossaire recherche impossible : {e}"))?;
+        let result = stmt
+            .query_row(params![series_key, term], |row| {
+                Ok(GlossaryEntry {
+                    term: term.into(),
+                    translation: row.get(0)?,
+                    register: row.get(1)?,
+                })
+            })
+            .optional()
+            .map_err(|e| format!("glossaire lecture impossible : {e}"))?;
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
@@ -1864,8 +2003,11 @@ mod tests {
     #[test]
     fn migration_v8_vers_v9_cree_custom_sources() {
         // Simule une base estampillée v8 (sans la table custom_sources),
-        // réapplique migrate() et vérifie que la table existe et que la
-        // version est bien 9.
+        // réapplique migrate() et vérifie que la table custom_sources existe.
+        //
+        // Note : SCHEMA_VERSION vaut 10, donc migrate() joue les blocs v9 ET
+        // v10, et écrit user_version = 10. L'assertion porte donc sur >= 9
+        // (la table a été créée) et non sur == 9 (jamais écrit tel quel).
         let (s, path) = store_vierge();
         // Rétrograder à v8 : DROP la table si elle existait déjà, puis
         // fixer user_version.
@@ -1876,10 +2018,11 @@ mod tests {
             conn.execute_batch("PRAGMA user_version = 8").unwrap();
         }
         s.migrate().unwrap();
-        assert_eq!(
-            s.version().unwrap(),
-            9,
-            "la version doit être 9 après migration"
+        // La version finale est SCHEMA_VERSION (= 10), pas 9 — les blocs v9
+        // et v10 se sont tous les deux exécutés.
+        assert!(
+            s.version().unwrap() >= 9,
+            "la version doit être >= 9 après migration depuis v8"
         );
         // La table doit exister et être utilisable.
         s.add_custom_source("test-src", "Test Source", "fr", "/tmp/test.js")
@@ -1894,5 +2037,54 @@ mod tests {
         s.remove_custom_source("test-src").unwrap(); // deuxième fois : sans erreur
         assert!(s.list_custom_sources().unwrap().is_empty());
         nettoyer(&path);
+    }
+
+    #[test]
+    fn glossaire_ajouter_lister_et_supprimer() {
+        let store = Store::open_in_memory().expect("base en mémoire");
+        // Ajout d'une entrée.
+        store
+            .upsert_glossary_entry("series-1", "Naruto", "Naruto", Some("tu"))
+            .unwrap();
+        // Liste : une entrée.
+        let liste = store.list_glossary("series-1").unwrap();
+        assert_eq!(liste.len(), 1);
+        assert_eq!(liste[0].term, "Naruto");
+        assert_eq!(liste[0].translation, "Naruto");
+        assert_eq!(liste[0].register, Some("tu".into()));
+
+        // Mise à jour de la même entrée.
+        store
+            .upsert_glossary_entry("series-1", "Naruto", "Naruto", Some("vous"))
+            .unwrap();
+        let liste = store.list_glossary("series-1").unwrap();
+        assert_eq!(liste.len(), 1);
+        assert_eq!(liste[0].register, Some("vous".into()));
+
+        // Ajout d'une deuxième entrée pour la même série.
+        store
+            .upsert_glossary_entry("series-1", "Sasuke", "Sasuke", None)
+            .unwrap();
+        let liste = store.list_glossary("series-1").unwrap();
+        assert_eq!(liste.len(), 2);
+
+        // Recherche par terme.
+        let entree = store.get_glossary_entry("series-1", "Naruto").unwrap();
+        assert!(entree.is_some());
+        assert_eq!(entree.unwrap().translation, "Naruto");
+
+        // Terme inexistant.
+        let entree = store.get_glossary_entry("series-1", "Inexistant").unwrap();
+        assert!(entree.is_none());
+
+        // Suppression.
+        store.remove_glossary_entry("series-1", "Naruto").unwrap();
+        let liste = store.list_glossary("series-1").unwrap();
+        assert_eq!(liste.len(), 1);
+        assert_eq!(liste[0].term, "Sasuke");
+
+        // Autre série : isolée.
+        let liste_autre = store.list_glossary("series-2").unwrap();
+        assert!(liste_autre.is_empty());
     }
 }

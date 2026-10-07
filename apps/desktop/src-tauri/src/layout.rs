@@ -6,8 +6,6 @@
 //! 3. Césure simple aux espaces (pas de coupure de mot pour l'instant).
 //! 4. Retours à la ligne stockés explicitement dans `BlocTraduction::line_breaks`.
 
-use std::cmp::min;
-
 use crate::traduction::Bbox;
 
 // ---------------------------------------------------------------------------
@@ -70,10 +68,11 @@ pub enum ErreurLayout {
 /// # Retour
 /// `LayoutResult` avec la taille de police, la police et les coupures.
 pub fn calculer_mise_en_page(bbox: &Bbox, texte: &str) -> Result<LayoutResult, ErreurLayout> {
+    let texte = texte.trim_start().trim_end();
     if bbox.w < 1 || bbox.h < 1 {
         return Err(ErreurLayout::BboxVide);
     }
-    if texte.trim().is_empty() {
+    if texte.is_empty() {
         return Err(ErreurLayout::TexteVide);
     }
 
@@ -132,23 +131,34 @@ fn calculer_coupures(texte: &str, font_size: f64, largeur_dispo: f64) -> Vec<usi
     let mut coupures = Vec::new();
     let mut pos = 0;
 
-    while pos + max_caracteres_par_ligne < texte.len() {
-        // Chercher le dernier espace dans la fenêtre pour couper proprement.
-        let fin = pos + max_caracteres_par_ligne;
-        let coupure = texte[pos..fin]
-            .trim_end()
-            .rfind(' ')
-            .map(|i| pos + i)
-            .unwrap_or(fin);
-
-        // Avancer d'au moins un caractère pour éviter une boucle infinie.
-        let coupure = min(coupure + 1, texte.len());
-        if coupure <= pos {
+    while pos < texte.len() {
+        // Sauter les espaces en tête de ligne pour ne jamais créer de ligne vide.
+        while pos < texte.len() && texte.chars().nth(pos) == Some(' ') {
+            pos += 1;
+        }
+        if pos >= texte.len() {
             break;
         }
 
-        coupures.push(coupure);
-        pos = coupure;
+        let fin = (pos + max_caracteres_par_ligne).min(texte.len());
+
+        // Si tout le reste tient, pas de coupure supplémentaire.
+        if fin >= texte.len() {
+            break;
+        }
+
+        let window = &texte[pos..fin];
+        if let Some(rel) = window.rfind(' ') {
+            // Césure après l'espace : il reste dans la ligne courante,
+            // la ligne suivante commence après lui.
+            let coupure = pos + rel + 1;
+            coupures.push(coupure);
+            pos = coupure;
+        } else {
+            // Pas d'espace dans la fenêtre : coupure nette à la borne.
+            coupures.push(fin);
+            pos = fin;
+        }
     }
 
     coupures
@@ -215,5 +225,63 @@ mod tests {
             h: 100,
         };
         assert!(calculer_mise_en_page(&bbox, "").is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // Tests de propriétés (proptest)
+    // -------------------------------------------------------------------------
+
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Aucune ligne ne doit dépasser le budget de caractères calculé
+        /// à partir de la largeur disponible et du ratio moyen.
+        #[test]
+        fn prop_ligne_respecte_budget(bbox_x in 0i64..400, bbox_y in 0i64..400,
+                                      bbox_w in 20i64..600, bbox_h in 20i64..600,
+                                      texte in "[A-Za-z ]{1,80}") {
+            let bbox = Bbox { x: bbox_x, y: bbox_y, w: bbox_w, h: bbox_h };
+            let texte_trim = texte.trim();
+            if texte_trim.is_empty() { return Ok(()); }
+            let resultat = calculer_mise_en_page(&bbox, &texte);
+            if resultat.is_err() { return Ok(()); }
+
+            let resultat = resultat.unwrap();
+            let largeur_dispo = (bbox.w - 2 * MARGE_EROSION_PX).max(1) as f64;
+            let max_car = (largeur_dispo / (resultat.font_size * LARGEUR_CARACTERE_MOYEN))
+                .floor()
+                .max(1.0) as usize;
+
+            let mut pos = 0;
+            for coupure in &resultat.line_breaks {
+                let ligne = &texte_trim[pos..*coupure];
+                prop_assert!(!ligne.trim().is_empty(), "ligne vide en {pos}..{coupure}");
+                // Le budget porte sur le contenu rendu, pas les espaces de remplissage.
+                let non_space = ligne.chars().filter(|c| *c != ' ').count();
+                prop_assert!(non_space <= max_car + 1,
+                    "ligne {} ({}) dépasse le budget {} car", non_space, ligne, max_car);
+                pos = *coupure;
+            }
+            if pos < texte_trim.len() {
+                let derniere = &texte_trim[pos..];
+                prop_assert!(!derniere.trim().is_empty(), "dernière ligne vide");
+            }
+        }
+
+        /// Le texte produit ne doit jamais contenir de séquence de coupures
+        /// croissantes invalides (chaque coupure strictement après la précédente).
+        #[test]
+        fn prop_coupures_croissantes(bbox_x in 0i64..400, bbox_y in 0i64..400,
+                                     bbox_w in 20i64..600, bbox_h in 20i64..600,
+                                     texte in "[A-Za-z ]{1,80}") {
+            let bbox = Bbox { x: bbox_x, y: bbox_y, w: bbox_w, h: bbox_h };
+            let resultat = calculer_mise_en_page(&bbox, &texte);
+            if resultat.is_err() { return Ok(()); }
+
+            let coupures = &resultat.unwrap().line_breaks;
+            for paire in coupures.windows(2) {
+                prop_assert!(paire[0] < paire[1], "coupures non triées: {:?}", coupures);
+            }
+        }
     }
 }

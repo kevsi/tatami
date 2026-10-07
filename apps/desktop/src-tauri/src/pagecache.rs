@@ -204,6 +204,20 @@ impl PageCache {
             .cloned()
     }
 
+    /// Les **octets** d'une page déjà servie, par jeton.
+    ///
+    /// C'est l'entrée de la chaîne de traduction : le sidecar vision a besoin
+    /// des pixels, pas d'une URL et pas du protocole `tatami://`. Sans cet
+    /// accesseur, il ne restait que `serve_page`, donc un detour par le serveur
+    /// local — et `cache_path` était prive, donc rien ne pouvait le lire.
+    ///
+    /// `None` si la page n'a jamais été servie : le cache est borné et évacue,
+    /// donc un jeton peut avoir disparu. L'appelant doit alors refaire une
+    /// requête, ce qui est le comportement normal du cache.
+    pub fn octets(&self, token: &str) -> Option<Vec<u8>> {
+        std::fs::read(self.cache_path(token)).ok()
+    }
+
     fn cache_path(&self, token: &str) -> PathBuf {
         self.dir.join(format!("page-{token}.bin"))
     }
@@ -433,6 +447,28 @@ mod tests {
         let couv = c.register_cover("MANGADEX", "https://x/manga/cover.jpg", None);
         assert_ne!(page, couv, "page et couverture ne partagent pas de jeton");
         assert!(matches!(c.resolve(&couv), Some(PageRef::Couverture { .. })));
+    }
+
+    #[test]
+    fn les_octets_d_un_jeton_se_relisent() {
+        // C'est l'entrée de la chaîne de traduction : elle a besoin des pixels.
+        let (c, _garde_cache) = cache();
+        let jeton = c.register("MANGADEX", "https://x/trad.jpg");
+        // Le fichier est écrit là où le serveur l'écrirait, sinon le test
+        // prouverait un chemin et pas le vrai.
+        let contenu: &[u8] = &[0x89, b'P', b'N', b'G', 1, 2, 3, 4];
+        std::fs::write(c.dir.join(format!("page-{jeton}.bin")), contenu).expect("écriture");
+        assert_eq!(c.octets(&jeton).as_deref(), Some(contenu), "octets relus");
+    }
+
+    #[test]
+    fn un_jeton_inconnu_donne_aucun_octet() {
+        let (c, _garde_cache) = cache();
+        assert!(
+            c.octets("p0000000000000000").is_none(),
+            "un jeton jamais servi n'a pas d'octets : le cache est borné, donc \
+             l'appelant doit pouvoir le voir et refaire une requête"
+        );
     }
 
     #[test]

@@ -2941,7 +2941,29 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
   }
 }
 
-/** Charge la traduction d'une page du chapitre courant, si la surcouche est activée. */
+/**
+ * Clé d'une série pour le glossaire et le cache de traduction.
+ *
+ * `source` + `\u001f` + `manga_url` : c'est la convention déjà employée pour
+ * fusionner les favoris (`cumul.set(item.source + '\u001f' + item.manga_url)`),
+ * donc une série a une seule clé dans tout le produit. Le lecteur opened hors
+ * ligne n'a pas d'URL de manga : la clé retombe alors sur le chapitre, ce qui
+ * isole les glossaires plutôt que de les mélanger.
+ */
+function cleSerie(): string {
+  const source = reader?.source ?? '';
+  const manga = reader?.mangaUrl ?? '';
+  return manga ? `${source}${manga}` : `${source}${reader?.chapter.url ?? ''}`;
+}
+
+/** Charge la traduction d'une page du chapitre courant, si la surcouche est activée.
+ *
+ * Le glossaire est **par série** : la clé reprend la convention de fusion déjà
+ * employée pour les favoris (`source` + séparateur + `manga_url`). Elle est
+ * obligatoire côté Rust — sans elle, Tauri refuse l'appel, et l'erreur était
+ * avalée par un `catch {}` vide : la traduction ne s'affichait jamais et rien
+ * ne le disait.
+ */
 async function chargerTraductionPage(index: number, page: Page) {
   if (!afficherTraduction) return;
   if (blocsTraduction[index]) return; // déjà chargée
@@ -2955,13 +2977,19 @@ async function chargerTraductionPage(index: number, page: Page) {
       height: page.hauteur ?? 0,
       blocks: [],
     };
-    const resultat = await invoke<PageTranslation>('traduire_page', { page: pageTranslation });
+    const resultat = await invoke<PageTranslation>('traduire_page', {
+      page: pageTranslation,
+      seriesKey: cleSerie(),
+    });
     setBlocsTraduction((prev) => {
       if (prev[index]) return prev; // évite les races
       return { ...prev, [index]: resultat };
     });
-  } catch {
-    // silencieux : la traduction est optionnelle, le lecteur fonctionne sans.
+  } catch (e) {
+    // Journalisé, plus avalé : la traduction reste facultative — le lecteur
+    // fonctionne sans — mais un échec doit se voir dans la console plutôt que
+    // de se déguiser en « rien à traduire ».
+    console.warn(`traduction page ${index} : ${String(e)}`);
   }
 }
 

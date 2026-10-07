@@ -64,10 +64,15 @@ pub enum ErreurLayout {
 /// # Paramètres
 /// - `bbox` : boîte englobante du bloc de traduction.
 /// - `texte` : texte traduit à faire tenir.
+/// - `type_bloc` : type de bulle, influence le choix de la police.
 ///
 /// # Retour
 /// `LayoutResult` avec la taille de police, la police et les coupures.
-pub fn calculer_mise_en_page(bbox: &Bbox, texte: &str) -> Result<LayoutResult, ErreurLayout> {
+pub fn calculer_mise_en_page(
+    bbox: &Bbox,
+    texte: &str,
+    type_bloc: crate::traduction::TypeBloc,
+) -> Result<LayoutResult, ErreurLayout> {
     let texte = texte.trim_start().trim_end();
     if bbox.w < 1 || bbox.h < 1 {
         return Err(ErreurLayout::BboxVide);
@@ -96,7 +101,7 @@ pub fn calculer_mise_en_page(bbox: &Bbox, texte: &str) -> Result<LayoutResult, E
     }
 
     let font_size = meilleure.ok_or(ErreurLayout::AucuneTaille)?;
-    let font_family = choisir_police(bbox, font_size);
+    let font_family = choisir_police(type_bloc);
     let line_breaks = calculer_coupures(texte, font_size, largeur_dispo);
 
     Ok(LayoutResult {
@@ -154,8 +159,13 @@ fn calculer_coupures(texte: &str, font_size: f64, largeur_dispo: f64) -> Vec<usi
             let coupure = pos + rel + 1;
             coupures.push(coupure);
             pos = coupure;
+        } else if window.len() >= max_caracteres_par_ligne && max_caracteres_par_ligne > 1 {
+            // Pas d'espace et mot trop long : césure forcée avec hyphen.
+            let coupure = pos + max_caracteres_par_ligne - 1;
+            coupures.push(coupure);
+            pos = coupure;
         } else {
-            // Pas d'espace dans la fenêtre : coupure nette à la borne.
+            // Pas d'espace : coupure nette à la borne.
             coupures.push(fin);
             pos = fin;
         }
@@ -164,12 +174,15 @@ fn calculer_coupures(texte: &str, font_size: f64, largeur_dispo: f64) -> Vec<usi
     coupures
 }
 
-/// Choix de police selon la taille et le type de bloc.
-fn choisir_police(_bbox: &Bbox, _font_size: f64) -> &'static str {
-    // Pour l'instant : police par défaut.
-    // Un sélecteur plus fin pourra être ajouté en T4.6 selon le type de bloc
-    // et la taille retenue.
-    "Comic Neue"
+/// Choix de police selon le type de bloc et la taille.
+fn choisir_police(type_bloc: crate::traduction::TypeBloc) -> &'static str {
+    match type_bloc {
+        crate::traduction::TypeBloc::Dialogue => "Patrick Hand",
+        crate::traduction::TypeBloc::Narration => "Architects Daughter",
+        crate::traduction::TypeBloc::Sfx => "Luckiest Guy",
+        crate::traduction::TypeBloc::FreeText => "Comic Neue",
+        crate::traduction::TypeBloc::Ignore => "Comic Neue",
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +192,7 @@ fn choisir_police(_bbox: &Bbox, _font_size: f64) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::traduction::TypeBloc;
 
     #[test]
     fn texte_court_tient_sans_coupure() {
@@ -188,7 +202,7 @@ mod tests {
             w: 200,
             h: 100,
         };
-        let resultat = calculer_mise_en_page(&bbox, "Hello").unwrap();
+        let resultat = calculer_mise_en_page(&bbox, "Hello", TypeBloc::Dialogue).unwrap();
         assert!(resultat.line_breaks.is_empty());
         assert!(resultat.font_size >= FONT_SIZE_MIN);
     }
@@ -201,7 +215,8 @@ mod tests {
             w: 100,
             h: 200,
         };
-        let resultat = calculer_mise_en_page(&bbox, "Hello world this is a test").unwrap();
+        let resultat =
+            calculer_mise_en_page(&bbox, "Hello world this is a test", TypeBloc::Dialogue).unwrap();
         assert!(!resultat.line_breaks.is_empty());
     }
 
@@ -213,7 +228,7 @@ mod tests {
             w: 1,
             h: 1,
         };
-        assert!(calculer_mise_en_page(&bbox, "Hello").is_err());
+        assert!(calculer_mise_en_page(&bbox, "Hello", TypeBloc::Dialogue).is_err());
     }
 
     #[test]
@@ -224,7 +239,7 @@ mod tests {
             w: 100,
             h: 100,
         };
-        assert!(calculer_mise_en_page(&bbox, "").is_err());
+        assert!(calculer_mise_en_page(&bbox, "", TypeBloc::Dialogue).is_err());
     }
 
     // -------------------------------------------------------------------------
@@ -243,7 +258,7 @@ mod tests {
             let bbox = Bbox { x: bbox_x, y: bbox_y, w: bbox_w, h: bbox_h };
             let texte_trim = texte.trim();
             if texte_trim.is_empty() { return Ok(()); }
-            let resultat = calculer_mise_en_page(&bbox, &texte);
+            let resultat = calculer_mise_en_page(&bbox, &texte, TypeBloc::Dialogue);
             if resultat.is_err() { return Ok(()); }
 
             let resultat = resultat.unwrap();
@@ -275,7 +290,7 @@ mod tests {
                                      bbox_w in 20i64..600, bbox_h in 20i64..600,
                                      texte in "[A-Za-z ]{1,80}") {
             let bbox = Bbox { x: bbox_x, y: bbox_y, w: bbox_w, h: bbox_h };
-            let resultat = calculer_mise_en_page(&bbox, &texte);
+            let resultat = calculer_mise_en_page(&bbox, &texte, TypeBloc::Dialogue);
             if resultat.is_err() { return Ok(()); }
 
             let coupures = &resultat.unwrap().line_breaks;

@@ -1,5 +1,6 @@
 package org.tatami.engine
 
+import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -172,6 +173,103 @@ class ScriptedParserTest {
         val resultat = kotlinx.coroutines.runBlocking { parser.getPages("/ch/1") }
         assertIs<JSONArray>(resultat)
         assertEquals(1, resultat.length())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Routage d'une source personnalisée
+// ---------------------------------------------------------------------------
+
+/**
+ * Le contrat entre le moteur et l'interface pour une source scriptée.
+ *
+ * Ce chemin n'était couvert par **aucun** test : les défauts d'identité (2026-10-07)
+ * et le champ `source` manquant (même jour) étaient tous deux dans du code jamais
+ * exercé. Chaque réponse doit donc être vérifiée ici, pas seulement le script.
+ */
+class DispatchPersonnaliseeTest {
+
+    private val client = OkHttpClient()
+
+    @Test
+    fun `search ajoute source et contentRating a chaque manga`() = runBlocking {
+        val dossier = Files.createTempDirectory("tatami-test-dispatch").toFile()
+        try {
+            val loader = ScriptedSourceLoader(dossier, client)
+            loader.charger(
+                File(dossier, "ma-source.js").also { it.writeText(scriptMinimal("ma-source")) },
+            )
+            val r = dispatchCustom(
+                loader, SessionCache(), "custom:ma-source", "search",
+                JSONObject().put("query", "").put("offset", 0).put("limit", 20),
+            )
+            val liste = r.getJSONArray("list")
+            assertEquals(1, liste.length())
+            val manga = liste.getJSONObject(0)
+            // Sans `source`, l'interface appelle `chapters` sans la clé et Tauri
+            // refuse la commande — mesuré dans l'app le 2026-07.
+            assertEquals("custom:ma-source", manga.getString("source"))
+            assertEquals("UNKNOWN", manga.getString("contentRating"))
+        } finally {
+            dossier.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `chapters et details repurent par le nom de contrat`() = runBlocking {
+        val dossier = Files.createTempDirectory("tatami-test-dispatch2").toFile()
+        try {
+            val loader = ScriptedSourceLoader(dossier, client)
+            loader.charger(
+                File(dossier, "ma-source.js").also { it.writeText(scriptMinimal("ma-source")) },
+            )
+            val cache = SessionCache()
+            val sourceName = "custom:ma-source"
+            // search d'abord : c'est lui qui alimente le cache des trois étapes.
+            dispatchCustom(
+                loader, cache, sourceName, "search",
+                JSONObject().put("query", "").put("offset", 0).put("limit", 20),
+            )
+            val details = dispatchCustom(
+                loader, cache, sourceName, "details",
+                JSONObject().put("url", "/manga/1"),
+            )
+            assertEquals("Manga 1", details.getJSONObject("manga").getString("title"))
+            val chapitres = dispatchCustom(
+                loader, cache, sourceName, "chapters",
+                JSONObject().put("mangaUrl", "/manga/1"),
+            )
+            assertEquals(1, chapitres.getJSONArray("chapters").length())
+            val pages = dispatchCustom(
+                loader, cache, sourceName, "pages",
+                JSONObject().put("chapterUrl", "/ch/1"),
+            )
+            assertEquals(1, pages.getJSONArray("pages").length())
+        } finally {
+            dossier.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `une source inconnue est refusee`() = runBlocking {
+        val dossier = Files.createTempDirectory("tatami-test-dispatch3").toFile()
+        try {
+            val loader = ScriptedSourceLoader(dossier, client)
+            // `ParamException` est privé dans Server.kt : on vérifie le message,
+            // qui est de toute façon ce que l'interface affiche.
+            val e = assertFailsWith<Exception> {
+                dispatchCustom(
+                    loader, SessionCache(), "custom:fantome", "search",
+                    JSONObject().put("query", ""),
+                )
+            }
+            assertTrue(
+                e.message?.contains("unknown custom source") == true,
+                "le refus doit nommer la source inconnue, reçu : ${e.message}",
+            )
+        } finally {
+            dossier.deleteRecursively()
+        }
     }
 }
 

@@ -472,7 +472,7 @@ private suspend fun dispatch(
 /**
  * Traite une commande pour une source personnalisée scriptée.
  */
-private suspend fun dispatchCustom(
+internal suspend fun dispatchCustom(
     scriptLoader: ScriptedSourceLoader,
     cache: SessionCache,
     sourceName: String,
@@ -488,9 +488,20 @@ private suspend fun dispatchCustom(
             val query = p.optString("query", "")
             val page = p.optInt("offset", 0) / maxOf(1, p.optInt("limit", 20)) + 1
             val arr = parser.getList(page, query)
-            // Mettre en cache les résultats pour details/chapters/pages.
+            // Le script ne connaît pas l'identifiant de contrat qu'il reçoit à la
+            // recherche. Or c'est l'interface qui le renvoie ensuite à `details`,
+            // `chapters` et aux téléchargements : sans ce champ, la commande part
+            // sans `source` et Tauri la refuse. Mesuré le 2026-07 : « invalid
+            // args `source` for command `chapters`: command chapters missing
+            // required key source ». Les sources natives, elles, portent `source`
+            // (mangaToJson) — d'où l'écart.
             for (i in 0 until arr.length()) {
                 val m = arr.getJSONObject(i)
+                m.put("source", sourceName)
+                // Un script ne déclare pas de classification : l'interface lit
+                // ce champ pour le mode incognito, autant lui donner la valeur
+                // explicite des natives sans classification.
+                if (!m.has("contentRating")) m.put("contentRating", "UNKNOWN")
                 cache.putCustomManga(sourceName, m.optString("url", ""), m)
             }
             JSONObject().put("list", arr)

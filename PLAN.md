@@ -154,6 +154,15 @@
   les tuiles de langue (un onglet ne se cible plus par son libellé traduit), et `nomSource()`
   pour le nom affiché — la fiche affichait `custom:mangadex-api`._
 
+### Dette connue mesurée le 2026-10-07
+
+- `FermetureStdinTest > cinq requetes d'un bloc rendent cinq reponses completes` **échoue en
+  suite complète** (2 exécutions sur 2) et **passe seul** (3 sur 3). Vérifié sans la
+  modification du jour (`git stash`) : l'échec est donc préexistant et lié à la charge, pas
+  à la phase S. Le test lit 5 lignes de stdout après fermeture de stdin — c'est le genre de
+  course déjà décrite dans son propre commentaire. À reprendre : timeout sur la lecture,
+  ou assertion sur le nombre de lignes lues plutôt que sur la 5ᵉ.
+
 ### Audit de bout en bout (2026-10-07)
 
 Trois défauts trouvés en relisant les 4 couches, tous deux commits :

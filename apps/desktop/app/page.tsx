@@ -1142,6 +1142,18 @@ export default function Home() {
   const [queueRunning, setQueueRunning] = useState(false);
   const cancelQueue = useRef(false);
 
+  /** Recharge la liste des sources du moteur.
+   *
+   *  Mémorisée **sans dépendance** : l'action d'import s'en sert, et une
+   *  identité recréée à chaque rendu la relancerait en boucle (leçon AGENTS.md
+   *  §14 sur les dépendances d'effet recréées).
+   */
+  const chargerSources = useCallback(() => {
+    invoke<{ sources: Source[] }>('list_sources')
+      .then((r) => setSources(r.sources ?? []))
+      .catch((e) => setError(String(e)));
+  }, []);
+
   /*
    * Préférences et santé des sources lues APRÈS l'hydratation : en export
    * statique le HTML est produit au build, il ne peut pas contenir ce qui est
@@ -1177,9 +1189,7 @@ export default function Home() {
       setMaj(loadMaj());
       setNotif(notifActive());
     }
-    invoke<{ sources: Source[] }>('list_sources')
-      .then((r) => setSources(r.sources ?? []))
-      .catch((e) => setError(String(e)));
+    chargerSources();
     refreshDownloads();
     const unlisten = listen<Progress>('download://progress', (event) => {
       // Deux téléchargements actifs = deux sources distinctes (cf. verrou
@@ -1387,13 +1397,13 @@ export default function Home() {
   }, []);
 
   // T3.6 — charge le consentement à la traduction en ligne au démarrage.
-  const chargerConsentementTraduction = useCallback(async () => {
-    try {
-      const valeur = await invoke<boolean>('obtenir_consentement_traduction');
-      setConsentementTraduction(valeur);
-    } catch (e) {
-      setError(String(e));
-    }
+  // Chaîne `.then()` et non `async` : `await` suivi d'un `setState` fait
+  // signaler `set-state-in-effect` en erreur (la forme voisine
+  // `chargerSources` ne se fait pas signaler). Erreur introduite par e741d20.
+  const chargerConsentementTraduction = useCallback(() => {
+    invoke<boolean>('obtenir_consentement_traduction')
+      .then(setConsentementTraduction)
+      .catch((e) => setError(String(e)));
   }, []);
 
   useEffect(() => {
@@ -1526,6 +1536,16 @@ export default function Home() {
       const cs = await invoke<CustomSource>('importer_source', { path: choisi });
       setNotice(t('sources.perso.ok', { nom: cs.name }));
       chargerSourcesPerso();
+      // Le moteur ne voit pas le fichier dès la fin de la copie : le
+      // `ScriptedSourceLoader` le repère au WatchService puis l'exécute.
+      // Mesuré le 2026-07 : la tuile apparaît **~580 ms** après la copie (la
+      // première tentative est refusée car le fichier est encore en cours
+      // d'écriture, l'événement MODIFY suivant réussit ~1 s après). Un seul
+      // rafraîchissement immédiat peut donc la rater : on réessaie à 1,5 s
+      // puis 4 s.
+      chargerSources();
+      window.setTimeout(chargerSources, 1500);
+      window.setTimeout(chargerSources, 4000);
     } catch (e) {
       setError(t('sources.perso.erreur', { raison: String(e) }));
     } finally {
@@ -5653,6 +5673,26 @@ if (reader) {
           </button>
         </div>
       )}
+
+      {/* S2.3 — point d'entrée de l'import dans le catalogue. Le compte vient
+          de la liste du moteur, pas de la base : c'est ce que la grille
+          affiche, donc une source dont le script n'a pas pu être exécuté par
+          le moteur n'est pas comptée (elle reste visible dans Réglages). */}
+      <div className="row-actions">
+        <span className="muted">
+          {t('catalogue.import.compte', {
+            n: sources.filter((s) => s.custom).length,
+            s: sources.filter((s) => s.custom).length > 1 ? 's' : '',
+          })}
+        </span>
+        <button
+          className="btn"
+          disabled={importPersoEnCours}
+          onClick={() => void importerSourcePerso()}
+        >
+          {importPersoEnCours ? t('sources.perso.en.cours') : t('sources.perso.importer')}
+        </button>
+      </div>
 
       {enTiles ? (
         <>

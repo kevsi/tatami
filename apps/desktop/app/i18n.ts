@@ -271,6 +271,10 @@ const FR = {
   'sources.perso.annuler': 'Annuler',
   // Badge affiché dans la grille du catalogue sur les cartes custom.
   'catalogue.perso': 'Perso',
+  // Barre « Sources importées » du catalogue (S2.3). `{s}` porte le pluriel
+  // comme `catalogue.desactivees.afficher` : une seule clé ne peut pas servir
+  // les deux langues.
+  'catalogue.import.compte': '{n} source importée{s}',
 
   // --- Liste des titres
 
@@ -648,6 +652,7 @@ const EN: Record<Cle, string> = {
   'sources.perso.confirmer': 'Delete {nom}',
   'sources.perso.annuler': 'Cancel',
   'catalogue.perso': 'Custom',
+  'catalogue.import.compte': '{n} imported source{s}',
 
 
   'fiche.ajouter.favori': '♡ Add to favourites',

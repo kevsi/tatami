@@ -544,6 +544,13 @@ Chaîne déjà mesurée contre le moteur réel le 2026-07 (NDJSON, `serve`) : `l
 Un défaut ici n'est pas un défaut d'import : c'est le `ScriptedSourceLoader` (dossier,
 WatchService) ou le script lui-même.
 
+Sur cet écran, une barre affiche « n source importée(s) » et le bouton
+« Importer un script… » (S2.3) : c'est **le même dialogue** que l'étape 2. Après
+l'import, la nouvelle tuile peut mettre **~0,6 s** à apparaître (le moteur exécute le
+script après l'avoir vu au WatchService) — si elle ne vient pas au premier coup d'œil,
+attendre 2 s avant de conclure. Le compte vient de la grille : une source dont le script
+est invalide n'y est pas, alors qu'elle reste listée dans Réglages.
+
 ### §S.3 Désactivation et suppression
 
 | # | Geste | Attendu |

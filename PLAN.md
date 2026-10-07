@@ -130,6 +130,19 @@
   désactivation par `s.name` donc sans cas particulier. **Reste** : exécuter
   `docs/smoke-test.md` §S — la section est écrite, jamais jouée._
 
+- [x] **S2.3** — Point d'entrée de l'import dans l'écran Catalogue : une barre
+  « n source importée(s) » + bouton « Importer un script… » (même dialogue que
+  Réglages). Demande explicite de l'humain le 2026-10-07, hors périmètre initial :
+  ajoutée ici avant d'écrire le code (§11, anti-dérive).
+  _Prouvé : `chargerSources` extrait en `useCallback` sans dépendance et appelé au
+  montage + après import ; après import la liste est rechargée **3 fois** (0, 1,5 s,
+  4 s) parce que le moteur ne voit le fichier que ~580 ms après la copie (mesuré :
+  WatchService, 1ʳᵉ tentative refusée car le fichier s'écrit encore). typecheck 0
+  erreur ; lint 0 erreur ; i18n/hooks/chemins verts ; `next build` OK._
+  _Le compte vient de la liste du moteur, pas de la base : une source dont le script
+  n'a pas pu être exécuté par le moteur n'apparaît pas dans la grille, donc n'est pas
+  comptée — elle reste visible dans Réglages._
+
 ### Audit de bout en bout (2026-10-07)
 
 Trois défauts trouvés en relisant les 4 couches, tous deux commits :

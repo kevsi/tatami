@@ -98,3 +98,19 @@ un test de contrat doit **échouer** quand la forme change, pour qu'on décide.
 Ne pas « corriger » la fixture pour la faire passer — mettre à jour
 `contract/README.md` et, si le contrat change vraiment, le `protocol.json` avec
 une ADR (AGENTS.md §5).
+### Une fixture doit être une réponse réelle, pas une synthèse
+
+`23-vision-detect` enregistre **une réponse entière telle que le sidecar l'a
+rendue**, pas une fusion des six tuiles. La première version fusionnait et
+reformait les coordonnées à plat ; le résultat ne correspondait plus à rien de
+réel, et le type Rust refusait de le lire. Corollaire : à l'enregistrement, ne
+jamais réécrire la réponse — la **copier**.
+
+### detect rend des coordonnées négatives, et c'est normal
+
+La fixture porte `x: -144` et `y: -46` pour une tuile de 640×640 : la bulle
+déborde de la fenêtre. Ce n'est pas une erreur, c'est ce que fait un détecteur
+qui raisonne sur sa fenêtre. Le `bbox` général du contrat porte
+`minimum: 0`, un choix écrit **avant** que detect existe et jamais vérifié ;
+une boîte de détection a donc son propre schéma (`detectionBbox`), sans borne
+négative, avec `w` et `h` strictement positifs.

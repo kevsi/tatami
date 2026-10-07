@@ -31,6 +31,31 @@ use ort::value::Tensor;
 /// Côté de la fenêtre d'entrée du détecteur, en pixels.
 pub const COTE_FENETRE: u32 = 640;
 
+/// Un côté d'image au-delà duquel le détecteur déforme et rend n'importe quoi.
+///
+/// Mesuré le 2026-10-07 : le détecteur travaille en 640×640. Une page de
+/// 800×1000 est ramenée à cette taille, et les boîtes remontées font alors
+/// 769×645 — plus grandes que la page. Le ratio compte donc autant que le côté.
+pub const COTE_MAXIMAL: u32 = 1024;
+
+/// Tolérance sur le rapport d'aspect. Une tuile est carrée ; une page de webtoon
+/// ne l'est pas (mesuré : 800×1000, 690×1280).
+pub const RATIO_MIN: f32 = 0.75;
+pub const RATIO_MAX: f32 = 1.40;
+
+/// Vrai si une image peut être passée au détecteur telle quelle.
+///
+/// Fonction pure : la règle est testée sans modèle, parce que le défaut qu'elle
+/// évite — des boîtes absurdes, sans erreur — ne se voit qu'en regardant
+/// l'image.
+pub fn tuile_acceptable(largeur: u32, hauteur: u32) -> bool {
+    if largeur == 0 || hauteur == 0 || largeur > COTE_MAXIMAL || hauteur > COTE_MAXIMAL {
+        return false;
+    }
+    let ratio = largeur as f32 / hauteur as f32;
+    ratio >= RATIO_MIN && ratio <= RATIO_MAX
+}
+
 /// Score minimal pour garder une détection.
 ///
 /// Le triage des 36 pages du corpus a donné six pages au-dessus de 0,97 et une

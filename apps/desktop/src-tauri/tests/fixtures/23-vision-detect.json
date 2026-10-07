@@ -4,7 +4,28 @@
   "id": "vision-detect-enregistre",
   "ok": true,
   "result": {
-    "detections": []
+    "detections": [
+      {
+        "bbox": {
+          "h": 214,
+          "w": 359,
+          "x": -144,
+          "y": -46
+        },
+        "classe": 0,
+        "score": 0.9829999804496765
+      },
+      {
+        "bbox": {
+          "h": 185,
+          "w": 314,
+          "x": -85,
+          "y": 0
+        },
+        "classe": 1,
+        "score": 0.9580000042915344
+      }
+    ]
   },
   "_note": "Deux boîtes sur six, pour la forme. Les coordonnées débordent de la page : le détecteur travaille en 640 et ne raint pas l'image, le bornage est à l'appelant."
 }

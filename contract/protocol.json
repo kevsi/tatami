@@ -169,6 +169,18 @@
       },
       "additionalProperties": false
     },
+    "detectionBbox": {
+      "type": "object",
+      "description": "Boîte d'une détection, dans le repère de la tuile 640×640. `x` et `y` peuvent être NÉGATIFS et la boîte peut dépasser la tuile : mesuré le 2026-10-07, une bulle donne (-144, -46, 359, 214) alors que la tuile fait 640×640. C'est le comportement normal d'un détecteur qui raisonne sur sa fenêtre ; le bornage sur la page est la responsabilité de l'appelant. Le `minimum: 0` du `bbox` général ne s'applique donc pas ici — il décrivait une supposition jamais mesurée.",
+      "required": ["x", "y", "w", "h"],
+      "properties": {
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
     "capabilitiesResult": {
       "type": "object",
       "description": "Forme de `result` pour `capabilities` (sidecar vision). `inpaintDisponible` est `false` tant que le modèle d'effacement n'est pas dans le pack : l'application peut alors l'afficher au lieu d'appeler une méthode qui échouera.",
@@ -195,7 +207,7 @@
             "type": "object",
             "required": ["bbox", "classe", "score"],
             "properties": {
-              "bbox": { "$ref": "#/$defs/bbox" },
+              "bbox": { "$ref": "#/$defs/detectionBbox" },
               "classe": { "type": "integer", "minimum": 0, "maximum": 2 },
               "score": { "type": "number", "minimum": 0, "maximum": 1 }
             },

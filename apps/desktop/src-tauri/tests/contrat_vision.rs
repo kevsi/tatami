@@ -11,8 +11,8 @@ use std::fs;
 use jsonschema::JSONSchema;
 use serde_json::json;
 use tatami_desktop::vision::{
-    DetectResult, HealthResult, InpaintResult, LoadPackResult, OcrResult, PackManifest, VisionBbox,
-    VisionModel, VisionOcrLine,
+    CapabilitiesResult, DetectResult, Detection, HealthResult, InpaintResult, LoadPackResult,
+    OcrResult, PackManifest, VisionBbox, VisionModel, VisionOcrLine,
 };
 
 fn charger_fixture(nom: &str) -> serde_json::Value {
@@ -107,11 +107,15 @@ fn contrat_vision_types_rust_accord() {
     let schema = JSONSchema::compile(&schema_json).expect("schema invalide");
 
     let detect = DetectResult {
-        boxes: vec![VisionBbox {
-            x: 10,
-            y: 20,
-            w: 200,
-            h: 40,
+        detections: vec![Detection {
+            bbox: VisionBbox {
+                x: 10,
+                y: 20,
+                w: 200,
+                h: 40,
+            },
+            classe: 0,
+            score: 0.98,
         }],
     };
     let ocr = OcrResult {
@@ -128,10 +132,18 @@ fn contrat_vision_types_rust_accord() {
     let inpaint = InpaintResult {
         data: "base64".into(),
         content_type: "image/png".into(),
+        tiles: 1,
+        ms: 12000,
     };
     let load_pack = LoadPackResult {
         pack_id: "tatami-vision".into(),
         version: "0.1.0".into(),
+    };
+    let capabilities = CapabilitiesResult {
+        pack_id: "tatami-vision".into(),
+        version: "0.1.0".into(),
+        methods: vec!["detect".into(), "ocr".into()],
+        inpaint_disponible: false,
     };
     let health = HealthResult {
         ok: true,
@@ -156,6 +168,7 @@ fn contrat_vision_types_rust_accord() {
         ("inpaint", serde_json::to_value(&inpaint).unwrap()),
         ("loadPack", serde_json::to_value(&load_pack).unwrap()),
         ("health", serde_json::to_value(&health).unwrap()),
+        ("capabilities", serde_json::to_value(&capabilities).unwrap()),
     ] {
         let enveloppe = json!({ "id": nom, "ok": true, "result": valeur });
         let result = schema.validate(&enveloppe);

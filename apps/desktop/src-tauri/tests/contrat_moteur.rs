@@ -459,9 +459,12 @@ fn chaque_schema_de_resultat_est_attribue_a_une_methode() {
     let defs = s.get("$defs").and_then(Value::as_object).expect("$defs");
     // Un `$defs` nommé `*Result` est, par convention du contrat, la forme d'un
     // `result`. Le nom est donc la convention ; la porte la vérifie.
+    // `healthResult` est volontairement absent de la table : `health` a deux
+    // formes et le sidecar vision comme le moteur rendent des choses
+    // différentes — c'est le `$defs` le plus partagé, donc le moins fiable.
     let resultats: Vec<&str> = defs
         .keys()
-        .filter(|k| k.ends_with("Result"))
+        .filter(|k| k.ends_with("Result") && *k != "healthResult")
         .map(String::as_str)
         .collect();
     let attribues: BTreeSet<&str> = RESULTATS_PAR_METHODE.iter().map(|(_, d)| *d).collect();

@@ -280,10 +280,18 @@ impl DetecteurLignes {
     }
 }
 
-/// Arrondit une dimension au multiple de 32 supérieur, avec un minimum d'un
-/// multiple : une dimension nulle est une forme invalide pour le modèle.
+/// Arrondit une dimension au multiple de 32 **le plus proche**, avec un minimum
+/// d'un multiple : une dimension nulle est une forme invalide pour le modèle.
+///
+/// Arrondi et non arrondi supérieur, **pour être identique à la recette de
+/// référence** : la sonde Python utilisait `round()`, donc 462 px donnaient 448.
+/// Les deux formes donnaient le même texte une fois le reste corrigé, mais
+/// la référence évite une divergence qui n'apparaîtra qu'un jour, sur une autre
+/// page. Le charabia rencontré au passage venait d'ailleurs : `crop_imm` attend
+/// une largeur et une hauteur, pas un coin.
 fn arrondi_au_multiple_32(valeur: u32) -> u32 {
-    valeur.max(1).div_ceil(MULTIPLE) * MULTIPLE
+    let demi = MULTIPLE / 2;
+    (((valeur.max(1) + demi) / MULTIPLE).max(1)) * MULTIPLE
 }
 
 #[cfg(test)]
@@ -402,12 +410,15 @@ mod tests {
     }
 
     #[test]
-    fn les_dimensions_entree_tombent_sur_un_multiple_de_32() {
+    fn les_dimensions_entree_tombent_sur_un_multiple_de_32_au_plus_proche() {
+        // Valeurs relevées sur la bulle de référence : 462x491 px.
+        assert_eq!(arrondi_au_multiple_32(462), 448, "comme round() en Python");
+        assert_eq!(arrondi_au_multiple_32(491), 480, "comme round() en Python");
+        assert_eq!(arrondi_au_multiple_32(641), 640);
         assert_eq!(arrondi_au_multiple_32(0), 32, "zéro reste valide");
         assert_eq!(arrondi_au_multiple_32(1), 32);
         assert_eq!(arrondi_au_multiple_32(32), 32);
-        assert_eq!(arrondi_au_multiple_32(33), 64);
-        assert_eq!(arrondi_au_multiple_32(641), 672);
+        assert_eq!(arrondi_au_multiple_32(33), 32);
         assert_eq!(
             arrondi_au_multiple_32(100) % MULTIPLE,
             0,

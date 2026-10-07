@@ -38,6 +38,41 @@ anonymisées) sont autorisées. »
 valeurs `null`, les noms de sources (`MANGADEX`…), les codes d'erreur, les
 longueurs mesurées. C'est ce que le test vérifie.
 
+## Les six fixtures du sidecar vision (2026-10-07)
+
+`20-vision-*` à `25-vision-*` viennent du **sidecar vision**, pas du moteur de
+sources : même contrat, autre processus. Elles ont été enregistrées par
+pilotage NDJSON réel de `sidecar-vision/target/release/tatami-vision.exe`, avec
+un pack local assemblé depuis les poids de l'évaluation (les poids, eux, ne sont
+**jamais** dans le dépôt).
+
+| Fixture | Méthode | Ce qu'elle prouve |
+|---|---|---|
+| `20-vision-hello` | `hello` | même forme que le hello du moteur |
+| `21-vision-loadPack` | `loadPack` | identité du pack (`packId`, `version`) |
+| `22-vision-capabilities` | `capabilities` | réponse **avant** `loadPack` : aucun modèle |
+| `23-vision-detect` | `detect` | deux boîtes sur six, pour la forme |
+| `24-vision-ocr` | `ocr` | trois lignes d'anglais lu sur une bulle |
+| `25-vision-inpaint` | `inpaint` | **`ok: false`**, `MODEL_MISSING` |
+
+Deux points qui méritent d'être lus :
+
+- **`25-vision-inpaint` est une erreur, et c'est voulu.** L'effacement (T2.5)
+  n'est pas intégré ; le sidecar le dit au lieu de faire semblant. La porte
+  `les_erreurs_enregistrees_ne_sont_pas_rejouees` exige que cette erreur soit
+  **définitive** : rejouer ne changera rien tant que le modèle est absent, donc
+  elle ne doit pas être rejouée trois fois.
+- **`23-vision-detect` contient des coordonnées qui débordent de la page** (ici
+  `x: -144`). Ce n'est pas une faute de frappe : le détecteur travaille en
+  coordonnées normalisées sur 640 et ne raint pas l'image d'origine. La fixture
+  le montre tel quel, parce que c'est ce que fait vraiment le modèle, et que le
+  bornage est une responsabilité de l'appelant.
+
+**Texte des lignes OCR** : le texte anglais lu sur la bulle est conservé tel
+quel, c'est-à-dire **non anonymisé** — c'est du texte de dialogue de trois mots
+par ligne, sans titre ni identifiant d'œuvre, et c'est la seule preuve que la
+chaîne vision lit vraiment. Le reste (images, poids, corpus) reste hors du dépôt.
+
 ### Le cas de `fetchCover`
 
 Le `contentType` annoncé est `image/jpeg`, mais les octets substitués sont un

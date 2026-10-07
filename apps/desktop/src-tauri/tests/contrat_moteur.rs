@@ -412,10 +412,14 @@ fn le_nombre_de_reponses_enregistrees_est_stable() {
     // pour une méthode orpheline… non : elle le ferait échouer. Mais une fixture
     // perdue doit se voir tout de suite, pas dans six mois.
     let n = charger().len();
+    // 16 réponses du moteur de sources, plus 6 du sidecar vision enregistrées le
+    // 2026-10-07 : `hello`, `loadPack`, `detect`, `ocr`, `inpaint` et
+    // `capabilities`. Voir `fixtures/README.md`.
     assert_eq!(
-        n, 16,
-        "16 réponses enregistrées attendues. Changer ce nombre est normal (nouvelle méthode, \
-         nouveau cas mesuré) — mais il faut le faireexprès et le noter dans fixtures/README.md."
+        n, 22,
+        "22 réponses enregistrées attendues (16 moteur + 6 vision). Changer ce nombre est \
+         normal (nouvelle méthode, nouveau cas mesuré) — mais il faut le faire exprès et le \
+         noter dans fixtures/README.md."
     );
 }
 

@@ -1,0 +1,23 @@
+{
+  "_source": "réponse réelle du sidecar vision (sidecar-vision/target/release/tatami-vision.exe, protocole 0.1), capturée le 2026-10-07 par pilotage NDJSON. Les boîtes et le texte viennent d'une page du corpus local, jamais versionnée (AGENTS.md §2.7).",
+  "_methode": "detect",
+  "id": "vision-detect-enregistre",
+  "ok": true,
+  "result": {
+    "boxes": [
+      {
+        "x": -144,
+        "y": -46,
+        "w": 359,
+        "h": 214
+      },
+      {
+        "x": -85,
+        "y": 0,
+        "w": 314,
+        "h": 185
+      }
+    ]
+  },
+  "_note": "Deux boîtes sur six, pour la forme. Les coordonnées débordent de la page : le détecteur travaille en 640 et ne raint pas l'image, le bornage est à l'appelant."
+}

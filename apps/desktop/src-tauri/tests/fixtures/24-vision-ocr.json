@@ -1,0 +1,38 @@
+{
+  "_source": "réponse réelle du sidecar vision (sidecar-vision/target/release/tatami-vision.exe, protocole 0.1), capturée le 2026-10-07 par pilotage NDJSON. Les boîtes et le texte viennent d'une page du corpus local, jamais versionnée (AGENTS.md §2.7).",
+  "_methode": "ocr",
+  "id": "vision-ocr-enregistre",
+  "ok": true,
+  "result": {
+    "lines": [
+      {
+        "bbox": {
+          "h": 14,
+          "w": 75,
+          "x": 7,
+          "y": 12
+        },
+        "text": "THES?"
+      },
+      {
+        "bbox": {
+          "h": 9,
+          "w": 120,
+          "x": 394,
+          "y": 359
+        },
+        "text": "PROBABLY"
+      },
+      {
+        "bbox": {
+          "h": 9,
+          "w": 188,
+          "x": 359,
+          "y": 383
+        },
+        "text": "THE SAME PLACE"
+      }
+    ]
+  },
+  "_note": "Texte anglais lu sur une bulle de webtoon. Les espaces sont présents : c'est la classe 18709 du dictionnaire, celle que le fichier .txt ne nomme pas."
+}

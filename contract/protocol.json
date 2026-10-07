@@ -28,7 +28,8 @@
         "detect",
         "ocr",
         "inpaint",
-        "loadPack"
+        "loadPack",
+        "capabilities"
       ]
     },
     "errorCode": {

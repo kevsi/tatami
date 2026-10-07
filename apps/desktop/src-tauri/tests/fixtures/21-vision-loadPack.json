@@ -1,0 +1,10 @@
+{
+  "_source": "réponse réelle du sidecar vision (sidecar-vision/target/release/tatami-vision.exe, protocole 0.1), capturée le 2026-10-07 par pilotage NDJSON. Les boîtes et le texte viennent d'une page du corpus local, jamais versionnée (AGENTS.md §2.7).",
+  "_methode": "loadPack",
+  "id": "vision-loadpack-enregistre",
+  "ok": true,
+  "result": {
+    "packId": "vision-fr",
+    "version": "0.1.0"
+  }
+}

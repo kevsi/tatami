@@ -65,7 +65,14 @@ pub enum TypeBloc {
 }
 
 /// Résultat du pipeline sur un bloc.
+///
+/// Sérialisé en minuscules, comme le schéma `contract/translation/schema.json`
+/// l'exige (`"ok"`, `"review"`, `"fallback"`). Mesuré le 2026-10-07 : sans ce
+/// `rename_all`, le type Rust sortait `"Ok"` et la porte
+/// `contrat_traduction_types_rust_accord` échouait — le schéma et le code
+/// divergeaient depuis T1.1, et rien d'autre ne les rapprochait.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum StatutBloc {
     Ok,
     Review,
@@ -82,6 +89,12 @@ pub struct Bbox {
 }
 
 /// Bloc de texte détecté sur une page.
+///
+/// Les champs optionnels sont sérialisés **absents** quand ils sont `None`, et
+/// non `null`. Le schéma les déclare sans `null` dans leur `type` : mesuré le
+/// 2026-10-07, un `null` rendait `PageTranslation` invalide
+/// (`null is not of type "string"`), et le type est echangé tel quel avec
+/// l'interface TypeScript, qui distingue `undefined` (champ absent) de `null`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlocTraduction {
     /// Identifiant stable du bloc sur la page.
@@ -92,10 +105,10 @@ pub struct BlocTraduction {
     /// Position et taille dans la page.
     pub bbox: Bbox,
     /// Texte source lu par l'OCR (anglais attendu).
-    #[serde(rename = "originalText")]
+    #[serde(rename = "originalText", skip_serializing_if = "Option::is_none")]
     pub original_text: Option<String>,
     /// Texte traduit (français). Vide si `status` n'est pas `ok`.
-    #[serde(rename = "translatedText")]
+    #[serde(rename = "translatedText", skip_serializing_if = "Option::is_none")]
     pub translated_text: Option<String>,
     /// Ordre de lecture sur la page (0 = premier bloc lu).
     #[serde(rename = "readingOrder")]
@@ -104,15 +117,16 @@ pub struct BlocTraduction {
     #[serde(rename = "status")]
     pub status: StatutBloc,
     /// Score de confiance OCR/traduction, 0 = inconnu, 1 = certain.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
     /// Taille de police choisie pour le rendu, en px.
-    #[serde(rename = "fontSize")]
+    #[serde(rename = "fontSize", skip_serializing_if = "Option::is_none")]
     pub font_size: Option<f64>,
     /// Nom de la police utilisée.
-    #[serde(rename = "fontFamily")]
+    #[serde(rename = "fontFamily", skip_serializing_if = "Option::is_none")]
     pub font_family: Option<String>,
     /// Indices de coupure dans `translated_text`, triés croissants.
-    #[serde(rename = "lineBreaks")]
+    #[serde(rename = "lineBreaks", skip_serializing_if = "Option::is_none")]
     pub line_breaks: Option<Vec<usize>>,
 }
 
@@ -123,7 +137,7 @@ pub struct PageTranslation {
     #[serde(rename = "pageId")]
     pub page_id: String,
     /// URL stable du manga.
-    #[serde(rename = "mangaUrl")]
+    #[serde(rename = "mangaUrl", skip_serializing_if = "Option::is_none")]
     pub manga_url: Option<String>,
     /// URL stable du chapitre.
     #[serde(rename = "chapterUrl")]

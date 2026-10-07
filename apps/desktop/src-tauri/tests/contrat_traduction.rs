@@ -77,3 +77,44 @@ fn contrat_traduction_types_rust_accord() {
         panic!("types Rust invalides : {}", messages.join(" | "));
     }
 }
+
+/// Le cas nominal **du sérialiseur Rust**, distinct de la validation du schéma.
+///
+/// Mesuré le 2026-10-07 : le test ci-dessus valide la forme JSON du schéma, mais
+/// ne prouve pas que serde produit cette forme. Les deux sont des portes
+/// distinctes : `StatutBloc::Ok` sérialisait en `"Ok"` alors que le schéma
+/// attend `"ok"`, et une régression de ce genre passe le validateur de fixture
+/// tout en cassant le front, qui lit les clés du schéma.
+#[test]
+fn les_enums_rust_sont_serialisees_comme_le_schema_les_attend() {
+    let attendu: Vec<(&str, serde_json::Value)> = vec![
+        ("ok", serde_json::json!("ok")),
+        ("review", serde_json::json!("review")),
+        ("fallback", serde_json::json!("fallback")),
+    ];
+    for (nom, statut) in [
+        ("ok", StatutBloc::Ok),
+        ("review", StatutBloc::Review),
+        ("fallback", StatutBloc::Fallback),
+    ] {
+        let v = serde_json::to_value(statut).expect("sérialisation");
+        assert_eq!(
+            v,
+            attendu.iter().find(|(n, _)| *n == nom).unwrap().1,
+            "`{nom}` sort en {v}, le schéma attend une chaîne minuscule"
+        );
+    }
+
+    // Les types de bloc aussi : `Dialogue` ne doit pas devenir `"dialogue"`
+    // alors que le schéma écrit `"dialogue"`… donc on vérifie les deux côtés.
+    for (nom, valeur, attendu) in [
+        ("dialogue", TypeBloc::Dialogue, "dialogue"),
+        ("narration", TypeBloc::Narration, "narration"),
+        ("sfx", TypeBloc::Sfx, "sfx"),
+        ("texte libre", TypeBloc::FreeText, "free_text"),
+        ("ignoré", TypeBloc::Ignore, "ignore"),
+    ] {
+        let v = serde_json::to_value(valeur).expect("sérialisation");
+        assert_eq!(v, serde_json::json!(attendu), "`{nom}` sort en {v}");
+    }
+}

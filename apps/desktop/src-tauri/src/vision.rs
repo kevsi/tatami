@@ -12,7 +12,13 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Boîte englobante, en pixels.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// `Copy` : quatre `i64`, donc la copie est triviale — et son absence coûte
+/// cher. Sans lui, un test qui veut regarder `fusion[0].bbox` doit cloner, et
+/// le clone se glisse dans un message d'assertion… où il masque la valeur
+/// réelle. Le type qui empêche la faute vaut mieux que le `clone()` de
+/// précaution.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct VisionBbox {
     pub x: i64,
     pub y: i64,

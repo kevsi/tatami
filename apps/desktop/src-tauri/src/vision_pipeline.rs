@@ -138,31 +138,78 @@ pub const SEUIL_FUSION: i64 = 24;
 
 /// Fusionne les détections d'une même bulle vues dans deux tuiles.
 ///
-/// Une bulle à cheval sur une jonction est détectée **deux fois** : une fois
-/// tronquée à gauche, une fois tronquée à droite. Sans fusion, la page affiche
-/// le même texte deux fois, dans deux blocs.
+/// Une bulle à cheval sur une jonction est détectée **plusieurs fois** : mesuré
+/// le 2026-10-07 sur `2-webtoonsen/p072.jpg`, la bulle de `(538,508)` est sortie
+/// **trois fois**, en (538,508), (583,508) et (596,508) — et les deux dernières
+/// n'en lisaient qu'un fragment (`ROBABLY / SAME PLA`, `OBABL / AME PL`).
+/// Sans fusion, la page affiche le même texte trois fois, dont deux fois coupé.
 ///
-/// Pourquoi pas `tile::DetectionFusion` : il ne transporte qu'une `Bbox`, donc
-/// il perd la classe — or la classe **est** la classification de T2.3, et la
-/// perdre obligerait à la deviner. Ici la classe conservée est celle de la
-/// détection la plus sûre du groupe.
+/// ## Pourquoi un union-find, et pas un balayage
 ///
-/// Le tri est par score décroissant, donc le premier élément d'un groupe est le
-/// plus fiable et sa classe l'emporte.
+/// Ma première version triait par score décroissant puis ne comparait chaque
+/// boîte qu'avec la **dernière conservée**. C'est un balayage : il ne vaut que
+/// si l'entrée est triée **spatialement**. Triée par score, la comparaison
+/// porte sur une boîte sans rapport, aucune fusion n'a lieu — et les tests
+/// passaient, parce qu'ils donnaient des boîtes dans un ordre spatial
+/// favorable. La preuve que la page donnait trois blocs pour une bulle est
+/// venue de la mesure, pas du test.
+///
+/// Ici, toutes les paires sont comparées, puis les groupes sont constitués par
+/// union-find : la fusion est donc indépendante de l'ordre d'entrée.
+///
+/// ## La classe conservée
+///
+/// Elle vient de la détection la plus sûre du groupe (les notes les plus
+/// grandes d'abord). C'est elle qui décide si l'on efface, donc c'est la plus
+/// fiable qui doit parler.
 pub fn fusionner(mut detections: Vec<Detection>, seuil: i64) -> Vec<Detection> {
+    if detections.len() < 2 {
+        return detections;
+    }
+    // Notes décroissantes : le premier élément d'un groupe est le plus sûr, et
+    // c'est lui qui représente le groupe.
     detections.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    let mut resultats: Vec<Detection> = Vec::new();
-    for d in detections {
-        match resultats.last_mut() {
-            Some(existant) if se_touchent(&existant.bbox, &d.bbox, seuil) => {
-                existant.bbox = englobe(&existant.bbox, &d.bbox);
-            }
-            _ => resultats.push(d),
+    let n = detections.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn racine(parent: &mut [usize], x: usize) -> usize {
+        let mut x = x;
+        while parent[x] != x {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
         }
+        x
+    }
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if se_touchent(&detections[i].bbox, &detections[j].bbox, seuil) {
+                let (a, b) = (racine(&mut parent, i), racine(&mut parent, j));
+                if a != b {
+                    // Le représentant est le plus petit indice = le plus sûr.
+                    parent[a.max(b)] = a.min(b);
+                }
+            }
+        }
+    }
+    // Un groupe = une bulle. On reparcourt dans l'ordre des notes, donc le
+    // représentant de chaque groupe est déjà en tête.
+    let mut resultats: Vec<Detection> = Vec::new();
+    let mut vues: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+    for i in 0..n {
+        let groupe = racine(&mut parent, i);
+        if !vues.insert(groupe) {
+            continue;
+        }
+        let mut bulle = detections[i].clone();
+        for (j, autre) in detections.iter().enumerate().skip(i + 1) {
+            if racine(&mut parent, j) == groupe {
+                bulle.bbox = englobe(&bulle.bbox, &autre.bbox);
+            }
+        }
+        resultats.push(bulle);
     }
     resultats
 }
@@ -265,7 +312,22 @@ pub async fn analyser_page_interne(
     let octets = cache
         .octets(token)
         .ok_or_else(|| ErreurVision::PageAbsente(token.to_string()))?;
-    let image = image::load_from_memory(&octets)
+    analyser_octets(vision, &octets, token, chapter_url, source).await
+}
+
+/// Le travail réel, sur des **octets** d'image.
+///
+/// Séparé de l'accès au cache pour une raison concrète : la chaîne se prouve
+/// sans interface, sur une page du corpus, en appelant cette fonction. Un
+/// test qui doit fabriquer un jeton de cache teste le cache, pas la chaîne.
+pub async fn analyser_octets(
+    vision: &Arc<SuperviseurVision>,
+    octets: &[u8],
+    jeton: &str,
+    chapter_url: &str,
+    source: &str,
+) -> Result<PageTranslation, ErreurVision> {
+    let image = image::load_from_memory(octets)
         .map_err(|e| ErreurVision::ImageIllisible(e.to_string()))?
         .to_rgb8();
     let (largeur, hauteur) = (image.width(), image.height());
@@ -383,7 +445,7 @@ pub async fn analyser_page_interne(
     );
 
     Ok(PageTranslation {
-        page_id: token.to_string(),
+        page_id: jeton.to_string(),
         manga_url: None,
         chapter_url: chapter_url.to_string(),
         source: source.to_string(),
@@ -694,6 +756,79 @@ mod tests {
             score: 0.9,
         };
         assert_eq!(fusionner(vec![haute, basse], SEUIL_FUSION).len(), 2);
+    }
+
+    #[test]
+    fn la_fusion_ne_depend_pas_de_l_ordre_des_notes() {
+        // La page mesurée (`2-webtoonsen/p072.jpg`) a donné 7 détections pour
+        // 3 bulles, dont trois fois la même bulle de y=508. Le tri par note
+        // place naturally la bulle de (538,508) — celle de (583,508) derrière,
+        // et une bulle de l'autre coin de la page entre les deux. Un balayage
+        // qui ne compare qu'avec la dernière conserve **trois** blocs ; ici
+        // deux.
+        let page = vec![
+            Detection {
+                bbox: b(538, 508, 188, 107),
+                classe: ClasseBloc::TexteBulle,
+                score: 0.95,
+            },
+            Detection {
+                bbox: b(100, 100, 90, 40),
+                classe: ClasseBloc::Bulle,
+                score: 0.90,
+            },
+            Detection {
+                bbox: b(583, 508, 114, 107),
+                classe: ClasseBloc::TexteBulle,
+                score: 0.70,
+            },
+        ];
+        let fusion = fusionner(page, SEUIL_FUSION);
+        assert_eq!(fusion.len(), 2, "trois détections -> deux bulles");
+        assert!(
+            fusion.iter().any(|d| d.bbox.x == 538 && d.bbox.w == 188),
+            "la bulle de y=508 est une seule boîte — l'union de 538..726 et \
+             583..697 fait 188 de large, pas deux boîtes : {:?}",
+            fusion.iter().map(|d| d.bbox).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn trois_vues_de_la_meme_bulle_donnent_un_bloc_et_un_texte_complet() {
+        // Les trois boîtes réellement rendues par le détecteur pour la bulle de
+        // (538,508). La troisième est la plus étroite : lue seule, elle ne
+        // donnerait que « OBABL / AME PL ». C'est le défaut exact que la fusion
+        // supprime, et la raison de ne pas se contenter de tuiler : sans
+        // dédoublonnage, chaque jonction multiplie le texte tronqué.
+        let trois = vec![
+            Detection {
+                bbox: b(538, 508, 188, 107),
+                classe: ClasseBloc::TexteBulle,
+                score: 0.95,
+            },
+            Detection {
+                bbox: b(583, 508, 114, 107),
+                classe: ClasseBloc::TexteBulle,
+                score: 0.92,
+            },
+            Detection {
+                bbox: b(596, 508, 88, 107),
+                classe: ClasseBloc::TexteBulle,
+                score: 0.90,
+            },
+        ];
+        let fusion = fusionner(trois, SEUIL_FUSION);
+        assert_eq!(fusion.len(), 1);
+        let u = fusion[0].bbox;
+        assert_eq!(
+            (u.x, u.y, u.w, u.h),
+            (538, 508, 188, 107),
+            "la plus large des trois"
+        );
+        assert!(
+            u.w >= 188,
+            "la culture doit couvrir au moins la vue la plus large, sinon l'OCR rend un fragment"
+        );
     }
 
     #[test]

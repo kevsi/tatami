@@ -23,6 +23,7 @@
 //! Les poids ne sont **jamais** dans le dépôt : ils arrivent par packs
 //! versionnés et vérifiés (`pack.rs` côté application).
 
+pub mod detect;
 pub mod dico;
 pub mod lignes;
 pub mod ocr;

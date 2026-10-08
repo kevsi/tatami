@@ -33,6 +33,8 @@ pub enum ErreurTraduction {
     Reseau(String),
     #[error("réponse Gemini inattendue : {0}")]
     Reponse(String),
+    #[error("réponse locale inattendue : {0}")]
+    ReponseLocale(String),
     #[error("traduction locale indisponible (modèle non chargé)")]
     LocalIndisponible,
     #[error("trousseau indisponible : {0}")]
@@ -54,6 +56,22 @@ pub enum ErreurTraduction {
 // **Liste ≠ utilisable** : un modèle listé par `/v1beta/models` peut refuser de
 // répondre. `gemini-3.8-flash` est le remplaçant nommé par l'API elle-même.
 const MODELE_GEMINI: &str = "gemini-3.8-flash";
+
+/// Interrupteur de la traduction **locale** (opus-mt).
+///
+/// Coupé le 2026-10-08 sur décision de l'utilisateur. Ce n'est pas un défaut :
+/// la boucle fonctionne et est mesurée — 92 à 824 ms par bulle, et sur une page
+/// anglaise réelle de GDSCANS (page 11, langue confirmée par les mots des blocs
+/// de dialogue) « Right! » → « Oui ! », « crazy! » → « C'est fou ! ». Mais la
+/// qualité y est inégale : une bulle sur cinq revenait **inchangée**, et les
+/// traductions restent approximatives là où un LLM en ligne est nettement
+/// meilleur (mesuré dans `docs/spike-traduction.md` §8.6).
+///
+/// Préférer du français approximatif posé sur les bulles à pas de traduction du
+/// tout : on a donc coupé. Le code est committé, testé et probed ; le remettre
+/// ne tient qu'à cette constante. Passer à `true` rend le chemin local de
+/// nouveau disponible en repli de l'en ligne.
+const TRADUCTION_LOCALE_ACTIVE: bool = false;
 
 // ---------------------------------------------------------------------------
 // Types du contrat de traduction
@@ -301,6 +319,19 @@ impl Traducteur {
         Ok(texte_reponse.trim().to_string())
     }
 
+    /// `true` si au moins un fournisseur **en ligne** est configuré.
+    ///
+    /// Mesuré le 2026-10-08 : sans clé, `traduire()` retombait sur opus-mt avec
+    /// le **prompt de page entier**. Un modèle seq2seq ne s'en sort pas — il
+    /// produisait une phrase sans rapport, et surtout il le faisait trois fois
+    /// (les trois tentatives avec backoff) avant d'atteindre le repli par
+    /// bulle, qui est le seul chemin correct. Le chemin se décide donc avant
+    /// l'appel, pas par défaut en cascade.
+    pub fn fournisseur_en_ligne_configure() -> bool {
+        matches!(Self::cle_openrouter(), Ok(Some(c)) if !c.is_empty())
+            || matches!(Self::cle_gemini(), Ok(Some(c)) if !c.is_empty())
+    }
+
     /// Traduit via le modèle local du sidecar vision (opus-mt).
     ///
     /// Le cœur ne parle jamais à ONNX : il émet la méthode `translate` du contrat,
@@ -330,12 +361,22 @@ impl Traducteur {
                 return Err(ErreurTraduction::LocalIndisponible);
             }
         };
-        match reponse.get("translatedText").and_then(|v| v.as_str()) {
+        // `demander` rend l'**enveloppe** entière : c'est `result` qui porte la
+        // charge utile, comme pour `detect`, `ocr` et `loadPack`
+        // (`vision_pipeline.rs:567`, `download.rs`). Lire `translatedText` à la
+        // racine renvoyait « absent » sur une réponse parfaitement bonne — mesuré
+        // le 2026-10-08, le journal répétait « sans translatedText » alors que
+        // la ligne contenait bien le texte, sous `result`.
+        let charge = reponse
+            .get("result")
+            .and_then(|r| r.get("translatedText"))
+            .and_then(|v| v.as_str());
+        match charge {
             Some(fr) => Ok(fr.to_string()),
             None => {
-                tracing::warn!("`translate` sans `translatedText` : {reponse}");
-                Err(ErreurTraduction::Reponse(format!(
-                    "réponse locale inattendue : {reponse}"
+                tracing::warn!("`translate` : pas de result.translatedText dans {reponse}");
+                Err(ErreurTraduction::ReponseLocale(format!(
+                    "réponse de `translate` : {reponse}"
                 )))
             }
         }
@@ -624,7 +665,17 @@ pub async fn traduire_page(
         .collect();
 
     let fallback = LocalTranslator::avec_vision(Arc::clone(vision.inner()));
-    let page_traduite = if consentement {
+    let en_ligne = consentement && Traducteur::fournisseur_en_ligne_configure();
+    if consentement && !en_ligne && TRADUCTION_LOCALE_ACTIVE {
+        tracing::info!("traduction en ligne : aucune clé, passage direct par bulle (opus-mt)");
+    }
+    // Aucun fournisseur utilisable : le dire plutôt que renvoyer une page
+    // entièrement vide. C'est aussi ce que voit l'interface, qui peut alors
+    // proposer de configurer une clé au lieu d'afficher un overlay muet.
+    if !en_ligne && !TRADUCTION_LOCALE_ACTIVE {
+        return Err(ErreurTraduction::LocalIndisponible.to_string());
+    }
+    let page_traduite = if en_ligne {
         let translator = GeminiTranslator::new();
         traduire_page(&translator, &fallback, &page, &glossaire)
             .await

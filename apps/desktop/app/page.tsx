@@ -1115,6 +1115,11 @@ export default function Home() {
   // la fois, sinon les trois pages que déclenche l'observateur se disputent les
   // tuiles et chacune dépasse le délai de 10 s.
   const chaineTraductionRef = useRef<Promise<unknown>>(Promise.resolve());
+  // Index **déjà en file**, pas encore analysés. La garde `blocsTraductionRef`
+  // ne couvre que les pages terminées : sans ce jeu, l'observateur qui
+  // redéclenche la page visible la remettait en file, et la vision — 30 à 60 s
+  // par page — refait le même travail, devant les pages voisines.
+  const enAttenteTraductionRef = useRef<Set<number>>(new Set());
   const setAfficherTraductionComputed = (v: boolean) => {
     afficherTraductionRef.current = v;
     setAfficherTraduction(v);
@@ -3032,6 +3037,8 @@ function taillePoliceSource(b: BlocTraduction): number {
 async function chargerTraductionPage(index: number, page: Page) {
   if (!afficherTraductionRef.current) return;
   if (blocsTraductionRef.current[index]) return; // déjà chargée
+  if (enAttenteTraductionRef.current.has(index)) return; // déjà en file
+  enAttenteTraductionRef.current.add(index);
   // L'analyse est photographiée **au moment de l'appel** : une mise en file
   // devient inutile si le lecteur n'est plus sur la même page avant son tour.
   // Mesuré le 2026-10-08 : sans cette garde, une analyse en file partait après
@@ -3040,16 +3047,22 @@ async function chargerTraductionPage(index: number, page: Page) {
   // à voir avec lui.
   const chapitre = reader?.chapter.url ?? '';
   await enFileTraduction(async () => {
-    if (!afficherTraductionRef.current) return;
-    // Deux critères, pas un : le chapitre **et** le jeton de la page. Rouvrir le
-    // MÊME chapitre ré-enregistre les pages, donc les jetons changent — et une
-    // analyse en file partie sur l'ancien jeton répond « page inconnue ou déjà
-    // évacuée du cache » (mesuré le 2026-10-08). Comparer l'URL ne le voit pas :
-    // elle est identique.
-    if ((reader?.chapter.url ?? '') !== chapitre) return;
-    if ((reader?.pages[index]?.token ?? '') !== page.token) return;
-    if (blocsTraductionRef.current[index]) return; // chargée entre-temps
-    await analyserPage(index, page);
+    try {
+      if (!afficherTraductionRef.current) return;
+      // Deux critères, pas un : le chapitre **et** le jeton de la page. Rouvrir le
+      // MÊME chapitre ré-enregistre les pages, donc les jetons changent — et une
+      // analyse en file partie sur l'ancien jeton répond « page inconnue ou déjà
+      // évacuée du cache » (mesuré le 2026-10-08). Comparer l'URL ne le voit pas :
+      // elle est identique.
+      if ((reader?.chapter.url ?? '') !== chapitre) return;
+      if ((reader?.pages[index]?.token ?? '') !== page.token) return;
+      if (blocsTraductionRef.current[index]) return; // chargée entre-temps
+      await analyserPage(index, page);
+    } finally {
+      // Toujours libérer l'index : une tâche sautée par une garde ne doit pas
+      // rester « en attente » pour le reste de la session.
+      enAttenteTraductionRef.current.delete(index);
+    }
   });
 }
 

@@ -2039,6 +2039,82 @@ button:disabled {
   }
 }
 
+/* ---------- Bandeau base en mémoire ----------
+ *
+ * Même principe que le toast : fixe en haut de la fenêtre, z-index élevé
+ * pour passer au-dessus du lecteur. Le fond utilise les tokens d'alerte
+ * (danger) car c'est une information critique : l'utilisateur perdra ses
+ * données à la fermeture.
+ */
+.bandeau-memoire {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s3) var(--s5);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--danger-texte);
+  background: var(--danger-fond);
+  border-bottom: 1px solid var(--danger-bordure);
+  box-shadow: var(--shadow);
+  animation: bandeau-entree 0.2s ease-out;
+}
+
+.bandeau-memoire span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bandeau-fermer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.bandeau-fermer:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.bandeau-fermer:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@keyframes bandeau-entree {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bandeau-memoire {
+    animation: none;
+  }
+}
+
 .alert {
   background: var(--danger-fond);
   border: 1px solid var(--danger-bordure);

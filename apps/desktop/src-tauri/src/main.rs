@@ -224,6 +224,7 @@ fn main() {
             commands::list_sources,
             commands::latest,
             commands::filter_options,
+            commands::est_base_en_memoire,
             download::download_chapter,
             download::missing_chapters,
             download::clean_partials,

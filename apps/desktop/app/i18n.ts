@@ -462,6 +462,8 @@ const FR = {
   'catalogue.webtoon': '{n} webtoons',
   'catalogue.source1': '{n} source',
   'catalogue.source': '{n} sources',
+  'bandeau.base_en_memoire':
+    'La base de données est en mémoire : les favoris et l\'historique ne seront pas conservés.',
 } as const;
 
 type Cle = keyof typeof FR;
@@ -849,6 +851,8 @@ const EN: Record<Cle, string> = {
   'catalogue.webtoon': '{n} webtoons',
   'catalogue.source1': '{n} source',
   'catalogue.source': '{n} sources',
+  'bandeau.base_en_memoire':
+    'The database is in memory: favourites and history will not be persisted.',
 };
 
 const DICTIONNAIRES: Record<Lang, Record<Cle, string>> = { fr: FR, en: EN };

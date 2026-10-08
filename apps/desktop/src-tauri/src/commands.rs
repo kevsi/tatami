@@ -352,3 +352,12 @@ mod tests {
         );
     }
 }
+
+/// Retourne `true` si la base de données est en mémoire (repli de secours).
+/// L'interface peut alors afficher un bandeau d'avertissement.
+#[tauri::command]
+pub async fn est_base_en_memoire(
+    store: State<'_, Arc<crate::store::Store>>,
+) -> Result<bool, String> {
+    Ok(store.est_en_memoire())
+}

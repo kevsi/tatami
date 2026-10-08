@@ -127,6 +127,7 @@ pub struct CustomSource {
 pub struct Store {
     conn: Mutex<Connection>,
     path: PathBuf,
+    in_memory: bool,
 }
 
 impl Store {
@@ -145,6 +146,7 @@ impl Store {
         let store = Store {
             conn: Mutex::new(conn),
             path,
+            in_memory: false,
         };
         store.migrate()?;
         Ok(store)
@@ -157,9 +159,16 @@ impl Store {
         let store = Store {
             conn: Mutex::new(conn),
             path: PathBuf::from(":memory:"),
+            in_memory: true,
         };
         store.migrate()?;
         Ok(store)
+    }
+
+    /// Indique si la base est en mémoire (repli de secours) : les favoris,
+    /// l'historique et les téléchargements ne survivront pas à la fermeture.
+    pub fn est_en_memoire(&self) -> bool {
+        self.in_memory
     }
 
     fn version(&self) -> Result<i64, String> {

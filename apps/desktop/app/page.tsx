@@ -497,7 +497,27 @@ function Toaster({
     </div>
   );
 }
-
+ 
+// Bandeau d'avertissement : base en mémoire (repli de secours).
+// Affiche un message fixe en haut de la fenêtre tant que la base est en mémoire.
+function BaseMemoireBanner({ visible }: { visible: boolean }) {
+  const { t } = useI18n();
+  if (!visible) return null;
+  return (
+    <div className="bandeau-memoire" role="alert" aria-live="assertive">
+      <span>{t('bandeau.base_en_memoire')}</span>
+      <button
+        className="bandeau-fermer"
+        aria-label={t('notification.fermer')}
+        title={t('notification.fermer')}
+        onClick={() => window.localStorage.setItem('bandeau_memoire_masque', '1')}
+      >
+        {'×'}
+      </button>
+    </div>
+  );
+}
+ 
 // Barre d'application persistante : brand + onglets, visible dans toutes les vues.
 function AppBar({
   tab,
@@ -1004,6 +1024,7 @@ export default function Home() {
   // `inactif` avant la lecture du système ferait clignoter l'interrupteur à
   // chaque ouverture de l'écran des réglages.
   const [demarrage, setDemarrage] = useState<EtatDemarrage>('inconnu');
+  const [baseEnMemoire, setBaseEnMemoire] = useState(false);
   // Ce qui n'a pas encore été regardé. Une valeur dérivée, pas un second état :
   // deux compteurs qui peuvent divergir sont deux bugs en attente.
   const majNonVus = maj.filter((m) => !m.vue).length;
@@ -1205,6 +1226,13 @@ export default function Home() {
       .then(setDossierTelechargements)
       .catch(() => {
         /* l'affichage retombe sur le dossier par défaut */
+      });
+    // Vérification base en mémoire : si le dossier de données est verrouillé,
+    // Rust a basculé sur une base en mémoire — rien ne persistera.
+    void invoke<boolean>('est_base_en_memoire')
+      .then(setBaseEnMemoire)
+      .catch(() => {
+        /* silencieux : si la commande échoue, on assume base persistante */
       });
     const modeIncognito = window.localStorage.getItem(INCOGNITO_KEY);
     if (modeIncognito != null) setIncognito(modeIncognito === '1');
@@ -2922,6 +2950,7 @@ function renderSuperpositions() {
       {renderVerif()}
       {renderChargement()}
       <Toaster toasts={toasts} onClose={fermerToast} />
+      <BaseMemoireBanner visible={baseEnMemoire} />
     </>
   );
 }

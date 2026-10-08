@@ -415,6 +415,9 @@ const FR = {
   'lecteur.signet': 'Signet',
   'lecteur.signet.actif': 'Signet ✓',
   'lecteur.traduction.toggle': 'Afficher la traduction',
+  // F3 : l'échec doit se voir dans l'interface, pas seulement dans la console.
+  'lecteur.traduction.echec':
+    'Traduction impossible pour l’instant. Configurez une clé de traduction dans les réglages, ou attendez : la page est longue à analyser.',
 
   // --- Erreurs
   'erreur.lecture': 'Lecture impossible : {raison}',
@@ -784,6 +787,9 @@ const EN: Record<Cle, string> = {
   'lecteur.signet': 'Bookmark',
   'lecteur.signet.actif': 'Bookmark ✓',
   'lecteur.traduction.toggle': 'Show translation',
+  // F3 : the failure has to be visible in the interface, not only in the console.
+  'lecteur.traduction.echec':
+    'Translation unavailable for now. Configure a translation key in the settings, or wait: the page takes a while to analyse.',
 
   'erreur.lecture': 'Cannot read: {raison}',
   'erreur.chapitres': 'Chapters unavailable: {raison}',

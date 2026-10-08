@@ -2676,6 +2676,21 @@ button:disabled {
   border-radius: 4px;
   background: var(--surface);
 }
+/* Echec de traduction dans la barre du lecteur (F3, 2026-10-08).
+   Sans lui, l'utilisateur cliquait sur FR et ne voyait rien : l'erreur ne
+   partait que dans la console. Meme traitement que `.reader-offline` — tokens
+   existants, aucune couleur nouvelle. */
+.alerte-traduction {
+  flex: 1 1 100%;
+  margin: 4px 0 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
 /* Mention « Hors ligne » dans la barre du lecteur.
    Classe dediee et non `.badge` : ce dernier porte `margin-left: auto`, qui
    pousserait la mention a l'extremite opposee de la barre. */

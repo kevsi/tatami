@@ -70,24 +70,33 @@
 
 ### Next steps
 
-Ajouté le 2026-10-08 (pilotage de l'application réelle — l'ordre a changé, voir
-la dette mesurée ci-dessus : les défauts 2 et 3 de cette section sont
-**bloquants pour l'usage**, pas des finitions) :
+Ajouté le 2026-10-08 (pilotage de l'application réelle — les défauts 1, 2, 3 et 4
+de la section précédente sont **corrigés et mesurés** ; ce qui suit est le reste) :
 
-1. **Défaut 2 ci-dessus — le saut de page.** Deux voies, à trancher :
-   (a) faire émettre `largeur`/`hauteur` par le moteur puis les lire dans Rust ;
-   (b) mesurer la taille réelle des images déjà chargées dans le lecteur.
-   (a) est plus juste et débloque aussi la virtualisation (22 pages montées au
-   lieu d'une fenêtre) ; (b) ne coûte aucune requête mais touche à la
-   virtualisation, qui a déjà coûté deux corrections de position de lecture.
-2. **Défaut 3 ci-dessus — la bascule FR sans fournisseur.** Rendre l'échec
-   visible dans l'interface au lieu de la seule console, et traiter la
-   contention des trois analyses simultanées.
-3. **Défaut 4 ci-dessus — « désactivée{s} »**, une ligne.
-4. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
-5. **Retirer la liste blanche S2** de `main.rs:387-393` : les trois commandes sont maintenant
+1. **Les dimensions des pages distantes** — seul point non résolu du défaut 2.
+   `MangaPage` du parser ne porte que `url` et `preview` : il n'existe donc
+   aucune dimension à émettre sans télécharger chaque image. Décision humaine
+   attendue : (a) le moteur fait une requête de dimension par image (coûteuse en
+   bande passante, mais `image.rs` sait déjà lire les en-têtes JPEG/PNG/WebP) ;
+   (b) le lecteur mesure `naturalHeight` des images déjà chargées (aucune
+   requête, mais la virtualisation ne peut pas s'activer tant que toutes les
+   pages ne sont pas connues — donc elle resterait désactivée). En l'état :
+   **22 pages montées** au lieu d'une fenêtre glissante.
+2. **`analyser_page` est rejoué même quand la page est en cache** — 51 s payés
+   pour afficher des blocs déjà en base. Le cache n'est consulté que par
+   `traduire_page`.
+3. **Le texte OCR dégradé est affiché tel quel** (« 039MA 03350.7 », un crédit) et
+   « CERTAIN IT IS CRAZY » devient « CERTAINS C'EST CRAZY ». Aucun garde ne filtre
+   une reconnaissance douteuse — le `confidence` vaut 1 partout, donc il ne peut
+   rien servir de seuil.
+4. **Écran pour saisir la clé de traduction** — le repli local étant coupé et le
+   quota Gemini gratuit étant de 20 pages par jour, il manque l'écran qui permet
+   de configurer le fournisseur. C'est la dette 3 de la section précédente.
+5. **`listSources` à 10 s** au démarrage à froid (défaut 5 ci-dessus).
+6. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
+7. **Retirer la liste blanche S2** de `main.rs:387-393` : les trois commandes sont maintenant
    appelées par l'interface, la porte « commande morte » doit de nouveau mordre.
-6. **T5.1** — éditeur de bloc : modifier le texte, déplacer/redimensionner, retoucher le masque, relancer l'effacement local, régler la taille de police.
+8. **T5.1** — éditeur de bloc : modifier le texte, déplacer/redimensionner, retoucher le masque, relancer l'effacement local, régler la taille de police.
 
 ---
 
@@ -245,31 +254,58 @@ committée rend le texte lisible (mesuré `rgba(0,0,0,0.82)`).
    0. Le défaut était invisible parce qu'il n'existe qu'en dessous de 100 % de
    zoom, et toutes les mesures précédentes portaient sur le compteur de pages.
 
-2. **Le saut de page ne déplace pas la bande — À CORRIGER.** Mesuré : trois
-   clics sur `→` laissent `scrollTop` à **0** et la première page affichée à
-   l'index 0, tandis que le compteur passe de 3 à 6 — l'écran ment. La molette,
-   elle, fonctionne (`scrollTo(3000)` → 3000, compteur 6). Cause lue dans le
-   code : `Server.kt::pageToJson` n'émet que `index`, `url` et `previewUrl`, et
-   `commands.rs::pages` n'ajoute que `token` — donc `largeur`/`hauteur` sont
-   **toujours absents**, `hauteurs` vaut zéro, `offsets` vaut zéro partout, et
-   `scrollToPage` défile vers `max(0, 0 - 8)`. Le commentaire du type `Page`
-   (« lue par Rust dans l'en-tête ») décrit une garantie que rien n'implémente :
-   seul le chemin `.cbz` local (`LocalPage`) a de vraies dimensions.
-   Conséquence secondaire : la bande n'est jamais virtualisable, donc **les 22
-   pages sont montées** au lieu d'une fenêtre glissante.
+2. **Le saut de page ne déplaçait pas la bande — CORRIGÉ.** Mesuré : trois
+   clics sur `→` laissaient `scrollTop` à **0** et la première page affichée à
+   l'index 0, tandis que le compteur passait de 3 à 6 — l'écran mentait. La
+   molette, elle, fonctionnait (`scrollTo(3000)` → 3000, compteur 6). Cause lue
+   dans le code : `Server.kt::pageToJson` n'émet que `index`, `url` et
+   `previewUrl`, et `commands.rs::pages` n'ajoute que `token` — donc
+   `largeur`/`hauteur` sont **toujours absents**, `hauteurs` vaut zéro,
+   `offsets` vaut zéro partout. La garde `haut !== undefined` était donc
+   **satisfaite par 0**, et `scrollToPage` défilait vers `max(0, 0 - 8)` : la
+   branche de repli sur `scrollIntoView` — qui est la bonne hors virtualisation —
+   était inatteignable. Correctif : `offsets[cible]` n'est lu que si
+   `bandeVirtualisable`. Preuve rouge/verte en réécrivant le chunk servi
+   (`.mesures/pilot-107-preuve-rouge.cjs`) : ancien code → compteur 4, bande 0,
+   page 1 affichée ; code corrigé → compteur 5, bande 2864, page 5 affichée.
+   **Reste ouvert** : `MangaPage` du parser ne porte que `url` et `preview`, donc
+   la virtualisation reste impossible sans télécharger chaque image. Les 22 pages
+   sont donc montées au lieu d'une fenêtre glissante.
 
-3. **Sur le chemin par défaut, la bascule FR ne produit rien de visible.**
-   Mesuré : 15 s puis `[warning] traduction page 11 : sidecar vision : detect
-   vision : délai dépassé (10s)`, et la page reste en anglais, sans un mot
-   (`.mesures/p101-sans-cles.png`). `DELAI_DETECT = 10 s` est un délai **par
-   tuile**, or l'observateur lance trois pages d'affilée : sur deux cœurs, chaque
-   tuile dépasse alors 10 s. L'échec ne va que dans `console.warn`
-   (`page.tsx:3050`), donc l'utilisateur n'a aucun signal.
+3. **Sur le chemin par défaut, la bascule FR ne produisait rien de visible —
+   CORRIGÉ.** Trois défauts distincts, tous mesurés :
+   - *Le délai de 10 s ne couvre pas le sidecar froid.* Mesuré : sidecar tué puis
+     FR → `detect vision : délai dépassé (10s)` en 39,7 s. Après un premier
+     `detect`, la même page aboutit. La session ONNX n'est chaude qu'après une
+     première inférence. Correctif : préchauffage dans `assurer_demarrage`,
+     après `loadPack` — là où un délai long est normal. Mesuré : démarrage neuf →
+     analyse réussie.
+   - *Le superviseur ne voyait pas mourir son enfant.* `assurer_demarrage`
+     testait `enfant.is_some()`, or un `Child` est un handle, pas un état : la
+     valeur restait `true` après un crash, donc **toute** traduction suivante
+     échouait définitivement sur `stdin vision : os error 232`, sans relance.
+     Correctif : `try_wait()` + remise à zéro de l'état. Mesuré : sidecar tué →
+     analyse réussie en 163 s et **nouveau** sidecar (pid 10328).
+   - *L'échec n'était visible que dans la console.* `console.warn` seul
+     (§ `page.tsx`). Correctif : `<p role="alert">` dans la barre du lecteur,
+     qui reste jusqu'à ce qu'une page réussisse, avec la clé
+     `lecteur.traduction.echec` (FR/EN).
+   - *La file d'attente.* L'observateur déclenche `i`, `i+1`, `i-1`. Une file
+     borne le débit à une analyse, mais **mesure 109 : sur cette machine il n'y a
+     qu'une analyse à la fois de toute façon, et elle aboutit dans les deux cas**.
+     La concurrence n'était donc pas la cause du délai dépassé — il ne faut pas
+     lui attribuer le correctif. Elle est conservée pour le débit, avec une garde
+     de génération : sans elle, une analyse en file partait après un changement
+     de chapitre et répondait « page inconnue ou déjà évacuée du cache ». Comparer
+     le **chapitre** ne suffit pas — rouvrir le même chapitre ré-enregistre les
+     jetons, l'URL est identique : il faut comparer le **jeton de la page**.
 
-4. **« 8 désactivée{s} »** — `page.tsx:5907` passe `{ n }` à
-   `catalogue.sources.desactivees`, dont le gabarit est `'{n} désactivée{s}'`.
-   Même famille que la dette 2 de la section précédente : une seule clé ne peut
-   pas porter le pluriel des deux langues.
+4. **« 8 désactivée{s} » — CORRIGÉ.** `page.tsx` passait `{ n }` à un gabarit
+   `'{n} désactivée{s}'`. Les deux autres appels de la même famille passent déjà
+   `s: n > 1 ? 's' : ''` ; celui-ci non. Mesuré après : « 1363 sources
+   disponibles · 8 désactivées », plus aucun `{s}` à l'écran. Le cas singulier
+   n'a pas été joué à l'écran : il faudrait désactiver 7 des 8 sources dans les
+   réglages de l'utilisateur.
 
 5. **`listSources` expire à 10 s au démarrage à froid** (JVM qui reconstruit le
    catalogue des 1370 sources) : l'écran affiche « 0 sources disponibles » puis

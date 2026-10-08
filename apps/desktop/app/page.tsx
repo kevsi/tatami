@@ -1106,9 +1106,21 @@ export default function Home() {
   useEffect(() => {
     blocsTraductionRef.current = blocsTraduction;
   }, [blocsTraduction]);
+  // F3 (mesuré le 2026-10-08) : sans fournisseur configuré, la bascule FR ne
+  // produisait **rien** à l'écran — l'échec ne partait que dans `console.warn`
+  // (`page.tsx` ~3050). Un toast de 3 s ne survit pas aux 15 à 60 s d'analyse,
+  // donc l'état est un message de lecteur qui reste jusqu'à ce que ça passe.
+  const [traductionEchec, setTraductionEchec] = useState(false);
+  // File d'attente des analyses de page (voir `enFileTraduction`) : une seule à
+  // la fois, sinon les trois pages que déclenche l'observateur se disputent les
+  // tuiles et chacune dépasse le délai de 10 s.
+  const chaineTraductionRef = useRef<Promise<unknown>>(Promise.resolve());
   const setAfficherTraductionComputed = (v: boolean) => {
     afficherTraductionRef.current = v;
     setAfficherTraduction(v);
+    // Le message d'échec vaut pour la session FR courante : le rebascule doit
+    // le retirer, sinon il reste affiché après que la cause soit corrigée.
+    setTraductionEchec(false);
   };
   const [challenge, setChallenge] = useState<string | null>(null);
   const [challengeBusy, setChallengeBusy] = useState(false);
@@ -3020,7 +3032,60 @@ function taillePoliceSource(b: BlocTraduction): number {
 async function chargerTraductionPage(index: number, page: Page) {
   if (!afficherTraductionRef.current) return;
   if (blocsTraductionRef.current[index]) return; // déjà chargée
+  // L'analyse est photographiée **au moment de l'appel** : une mise en file
+  // devient inutile si le lecteur n'est plus sur la même page avant son tour.
+  // Mesuré le 2026-10-08 : sans cette garde, une analyse en file partait après
+  // un changement de chapitre et répondait « page inconnue ou déjà évacuée du
+  // cache » — un message qui ne parle pas du lecteur, sur une page qui n'a rien
+  // à voir avec lui.
+  const chapitre = reader?.chapter.url ?? '';
+  await enFileTraduction(async () => {
+    if (!afficherTraductionRef.current) return;
+    // Deux critères, pas un : le chapitre **et** le jeton de la page. Rouvrir le
+    // MÊME chapitre ré-enregistre les pages, donc les jetons changent — et une
+    // analyse en file partie sur l'ancien jeton répond « page inconnue ou déjà
+    // évacuée du cache » (mesuré le 2026-10-08). Comparer l'URL ne le voit pas :
+    // elle est identique.
+    if ((reader?.chapter.url ?? '') !== chapitre) return;
+    if ((reader?.pages[index]?.token ?? '') !== page.token) return;
+    if (blocsTraductionRef.current[index]) return; // chargée entre-temps
+    await analyserPage(index, page);
+  });
+}
 
+/**
+ * Une seule analyse de page à la fois.
+ *
+ * **Ce que la file corrige, mesuré le 2026-10-08** : l'observateur
+ * d'intersection déclenche `i`, `i+1` et `i-1`, donc jusqu'à trois
+ * `analyser_page` d'affilée. La vision est le goulot (11 à 43 s par page) et
+ * elle monopolise les deux cœurs : trois analyses simultanées, c'est trois fois
+ * plus de latence pour l'utilisateur, sur une fonction de fond. La file borne
+ * le débit à une analyse, comme le fait déjà le taux par source côté moteur.
+ *
+ * **Ce qu'elle ne corrige pas** — et qu'il ne faut pas lui attribuer : le
+ * `detect vision : délai dépassé (10s)` du 2026-10-08. Mesuré ensuite
+ * (`.mesures/pilot-109-preuve-file.cjs`) : sur cette machine **une seule** page
+ * est analysée à la fois de toute façon, et l'analyse aboutit dans les deux cas,
+ * file ou pas. La concurrence n'était donc pas la cause ; l'hypothèse restante
+ * est le sidecar vision à froid (process neuf, ~800 Mo de modèles), non encore
+ * mesurée.
+ *
+ * `then(tache, tache)` : la tâche s'exécute même si la précédente a échoué, et
+ * la chaîne aval avale l'erreur, donc un échec ne fige pas la file.
+ *
+ * La chaîne vit dans un `useRef`, **pas** dans une `let` du corps : ce fichier
+ * déclare ses fonctions à l'intérieur du composant (`Home()` commence ligne
+ * 943, son JSX ligne 3157), donc une `let` ici serait recréée à chaque rendu et
+ * la file ne verrouillerait rien.
+ */
+function enFileTraduction(tache: () => Promise<void>): Promise<void> {
+  const suivant = chaineTraductionRef.current.then(tache, tache);
+  chaineTraductionRef.current = suivant.catch(() => {});
+  return suivant;
+}
+
+async function analyserPage(index: number, page: Page) {
   try {
     const analysee = await invoke<PageTranslation>('analyser_page', {
       token: page.token,
@@ -3043,11 +3108,12 @@ async function chargerTraductionPage(index: number, page: Page) {
       if (prev[index]) return prev; // évite les races
       return { ...prev, [index]: resultat };
     });
+    setTraductionEchec(false);
   } catch (e) {
-    // Journalisé, plus avalé : la traduction reste facultative — le lecteur
-    // fonctionne sans — mais un échec doit se voir dans la console plutôt que
-    // de se déguiser en « rien à traduire ».
+    // Journalisé ET affiché : mesuré le 2026-10-08, `console.warn` seul
+    // laissait l'utilisateur devant une page inchangée, sans comprendre pourquoi.
     console.warn(`traduction page ${index} : ${String(e)}`);
+    setTraductionEchec(true);
   }
 }
 
@@ -3057,18 +3123,20 @@ async function chargerTraductionPage(index: number, page: Page) {
 // statique ne produisait rien, et le porteur d'état — le setState updater en
 // charge — n'était jamais seul à déclencher l'overlay).
 // Même motif que l'effet de chargement des préférences au-dessous : les
-// `setState` de `chargerTraductionPage` arrivent tous après un `await` (et le
-// règle `set-state-in-effect` ne voit pas la frontière d'attente). Faux
-// positif vérifié : le chargement initial des préférences. On désactive la
-// règle pour CET effet uniquement, comme le fait le fichier au § préférences.
-/* eslint-disable react-hooks/set-state-in-effect */
+// `setState` arrivent tous après un `await` (et la règle
+// `set-state-in-effect` ne voit pas la frontière d'attente).
+//
+// Le `eslint-disable` qui était ici est **retiré** : il ne servait plus à rien.
+// Le travail est parti dans `analyserPage`, donc plus aucun `setState` n'est
+// dans le corps de l'effet, et la règle n'a plus rien à signaler — ESLint le
+// signalait comme directive inutilisée. Faux positif vérifié : le chargement
+// initial des préférences, où le disable est encore nécessaire.
 useEffect(() => {
   if (!afficherTraduction || !reader) return;
   const i = reader.index ?? 0;
   const page = reader.pages[i];
   if (page) void chargerTraductionPage(i, page);
 }, [afficherTraduction, reader?.index]);
-/* eslint-enable react-hooks/set-state-in-effect */
 
 /**
  * Les surcouches de l'application : panneau de vérification et notifications.
@@ -3321,7 +3389,22 @@ function jumpToPage(raw: string) {
 function scrollToPage(i: number) {
   const root = stripRef.current;
   const cible = i >= 0 && i < pagesBande.length ? i : 0;
-  const haut = offsets[cible];
+  // `offsets` n'est fiable **que** si la bande est virtualisable : il est bâti
+  // par sommation des `hauteurs`, et une seule hauteur inconnue suffit à rendre
+  // la bande non virtualisable — donc tous les offsets sont nuls.
+  //
+  // Mesuré le 2026-10-08 : le moteur n'émet aucune dimension (`MangaPage` du
+  // parser ne porte que `url` et `preview`, `commands.rs::pages` n'ajoute que
+  // `token`), donc `hauteurs` vaut zéro pour **tout** chapitre distant. La garde
+  // d'en dessous était donc satisfaite (`haut === 0` est défini) et on
+  // défilait vers `max(0, 0 - 8)`, c'est-à-dire nulle part : trois clics sur `→`
+  // laissaient `scrollTop` à 0 et la page 1 affichée, tandis que le compteur
+  // passait de 3 à 6. L'écran mentait.
+  //
+  // Hors virtualisation, c'est la **géométrie réelle du DOM** qui fait foi —
+  // exactement ce que dit l'effet de positionnement (ligne ~3520). D'où le
+  // repli sur `scrollIntoView`, qui était déjà écrit mais jamais atteint.
+  const haut = bandeVirtualisable ? offsets[cible] : undefined;
   if (root && haut !== undefined) {
     root.scrollTo({ top: Math.max(0, haut - 8), behavior: 'smooth' });
     setReader((r) => (r ? { ...r, index: cible } : r));
@@ -4697,6 +4780,16 @@ if (reader) {
             >
               {afficherTraduction ? 'FR' : '原文'}
             </button>
+            {/* F3 (mesuré le 2026-10-08) : sans fournisseur configuré, la bascule
+                FR ne produisait rien de visible — l'erreur ne partait que dans la
+                console du développeur. Un `<p role="alert">` juste après la
+                bascule : l'échec est annoncé là où l'utilisateur vient de cliquer,
+                et il reste affiché jusqu'à ce qu'une page réussisse. */}
+            {traductionEchec && (
+              <p className="alerte-traduction" role="alert">
+                {t('lecteur.traduction.echec')}
+              </p>
+            )}
 
             {/* Navigation du bandeau, dans la barre du lecteur (demande
                 explicite). En mode webtoon, la navigation vivait sous la
@@ -5904,7 +5997,14 @@ if (reader) {
         <span className="sub">
           {t('catalogue.sources.disponibles', { n: visibleSources.length })}
           {sourcesOff.length > 0
-            ? ` · ${t('catalogue.sources.desactivees', { n: sourcesOff.length })}`
+            ? ` · ${t('catalogue.sources.desactivees', {
+                n: sourcesOff.length,
+                // `{s}` porte le pluriel, comme les deux autres appels de la même
+                // famille. Sans lui, l'en-tête affichait « 8 désactivée{s} »
+                // (mesuré le 2026-10-08) : le gabarit a un `{s}`, l'appel ne le
+                // fournissait pas.
+                s: sourcesOff.length > 1 ? 's' : '',
+              })}`
             : ''}
         </span>
       </header>

@@ -1169,6 +1169,66 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   réécrits. Corollaire : une porte qui rend le même verdict en 3 s qu'en
   1 min 14 n'a rien mesuré.
 
+- **Un compteur qui bouge n'est pas la preuve que l'écran a bougé.** Mesuré le
+  2026-10-08 : trois clics sur `→` faisaient passer le compteur de pages de 3 à 6
+  pendant que `scrollTop` restait à 0 et que la page 1 restait affichée. La
+  navigation « fonctionnait » depuis des semaines parce qu'on mesurait le
+  compteur. Mesurer l'**élément visible** (`data-index` de la première image
+  dans la bande), jamais l'indicateur.
+
+- **Une garde satisfaite par une valeur nulle rend la bonne branche
+  inatteignable.** `if (haut !== undefined)` est vrai pour `0` : la branche de
+  repli — celle qui faisait défiler via `scrollIntoView` et qui était la seule
+  correcte hors virtualisation — ne pouvait pas s'exécuter. Une garde doit tester
+  la **validité** de la valeur, pas sa présence : `bandeVirtualisable ? offsets[i]
+  : undefined`.
+
+- **`align-items` du parent ne positionne pas un enfant `position:absolute`.**
+  Le flux normal ne le concernait plus, donc le centrage du parent ne
+  s'appliquait pas et `left:auto` le posait au bord gauche. Mesuré : l'écart
+  valait exactement la marge de centrage — **315 px à 50 % de zoom, 126 px à
+  75 %, 0 à 100 %** (là la page déborde). Corollaire de mesure : un défaut
+  d'alignement peut n'exister que sur une partie de la plage des réglages, donc
+  « ça marche à 100 % » ne prouve rien.
+
+- **Un handle de processus n'est pas un état : `is_some()` reste vrai après la
+  mort.** `assurer_demarrage` testait `enfant.is_some()`, donc un sidecar crashé
+  était considéré comme démarré et **toute** requête suivante échouait
+  définitivement sur `os error 232`. Le test qui compte est `try_wait()`. Mesuré :
+  sidecar tué → relance automatique et analyse réussie en 163 s.
+
+- **Un délai doit couvrir l'état le plus lent, pas l'état nominal.** Le délai de
+  détection de 10 s (par tuile) était calibré sur 2,3 s par tuile **session
+  chaude** ; à froid, la première inférence le dépasse (échec mesuré en 39,7 s),
+  et c'est précisément la première page que l'utilisateur veut traduire. La
+  parade n'est pas d'allonger le délai du chemin critique, mais de payer le
+  préchauffage là où un délai long est normal et invisible.
+
+- **Une file d'attente sans garde de génération fabrique du travail périmé.**
+  Comparer le chapitre ne suffit pas : rouvrir **le même** chapitre ré-enregistre
+  les jetons, l'URL est identique, et l'analyse en file partait sur un jeton
+  évacué (« page inconnue »). Il faut comparer le jeton de la page.
+
+- **Ne pas attribuer un correctif à la première cause plausible.** J'ai écrit que
+  trois analyses concurrentes expliquaient le `délai dépassé`, puis mesuré : une
+  seule analyse à la fois, et elle aboutit dans les deux cas. La cause réelle
+  était le sidecar froid. Corollaire : une explication plausible n'est pas une
+  mesure ; et une correction à conserver pour une **autre** raison (ici le débit)
+  doit le dire dans le commentaire, sinon elle récupère le mérite d'un défaut
+  qu'elle ne corrige pas.
+
+- **Le marqueur d'une preuve rouge se lit dans le bundle compilé, pas dans la
+  source.** La forme devinée (`() =>` avec espaces) n'existait pas après
+  compilation (`()=>`), donc la réécriture ne mordait pas et le script annonçait
+  `chunks reecrits : 0` — un silence indiscernable d'une preuve verte. lire le
+  chunk, copier la forme exacte, et **échouer bruyamment** si le marqueur est
+  absent (le script le fait désormais).
+
+- **`execSync` passe par cmd.exe** : les cmdlets PowerShell y sont inconnus
+  (« Stop-Process n'est pas reconnu »), et `powershell -NoProfile -Command "…"`
+  imbriqué perd ses guillemets. Pour une action sur les processus, l'exécuter
+  depuis le shell de l'agent, et laisser le script Node ne mesurer que l'app.
+
 - **Un test qui nettoie ce qu'il veut mesurer ne peut plus crier.** Mesuré le
   2026-10-07 : le contrôle OCR de T0 comparait l'attendu et le lu **après avoir
   retiré les espaces et la ponctuation des deux côtés**. Le modèle, lui, lisait

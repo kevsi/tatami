@@ -89,9 +89,20 @@ impl SuperviseurVision {
     /// Démarre le sidecar s'il ne tourne pas, exige un `hello`, puis charge le
     /// pack s'il y en a un. Idempotent : le planter deux fois ne fait rien de
     /// plus.
+    ///
+    /// La vivacité est testée pour de vrai. Mesuré le 2026-10-08 : après la mort
+    /// du sidecar (crash, ou `OUT_OF_MEMORY` sur une page), `enfant.is_some()`
+    /// restait `true` — le `Child` est un handle, pas un état — donc cette
+    /// fonction répondait « démarré » et **toute** traduction suivante échouait
+    /// définitivement sur `stdin vision : os error 232`, sans aucun relancement.
+    /// Un superviseur doit survivre à la mort de son enfant (§4.2).
     pub async fn assurer_demarrage(self: &Arc<Self>) -> Result<(), String> {
         if *self.demarre.lock().await && self.enfant.lock().await.is_some() {
-            return Ok(());
+            if self.enfant_vivant().await {
+                return Ok(());
+            }
+            tracing::warn!("sidecar vision mort : il va etre relance");
+            self.arreter_etat().await;
         }
         if !self.binaire.is_file() {
             return Err(format!(
@@ -183,9 +194,54 @@ impl SuperviseurVision {
             )
             .await
             .map_err(|e| format!("loadPack : {e}"))?;
+            // Préchauffage. Mesuré le 2026-10-08 : sur un sidecar **froid**, la
+            // première détection dépassait le délai de 10 s (échec en 39,7 s),
+            // alors que la suivante aboutissait. La session ONNX n'est chaude
+            // qu'après une première inférence — donc on la fait payer ici, dans
+            // `assurer_demarrage`, où un délai long est normal et sans effet
+            // visible, plutôt que par la première page que l'utilisateur
+            // traduirait. L'échec est journalisé, pas remonté : une page de
+            // préchauffage crée pas une erreur.
+            if let Err(e) = self.prechauffer().await {
+                tracing::warn!("prechauffage vision ignore : {e}");
+            }
         }
         tracing::info!("sidecar vision prêt (protocol={version})");
         Ok(())
+    }
+
+    /// `true` si le processus existe encore. `try_wait` ne consomme pas l'état de
+    /// sortie : il se contente de le lire.
+    async fn enfant_vivant(&self) -> bool {
+        let mut garde = self.processus.lock().await;
+        match garde.as_mut() {
+            Some(c) => !matches!(c.try_wait(), Ok(Some(_))),
+            // handle absent : on ne sait rien, donc on suppose vivant pour ne pas
+            // respawner à chaque appel.
+            None => true,
+        }
+    }
+
+    /// Ouvre les verrous après la mort du child, pour que le prochain
+    /// `assurer_demarrage` reparte d'un état propre.
+    async fn arreter_etat(&self) {
+        *self.demarre.lock().await = false;
+        *self.enfant.lock().await = None;
+        *self.processus.lock().await = None;
+    }
+
+    /// Première inférence, pour payer le chargement de la session hors du
+    /// chemin critique. La tuile est minuscule : ce qui compte est le passage de
+    /// la session à « chaude », pas le résultat.
+    async fn prechauffer(&self) -> Result<(), String> {
+        const PIXEL: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+        self.demander(
+            "detect",
+            serde_json::json!({ "image": { "data": PIXEL } }),
+            DELAI_CHARGEMENT,
+        )
+        .await
+        .map(|_| ())
     }
 
     /// Envoie une requête et attend sa réponse, avec le même ordre de verrous que

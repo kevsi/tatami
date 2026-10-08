@@ -101,7 +101,17 @@
       "properties": {
         "index": { "type": "integer", "minimum": 0 },
         "url": { "type": "string", "description": "URL de la page (pas forcément l'image directe : passer par fetchImage)." },
-        "previewUrl": { "type": "string" }
+        "previewUrl": { "type": "string" },
+        "largeur": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Largeur en pixels. Présent si l'image est déjà en cache disque au moment de l'appel `pages`. Absent = image pas encore en cache, dimensions inconnues."
+        },
+        "hauteur": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Hauteur en pixels. Présent si l'image est déjà en cache disque au moment de l'appel `pages`. Absent = image pas encore en cache, dimensions inconnues."
+        }
       },
       "additionalProperties": true
     },

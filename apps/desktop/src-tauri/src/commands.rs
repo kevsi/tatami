@@ -286,6 +286,30 @@ pub async fn chapters(
     )
 }
 
+/// Injecte le jeton de cache et les dimensions (si disponibles) dans chaque
+/// page d'un tableau JSON.
+///
+/// Extraite en fonction pure pour être testable sans `tauri::State`. La commande
+/// `pages` délègue ici toute la logique d'injection ; `commands.rs::tests` la
+/// teste directement.
+pub fn injecter_dims_et_token(arr: &mut [serde_json::Value], cache: &PageCache, source: &str) {
+    for p in arr.iter_mut() {
+        let url = match p.get("url").and_then(|v| v.as_str()) {
+            Some(u) => u.to_string(),
+            None => continue,
+        };
+        let token = cache.register(source, &url);
+        if let Some(dims) = cache.lire_dims(&token) {
+            if let Some(o) = p.as_object_mut() {
+                o.insert("largeur".to_string(), serde_json::json!(dims.0));
+                o.insert("hauteur".to_string(), serde_json::json!(dims.1));
+            }
+        }
+        p.as_object_mut()
+            .map(|o| o.insert("token".to_string(), serde_json::Value::String(token)));
+    }
+}
+
 #[tauri::command]
 pub async fn pages(
     sup: State<'_, Arc<Supervisor>>,
@@ -302,20 +326,15 @@ pub async fn pages(
             .await?,
     )?;
     if let Some(arr) = result.get_mut("pages").and_then(|v| v.as_array_mut()) {
-        for p in arr.iter_mut() {
-            if let Some(url) = p.get("url").and_then(|v| v.as_str()) {
-                let token = pages_idx.register(source.trim(), url);
-                p.as_object_mut()
-                    .map(|o| o.insert("token".to_string(), serde_json::Value::String(token)));
-            }
-        }
+        injecter_dims_et_token(arr, &pages_idx, source.trim());
     }
     Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{latest_params, requested_rating};
+    use super::{injecter_dims_et_token, latest_params, requested_rating};
+    use crate::pagecache::PageCache;
 
     #[test]
     fn une_chaine_vide_ne_signifie_pas_safe() {
@@ -350,6 +369,61 @@ mod tests {
                 .contains_key("contentRating"),
             "aucune classification ne doit être envoyée quand l'option est « Toutes »"
         );
+    }
+
+    /// Construit un cache de test isolé (pid + compteur, effacé en Drop).
+    fn cache_test() -> (std::sync::Arc<PageCache>, crate::download::DossierDeTest) {
+        let garde = crate::download::DossierDeTest::new("cmd");
+        (PageCache::new(garde.chemin()), garde)
+    }
+
+    // ---- Tests ADR-0012 : injecter_dims_et_token ----
+
+    /// Cache froid : pas de dims → champ `largeur`/`hauteur` absent.
+    #[test]
+    fn pages_sans_cache_ne_renvoie_pas_largeur() {
+        let (cache, _garde) = cache_test();
+        let mut arr = vec![serde_json::json!({"index": 0, "url": "https://x/1.jpg"})];
+        injecter_dims_et_token(&mut arr, &cache, "MANGADEX");
+        let page = &arr[0];
+        assert!(
+            page.get("token").is_some(),
+            "le token doit toujours être présent"
+        );
+        assert!(
+            page.get("largeur").is_none(),
+            "largeur absente si cache froid"
+        );
+        assert!(
+            page.get("hauteur").is_none(),
+            "hauteur absente si cache froid"
+        );
+    }
+
+    /// Cache chaud : dims stockées → champs `largeur`/`hauteur` présents et corrects.
+    #[test]
+    fn pages_avec_cache_renvoie_largeur_et_hauteur() {
+        let (cache, _garde) = cache_test();
+        let token = cache.register("MANGADEX", "https://x/1.jpg");
+        cache.stocker_dims(&token, (800, 2171));
+
+        let mut arr = vec![serde_json::json!({"index": 0, "url": "https://x/1.jpg"})];
+        injecter_dims_et_token(&mut arr, &cache, "MANGADEX");
+        let page = &arr[0];
+        assert_eq!(page["token"].as_str(), Some(token.as_str()));
+        assert_eq!(page["largeur"].as_u64(), Some(800));
+        assert_eq!(page["hauteur"].as_u64(), Some(2171));
+    }
+
+    /// Une page sans champ `url` est ignorée sans paniquer.
+    #[test]
+    fn pages_sans_url_sont_ignorees() {
+        let (cache, _garde) = cache_test();
+        let mut arr = vec![serde_json::json!({"index": 0})];
+        injecter_dims_et_token(&mut arr, &cache, "MANGADEX");
+        let page = &arr[0];
+        assert!(page.get("token").is_none(), "pas de token si pas d'url");
+        assert!(page.get("largeur").is_none());
     }
 }
 

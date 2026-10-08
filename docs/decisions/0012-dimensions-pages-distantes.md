@@ -1,7 +1,7 @@
 # 0012 — Dimensions des pages distantes
 
-- Date : 2026-10-09
-- Statut : proposée
+- Date : 2026-10-10
+- Statut : acceptée
 
 ## Contexte
 
@@ -11,7 +11,17 @@ Le correctif immédiat (tâche P0) est de passer `loading="eager"` quand `bandeV
 
 ## Décision
 
-Proposée — à valider avec l'humain. Deux alternatives étudiées ci-dessous, pas de décision prise.
+Option A retenue : Rust lit les dimensions depuis les octets déjà en mémoire lors de l'écriture dans le cache disque (`ecrire_cache`), les stocke dans un `Mutex<HashMap<String, (u32, u32)>>` dans `PageCache`, et les injecte dans la réponse de la commande `pages` si disponibles.
+
+La logique d'injection est extraite en une fonction pure `injecter_dims_et_token` testable indépendamment de `tauri::State`.
+
+## Décision finale
+
+Aucun changement côté moteur Kotlin ni dans le contrat du protocole `pages` (le moteur ne connaît pas les dimensions — c'est Rust qui les lit depuis le cache). Deux champs optionnels `largeur` et `hauteur` ajoutés dans `$defs/page` de `contract/protocol.json`.
+
+Les dimensions sont mémorisées en mémoire uniquement (pas de persistance entre sessions) : même pattern que l'index `PageCache`. Pas de migration SQLite : les dimensions sont recalculées à chaque session au fil du défilement.
+
+Comportement attendu : premier appel `pages` → pas de dimensions (bande en mode `eager`) → l'utilisateur défile → `serve_page` télécharge et mémorise → retour sur le chapitre ou chapitre suivant → dimensions présentes → virtualisation active.
 
 ## Alternatives étudiées
 
@@ -33,6 +43,7 @@ Lors du téléchargement de l'image dans `fetchImage`, le moteur Kotlin décode 
 
 ## Conséquences
 
-- En attendant une décision, `bandeVirtualisable` reste `false` pour toutes les sources distantes, et les images sont chargées en mode `eager` (correctif P0).
+- La virtualisation de la bande webtoon devient possible pour les sources distantes dès que les images sont mises en cache (à partir du deuxième affichage du chapitre, ou après défilement).
+- Pas de breaking change dans le protocole moteur ↔ Rust.
+- `bandeVirtualisable` reste le seul point de décision côté TypeScript.
 - La décision impacte le protocole Rust ↔ moteur (`contract/`) : toute évolution doit être documentée dans une ADR de protocole avant implémentation.
-- La validation de l'option choisie nécessite de mesurer l'impact mémoire et le temps de démarrage du lecteur sur un chapitre long (~200 pages).

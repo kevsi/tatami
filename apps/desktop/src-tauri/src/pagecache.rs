@@ -84,6 +84,16 @@ impl Index {
 pub struct PageCache {
     index: Mutex<Index>,
     dir: PathBuf,
+    /// Dimensions (largeur, hauteur) en pixels, mémorisées lors de l'écriture
+    /// dans le cache disque. Valeur optionnelle : absente si l'image n'a pas
+    /// encore été téléchargée lors de l'appel `pages`.
+    ///
+    /// En mémoire uniquement (pas de persistance entre sessions) : même pattern
+    /// que l'index. Quand un jeton est évincé de l'index, ses dimensions
+    /// restent dans cette map jusqu'au redémarrage — c'est inoffensif : un jeton
+    /// évincé puis recréé pour la même paire (source, url) est **identique**
+    /// (seeds déterministes dans la session), donc les dimensions correspondent.
+    dims: Mutex<HashMap<String, (u32, u32)>>,
 }
 
 impl PageCache {
@@ -92,7 +102,29 @@ impl PageCache {
         Arc::new(Self {
             index: Mutex::new(Index::vide()),
             dir,
+            dims: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Mémorise les dimensions d'une image pour un jeton donné.
+    ///
+    /// Appelé depuis `ecrire_cache` **sur les octets déjà en mémoire**, sans
+    /// aucune I/O supplémentaire. `pub(crate)` pour les tests de commande.
+    pub(crate) fn stocker_dims(&self, token: &str, dims: (u32, u32)) {
+        self.dims
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(token.to_string(), dims);
+    }
+
+    /// Retourne les dimensions mémorisées pour ce jeton, ou `None` si l'image
+    /// n'est pas encore en cache.
+    pub fn lire_dims(&self, token: &str) -> Option<(u32, u32)> {
+        self.dims
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(token)
+            .copied()
     }
 
     /// Enregistre (ou retrouve) une page distante.
@@ -349,6 +381,13 @@ fn ecrire_cache(
         let _ = std::fs::remove_file(&tmp);
         tracing::warn!("cache {} : rename échoué ({e})", final_path.display());
     }
+    // Mémorise les dimensions sur les octets déjà en mémoire, sans I/O
+    // supplémentaire. Le rename peut avoir échoué, mais les octets sont valides :
+    // on stocke quand même (la prochaine relecture cache passera par le moteur
+    // mais les dimensions sont déjà connues pour cette session).
+    if let Some(dims) = crate::image::dimensions(bytes) {
+        cache.stocker_dims(token, dims);
+    }
     Ok((bytes.to_vec(), kind.content_type().to_string()))
 }
 
@@ -475,6 +514,76 @@ mod tests {
         assert!(
             couvertes <= CAP_COVER,
             "les couvertures ne doivent pas evicter les pages, plafond = {couvertes}"
+        );
+    }
+
+    // ---- Tests ADR-0012 Option A : dimensions en mémoire ----
+
+    #[test]
+    fn stocker_et_lire_dims() {
+        let (c, _garde_cache) = cache();
+        let token = c.register("MANGADEX", "https://x/1.jpg");
+        // Avant stockage : None.
+        assert_eq!(c.lire_dims(&token), None, "pas encore de dims");
+        // Après stockage : Some.
+        c.stocker_dims(&token, (800, 2171));
+        assert_eq!(
+            c.lire_dims(&token),
+            Some((800, 2171)),
+            "les dims stockées doivent être relisibles"
+        );
+        // Un jeton inconnu renvoie None.
+        assert_eq!(c.lire_dims("inconnu-0000000000000000"), None);
+    }
+
+    #[test]
+    fn dims_absentes_si_pas_encore_chargees() {
+        // Prouve que le premier appel `pages` (avant tout fetchImage) ne renvoie
+        // pas de dimensions : comportement nominal, bande non virtualisable.
+        let (c, _garde_cache) = cache();
+        let token = c.register("MANGADEX", "https://x/1.jpg");
+        assert_eq!(
+            c.lire_dims(&token),
+            None,
+            "avant fetchImage, les dims doivent être absentes"
+        );
+    }
+
+    #[test]
+    fn dims_non_transmises_par_eviction() {
+        // L'éviction de l'index ne supprime PAS les dimensions de la map `dims`.
+        // C'est inoffensif : un jeton évincé puis recréé pour la même URL
+        // produit le même token (seeds déterministes dans la session), donc les
+        // dimensions sont retrouvées même après éviction.
+        let (c, _garde_cache) = cache();
+        let premier = c.register("MANGADEX", "https://x/0.jpg");
+        c.stocker_dims(&premier, (800, 2171));
+        // Remplir jusqu'à l'éviction du premier jeton.
+        for i in 1..(CAP_PAGE + 50) {
+            c.register("MANGADEX", &format!("https://x/{i}.jpg"));
+        }
+        // Le jeton est évincé de l'index.
+        assert!(
+            c.resolve(&premier).is_none(),
+            "l'entrée évincée ne doit plus être dans l'index"
+        );
+        // Les dimensions restent dans la map (comportement documenté).
+        // Ce n'est pas un bug : les dims d'un jeton évincé sont du bruit
+        // inoffensif, et les purger coûterait une complexité injustifiée.
+        // Ce test documente l'invariant plutôt qu'il ne l'impose.
+        // (lire_dims peut retourner Some ou None selon l'implémentation future)
+        let _ = c.lire_dims(&premier); // ne pas asserter : comportement documenté, pas imposé
+                                       // Ce qui compte : un nouveau register pour la même URL redonne le même token,
+                                       // donc les dims sont retrouvées.
+        let token2 = c.register("MANGADEX", "https://x/0.jpg");
+        assert_eq!(
+            token2, premier,
+            "le même (source, url) doit produire le même token (seeds stables)"
+        );
+        assert_eq!(
+            c.lire_dims(&token2),
+            Some((800, 2171)),
+            "les dims stockées avant éviction sont retrouvées via le même token"
         );
     }
 }

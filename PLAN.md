@@ -156,8 +156,8 @@
 
 ### Dette connue mesurée le 2026-10-08 (pilotage de la traduction)
 
-Deux défauts trouvés en pilotant l'app réelle le 2026-10-08, **après** le correctif
-`aa99972` (magasin de secrets Windows) :
+Défauts trouvés en pilotant l'app réelle, **après** le correctif `aa99972`
+(magasin de secrets Windows) et avec le chemin OpenRouter actif.
 
 1. **`translator::tests::gemini_sans_cle_retourne_local_indisponible` dépend de la machine.**
    Il suppose qu'aucune clé n'est enregistrée dans le trousseau ; il passe chez un
@@ -165,12 +165,42 @@ Deux défauts trouvés en pilotant l'app réelle le 2026-10-08, **après** le co
    échoué avec une clé, 225 passés après suppression). Le correctif : rendre la clé
    injectable dans `Traducteur` au lieu de lire le trousseau réel depuis un test.
 
-2. **L'OCR produit un faux positif à confiance 1.00.** Sur `Yani Neko · 1mg` page 14
-   (1200×1709), la vision a détecté **un seul** bloc, `bbox (987, 811, 158, 105)`,
-   confiance **1.00**, texte `"OS FUMC\nA TODOS\nEN UN DIA"` — sur une zone de tramage
-   **sans un seul glyphe** (recadrage vérifié). La traduction de cette invention s'affiche
-   ensuite sur la page, avec une latence de **42 s par page** (73 s pour une bulle isolée).
-   À reprendre : un seuil de confiance sur le bloc, ou une relecture du crop.
+2. **Le quota Gemini gratuit est de 20 requêtes par jour et par modèle.** Mesuré le
+   2026-10-08 sur `gemini-3.8-flash` : HTTP 429, `quotaMetric`
+   `GenerateRequestsPerDayPerProjectPerModel-FreeTier`, `quotaValue: "20"`,
+   `retryDelay: 59049 s`. Une page = une requête, donc **20 pages par jour** au total,
+   et la traduction ceases silencieusement (statut `fallback`, overlay vide, aucun
+   message). L'ADR 0008 dit « ~14 appels/jour » : c'était mesuré sur Gemini 3.5.
+   **Le repli hors ligne n'existe pas** (`traduire_local` est un stub), donc au-delà
+   de 20 pages la fonction n'est plus utilisable.
+
+3. **Le chemin OpenRouter n'était jamais testé parce qu'il n'avait pas d'écran.**
+   `Traducteur::cle_openrouter()` lit le trousseau **puis** `OPENROUTER_API_KEY`, et
+   `traduire_openrouter` est déjà complet avec le modèle en dur
+   `cohere/north-mini-code:free`. Mesuré le 2026-10-08 : **2,6 s** par page contre
+   **73 s** avec Gemini, coût 0, traduction correcte
+   (« YOU GOT TO GET CLOTHES FOR DOGS » → « Il faut acheter des vêtements pour les
+   chiens. »). Une simple variable d'environnement rend le chemin actif — il ne
+   manque qu'un écran pour saisir la clé, et un choix de fournisseur.
+
+4. **L'effacement n'est pas branché, donc la traduction se superpose à l'original.**
+   `inpaint` répond `MODEL_MISSING` (`tests/fixtures/README.md` le dit) et ADR 0011
+   prévoit d'effacer le dialogue avant de le remplacer. La capture du 2026-10-08 montre
+   « Cette partie montre / la liberté de la jeunesse » **par-dessus** l'anglais, qui
+   reste lisible dessous : le résultat est illisible. C'est le défaut prioritaire
+   tant que la traduction fonctionne. Correctifpossible à court terme : une plaque de
+   fond derrière la bulle.
+
+5. **L'OCR produit des blocs fantômes et du texte dégradé, et rien ne le filtre.**
+   Le champ `confidence` vaut **1** sur les 45 blocs mesurés : il ne discrimine rien,
+   donc aucun seuil ne peut s'appuyer dessus. Un bloc `dialogue` d'un seul caractère
+   (`"7"`, `"一"`, `"d"`) et des blocs `free_text` posés sur du tramage vide ont été
+   détectés. Corrigé pour l'affichage par `blocsSuperposables` (type + longueur ≥ 4),
+   mais **rien n'empêche un texte Recognition dégradé d'être affiché** : « MODERN... S »
+   a été rendu tel quel par le modèle.
+
+6. **La vision est le goulot, pas le traducteur.** `analyser_page` seule : 11 s, 43 s,
+   20 s, 30 s, 30 s selon la page (1 à 19 blocs).
 
 ### Dette connue mesurée le 2026-10-07
 

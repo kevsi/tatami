@@ -1577,8 +1577,20 @@ button:disabled {
 .bubble-text {
   position: absolute;
   margin: 0;
-  padding: 0;
-  color: #ffffff;
+  color: var(--sur-voile);
+  /* Plaque de fond. Mesuré le 2026-10-08 : sans elle, l'anglais d'origine reste
+     lisible sous le français (`.bubble-text` n'avait qu'une ombre), donc le texte
+     superposé est illisible — l'effacement du texte d'origine (ADR 0011, tâche
+     T2.5) n'est pas intégré, `inpaint` répond MODEL_MISSING.
+     `box-decoration-break: clone` donne à chaque ligne sa propre pastille
+     arrondie au lieu d'un seul rectangle autour du paragraphe, ce qui suit la
+     forme d'une bulle. Tokens `--pastille-fond` / `--sur-voile` : ils restent
+     sombres dans les deux thèmes, donc aucune définition à dupliquer. */
+  background: var(--pastille-fond);
+  border-radius: 0.32em;
+  padding: 0.14em 0.3em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 4px rgba(0, 0, 0, 0.6);
   letter-spacing: 0.01em;
   line-height: 1.25;
@@ -1590,10 +1602,27 @@ button:disabled {
   user-select: none;
 }
 
-/* T4.6 — conteneur de surcouche de traduction sur chaque page webtoon. */
+/* T4.6 — conteneur de surcouche de traduction sur chaque page webtoon.
+   `align-items: center` est **indispensable**, et pas décoratif : c'est lui qui
+   centre la surcouche sur l'image.
+
+   Mesuré le 2026-10-08 : `.webtoon-inner` centre ses images avec
+   `align-items:center`, donc une page plus étroite que la bande est centrée
+   dans la bande — mais les pages de la surcouche sont en `position:absolute`,
+   donc **hors flux** : `left:auto` les pose au bord gauche et l'alignement du
+   conteneur flex ne s'y applique pas. Résultat mesuré, décalage horizontal
+   égal à la marge de centrage : 315 px à 50 % de zoom, 126 px à 75 %, et 0 à
+   100 % (là la page déborde la bande) — ce qui rendait le défaut invisible
+   tant qu'on ne regardait qu'à 100 %. Les traductions flottaient donc à côté
+   de leur bulle. Reproduit par `.mesures/pilot-94-zoom.cjs`, qui mesure
+   l'écart entre la position mesurée d'une plaque et celle attendue d'après la
+   bbox de la base. */
 .traduction-overlay {
   position: absolute;
   inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   pointer-events: none;
   overflow: hidden;
 }

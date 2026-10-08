@@ -69,10 +69,25 @@
 **Phase T4 livrée** — mise en page et rendu.
 
 ### Next steps
-1. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
-2. **Retirer la liste blanche S2** de `main.rs:387-393` : les trois commandes sont maintenant
+
+Ajouté le 2026-10-08 (pilotage de l'application réelle — l'ordre a changé, voir
+la dette mesurée ci-dessus : les défauts 2 et 3 de cette section sont
+**bloquants pour l'usage**, pas des finitions) :
+
+1. **Défaut 2 ci-dessus — le saut de page.** Deux voies, à trancher :
+   (a) faire émettre `largeur`/`hauteur` par le moteur puis les lire dans Rust ;
+   (b) mesurer la taille réelle des images déjà chargées dans le lecteur.
+   (a) est plus juste et débloque aussi la virtualisation (22 pages montées au
+   lieu d'une fenêtre) ; (b) ne coûte aucune requête mais touche à la
+   virtualisation, qui a déjà coûté deux corrections de position de lecture.
+2. **Défaut 3 ci-dessus — la bascule FR sans fournisseur.** Rendre l'échec
+   visible dans l'interface au lieu de la seule console, et traiter la
+   contention des trois analyses simultanées.
+3. **Défaut 4 ci-dessus — « désactivée{s} »**, une ligne.
+4. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
+5. **Retirer la liste blanche S2** de `main.rs:387-393` : les trois commandes sont maintenant
    appelées par l'interface, la porte « commande morte » doit de nouveau mordre.
-3. **T5.1** — éditeur de bloc : modifier le texte, déplacer/redimensionner, retoucher le masque, relancer l'effacement local, régler la taille de police.
+6. **T5.1** — éditeur de bloc : modifier le texte, déplacer/redimensionner, retoucher le masque, relancer l'effacement local, régler la taille de police.
 
 ---
 
@@ -201,6 +216,81 @@ Défauts trouvés en pilotant l'app réelle, **après** le correctif `aa99972`
 
 6. **La vision est le goulot, pas le traducteur.** `analyser_page` seule : 11 s, 43 s,
    20 s, 30 s, 30 s selon la page (1 à 19 blocs).
+
+### Dette connue mesurée le 2026-10-08 (pilotage 2 — surcouche et navigation)
+
+Pilotage de l'app réelle, après `d82a79d`. Un walk complet a été écrit et rejoué
+(`.mesures/pilot-90-traduction.cjs`, `.mesures/pilot-94-zoom.cjs`,
+`.mesures/pilot-99-saut-bouton.cjs`, `.mesures/pilot-101-sans-cles.cjs`), sur
+GDSCANS / `Otaku-kun Who's Kind to Gyaru` / Ch.1.1 (22 pages). État de la machine
+mesuré : **aucune clé** Gemini dans le trousseau, pas de `OPENROUTER_API_KEY`,
+`TRADUCTION_LOCALE_ACTIVE = false`.
+
+**Ce qui marche** : les 4 onglets répondent, 1363 sources, 3 favoris, thème et
+langue corrects, **0 erreur console et 0 requête en échec** sur les quatre
+écrans. La traduction **en cache** s'affiche : 5 blocs, français correct
+(« Oui ! », « C'est pas vrai. », « C'est fou ! »), et la plaque de fond non
+committée rend le texte lisible (mesuré `rgba(0,0,0,0.82)`).
+
+1. **La surcouche de traduction n'était pas centrée sur l'image — CORRIGÉ.**
+   Décalage horizontal exactement égal à la marge de centrage, mesuré à trois
+   zooms : **−315 px à 50 %, −126 px à 75 %, 0 à 100 %** (là, la page déborde la
+   bande). Cause : `.webtoon-inner` centre ses images par `align-items:center`,
+   mais les pages de `.traduction-overlay` sont en `position:absolute`, donc
+   **hors flux** : `left:auto` les pose au bord gauche et l'alignement du parent
+   flex ne s'y applique pas. Les traductions flottaient à côté de leur bulle
+   (`.mesures/p90-2-apres-fr.png`, avant).
+   Correctif : `align-items: center` sur `.traduction-overlay`. Après : écart
+   **0,0,0**. Porte prouvée **rouge** en commentant la ligne : −336,5 / −134,6 /
+   0. Le défaut était invisible parce qu'il n'existe qu'en dessous de 100 % de
+   zoom, et toutes les mesures précédentes portaient sur le compteur de pages.
+
+2. **Le saut de page ne déplace pas la bande — À CORRIGER.** Mesuré : trois
+   clics sur `→` laissent `scrollTop` à **0** et la première page affichée à
+   l'index 0, tandis que le compteur passe de 3 à 6 — l'écran ment. La molette,
+   elle, fonctionne (`scrollTo(3000)` → 3000, compteur 6). Cause lue dans le
+   code : `Server.kt::pageToJson` n'émet que `index`, `url` et `previewUrl`, et
+   `commands.rs::pages` n'ajoute que `token` — donc `largeur`/`hauteur` sont
+   **toujours absents**, `hauteurs` vaut zéro, `offsets` vaut zéro partout, et
+   `scrollToPage` défile vers `max(0, 0 - 8)`. Le commentaire du type `Page`
+   (« lue par Rust dans l'en-tête ») décrit une garantie que rien n'implémente :
+   seul le chemin `.cbz` local (`LocalPage`) a de vraies dimensions.
+   Conséquence secondaire : la bande n'est jamais virtualisable, donc **les 22
+   pages sont montées** au lieu d'une fenêtre glissante.
+
+3. **Sur le chemin par défaut, la bascule FR ne produit rien de visible.**
+   Mesuré : 15 s puis `[warning] traduction page 11 : sidecar vision : detect
+   vision : délai dépassé (10s)`, et la page reste en anglais, sans un mot
+   (`.mesures/p101-sans-cles.png`). `DELAI_DETECT = 10 s` est un délai **par
+   tuile**, or l'observateur lance trois pages d'affilée : sur deux cœurs, chaque
+   tuile dépasse alors 10 s. L'échec ne va que dans `console.warn`
+   (`page.tsx:3050`), donc l'utilisateur n'a aucun signal.
+
+4. **« 8 désactivée{s} »** — `page.tsx:5907` passe `{ n }` à
+   `catalogue.sources.desactivees`, dont le gabarit est `'{n} désactivée{s}'`.
+   Même famille que la dette 2 de la section précédente : une seule clé ne peut
+   pas porter le pluriel des deux langues.
+
+5. **`listSources` expire à 10 s au démarrage à froid** (JVM qui reconstruit le
+   catalogue des 1370 sources) : l'écran affiche « 0 sources disponibles » puis
+   « timeout 10s sur listSources ». L'interface, elle, montre l'erreur — c'est le
+   bon comportement ; c'est le délai qui est trop court pour un premier appel.
+
+Confirmé par ailleurs, déjà connu : le texte OCR dégradé est affiché tel quel
+(« 039MA 03350.7 », un crédit de la page de remerciements) et
+« CERTAIN IT IS CRAZY » devient « CERTAINS C'EST CRAZY ». Et `analyser_page` est
+**rejoué même quand la page est en cache** : 51 s payés pour afficher des blocs
+déjà en base.
+
+Pièges de mesure rencontrés dans ce pilotage, à ne pas re-commettre :
+`data-page` n'existe **que** dans la surcouche (attendre `[data-page]` pour
+détecter l'ouverture du lecteur est faux) ; `data-page` est un index **base 0** ;
+le squelette `aria-busy="true"` intercepte les clics ; `data-lang` est en
+**minuscules** ; un clic juste après un rechargement est perdu (hydratation) ;
+compter toutes les plaques confond la fenêtre virtuelle avec la page visée.
+Et `%APPDATA%\Tatami\launch_with_ort.ps1` était **corrompu** (`\ = '…'` au lieu
+de `$env:ORT_DYLIB_PATH = '…'`) : l'application partait donc sans runtime ONNX.
+Remplacé par `.mesures/lancer-app.ps1`.
 
 ### Dette connue mesurée le 2026-10-07
 

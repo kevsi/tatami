@@ -1161,6 +1161,30 @@ export default function Home() {
   }, []);
 
   /*
+   * Miroir de `t` pour les écouteurs d'évènements.
+   *
+   * `useI18n()` rend `t` sous forme de fonction **recréée à chaque rendu**. Un
+   * écouteur abonné une seule fois (`[]`) garde donc la closure du rendu de
+   * montage : tout texte qu'il produit reste dans la langue de ce moment-là.
+   * Mesuré le 2026-10-08 sur les notifications « N nouveaux chapitres ».
+   *
+   * On ne peut pas mettre `langue` dans le tableau de dépendances de l'effet
+   * qui l'abonne : cet effet recharge aussi les téléchargements et les sources,
+   * donc le rejouer à chaque changement de langue réabonnerait trois écouteurs
+   * et relancerait deux requêtes. D'où le miroir, mis à jour par un effet
+   * séparé qui ne dépend que du **primitif** `langue`.
+   */
+  const tCourant = useRef(t);
+  useEffect(() => {
+    tCourant.current = t;
+    // `t` est volontairement absent : il est recréé à chaque rendu, donc le
+    // l'ajouter relancerait ce miroir à chaque rendu — l'inverse de l'effet
+    // recherché. La dépendance utile est le primitif `langue`, qui change
+    // exactement quand la traduction change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [langue]);
+
+  /*
    * Préférences et santé des sources lues APRÈS l'hydratation : en export
    * statique le HTML est produit au build, il ne peut pas contenir ce qui est
    * stocké sur la machine de l'utilisateur. Les poser dans un initialiseur
@@ -1241,7 +1265,14 @@ export default function Home() {
       // peut en trouver 12 dans 5 séries ; douze alertes d'un coup sont pires
       // qu'aucune. Le rejet est sans conséquence ici : le flux « mises à »
       // n'en dépend pas, et notifier est un bonus.
-      void notifie(texteNotification(t, passe.nouveaux));
+      // `tCourant`, pas `t` : cet effet est abonné **une fois** (tableau `[]`,
+      // pour ne pas réabonner à chaque `refreshDownloads`), donc sa closure
+      // garde la fonction de traduction du rendu de montage. Mesuré le
+      // 2026-10-08 : après un basculement FR → EN, toutes les notifications
+      // « 3 nouveaux chapitres » restaient en français. La porte
+      // `hooks:check` ne le voit pas, car elle cherche `t` **dans** le tableau
+      // de dépendances — qui est vide.
+      void notifie(texteNotification(tCourant.current, passe.nouveaux));
 
       setMaj((precedent) => {
         const cumul = new Map<string, MajItem>();
@@ -2041,7 +2072,12 @@ export default function Home() {
         timeoutSecs: listTimeout,
       });
       const items = r.list ?? [];
-      if (items.length > 0 && selected) clearHealthFor([selected.name]);
+      // `s`, **pas** `selected`. `setSelected(s)` plus haut ne met pas à jour la
+      // closure : `selected` y est encore la source du rendu précédent, donc la
+      // source précédente. Mesuré le 2026-10-08 : en passant de la source A
+      // (en échec) à B, l'échec de B était mémorisé au nom de A, le succès de B
+      // effacait la santé de A, et la fenêtre de challenge était rattachée à A.
+      if (items.length > 0) clearHealthFor([s.name]);
       setLatest((prev) => (offset === 0 ? items : [...prev, ...items]));
       setLatestOffset(offset + items.length);
       // Une source qui renvoie 0 au-delà de la première page ne pagine pas
@@ -2053,12 +2089,13 @@ export default function Home() {
       const raw = String(e);
       setError(raw);
       const url = challengeUrl(raw);
-      setChallenge(url && selected ? url : null);
+      setChallenge(url);
       // Mémorise la source en échec : elle sera signalée dans le catalogue.
       // Une demande de vérification n'est PAS un échec : à résoudre par l'humain.
-      if (selected && !url) {
+      // Même règle qu'au-dessus : c'est bien `s` qui a échoué.
+      if (!url) {
         const code = raw.slice(0, raw.indexOf(':') > 0 ? raw.indexOf(':') : 12);
-        noteHealth([selected.name], code, describeError(raw, selected.name, t));
+        noteHealth([s.name], code, describeError(raw, s.name, t));
         setHealth(loadHealth());
       }
     } finally {
@@ -2370,7 +2407,7 @@ function nomSource(s: Source): string {
     setError(null);
     try {
       const file = await fetchOneChapter(selected.name, openManga, c, chapters.length);
-      setNotice(`Téléchargé : ${file}`);
+      setNotice(t('notice.telecharge', { f: file }));
       refreshDownloads();
     } catch (e) {
       setError(t('erreur.telechargement', { raison: String(e) }));
@@ -3026,7 +3063,7 @@ async function resumeReading(h: HistoryItem) {
     list[h.chapter_index] ??
     list[0];
   if (!chapter) {
-    setError('Ce webtoon n’a plus aucun chapitre lisible.');
+    setError(t('libelle.webtoon.sans.chapitre'));
     return;
   }
   await openReaderAt(chapter, h.page_index, h.source, h.title);
@@ -3958,7 +3995,9 @@ useEffect(() => {
                 window.localStorage.setItem(SOURCES_KEY, JSON.stringify(next));
               }}
             >
-              {enabled === null || enabled.length === sources.length ? 'Tout désactiver' : 'Tout activer'}
+              {enabled === null || enabled.length === sources.length
+                        ? t('sources.tout.desactiver')
+                        : t('sources.tout.activer')}
             </button>
             <span className="muted">
               {visibleSources.length} / {sources.length} catalogues
@@ -4349,7 +4388,7 @@ useEffect(() => {
                           </button>
                         )}
                         <button className="btn btn-ghost" onClick={() => setDeleteTarget(item)}>
-                          Supprimer
+                          {t('libelle.supprimer')}
                         </button>
                       </div>
                     </div>
@@ -4656,7 +4695,7 @@ if (reader) {
             </label>
             {categories.length === 0 && (
               <p className="muted">
-                Créez vos catégories dans Réglages pour ranger vos favoris.
+                {t('libelle.categories.vides')}
               </p>
             )}
           </div>
@@ -4687,8 +4726,19 @@ if (reader) {
 
         {chapters.length > 0 && (
           <p className="count">
-            {chapters.length} chapitre{chapters.length > 1 ? 's' : ''} · {checked.size} sélectionné
-            {checked.size > 1 ? 's' : ''}
+            {/* Le pluriel se construit dans le dictionnaire, pas ici : le
+                français et l'anglais n'ont pas la même règle (« 1 chapitre »
+                mais « 1 chapter » s'écrit pareil, « 2 chapitres » ne s'écrit
+                pas comme « 2 chapters »… et surtout `{n > 1 ? 's' : ''}`
+                ment dans une des deux langues). Clés séparées, conformément à la
+                convention déjà appliquée aux notifications. */}
+            {checked.size === 0
+              ? chapters.length === 1
+                ? t('chapitres.compte1', { n: chapters.length, k: checked.size })
+                : t('chapitres.compte', { n: chapters.length, k: checked.size })
+              : checked.size === 1
+                ? t('chapitres.compte.selection1', { n: chapters.length, k: checked.size })
+                : t('chapitres.compte.selection', { n: chapters.length, k: checked.size })}
           </p>
         )}
 
@@ -4698,7 +4748,7 @@ if (reader) {
             disabled={downloading || checked.size === 0}
             onClick={downloadSelected}
           >
-            {downloading ? 'Téléchargement…' : `Télécharger la sélection (${checked.size})`}
+            {downloading ? t('dl.en.cours') : t('dl.selection', { n: checked.size })}
           </button>
           <div className="pick-bar" role="group" aria-label="Sélection rapide des chapitres">
             <span className="pick-label">
@@ -4710,7 +4760,7 @@ if (reader) {
               max={Math.max(1, filteredChapters.length)}
               value={pickCount}
               onChange={(e) => setPickCount(Number(e.target.value))}
-              aria-label={`Nombre de chapitres à sélectionner (${pickCount})`}
+              aria-label={t('libelle.selection.nb', { n: pickCount })}
             />
             <button className="btn btn-ghost" onClick={() => pickChapters('last')}>
               N derniers
@@ -4719,10 +4769,10 @@ if (reader) {
               N premiers
             </button>
             <button className="btn btn-ghost" onClick={() => pickChapters('all')}>
-              Tout
+              {t('libelle.tout')}
             </button>
             <button className="btn btn-ghost" onClick={() => pickChapters('none')}>
-              Aucun
+              {t('libelle.aucun')}
             </button>
           </div>
           <input
@@ -4793,7 +4843,7 @@ if (reader) {
                       type="checkbox"
                       checked={on}
                       onChange={() => toggleChapter(c.url)}
-                      aria-label={`Sélectionner ${chapterLabel(c)}`}
+                      aria-label={t('libelle.selection.un', { chapitre: chapterLabel(c) })}
                     />
                   </label>
                   <button
@@ -4811,8 +4861,8 @@ if (reader) {
                     className="chapter-dl"
                     disabled={downloading}
                     onClick={() => void downloadChapter(c)}
-                    aria-label={`Télécharger ${chapterLabel(c)}`}
-                    title="Télécharger"
+                    aria-label={t('libelle.telecharger.un', { chapitre: chapterLabel(c) })}
+                    title={t('libelle.telecharger')}
                   >
                     ↓
                   </button>
@@ -4823,7 +4873,7 @@ if (reader) {
         )}
 
         {!loading && chapters.length > 0 && filteredChapters.length === 0 && (
-          <p className="muted">Aucun chapitre ne correspond à « {chapterQuery} ».</p>
+          <p className="muted">{t('libelle.chapitre.introuvable', { q: chapterQuery })}</p>
         )}
 
         {!loading && chapters.length === 0 && !error && (
@@ -4859,8 +4909,8 @@ if (reader) {
           <input
             className="search"
             type="search"
-            aria-label="Rechercher un webtoon dans cette source"
-            placeholder="Rechercher un webtoon…"
+            aria-label={t('libelle.recherche.aria')}
+            placeholder={t('libelle.recherche.placeholder')}
             value={mangaQuery}
             onChange={(e) => setMangaQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -4868,7 +4918,7 @@ if (reader) {
             }}
           />
           <button className="btn" onClick={searchInSource} disabled={loading}>
-            Rechercher
+            {t('libelle.rechercher')}
           </button>
         </div>
 
@@ -4899,7 +4949,9 @@ if (reader) {
           {selectMode ? (
             <>
               <span className="muted">
-                {picked.size} webtoon{picked.size > 1 ? 's' : ''} sélectionné
+                {picked.size === 1
+                  ? t('selection.webtoon1', { n: picked.size })
+                  : t('selection.webtoon', { n: picked.size })}
                 {picked.size > 1 ? 's' : ''}
               </span>
               <div className="select-actions">
@@ -4907,17 +4959,17 @@ if (reader) {
                   className="btn btn-ghost"
                   onClick={() => setPicked(new Set(latest.map(mangaKey)))}
                 >
-                  Tout
+                  {t('libelle.tout')}
                 </button>
                 <button className="btn btn-ghost" onClick={leaveSelectMode}>
-                  Annuler
+                  {t('libelle.annuler')}
                 </button>
                 <button
                   className="btn btn-primary"
                   disabled={picked.size === 0 || queueRunning}
                   onClick={startQueue}
                 >
-                  {queueRunning ? 'Téléchargement…' : `Télécharger (${picked.size})`}
+                  {queueRunning ? t('dl.en.cours') : t('dl.compter', { n: picked.size })}
                 </button>
               </div>
             </>
@@ -4934,12 +4986,12 @@ if (reader) {
                   <span>{t('source.chapitres.recents')}</span>
                   <span className="muted">
                     {recentBusy > 0
-                      ? `${recentBusy} en cours…`
+                      ? t('recent.en.cours', { n: recentBusy })
                       : `${Object.keys(cardRecent).length}/${latest.length}`}
                   </span>
                 </label>
                 <button className="btn" onClick={() => setSelectMode(true)} disabled={latest.length === 0}>
-                  Sélectionner
+                  {t('libelle.selectionner')}
                 </button>
               </div>
             </>
@@ -4973,11 +5025,7 @@ if (reader) {
           <div className="alert">
             <p>{describeError(error, selected.name, t)}</p>
             {challenge && (
-              <p className="muted">
-                Ce site demande une vérification anti-robot. Résous-la dans la fenêtre
-                qui va s&apos;ouvrir, puis reviens ici : les cookies seront transmis au
-                moteur et la requête rejouée.
-              </p>
+              <p className="muted">{t('libelle.verification.note')}</p>
             )}
             <div className="alert-actions">
               {challenge ? (
@@ -4997,7 +5045,7 @@ if (reader) {
                     C&apos;est fait, réessayer
                   </button>
                   <button className="btn btn-ghost" onClick={() => void cancelChallenge()}>
-                    Annuler
+                    {t('libelle.annuler')}
                   </button>
                 </>
               ) : (
@@ -5020,7 +5068,9 @@ if (reader) {
           {latest.length > 0 && (
           <div className="list-bar">
             <p className="count">
-              {latest.length} webtoon{latest.length > 1 ? 's' : ''}
+              {latest.length === 1
+                ? t('catalogue.webtoon1', { n: latest.length })
+                : t('catalogue.webtoon', { n: latest.length })}
               {loading ? ' — chargement…' : ''}
             </p>
             <div className="chips" role="group" aria-label="Tri des titres">
@@ -5735,7 +5785,7 @@ if (reader) {
                 <b>{code.toUpperCase()}</b>
                 <span className="lang-nom">{NOMS_LANGUE[code] ?? code.toUpperCase()}</span>
                 <span className="muted">
-                  {n} source{n > 1 ? 's' : ''}
+                  {n === 1 ? t('catalogue.source1', { n }) : t('catalogue.source', { n })}
                 </span>
               </button>
             ))}
@@ -5744,7 +5794,9 @@ if (reader) {
       ) : (
         <>
           <p className="count">
-            {filtered.length} source{filtered.length > 1 ? 's' : ''}
+            {filtered.length === 1
+              ? t('catalogue.source1', { n: filtered.length })
+              : t('catalogue.source', { n: filtered.length })}
             {nameFilter ? ` pour « ${nameFilter} »` : ''}
             {lang !== 'all' ? ` · langue ${lang.toUpperCase()}` : ''}
           </p>

@@ -418,6 +418,50 @@ const FR = {
   'erreur.categories.ordre': 'Ordre des catégories : {raison}',
   'erreur.suppression': 'Suppression impossible : {raison}',
   'erreur.telechargement': 'Téléchargement : {raison}',
+
+  // --- Libellés qui étaient écrits en français dans le JSX (audit 2026-10-08) ---
+  //
+  // Ces quatorze chaînes se lisaient littéralement dans `page.tsx`, donc
+  // l'interface anglaise en affichait une moitié. Le cas le plus net était le
+  // compteur de chapitres, qui composait son pluriel à la main — ce que la
+  // section « Notifications système » ci-dessus interdit déjà par convention :
+  // le français et l'anglais n'ont pas la même règle, donc un pluriel construit
+  // dans le composant ment dans une des deux langues.
+  'chapitres.compte1': '{n} chapitre · {k} sélectionné',
+  'chapitres.compte': '{n} chapitres · {k} sélectionnés',
+  'chapitres.compte.selection1': '{n} chapitre · 1 sélectionné',
+  'chapitres.compte.selection': '{n} chapitres · {k} sélectionnés',
+  'libelle.aucun': 'Aucun',
+  'libelle.rechercher': 'Rechercher',
+  'libelle.annuler': 'Annuler',
+  'libelle.selectionner': 'Sélectionner',
+  'libelle.categories.vides':
+    'Créez vos catégories dans Réglages pour ranger vos favoris.',
+  'libelle.recherche.aria': 'Rechercher un webtoon dans cette source',
+  'libelle.recherche.placeholder': 'Rechercher un webtoon.',
+  'libelle.selection.nb': 'Nombre de chapitres à sélectionner ({n})',
+  'libelle.selection.un': 'Sélectionner {chapitre}',
+  'libelle.chapitre.introuvable': 'Aucun chapitre ne correspond à « {q} ».',
+  'libelle.webtoon.sans.chapitre': "Ce webtoon n'a plus aucun chapitre lisible.",
+  'libelle.verification.note':
+    "Ce site demande une vérification anti-robot. Résous-la dans la fenêtre qui va s'ouvrir, puis reviens ici : les cookies seront transmis au moteur et la requête rejouée.",
+  'libelle.tout': 'Tout',
+  'libelle.supprimer': 'Supprimer',
+  'libelle.telecharger': 'Télécharger',
+  'libelle.telecharger.un': 'Télécharger {chapitre}',
+  'sources.tout.desactiver': 'Tout désactiver',
+  'sources.tout.activer': 'Tout activer',
+  'dl.en.cours': 'Téléchargement.',
+  'dl.selection': 'Télécharger la sélection ({n})',
+  'dl.compter': 'Télécharger ({n})',
+  'recent.en.cours': '{n} en cours.',
+  'notice.telecharge': 'Téléchargé : {f}',
+  'selection.webtoon1': '{n} webtoon sélectionné',
+  'selection.webtoon': '{n} webtoons sélectionnés',
+  'catalogue.webtoon1': '{n} webtoon',
+  'catalogue.webtoon': '{n} webtoons',
+  'catalogue.source1': '{n} source',
+  'catalogue.source': '{n} sources',
 } as const;
 
 type Cle = keyof typeof FR;
@@ -764,6 +808,47 @@ const EN: Record<Cle, string> = {
   'erreur.categories.ordre': 'Category order: {raison}',
   'erreur.suppression': 'Cannot delete: {raison}',
   'erreur.telechargement': 'Download: {raison}',
+
+  // --- Labels that were written in French inside the JSX (audit 2026-10-08) ---
+  //
+  // Same fourteen strings as the French section above. The chapter counter was
+  // the clearest case: it built its plural by hand, which the "System
+  // notifications" section already forbids by convention, because French and
+  // English do not share a rule.
+  'chapitres.compte1': '{n} chapter · {k} selected',
+  'chapitres.compte': '{n} chapters · {k} selected',
+  'chapitres.compte.selection1': '{n} chapter · 1 selected',
+  'chapitres.compte.selection': '{n} chapters · {k} selected',
+  'libelle.aucun': 'None',
+  'libelle.rechercher': 'Search',
+  'libelle.annuler': 'Cancel',
+  'libelle.selectionner': 'Select',
+  'libelle.categories.vides': 'Create your categories in Settings to sort your favourites.',
+  'libelle.recherche.aria': 'Search a webtoon in this source',
+  'libelle.recherche.placeholder': 'Search a webtoon.',
+  'libelle.selection.nb': 'Number of chapters to select ({n})',
+  'libelle.selection.un': 'Select {chapitre}',
+  'libelle.chapitre.introuvable': 'No chapter matches “{q}”.',
+  'libelle.webtoon.sans.chapitre': 'This webtoon has no readable chapter left.',
+  'libelle.verification.note':
+    'This site asks for an anti-robot check. Solve it in the window that is about to open, then come back: the cookies are sent to the engine and the request is replayed.',
+  'libelle.tout': 'All',
+  'libelle.supprimer': 'Delete',
+  'libelle.telecharger': 'Download',
+  'libelle.telecharger.un': 'Download {chapitre}',
+  'sources.tout.desactiver': 'Disable all',
+  'sources.tout.activer': 'Enable all',
+  'dl.en.cours': 'Downloading.',
+  'dl.selection': 'Download selection ({n})',
+  'dl.compter': 'Download ({n})',
+  'recent.en.cours': '{n} in progress.',
+  'notice.telecharge': 'Downloaded: {f}',
+  'selection.webtoon1': '{n} webtoon selected',
+  'selection.webtoon': '{n} webtoons selected',
+  'catalogue.webtoon1': '{n} webtoon',
+  'catalogue.webtoon': '{n} webtoons',
+  'catalogue.source1': '{n} source',
+  'catalogue.source': '{n} sources',
 };
 
 const DICTIONNAIRES: Record<Lang, Record<Cle, string>> = { fr: FR, en: EN };

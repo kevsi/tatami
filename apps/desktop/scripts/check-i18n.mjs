@@ -1,5 +1,20 @@
-// Porte i18n : aucune clé morte, aucune chaîne française laissée en dur, et
-// aucun `{placeholder}` appelé sans ses valeurs.
+// Porte i18n. Elle vérifie **exactement** quatre choses :
+//
+//   1. FR et EN ont le même nombre de clés ;
+//   2. aucune clé n'est orpheline (définie et jamais appelée) ;
+//   3. aucun `{placeholder}` n'est appelé sans ses valeurs ;
+//   4. aucun pluriel n'est construit à la main dans le JSX (voir plus bas).
+//
+// **Ce qu'elle ne vérifie pas, et qu'il ne faut pas lui demander** : elle ne
+// cherche aucune chaîne française en dur. C'était pourtant ce qu'annonçait son
+// en-tête jusqu'au 2026-10-08, et l'audit a montré que 23 libellés
+// s'affichaient littéralement dans `page.tsx` pendant que la porte était verte.
+// Reconnaître du français dans du JSX sans parseur donne 503 faux positifs sur
+// `page.tsx` — commentaires multi-lignes et identifiants comme `source` ou
+// `chapitres` — donc une porte qui hurle sur du code correct finit ignorée,
+// ce qui est pire que pas de porte. La règle 4 ci-dessous a été retenue
+// parce qu'elle est **précise** : un pluriel assemblé dans le composant est
+// mathématiquement intraduisible, et le motif est rare et sans namesake.
 //
 // L'audit du 2026-10-04 a mesuré 199 clés définies pour 108 réellement
 // utilisées, et 7 libellés utilisateur en français en dehors de `t()`. Une clé
@@ -7,10 +22,8 @@
 // est traduit. La langue anglaise n'affichait donc que la moitié de
 // l'interface, silencieusement.
 //
-// Ce script échoue si une régression réapparaît. Il reste volontairement
-// grossier : il lit les **littéraux** des modules de l'app. Le compilateur reste
-// la vraie porte — `tsc` tranche quand une clé est absente du dictionnaire, ce
-// qu'aucune regex ne peut faire.
+// Le compilateur reste la vraie porte — `tsc` tranche quand une clé est absente
+// du dictionnaire, ce qu'aucune regex ne peut faire.
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -20,20 +33,37 @@ const racine = join(ici, '..');
 
 const i18n = readFileSync(join(racine, 'app', 'i18n.ts'), 'utf8');
 
-/** Tous les modules de l'app, **sauf le dictionnaire**.
+/** Tous les modules de l'app, **sauf le dictionnaire**, et **récursivement**.
  *
  *  Mesuré le 2026-10-05 : la porte ne lisait que `page.tsx`, donc les six clés
  *  de la tâche 3.3 — utilisées dans `app/notification.ts` — étaient déclarées
- *  mortes alors qu'elles sont affichées. Un écran peut livedans `page.tsx` dès
+ *  mortes alors qu'elles sont affichées. Un écran peut vivre dans `page.tsx` dès
  *  qu'on extrait un module ; la porte doit suivre.
+ *
+ *  La marche est **récursive** depuis le 2026-10-08 : `readdirSync` sans
+ *  profondeur ignorait `app/types/`, donc deux fichiers n'étaient jamais
+ *  analysés — exactement l'angle mort déjà corrigé deux fois pour `page.tsx`
+ *  et pour `aucune_commande_tauri_nest_morte`.
  *
  *  `i18n.ts` est exclu : y figurer ferait compter **toute** clé comme utilisée,
  *  puisque c'est là qu'elles sont définies — la porte ne crierait plus jamais.
  */
-const modules = readdirSync(join(racine, 'app'))
-  .filter((f) => /\.tsx?$/.test(f) && f !== 'i18n.ts')
-  .sort();
-const page = modules.map((f) => readFileSync(join(racine, 'app', f), 'utf8')).join('\n');
+function modulesDeApp(dossier) {
+  const trouves = [];
+  for (const entree of readdirSync(dossier, { withFileTypes: true })) {
+    const chemin = join(dossier, entree.name);
+    if (entree.isDirectory()) trouves.push(...modulesDeApp(chemin));
+    else if (/\.tsx?$/.test(entree.name) && entree.name !== 'i18n.ts') trouves.push(chemin);
+  }
+  return trouves.sort();
+}
+
+const modules = modulesDeApp(join(racine, 'app')).map((chemin) =>
+  chemin.slice(join(racine, 'app').length + 1),
+);
+const page = modules
+  .map((f) => readFileSync(join(racine, 'app', f), 'utf8'))
+  .join('\n');
 if (!modules.includes('page.tsx')) throw new Error('page.tsx absent de app/');
 
 
@@ -147,6 +177,39 @@ if (nonTraduites.length) {
   echecs.push(
     `${nonTraduites.length} clé(s) sans traduction anglaise :\n` +
       nonTraduites.map((c) => `    - ${c}`).join('\n'),
+  );
+}
+
+// --------------------------------------------------------------------------
+// Règle 4 — un pluriel assemblé dans le JSX est intraduisible
+// --------------------------------------------------------------------------
+//
+// `{n} chapitre{n > 1 ? 's' : ''}` produit « 1 chapitre » en français et
+// « 1 chapters » en anglais : la langue est écrite **dans** l'expression, donc
+// aucune clé ne peut la corriger. Le dictionnaire documente déjà la règle
+// inverse (« les pluriels sont des clés séparées »), mais rien ne la vérifiait —
+// c'est exactement ce que l'audit du 2026-10-08 a trouvé affiché dans le
+// compteur de chapitres.
+//
+// Le motif est volontairement étroit : `{ … } mot { … condition … 's' … }`. Un
+// plurif à la main s'écrit toujours ainsi ; un appel à `t()` ou une
+// interpolation normale ne ressemble pas à ça.
+const PLURIEL_EN_DUR = /\{[^{}]*\}[ \t]*[A-Za-zÀ-ÿ]{2,}[ \t]*\{[^{}]*\?[^{}]*'[a-zA-ZÀ-ÿ]{1,4}'[^{}]*\}/g;
+const plurielsEnDur = [];
+for (const nom of modules) {
+  const texte = readFileSync(join(racine, 'app', nom), 'utf8');
+  for (const m of texte.matchAll(PLURIEL_EN_DUR)) {
+    plurielsEnDur.push(`    - ${nom} : ${m[0].replace(/\s+/g, ' ').slice(0, 70)}`);
+  }
+}
+if (plurielsEnDur.length) {
+  echecs.push(
+    `${plurielsEnDur.length} pluriel(s) assemblé(s) dans le JSX :\n` +
+      `${plurielsEnDur.join('\n')}\n` +
+      `  Le nombre d'accords est écrit dans l'expression, donc aucune clé ne peut ` +
+      `le traduire.\n` +
+      `  Écris des clés séparées pour le singulier et le pluriel (le dictionnaire ` +
+      `le fait déjà pour les notifications).`,
   );
 }
 

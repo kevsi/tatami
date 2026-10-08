@@ -91,8 +91,35 @@ pub fn is_transient(result: &Result<Value, String>) -> bool {
 type PendingMap = Arc<Mutex<HashMap<String, oneshot::Sender<Value>>>>;
 
 enum WatchEnd {
-    Exited,
+    Exited { duree: Duration },
     StartFailed(String),
+}
+
+/// Une session qui a duré au moins ça n'est pas une session morte-née : le
+/// moteur a réellement servi, donc repartir au bas du délai est justifié.
+pub const SESSION_SAINTE: Duration = Duration::from_secs(60);
+
+/// Plafond du délai entre deux relances.
+pub const BACKOFF_MAX: Duration = Duration::from_secs(30);
+
+/// Décide du délai avant la relance suivante.
+///
+/// `duree_session` est le temps écoulé entre le lancement et la mort du moteur.
+///
+/// Pourquoi la durée compte : le 2026-10-08, `run` faisait
+/// `backoff = 1 s` **inconditionnellement** dès que le fils sortait, et
+/// `spawn_once` rendait `Ok(())` sans regarder le statut de sortie. Un moteur
+/// qui démarre, réussit son `hello`, puis meurt (OOM sous `-Xmx256m`,
+/// `System.exit`, exception non rattrapée) était donc relancé **1 fois par
+/// seconde, indéfiniment**, chaque cycle passant par `fail_pending` qui annule
+/// les requêtes en vol. Le délai exponentiel ne couvrait que les échecs de
+/// *lancement* (`StartFailed`), jamais les morts après démarrage.
+pub fn delai_avant_relance(backoff: Duration, duree_session: Duration) -> Duration {
+    if duree_session >= SESSION_SAINTE {
+        Duration::from_secs(1)
+    } else {
+        (backoff * 2).min(BACKOFF_MAX)
+    }
 }
 
 struct ChildHandles {
@@ -229,9 +256,9 @@ impl Supervisor {
         let mut backoff = Duration::from_secs(1);
         loop {
             match self.spawn_and_watch().await {
-                WatchEnd::Exited => {
-                    tracing::warn!("sidecar sorti, relance");
-                    backoff = Duration::from_secs(1);
+                WatchEnd::Exited { duree } => {
+                    tracing::warn!("sidecar sorti après {duree:?}, relance");
+                    backoff = delai_avant_relance(backoff, duree);
                 }
                 WatchEnd::StartFailed(e) => {
                     tracing::warn!("sidecar indisponible ({e}), nouvel essai");
@@ -249,11 +276,12 @@ impl Supervisor {
     async fn spawn_and_watch(&self) -> WatchEnd {
         match self.spawn_once().await {
             Err(e) => WatchEnd::StartFailed(e),
-            Ok(()) => WatchEnd::Exited,
+            Ok(duree) => WatchEnd::Exited { duree },
         }
     }
 
-    async fn spawn_once(&self) -> Result<(), String> {
+    async fn spawn_once(&self) -> Result<Duration, String> {
+        let demarrage = tokio::time::Instant::now();
         if !self.java.is_file() {
             return Err(format!("java introuvable : {}", self.java.display()));
         }
@@ -358,7 +386,7 @@ impl Supervisor {
                 Err(e) => tracing::warn!("attente sidecar : {e}"),
             }
         }
-        Ok(())
+        Ok(demarrage.elapsed())
     }
 
     /// Envoie une requête et attend la réponse (utilisé par les commandes Tauri en 0.9).
@@ -644,5 +672,41 @@ mod tests {
         // Une requête annulée par la purge n'a pas à réussir : ce qui compte
         // est qu'elle rende la main, pas qu'elle obtienne une réponse.
         let _ = requete_ok.expect("la requête n'a pas terminé");
+    }
+
+    /// Le défaut réel : `delai_avant_relance` ignorait `duree_session` et
+    /// remettait toujours le backoff à 1 s. Un moteur qui meurt après 10 s
+    /// était donc relancé chaque seconde, indéfiniment.
+    ///
+    /// Ce test échoue sur l'ancien code (remise à 1 s), et passe une fois la
+    /// logique corrigée (backoff exponentiel pour les sessions courtes).
+    #[test]
+    fn backoff_exponentiel_pour_les_sessions_courtes() {
+        let court = Duration::from_secs(10); // session de 10 s
+        let long = Duration::from_secs(300); // session de 5 min
+
+        // Session courte : le backoff doit grandir, pas être remis à 1 s
+        assert_eq!(
+            delai_avant_relance(Duration::from_secs(1), court),
+            Duration::from_secs(2),
+            "session courte → backoff double (1s → 2s)"
+        );
+        assert_eq!(
+            delai_avant_relance(Duration::from_secs(2), court),
+            Duration::from_secs(4),
+            "session courte → backoff double (2s → 4s)"
+        );
+        assert_eq!(
+            delai_avant_relance(Duration::from_secs(16), court),
+            Duration::from_secs(30),
+            "session courte → plafonné à BACKOFF_MAX (30s)"
+        );
+
+        // Session longue : on repart au plancher
+        assert_eq!(
+            delai_avant_relance(Duration::from_secs(30), long),
+            Duration::from_secs(1),
+            "session longue → backoff remis à 1s"
+        );
     }
 }

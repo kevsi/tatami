@@ -436,14 +436,6 @@ mod tests {
             "aucune commande extraite : le parseur du handler a régressé"
         );
 
-        // Commandes en attente d'interface (S2 — sources personnalisées).
-        // À retirer dès que l'interface appelle ces commandes.
-        let liste_blanche_s2: &[&str] = &[
-            "importer_source",
-            "lister_sources_custom",
-            "supprimer_source_custom",
-        ];
-
         // Commandes enregistrées mais dont l'interface n'a pas encore été
         // implémentée (pre-S2 : packs de modèles T1.4, traduction T3.1/T3.6).
         // À retirer au fur et à mesure que l'interface les appelle.
@@ -465,11 +457,7 @@ mod tests {
 
         let mortes: Vec<&&str> = enregistrees
             .iter()
-            .filter(|c| {
-                !interface.contains(**c)
-                    && !liste_blanche_s2.contains(*c)
-                    && !liste_blanche_preexistante.contains(*c)
-            })
+            .filter(|c| !interface.contains(**c) && !liste_blanche_preexistante.contains(*c))
             .collect();
         assert!(
             mortes.is_empty(),

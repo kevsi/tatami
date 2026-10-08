@@ -63,7 +63,13 @@ sha2 = "0.10"
 ed25519-dalek = "3"
 flate2 = "1.1.10"
 thiserror = "1"
-keyring = "3"
+# `windows-native` n'est pas optionnel par defaut dans keyring 3 : sans lui, le
+# magasin par defaut sur Windows est `mock` (`pub use mock as default` dans
+# lib.rs), c'est-a-dire une ecriture **reussie et jetee**. Mesure le 2026-10-08 :
+# `definir_cle_gemini` repondait Ok, `cle_gemini_configuree` valait toujours
+# false et `cmdkey /list` ne montrait aucune entree — donc aucune cle API n'a
+# jamais pu etre stockee, et la traduction en ligne ne pouvait pas fonctionner.
+keyring = { version = "3", features = ["windows-native"] }
 hex = "0.4"
 dirs-next = "2"
 async-trait = "0.1"

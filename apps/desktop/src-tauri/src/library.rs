@@ -413,6 +413,12 @@ pub async fn import_webtoon(dir: String, titre: Option<String>) -> Result<Import
     fichiers.sort_by_key(|f| nom_chapitres(&f.0));
 
     let destination = manga_dir(&racine, SOURCE_IMPORT, &titre);
+    // Le dossier **pouvait déjà exister** : c'est un réimport. La destination
+    // est un nom assaini, donc deux titres différents y retombent (`Foo: Bar`
+    // et `Foo? Bar` donnent le même dossier, et `sanitize` plafonne à 80
+    // caractères). On note donc l'état *avant* la création, parce qu'il décide
+    // de ce qu'on a le droit d'effacer plus bas.
+    let destination_existait = destination.is_dir();
     tokio::fs::create_dir_all(&destination)
         .await
         .map_err(|e| format!("création du dossier : {e}"))?;
@@ -478,7 +484,22 @@ pub async fn import_webtoon(dir: String, titre: Option<String>) -> Result<Import
         // Rien d'exploitable : on ne laisse pas un dossier vide derrière, et
         // surtout on n'écrit pas de `meta.json` — la bibliothèque n'afficherait
         // alors qu'un webtoon vide, ce qui est pire qu'une erreur franche.
-        let _ = tokio::fs::remove_dir_all(&destination).await;
+        //
+        // **Seulement si c'est nous qui l'avons créé.** Effacer un dossier qui
+        // précédait reviendrait à supprimer les chapitres d'un import antérieur
+        // alors que l'utilisateur n'a rien demandé d'autre qu'un nouvel import
+        // : mesuré le 2026-10-08, un second import sans archive lisible
+        // effaçait les 20 chapitres du premier (`remove_dir_all` était
+        // inconditionnel). Le test qui couvre ce cas compte les fichiers
+        // présents sur le disque, pas le code de retour.
+        if !destination_existait {
+            let _ = tokio::fs::remove_dir_all(&destination).await;
+        } else {
+            tracing::warn!(
+                "import sans chapitre importable, dossier préexistant conservé : {}",
+                destination.display()
+            );
+        }
         return Err(format!(
             "aucun chapitre importable dans ce dossier ({} fichier(s) refusé(s))",
             rapport.refuses.len()
@@ -1170,6 +1191,77 @@ mod tests {
         nettoyer(&titre);
         let _ = std::fs::remove_dir_all(&grand);
         let _ = std::fs::remove_dir_all(&petit);
+    }
+
+    /// Un second import **sans rien d'importable** ne doit pas effacer ce qu'un
+    /// premier import avait écrit.
+    ///
+    /// Le défaut mesuré le 2026-10-08 : `import_webtoon` faisait
+    /// `remove_dir_all(destination)` dès que `rapport.importes == 0`, sans savoir
+    /// si le dossier existait avant. Or la destination est un nom **assaini** :
+    /// `sanitize` transforme `:` et `?` en `_` et plafonne à 80 caractères, donc
+    /// `Foo: Bar` et `Foo? Bar` retombent sur le même dossier. Un import réussi,
+    /// puis un second import du même dossier dont les archives sont illisibles
+    /// (copie encore en cours) : les chapitres déjà importés étaient effacés, et
+    /// la commande renvoyait une erreur — donc l'utilisateur perdait sa
+    /// bibliothèque sans invite.
+    ///
+    /// Le test échoue sur l'ancien code, et échoue **sur le disque** : il relit
+    /// les `.cbz` présents plutôt que de se fier au code de retour, qui est un
+    /// `Ok`/`Err` et ne dit rien de l'effacement.
+    #[tokio::test]
+    async fn un_import_sans_rien_importable_n_efface_pas_le_precedent() {
+        let (titre, _garde_import) = import_de_test("precedent");
+
+        // 1. Un import réussi, de trois chapitres.
+        let (premier, _garde_src) =
+            dossier_source(&["Chapitre 1.cbz", "Chapitre 2.cbz", "Chapitre 3.cbz"]);
+        let rapport = import_webtoon(premier.to_string_lossy().to_string(), Some(titre.clone()))
+            .await
+            .expect("premier import");
+        assert_eq!(rapport.importes, 3);
+
+        let destination = crate::download::downloads_root()
+            .join(SOURCE_IMPORT)
+            .join(crate::download::sanitize(&titre));
+        assert_eq!(
+            std::fs::read_dir(&destination).unwrap().count(),
+            4,
+            "3 chapitres + meta.json"
+        );
+
+        // 2. Un second import du MÊME titre, dont le seul `.cbz` est illisible.
+        //    Il passe le filtre d'extension puis échoue à la lecture : c'est ce
+        //    chemin qui rend `importes == 0` **après** la création du dossier.
+        let (second, _garde_src2) = dossier_source(&["Chapitre 4.cbz"]);
+        std::fs::write(
+            second.join("Chapitre 4.cbz"),
+            b"ceci n'est pas une archive zip".as_slice(),
+        )
+        .expect("archive factice");
+        let echec = import_webtoon(second.to_string_lossy().to_string(), Some(titre.clone())).await;
+        assert!(
+            echec.is_err(),
+            "aucun chapitre importable : la commande doit échouer"
+        );
+
+        // 3. Le contrôle décisif : les trois chapitres sont **encore là**.
+        let presents: Vec<String> = std::fs::read_dir(&destination)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(
+            presents.len(),
+            4,
+            "le dossier d'import doit être intact : trouvé {presents:?}"
+        );
+        for attendu in ["Chapitre 1.cbz", "Chapitre 2.cbz", "Chapitre 3.cbz"] {
+            assert!(
+                presents.iter().any(|p| p == attendu),
+                "{attendu} a disparu de {destination:?} : trouvé {presents:?}"
+            );
+        }
     }
 
     /// Un réimport ne doit pas **réécrire** les fichiers déjà là : c'est la

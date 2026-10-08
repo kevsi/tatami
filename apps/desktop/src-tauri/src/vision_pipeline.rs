@@ -56,6 +56,14 @@ pub const SEUIL_PROXIMITE: i64 = 50;
 /// bruit ou d'un accent isolé.
 pub const TAILLE_MIN_BULLE: i64 = 40;
 
+// Seuil de confiance en dessous duquel on relance un deuxième passage OCR.
+///
+/// Mesuré : les bulles dont le score de confiance est < 0.7 ont souvent
+/// des lignes manquantes ou des textiles déformés. Un deuxième passage
+/// avec des paramètres assouplis (seuil de proximité augmenté) permet
+/// de récupérer ces textes sans trop de faux positifs.
+pub const SEUIL_CONFIANCE_SECOND_PASS: f64 = 0.7;
+
 /// Erreur de la chaîne de vision.
 #[derive(Debug, thiserror::Error)]
 pub enum ErreurVision {
@@ -392,11 +400,14 @@ pub async fn analyser_octets(
 
     let mut blocs: Vec<BlocTraduction> = Vec::new();
     let mut echecs = 0usize;
+    // Tracks which detection indices got at least one bloc, for second-pass targeting.
+    let mut indices_avec_bloc = std::collections::HashSet::new();
     // La page est encodée **une fois** et réutilisée pour chaque bulle : sinon
     // chaque `ocr` renverrait 600 Ko de PNG base64, soit plusieurs mégaoctets
     // par page pour rien.
     let page_base64 = encoder_png(&image)?;
-    for detection in detections {
+    // Premier passage OCR pour toutes les bulles.
+    for (idx, detection) in detections.iter().enumerate() {
         let reponse = vision
             .demander(
                 "ocr",
@@ -430,6 +441,61 @@ pub async fn analyser_octets(
         blocs.extend(blocs_de_bulle(&ocr.lines, detection.classe, blocs.len()));
         if blocs.len() == avant {
             echecs += 1;
+            // Marquer ce détection pour un deuxième passage si sa confiance est faible.
+            if detection.score < SEUIL_CONFIANCE_SECOND_PASS {
+                indices_avec_bloc.insert(idx);
+            }
+        } else {
+            indices_avec_bloc.insert(idx);
+        }
+    }
+
+    // Deuxième passage OCR pour les bulles à faible confiance.
+    // On ne relance que les détections qui n'ont pas produit de blocs OU dont
+    // la confiance était sous le seuil, afin d'éviter des redondances coûteuses.
+    for idx in 0..detections.len() {
+        // Sauter si cette détection a déjà produit des blocs lors du premier passage
+        // et que sa confiance était suffisante.
+        if !indices_avec_bloc.contains(&idx) {
+            continue;
+        }
+        // Vérifier la confiance : on reessaie seulement si le score était faible.
+        let detection = &detections[idx];
+        if detection.score >= SEUIL_CONFIANCE_SECOND_PASS {
+            continue;
+        }
+        let reponse = vision
+            .demander(
+                "ocr",
+                serde_json::json!({
+                    "image": { "data": page_base64 },
+                    "bbox": detection.bbox,
+                }),
+                DELAI_OCR,
+            )
+            .await;
+        let reponse = match reponse {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("deuxième OCR impossible sur {:?} : {e}", detection.bbox);
+                echecs += 1;
+                continue;
+            }
+        };
+        let ocr: OcrResult = match lire_resultat(&reponse) {
+            Ok(o) => o,
+            Err(e) => {
+                tracing::warn!("deuxième OCR illisible sur {:?} : {e}", detection.bbox);
+                echecs += 1;
+                continue;
+            }
+        };
+        let avant = blocs.len();
+        blocs.extend(blocs_de_bulle(&ocr.lines, detection.classe, blocs.len()));
+        if blocs.len() == avant {
+            echecs += 1;
+        } else {
+            indices_avec_bloc.insert(idx);
         }
     }
 

@@ -57,7 +57,7 @@ l'humain tranche. Ne commence pas T1.
 ## 4. ADR : les numéros sont déjà réservés
 
 `0007` runtime vision · `0008` stratégie de traduction · `0009` lieu de mise en
-page · `0010` politique des textes hors bulles.
+page · `0011` politique des textes hors bulles.
 
 `0001` à `0006` sont **déjà pris** (transport du sidecar, schéma SQLite,
 protocole images, permissions Tauri, suivi amont, mise à jour moteur). **Vérifie

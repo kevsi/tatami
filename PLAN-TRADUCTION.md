@@ -88,7 +88,7 @@ Tables SQLite prévues : pages traduites, blocs, glossaires, termes de glossaire
 | 0007 | Runtime vision : Python (PyTorch) ou ONNX Runtime en Rust | Python pour l'évaluation, ONNX pour la version livrée | Fin de T0 |
 | 0008 | Traduction : hors ligne seul, LLM en ligne seul, ou les deux | Les deux, avec le mode hors ligne conditionné par la qualité mesurée | Fin de T0 |
 | 0009 | Où se fait la mise en page : dans la webview ou dans Rust | Webview, car on mesure avec le moteur de rendu qui affichera le texte ; les retours à la ligne sont stockés explicitement dans le JSON pour un rendu déterministe | Fin de T0 |
-| 0010 | Politique des textes hors bulles (sfx, texte libre) | Ne pas effacer, afficher en légende | T2 |
+| 0011 | Politique des textes hors bulles (sfx, texte libre) | Ne pas effacer, afficher en légende | T2 |
 
 **Numérotation vérifiée le 2026-10-06.** Les quatre ADR que ce plan réservait
 auparavant (0002 à 0005) étaient **déjà pris** : `0002-schema-sqlite-migrations`,
@@ -135,7 +135,7 @@ Objectif : décider sur des chiffres et des licences vérifiées, pas sur des im
 - [x] **T2.2** Détection et segmentation des bulles et du texte, avec masque précis de l'intérieur.
 - [ ] **T2.3** Classification des blocs : dialogue, narration, sfx, texte libre, à ignorer (filigranes, crédits, logos).
 - [ ] **T2.4** OCR de l'anglais, regroupement des lignes d'une même bulle, ordre de lecture (haut vers bas, gauche vers droite).
-- [ ] **T2.5** Effacement du texte dans les bulles de dialogue et de narration ; politique pour le texte hors bulles selon l'ADR 0010.
+- [ ] **T2.5** Effacement du texte dans les bulles de dialogue et de narration ; politique pour le texte hors bulles selon l'ADR 0011.
 - [ ] **T2.6** Contrôle de résidu : second passage d'OCR sur la zone nettoyée, qui doit ne rien trouver. Sinon, le bloc passe en `review`.
 - [ ] **T2.7** Non-régression contre les mesures de T0, budget mémoire respecté sur la machine cible.
 

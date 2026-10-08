@@ -154,4 +154,50 @@ fn main() {
     for (anglais, attendu) in BULLES {
         println!("  attendu : {anglais:?} -> {attendu:?}");
     }
+
+    // La boucle ONNX, sur les mêmes cinq bulles. Référence : §8.5 de
+    // `docs/spike-traduction.md`, mesure du 2026-10-06. Une instance séparée
+    // évite d'emprunter `traducteur` pendant tout le reste de la sonde.
+    println!();
+    println!("=== Traduction (encodeur -> decodeur -> decodeur_avec_past) ===");
+    let mut traducteur = match TraducteurLocal::ouvrir(traduction) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("ECHEC : {e}");
+            std::process::exit(1);
+        }
+    };
+    let mut ecarts = 0usize;
+    for (anglais, attendu) in BULLES {
+        let debut = std::time::Instant::now();
+        match traducteur.traduire(anglais) {
+            Ok(obtenu) => {
+                let verdict = if obtenu == *attendu {
+                    "identique"
+                } else {
+                    ecarts += 1;
+                    "DIFFERENT"
+                };
+                println!("  [{verdict}] {anglais:?}");
+                println!("      attendu : {attendu:?}");
+                println!(
+                    "      obtenu  : {obtenu:?}   ({} ms)",
+                    debut.elapsed().as_millis()
+                );
+            }
+            Err(e) => {
+                ecarts += 1;
+                println!("  [ECHEC] {anglais:?} -> {e}");
+            }
+        }
+    }
+    println!();
+    println!("{ecarts} écart(s) sur {} bulles", BULLES.len());
+    if ecarts > 0 {
+        println!(
+            "Rappel §8.5 : le hors ligne est mesuré comme « utilisable mais\n\
+             imparfait ». Un écart n'est donc pas forcément un défaut de la boucle\n\
+             — mais il faut le regarder, pas le supposer."
+        );
+    }
 }

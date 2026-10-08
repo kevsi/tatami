@@ -335,7 +335,7 @@ fn repondre(requete: &Requete, moteurs: &mut Option<Moteurs>) -> Reponse {
                     "aucun pack chargé : `loadPack` d'abord",
                 );
             };
-            let Some(traducteur) = m.traducteur.as_ref() else {
+            let Some(traducteur) = m.traducteur.as_mut() else {
                 return Reponse::echec(
                     id,
                     Code::ModelMissing,

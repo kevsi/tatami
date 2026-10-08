@@ -1,10 +1,11 @@
 //! Traduction EN→FR locale (opus-mt ONNX).
 //!
-//! ## État : le tokenizer est écrit, la boucle ONNX reste à faire
+//! ## État : tokenizer et boucle de génération écrits
 //!
-//! `TraducteurLocal::traduire` renvoie encore `LocalIndisponible` : la boucle
-//! encodeur → décodeur attend les poids. Le tokenizer, lui, est complet et
-//! testé, parce qu'il ne dépend que du vocabulaire.
+//! `TraducteurLocal::traduire` enchaîne l'encodeur, le décodeur, puis
+//! `decoder_with_past` jusqu'au jeton de fin. Les noms de tenseurs ne sont pas
+//! devinés : ils ont été relevés sur les trois `.onnx` installés (mesuré le
+//! 2026-10-08, cf. `examples/sonde_onnx_traduction.rs`).
 //!
 //! ## Pourquoi un tokenizer maison, sans dépendance
 //!
@@ -43,6 +44,9 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
+
+use ort::session::{Session, SessionInputValue, SessionOutputs};
+use ort::value::Tensor;
 
 /// Marqueur de début de mot de SentencePiece (U+2581, « ▁ »).
 pub const MARQUEUR_MOT: char = '\u{2581}';
@@ -235,33 +239,278 @@ impl Tokenizer {
 /// `<pad>` : mesuré à 59 513 dans `vocab.json` le 2026-10-08.
 const INCONNU_REMPLISSAGE: i64 = 59_513;
 
-/// Modèles de traduction locaux.
+/// Jeton de début du décodeur, mesuré dans `generation_config.json` le
+/// 2026-10-08 : `decoder_start_token_id: 59513`, c'est-à-dire **`<pad>`**, et pas
+/// `</s>`. Le vocabulaire n'a d'ailleurs **pas** de `<s>` (`bos_token_id` vaut 0).
+const DEBUT_DECODEUR: i64 = INCONNU_REMPLISSAGE;
+
+/// `bad_words_ids: [[59513]]` : le modèle ne doit jamais **émettre** `<pad>`.
+/// Sans cette interdiction, la boucle peut s'y installer au lieu de s'arrêter.
+const JETONS_INTERDITS: &[i64] = &[INCONNU_REMPLISSAGE];
+
+/// `max_length: 512`, mesuré. Ce n'est pas un réglage : une bulle tient en
+/// quelques dizaines de jetons, donc c'est un garde-fou.
+const JETONS_MAX: usize = 512;
+
+/// Les trois sessions ONNX, chargées à la première traduction.
 ///
-/// `ouvrir` charge le vocabulaire ; la boucle ONNX arrive quand les poids sont
-/// dans le pack (elle est déjà câblée côté protocole : la méthode `translate`
-/// répond `MODEL_MISSING` si le pack n'a pas les modèles).
+/// Mesuré le 2026-10-08 : **840 Mo** au total. Les charger dans `ouvrir` les
+/// ferait payer à chaque `loadPack`, alors que la traduction est occasionnelle —
+/// donc à la première demande, pas au démarrage du sidecar.
+#[derive(Debug)]
+struct Modeles {
+    encodeur: Session,
+    decodeur: Session,
+    decodeur_avec_past: Session,
+}
+
+/// Une sortie `present.*` recopiée hors du prêt ONNX.
+///
+/// `SessionOutputs` emprunte la session qui l'a produite : sans copie, impossible
+/// de conserver un passé d'un pas de génération à l'autre.
+#[derive(Debug)]
+struct Copie {
+    nom: String,
+    forme: Vec<i64>,
+    valeurs: Vec<f32>,
+}
+
+fn session(chemin: &Path) -> Result<Session, String> {
+    let mut builder = Session::builder().map_err(|e| format!("session ONNX : {e}"))?;
+    builder
+        .commit_from_file(chemin)
+        .map_err(|e| format!("{} illisible : {e}", chemin.display()))
+}
+
+fn tenseur(forme: &[i64], valeurs: Vec<f32>) -> Result<Tensor<f32>, String> {
+    Tensor::from_array((forme.to_vec(), valeurs)).map_err(|e| format!("tenseur : {e}"))
+}
+
+fn ids(forme: &[i64], valeurs: &[i64]) -> Result<Tensor<i64>, String> {
+    Tensor::from_array((forme.to_vec(), valeurs.to_vec()))
+        .map_err(|e| format!("tenseur d'identifiants : {e}"))
+}
+
+impl Modeles {
+    fn ouvrir(pack: &crate::pack::TraductionPack) -> Result<Self, String> {
+        Ok(Self {
+            encodeur: session(&pack.encoder)?,
+            decodeur: session(&pack.decoder)?,
+            decodeur_avec_past: session(&pack.decoder_with_past)?,
+        })
+    }
+}
+
+/// Recopie les tenseurs `present.*` d'une sortie, en gardant leur nom.
+///
+/// Mesuré : le décodeur en rend **24** (6 couches × décodeur/encodeur ×
+/// clé/valeur), `decoder_with_past` n'en rend que **12** — celles du décodeur.
+/// Le compte est donc lu dans la sortie, jamais écrit en dur : un modèle à un
+/// autre nombre de couches marcherait sans changer une ligne.
+fn copier_pasts(sortie: &SessionOutputs) -> Result<Vec<Copie>, String> {
+    let mut out = Vec::new();
+    for (nom, valeur) in sortie.iter() {
+        if !nom.starts_with("present.") {
+            continue;
+        }
+        let (forme, valeurs) = valeur
+            .try_extract_tensor::<f32>()
+            .map_err(|e| format!("passé {nom} : {e}"))?;
+        out.push(Copie {
+            nom: nom.to_string(),
+            forme: forme.to_vec(),
+            valeurs: valeurs.to_vec(),
+        });
+    }
+    Ok(out)
+}
+
+/// Renomme une sortie `present.…` en entrée `past_key_values.…`.
+fn nom_du_passe(nom: &str) -> String {
+    nom.replacen("present.", "past_key_values.", 1)
+}
+
+/// Le jeton suivant : plus fort logit de la dernière position.
+///
+/// `bad_words_ids` est appliqué ici, en constante, parce que
+/// `generation_config.json` **n'est pas** dans le manifeste du pack : les
+/// valeurs sont reportées avec la mesure qui les fonde (`JETONS_INTERDITS`).
+fn meilleur_jeton(sortie: &SessionOutputs) -> Result<i64, String> {
+    let (forme, valeurs) = sortie
+        .get("logits")
+        .ok_or("le décodeur n'a pas de sortie `logits`")?
+        .try_extract_tensor::<f32>()
+        .map_err(|e| format!("logits : {e}"))?;
+    let Some(&classes) = forme.last() else {
+        return Err("logits sans dimension".to_string());
+    };
+    if classes <= 0 || valeurs.len() < classes as usize {
+        return Err(format!(
+            "logits de forme {forme:?} pour {} valeurs",
+            valeurs.len()
+        ));
+    }
+    let ligne = &valeurs[valeurs.len() - classes as usize..];
+    Ok(meilleur_de(ligne, JETONS_INTERDITS))
+}
+
+/// Plus grand logit, en sautant les jetons interdits.
+fn meilleur_de(ligne: &[f32], interdits: &[i64]) -> i64 {
+    let mut id = 0i64;
+    let mut score = f32::NEG_INFINITY;
+    for (i, &v) in ligne.iter().enumerate() {
+        if interdits.contains(&(i as i64)) {
+            continue;
+        }
+        if v > score {
+            score = v;
+            id = i as i64;
+        }
+    }
+    id
+}
+
+/// La source telle que Marian l'attend : les pièces, puis `</s>`.
+///
+/// `Tokenizer::encoder` rend les pièces brutes ; c'est ici qu'on ferme la
+/// séquence. Un texte vide rend une source vide : lui ajouter `</s>` ferait
+/// traduire une chaîne vide en une phrase.
+fn source_de(tokenizer: &Tokenizer, texte: &str) -> Vec<i64> {
+    let mut ids = tokenizer.encoder(texte);
+    if !ids.is_empty() {
+        ids.push(FIN);
+    }
+    ids
+}
+
+/// Traduction EN→FR locale (opus-mt ONNX).
 #[derive(Debug)]
 pub struct TraducteurLocal {
     tokenizer: Tokenizer,
+    pack: crate::pack::TraductionPack,
+    modeles: Option<Modeles>,
 }
 
 impl TraducteurLocal {
-    /// Charge les modèles et le vocabulaire depuis le pack.
+    /// Charge le vocabulaire. Les modèles sont chargés plus tard, à la première
+    /// traduction — voir [`Modeles`].
     pub fn ouvrir(pack: &crate::pack::TraductionPack) -> Result<Self, String> {
         let tokenizer = Tokenizer::charger(&pack.vocab_json).map_err(|e| e.to_string())?;
-        Ok(Self { tokenizer })
+        Ok(Self {
+            tokenizer,
+            pack: pack.clone(),
+            modeles: None,
+        })
     }
 
-    /// Le tokenizer chargé, pour les sondes qui doivent regarder la segmentation
-    /// avant que la boucle ONNX existe.
+    /// Le tokenizer chargé, pour les sondes qui doivent regarder la segmentation.
     pub fn tokenizer(&self) -> &Tokenizer {
         &self.tokenizer
     }
 
-    /// Traduit un texte anglais vers le français — **stub** tant que la boucle
-    /// ONNX n'est pas écrite.
-    pub fn traduire(&self, _texte: &str) -> Result<String, String> {
-        Err("LocalIndisponible: boucle ONNX non branchée".to_string())
+    /// Traduit un texte anglais vers le français.
+    ///
+    /// Décodage **glouton** alors que `generation_config.json` demande
+    /// `num_beams: 4` : l'écart joue sur la qualité, pas sur l'exactitude de la
+    /// boucle, et il est mesurable tout de suite (les cinq bulles de référence de
+    /// `docs/spike-traduction.md` §8.5).
+    ///
+    /// Aucun budget de jetons n'est en jeu : une bulle ne dépasse jamais quelques
+    /// dizaines de jetons, ce qui écarte d'un coup la troncature qui rendait
+    /// l'API en ligne inutilisable sur les pages à six blocs et plus.
+    pub fn traduire(&mut self, texte: &str) -> Result<String, String> {
+        let source = source_de(&self.tokenizer, texte);
+        if source.is_empty() {
+            return Ok(String::new());
+        }
+        if self.modeles.is_none() {
+            self.modeles = Some(Modeles::ouvrir(&self.pack)?);
+        }
+        let modeles = self
+            .modeles
+            .as_mut()
+            .ok_or("modèles de traduction absents après ouverture")?;
+
+        let n = source.len() as i64;
+        let masque = vec![1i64; n as usize];
+
+        // --- passe encodeur : une seule sortie mesurée, `last_hidden_state` ---
+        // Les douze passés encodeur ne sortent **pas** d'ici : c'est le décodeur
+        // qui les rend (`present.N.encoder.*`), mesuré le 2026-10-08.
+        let cache = {
+            let sortie = modeles
+                .encodeur
+                .run(ort::inputs![
+                    "input_ids" => ids(&[1, n], &source)?,
+                    "attention_mask" => ids(&[1, n], &masque)?,
+                ])
+                .map_err(|e| format!("encodeur : {e}"))?;
+            let (forme, valeurs) = sortie
+                .get("last_hidden_state")
+                .ok_or("l'encodeur n'a pas de sortie `last_hidden_state`")?
+                .try_extract_tensor::<f32>()
+                .map_err(|e| format!("last_hidden_state : {e}"))?;
+            let forme = forme.to_vec();
+            let valeurs = valeurs.to_vec();
+            tenseur(&forme, valeurs)?
+        };
+
+        // --- passe 1 : le décodeur, jeton de début, sans passé ---
+        let (mut jeton, mut pasts) = {
+            let sortie = modeles
+                .decodeur
+                .run(ort::inputs![
+                    "encoder_attention_mask" => ids(&[1, n], &masque)?,
+                    "input_ids" => ids(&[1, 1], &[DEBUT_DECODEUR])?,
+                    "encoder_hidden_states" => cache,
+                ])
+                .map_err(|e| format!("decodeur : {e}"))?;
+            let jeton = meilleur_jeton(&sortie)?;
+            (jeton, copier_pasts(&sortie)?)
+        };
+
+        // --- passes suivantes : un jeton à la fois, passés réutilisés ---
+        let mut genere = vec![jeton];
+        while jeton != FIN && genere.len() < JETONS_MAX {
+            let mut entrees: Vec<(String, SessionInputValue)> = Vec::with_capacity(pasts.len() + 2);
+            entrees.push((
+                "encoder_attention_mask".to_string(),
+                ids(&[1, n], &masque)?.into(),
+            ));
+            entrees.push(("input_ids".to_string(), ids(&[1, 1], &[jeton])?.into()));
+            for p in &pasts {
+                entrees.push((
+                    nom_du_passe(&p.nom),
+                    tenseur(&p.forme, p.valeurs.clone())?.into(),
+                ));
+            }
+            let (suivant, nouveaux) = {
+                let sortie = modeles
+                    .decodeur_avec_past
+                    .run(entrees)
+                    .map_err(|e| format!("decodeur_avec_past : {e}"))?;
+                let suivant = meilleur_jeton(&sortie)?;
+                let nouveaux = copier_pasts(&sortie)?;
+                (suivant, nouveaux)
+            };
+            // Mesuré : `decoder_with_past` ne réémet plus que les douze passés
+            // du décodeur. Ceux de l'encodeur cessent d'être produits, et c'est
+            // correct : la source ne change pas, donc ils restent ceux de la
+            // passe 1. D'où une fusion **par nom**, et non un remplacement.
+            for p in nouveaux {
+                match pasts.iter_mut().find(|q| q.nom == p.nom) {
+                    Some(q) => {
+                        q.forme = p.forme;
+                        q.valeurs = p.valeurs;
+                    }
+                    None => pasts.push(p),
+                }
+            }
+            jeton = suivant;
+            genere.push(jeton);
+        }
+
+        Ok(self.tokenizer.decoder(&genere))
     }
 }
 
@@ -379,5 +628,59 @@ mod tests {
             t.encoder("The").first().copied(),
             "« the » et « The » doivent avoir des ids différents"
         );
+    }
+
+    #[test]
+    fn une_sortie_present_devient_une_entree_past_key_values() {
+        // Mesuré : le décodeur rend `present.0.decoder.key`, le décodeur à passé
+        // attend `past_key_values.0.decoder.key`. Le préfixe change, le reste du
+        // nom non — d'où une substitution et non une construction.
+        assert_eq!(
+            nom_du_passe("present.3.encoder.value"),
+            "past_key_values.3.encoder.value"
+        );
+    }
+
+    #[test]
+    fn le_jeton_interdit_ne_gagne_jamais() {
+        // `bad_words_ids: [[59513]]` : même au sommet, `<pad>` ne doit pas être
+        // choisi, sinon la boucle s'installe au lieu de s'arrêter.
+        assert_eq!(meilleur_de(&[0.1, 9.0, 0.2], &[1]), 2);
+        assert_eq!(meilleur_de(&[0.1, 0.2, 0.05], &[1]), 0);
+        // Un seul candidat interdit : le suivant doit être pris, pas 0 par défaut.
+        assert_eq!(meilleur_de(&[-3.0, -7.0], &[0]), 1);
+    }
+
+    #[test]
+    fn la_source_se_termine_par_fin_de_sequence() {
+        // Marian attend `</s>` ; `Tokenizer::encoder` ne le met pas.
+        let t = tokenizer_de_test();
+        assert_eq!(source_de(&t, "not").last().copied(), Some(FIN));
+        // Un texte vide ne rend aucune source : ajouter `</s>` ferait traduire
+        // une chaîne vide en une phrase.
+        assert!(source_de(&t, "").is_empty());
+    }
+
+    #[test]
+    fn un_texte_vide_ne_charge_aucun_modele() {
+        // Les poids pèsent 840 Mo (mesuré) : `ouvrir` ne doit pas les charger, et
+        // un texte vide ne doit pas déclencher le chargement par la suite. Les
+        // chemins ci-dessous n'existent pas : si la boucle les ouvrait, elle
+        // échouerait au lieu de rendre une chaîne vide.
+        let faux = std::path::PathBuf::from("inexistant-ne-pas-ouvrir.onnx");
+        let pack = crate::pack::TraductionPack {
+            encoder: faux.clone(),
+            decoder: faux.clone(),
+            decoder_with_past: faux.clone(),
+            vocab_json: faux.clone(),
+            tokenizer_model: faux,
+        };
+        let mut t = TraducteurLocal {
+            tokenizer: tokenizer_de_test(),
+            pack,
+            modeles: None,
+        };
+        assert_eq!(t.traduire("").unwrap(), "");
+        assert!(t.modeles.is_none(), "aucun modèle ne doit être chargé");
     }
 }

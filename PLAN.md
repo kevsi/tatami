@@ -318,6 +318,20 @@ Confirmé par ailleurs, déjà connu : le texte OCR dégradé est affiché tel q
 **rejoué même quand la page est en cache** : 51 s payés pour afficher des blocs
 déjà en base.
 
+### Observation non expliquée (2026-10-08)
+
+Deux fois pendant ce pilotage, `tatami-desktop.exe` a disparu **sans une seule
+ligne de journal** — la dernière ligne était `stdout: EOF (moteur fermé)`, donc
+le sidecar moteur avait rendu la main avant. Les deux fois, la ligne précédente
+était une analyse de page large (`largeur=2700 hauteur=1920`, `échecs=4`).
+Pas de panique journalisée, pas de plantage visible.
+
+**Ce n'est pas un manque de mémoire** : échantillonné pendant un parcours
+complet (`.mesures/echantillon-memoire.ps1` → `.mesures/memoire.log`), la mémoire
+libre reste à 2,6–4,1 Go sur 12,2 Go et l'engagement à 18 Go sur 23,5 Go, sans
+descente. Donc la cause est **inconnue** — à rejouer avec un échantillonnage
+ouvert au moment de la mort, pas après.
+
 Pièges de mesure rencontrés dans ce pilotage, à ne pas re-commettre :
 `data-page` n'existe **que** dans la surcouche (attendre `[data-page]` pour
 détecter l'ouverture du lecteur est faux) ; `data-page` est un index **base 0** ;

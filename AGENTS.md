@@ -1319,3 +1319,89 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   fiables — deux fois le clic a visé la ligne voisine, parce que le plus grand
   ancêtre contenant le titre englobait toute la liste. Partir de l'élément dont
   l'`aria-label` est **unique** et remonter au plus petit conteneur utile.
+
+- **Un titre romanisé, un filtre de langue de source ou un badge « EN » ne prouvent
+  pas la langue du contenu.** Mesuré deux fois le 2026-10-08, sur deux sources
+  différentes : `MANGADEX` étiquetée `INT` a servi une série **espagnole**, puis
+  `TOOMICSEN` étiquetée `EN` a servi un webtoon dont les **cartes de titre sont
+  en anglais** et les dialogues en espagnol. J'ai donc pris trois pages « anglaises »
+  sur cette base et conclu qu'EN→FR était validé — alors que je n'avais mesuré que
+  des cartons de titre. Corollaires : (a) la source sert souvent **plusieurs
+  groupes de langue**, l'application en montre un seul, et le groupe affiché n'est
+  pas déductible du nom ; (b) **la seule mesure de la langue, c'est la sortie de la
+  vision sur un bloc de dialogue** — les titres de série sont bilingues par nature,
+  donc inutilisables ; (c) un test de traduction sur une page non vérifiée ne prouve
+  rien, et une traduction correcte d'une page espagnole ne prouve pas EN→FR.
+  Vérification à faire **avant** de dépenser un appel : lire les blocs `dialogue`
+  renvoyés par `analyser_page` et les juger par leurs mots (anglais : *the, and,
+  is, you* ; espagnol : *el, la, que, de, por, más*), puis **refuser** la page si le
+  verdict n'est pas net. Un contrôle coûtant un appel, il doit précéder l'appel.
+- **Une capture peut changer l'état qu'elle ostensibly mesure.** Dans le lecteur,
+  la position affichée est lue dans la barre d'outils ; mes captures successives
+  l'ont fait reculer (5 → 3 → 1), et les réponses `traduire_page` arrivées entre deux
+  captures se retrouvaient donc attribuées à la mauvaise page — jusqu'à afficher une
+  traduction dans le rapport qui n'était pas sur la page montrée. Corollaire :
+  **lire les mesures avant de capturer**, puis relire l'index après la capture pour
+  détecter la dérive ; et corréler par `[data-page="N"]`, jamais en comptant toutes
+  les boîtes de l'overlay (qui contient les pages de la fenêtre virtuelle).
+
+- **L'encodeur Marian ne rend qu'UNE sortie, et c'est une correction du modèle
+  documenté.** Mesuré le 2026-10-08 sur les trois `.onnx` de
+  `Infomaniak-AI/onnx-opus-mt-en-fr` (`examples/sonde_onnx_traduction.rs`) :
+  l'encodeur sort `last_hidden_state` [1, n, 512] et **rien d'autre** — les 12
+  passés encodeur ne sortent pas de lui mais du **décodeur**, en
+  `present.N.encoder.{key,value}`. Et `decoder_with_past` ne rend que **13**
+  sorties (`logits` + 12 `present.*.decoder.*`) : les passés encodeur ne sont
+  pas réémis, et c'est correct puisque la source ne change pas. Corollaire de
+  code : la boucle fusionne les passés **par nom** et ne remplace jamais la
+  liste entière ; le nombre de couches est lu dans les sorties, jamais écrit en
+  dur (6 ici, mais rien ne l'impose). Généralisation : **la fiche HuggingFace et
+  le `.onnx` exporté ne décrivent pas la même chose** — seul le `.onnx` fait foi.
+
+- **`generation_config.json` n'est pas dans le manifeste du pack.** Les valeurs
+  (`decoder_start_token_id: 59513` = `<pad>`, `eos_token_id: 0`,
+  `bad_words_ids: [[59513]]`, `max_length: 512`, `num_beams: 4`) sont donc des
+  **constantes en Rust**, chacune accompagnée de la mesure qui la fonde. Ce
+  n'est pas une recopie : c'est un report assumé, parce que le fichier ne sera
+  pas installé. Et `bad_words_ids` doit être **appliqué** : sans cette
+  interdiction, une boucle gloutonne peut émettre `<pad>` au lieu de `</s>` et
+  s'installer au lieu de s'arrêter. Test rouge prouvé : en neutralisant
+  l'interdiction, `le_jeton_interdit_ne_gagne_jamais` échoue en nommant
+  `left: 1, right: 2`.
+
+- **`cargo check` passe là où `cargo clippy` refuse.** Mesuré le 2026-10-08 :
+  un champ `Option<Arc<SuperviseurVision>>` dans une structure
+  `#[derive(Debug)]` **compilait** avec `cargo check` et **échouait** avec
+  `cargo clippy --all-targets -- -D warnings`, parce que `SuperviseurVision`
+  n'implémente pas `Debug`. Corollaire : `check` n'est pas une porte, c'est un
+  premier passage ; et plutôt qu'ajouter `#[derive(Debug)]` au superviseur
+  (canaux, verrous, processus), on écrit un `Debug` à la main qui dit ce
+  qu'on veut savoir — « branché : oui/non ».
+
+- **Une sonde qui écrit les octets de l'appelant attrape ce qu'aucun test
+  unitaire n'attrape.** Mesuré le 2026-10-08 : la traduction fonctionnait
+  (2/5 bulles identiques, 95 ms/bulle), et la première sonde NDJSON
+  `hello → loadPack → capabilities → translate` a répondu « `loadPack` attend
+  un paramètre `path` » alors que j'avais écrit `root`. Ni le `cargo test` du
+  sidecar, ni la compilation du cœur ne l'auraient vu. Corollaire : quand une
+  chaîne traverse un **contrat**, la vérifier par une sonde qui écrit
+  exactement le format de l'appelant — pas en appelant la fonction Rust de
+  l'autre côté.
+
+- **Une traduction *différente* n'est pas une traduction *fausse*.** Mesuré le
+  2026-10-08 sur les 5 bulles de `docs/spike-traduction.md` §8.5 : 2
+  identiques, 3 différentes — et les 3 sont des traductions plausibles
+  (« Comment pourriez-vous apprendre votre enfant comme ça »). C'est ce qui
+  **prouve** que l'alignement des passés est juste : un décalage de tenseur ne
+  donne pas du charabia, il donne du bruit. Corollaire de jugement : le signal
+  qui tranche n'est pas « identique ou non », c'est « lisible ou non ». Et la
+  référence venait d'un décodage **en faisceaux** alors que la boucle est
+  gloutonne : un écart y est donc **attendu**, et il faut le dire plutôt que le
+  traquer.
+
+- **Le consentement porte sur le réseau, pas sur la fonctionnalité.** Le refus
+  de « traduction en ligne » bloquait aussi le modèle local, donc le seul chemin
+  qui fonctionne hors connexion était inatteignable. Même famille que le
+  réglage que Rust applique : ce que le garde porte decides où se pose la
+  question, et une garde appliquée trop large supprime une fonction entière au
+  lieu de la protéger.

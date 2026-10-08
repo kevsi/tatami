@@ -2928,6 +2928,14 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
       mangaUrl: openManga?.url,
       coverUrl: openManga?.coverUrl ?? null,
     });
+    // TODO(P3): si chapters.length === 0 après l'ouverture (chemin direct sans
+    // loadChapters, ouvrirSignet ou resumeReading), charger les chapitres en
+    // arrière-plan : invoke('chapters', { source: src, mangaUrl, mangaTitle })
+    //   .then((r) => setChapters(r.chapters ?? []))
+    //   .catch(console.error)
+    // Pré-requis : vérifier que `openManga?.url` est disponible dans ce contexte
+    // (mesuré : peut valoir `undefined` si appelé depuis le sélecteur de chapitres
+    // du lecteur). Voir analyse-lecteur.md §2.3 pour le diagnostic complet.
   } catch (e) {
     setError(t('erreur.lecture', { raison: String(e) }));
   } finally {
@@ -3210,7 +3218,12 @@ function scrollToPage(i: number) {
   }
   const el = stripImages.current[cible];
   if (el) {
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // setTimeout(fn, 0) : reporter après le paint pour que les offsetTop soient
+    // stabilisés — utile quand `loading="eager"` provoque un reflux immédiat.
+    // `?.` : évite un crash si la ref est libérée pendant la tâche (démontage).
+    setTimeout(() => {
+      stripImages.current[cible]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
     setReader((r) => (r ? { ...r, index: cible } : r));
   } else {
     // Fallback sans bande rendue : positionne l'état, la bande se replace
@@ -4649,7 +4662,7 @@ if (reader) {
                     }}
                     src={pageSrc(p.token)}
                     alt={`Page ${i + 1}`}
-                    loading="lazy"
+                    loading={bandeVirtualisable ? 'lazy' : 'eager'}
                     decoding="async"
                     data-index={i}
                     style={

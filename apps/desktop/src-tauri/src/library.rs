@@ -519,9 +519,11 @@ pub async fn import_webtoon(dir: String, titre: Option<String>) -> Result<Import
     let json = serde_json::to_string_pretty(&entree).map_err(|e| e.to_string())?;
     let meta_path = destination.join(META);
     let tmp_path = meta_path.with_extension("json.tmp");
-    tokio::fs::write(&tmp_path, &json).await
+    tokio::fs::write(&tmp_path, &json)
+        .await
         .map_err(|e| format!("meta.json (tmp) : {e}"))?;
-    tokio::fs::rename(&tmp_path, &meta_path).await
+    tokio::fs::rename(&tmp_path, &meta_path)
+        .await
         .map_err(|e| format!("meta.json (rename) : {e}"))?;
 
     rapport.dir = destination.to_string_lossy().to_string();
@@ -716,9 +718,11 @@ pub async fn note_chapter(
     entry.updated_at = now_secs();
     let json = serde_json::to_string_pretty(&entry).map_err(|e| e.to_string())?;
     let tmp_path = path.with_extension("json.tmp");
-    tokio::fs::write(&tmp_path, &json).await
+    tokio::fs::write(&tmp_path, &json)
+        .await
         .map_err(|e| format!("meta.json (tmp) : {e}"))?;
-    tokio::fs::rename(&tmp_path, &path).await
+    tokio::fs::rename(&tmp_path, &path)
+        .await
         .map_err(|e| format!("meta.json (rename) : {e}"))
 }
 

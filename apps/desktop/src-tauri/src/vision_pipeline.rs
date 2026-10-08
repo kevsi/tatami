@@ -453,14 +453,13 @@ pub async fn analyser_octets(
     // Deuxième passage OCR pour les bulles à faible confiance.
     // On ne relance que les détections qui n'ont pas produit de blocs OU dont
     // la confiance était sous le seuil, afin d'éviter des redondances coûteuses.
-    for idx in 0..detections.len() {
+    for (idx, detection) in detections.iter().enumerate() {
         // Sauter si cette détection a déjà produit des blocs lors du premier passage
         // et que sa confiance était suffisante.
         if !indices_avec_bloc.contains(&idx) {
             continue;
         }
         // Vérifier la confiance : on reessaie seulement si le score était faible.
-        let detection = &detections[idx];
         if detection.score >= SEUIL_CONFIANCE_SECOND_PASS {
             continue;
         }

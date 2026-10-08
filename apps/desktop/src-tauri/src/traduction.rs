@@ -568,9 +568,13 @@ pub async fn traduire_page(
         .map_err(|e| e.to_string())?;
 
     // 2. Sauvegarder en cache si la traduction a réussi (au moins un bloc OK).
-    if page_traduite.blocks.iter().any(|b| b.status == StatutBloc::Ok) {
+    if page_traduite
+        .blocks
+        .iter()
+        .any(|b| b.status == StatutBloc::Ok)
+    {
         // Convertir PageTranslation vers PageTranslationRow + BlockRow pour le cache.
-        use crate::store::{PageTranslationRow, BlockRow};
+        use crate::store::{BlockRow, PageTranslationRow};
         let now = crate::store::now_ms();
 
         let page_row = PageTranslationRow {

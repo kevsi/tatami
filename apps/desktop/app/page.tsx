@@ -14,6 +14,7 @@ import { useApparence } from './apparence';
 import { useI18n, type MessageKey } from './i18n';
 import { notifActive, notifie, setNotifActive, texteNotification } from './notification';
 import type { BlocTraduction, PageTranslation } from './types/traduction';
+import { blocsSuperposables } from './types/traduction';
 import {
   lireDemarrage,
   reglerDemarrage,
@@ -4873,8 +4874,10 @@ if (reader) {
                           containerType: 'inline-size',
                         }}
                       >
-                        {blocs.blocks
-                          .filter((b) => b.status === 'ok' && b.translatedText)
+                        {/* ADR 0011 + garde de longueur : `blocsSuperposables`
+                            est le seul endroit qui décide ce qui est posé sur la
+                            page. Ne pas réintroduire un `.filter` inline ici. */}
+                        {blocsSuperposables(blocs.blocks)
                           .map((b) => (
                             <div
                               key={b.id}

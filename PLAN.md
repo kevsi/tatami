@@ -320,17 +320,39 @@ déjà en base.
 
 ### Observation non expliquée (2026-10-08)
 
-Deux fois pendant ce pilotage, `tatami-desktop.exe` a disparu **sans une seule
-ligne de journal** — la dernière ligne était `stdout: EOF (moteur fermé)`, donc
-le sidecar moteur avait rendu la main avant. Les deux fois, la ligne précédente
-était une analyse de page large (`largeur=2700 hauteur=1920`, `échecs=4`).
-Pas de panique journalisée, pas de plantage visible.
+Trois fois pendant ce pilotage, `tatami-desktop.exe` a disparu **sans une seule
+ligne de journal**. La séquence exacte de la troisième fois est dans
+`%APPDATA%\Tatami\logs\tatami.log` :
 
-**Ce n'est pas un manque de mémoire** : échantillonné pendant un parcours
-complet (`.mesures/echantillon-memoire.ps1` → `.mesures/memoire.log`), la mémoire
-libre reste à 2,6–4,1 Go sur 12,2 Go et l'engagement à 18 Go sur 23,5 Go, sans
-descente. Donc la cause est **inconnue** — à rejouer avec un échantillonnage
-ouvert au moment de la mort, pas après.
+```
+16:15:54  WARN supervisor: stdout: EOF (moteur fermé)
+16:15:54  WARN supervisor: boucle de lecture terminée
+16:15:54  WARN supervisor: sidecar terminé (exit code: 1)
+16:15:54  INFO supervisor: sidecar sorti, relance
+16:15:55  INFO supervisor: sidecar démarré (pid=Some(14016))
+--- puis plus rien ; le processus a disparu vers 17:16:05, soit 10 s après ---
+```
+
+Ce qui est établi, et ce qui ne l'est pas :
+
+- **Le superviseur moteur, lui, fait son travail** : il voit la sortie du
+  sidecar et le relance 1 s après. C'est le comportement voulu (§4.2).
+- **Ce n'est pas un manque de mémoire** : échantillonné pendant tout le parcours
+  (`.mesures/echantillon-memoire.ps1` → `.mesures/memoire.log`, 180 échantillons
+  de 5 s), la mémoire libre descend au plus à **2 190 Mo sur 12 193 Mo** et
+  l'engagement plafonne à **18 777 Mo sur 23 572 Mo**. Le pic du sidecar vision
+  est à 982 Mo.
+- **Ce n'est pas une panique Rust** : une panique écrit sur stderr, et
+  `.mesures/app-stderr.log` est **vide**. Aucune trace, donc aucune exception.
+- **L'application a été terminée de l'extérieur** (pas de `ExitProcess` propre,
+  pas de trace). Hypothèse à vérifier, non vérifiée : un job object posé par
+  l'environnement de lancement (le processus est démarré depuis un shell
+  d'agent), qui tuerait l'arbre au-delà d'un plafond. Vérifiable en lançant
+  l'application **hors** de ce shell (double-clic, ou `Start-Process` depuis une
+  session interactive) et en la laissant tourner seule une heure.
+
+À faire avant d'aller plus loin sur la traduction : c'est le seul défaut qui peut
+faire perdre le travail de l'utilisateur.
 
 Pièges de mesure rencontrés dans ce pilotage, à ne pas re-commettre :
 `data-page` n'existe **que** dans la surcouche (attendre `[data-page]` pour

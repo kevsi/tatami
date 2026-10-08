@@ -1275,3 +1275,47 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   calcule quelque chose, vérifier **jusqu'où** cette information voyage avant
   d'écrire le reste ; une donnée perdue au `$defs` se retrouve réinventée en
   heuristique trois fichiers plus loin.
+
+- **Une dépendance peut écrire « succès » et n'écrire rien.** `keyring = "3"` sans
+  la feature `windows-native` compile le magasin `mock` sur Windows
+  (`pub use mock as default`) : `set_password` répond `Ok`, rien n'est stocké.
+  Mesuré le 2026-10-08 : `definir_cle_gemini` répondait `null`, `cmdkey /list` ne
+  montrait **aucune** entrée, et la traduction en ligne retombait sur un stub —
+  donc une fonctionnalité « intégrée » depuis plusieurs commits ne pouvait pas
+  fonctionner. Corollaires : (a) lire le `#[cfg]` du **backend par défaut** de
+  toute dépendance qui touche au système (trousseau, clé, réseau) ; (b) une
+  écriture vers un système externe se prouve par un **aller-retour** dans ce
+  système, jamais par le code de retour ; (c) un trait « optionnel par défaut »
+  n'est pas activé par défaut.
+- **Un test qui suppose l'absence d'une donnée de la machine n'est pas un test.**
+  `gemini_sans_cle_retourne_local_indisponible` passait tant que le trousseau était
+  un mock (toujours vide) et échoue dès qu'il devient réel : 224 passés / 1 échoué
+  avec une clé, 225 passés après suppression. Même famille que « une mesure qui
+  dépend de l'état du disque » : isoler par injection, pas par dislocation de la
+  machine de test.
+- **`browser.close()` sur une connexion CDP ferme l'application.** En
+  `connectOverCDP` le navigateur distant **est** la webview : le `close()` de mon
+  script a tué `tatami-desktop.exe` (mesuré : `ECONNREFUSED` sur 9223 au tour
+  suivant). Pour lire une webview, sortir du script sans fermer.
+- **Un paramètre nommé `$args` avale les arguments, et cargo répond 0.** Ma porte a
+  affiché l'aide de cargo (« See 'cargo help …' ») et renvoyé **0** : une porte
+  verte qui n'a rien exécuté. Mon bilan a même annoncé « tout passe », parce que la
+  fonction renvoyait aussi ses lignes de log et que la somme portait sur du texte.
+  Corollaires : ne pas nommer un paramètre `$args` ; écrire le journal avec
+  `Write-Host` (hors pipeline) pour que seule la valeur de retour sorte ; et lire
+  **la sortie** d'une porte, pas son seul code.
+- **Un exécutable GUI lancé en shell avant-plan ouvre une fenêtre console, et il
+  peut ignorer le drapeau qu'on lui donne.** `tatami-desktop.exe --version` n'a pas
+  affiché de version : il a lancé l'app, et mon shell l'a attendu 120 s. La cause
+  est `main.rs:1`, `#![cfg_attr(not(debug_assertions), windows_subsystem =
+  "windows")]` : **en debug la console reste attachée**, donc chaque instance a
+  son `conhost.exe`. Pour piloter sans fenêtre : `Start-Process -WindowStyle
+  Hidden` avec les journaux redirigés dans des fichiers, puis CDP.
+- **Un parent déjà mort ne dit rien du lanceur : il faut l'attraper au démarrage.**
+  Trois « Tatami se lance sans mon accord » ont eu des parents différents, tous
+  déjà terminés au moment de la mesure ; `Win32_ProcessStartTrace` avec résolution
+  immédiate de la chaîne d'ancêtres a, lui, nommé le lanceur. Corollaire de
+  méthode : sur une webview, `.first()` et le conteneur d'ancêtres sont peu
+  fiables — deux fois le clic a visé la ligne voisine, parce que le plus grand
+  ancêtre contenant le titre englobait toute la liste. Partir de l'élément dont
+  l'`aria-label` est **unique** et remonter au plus petit conteneur utile.

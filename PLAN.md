@@ -154,6 +154,24 @@
   les tuiles de langue (un onglet ne se cible plus par son libellé traduit), et `nomSource()`
   pour le nom affiché — la fiche affichait `custom:mangadex-api`._
 
+### Dette connue mesurée le 2026-10-08 (pilotage de la traduction)
+
+Deux défauts trouvés en pilotant l'app réelle le 2026-10-08, **après** le correctif
+`aa99972` (magasin de secrets Windows) :
+
+1. **`translator::tests::gemini_sans_cle_retourne_local_indisponible` dépend de la machine.**
+   Il suppose qu'aucune clé n'est enregistrée dans le trousseau ; il passe chez un
+   développeur sans clé et échoue dès que la machine en a une (mesuré : 224 passés / 1
+   échoué avec une clé, 225 passés après suppression). Le correctif : rendre la clé
+   injectable dans `Traducteur` au lieu de lire le trousseau réel depuis un test.
+
+2. **L'OCR produit un faux positif à confiance 1.00.** Sur `Yani Neko · 1mg` page 14
+   (1200×1709), la vision a détecté **un seul** bloc, `bbox (987, 811, 158, 105)`,
+   confiance **1.00**, texte `"OS FUMC\nA TODOS\nEN UN DIA"` — sur une zone de tramage
+   **sans un seul glyphe** (recadrage vérifié). La traduction de cette invention s'affiche
+   ensuite sur la page, avec une latence de **42 s par page** (73 s pour une bulle isolée).
+   À reprendre : un seuil de confiance sur le bloc, ou une relecture du crop.
+
 ### Dette connue mesurée le 2026-10-07
 
 - `FermetureStdinTest > cinq requetes d'un bloc rendent cinq reponses completes` **échoue en

@@ -37,10 +37,8 @@ path = "src/bin/tatami-moteur.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# La chaine de vision decode les pages et decoupe les tuiles 640 : sans elle,
-# Rust ne peut pas.border une image et le tuilage devrait vivre dans le sidecar,
-# ce que T2.1 refuse (une tuile sert a detecter, une culture se prend sur
-# la page). Le crate etait deja compile pour les tests.
+# `image` sert le téléchargement et la lecture d'archive : Rust doit border une
+# image avant de l'écrire, et déduire le type **des octets** et non d'un en-tête.
 image = "0.25"
 # `tray-icon` : la fonction de zone de notification n'existe pas sans ce feature
 # (doc officielle : « Available on desktop and crate feature tray-icon only »).
@@ -50,7 +48,6 @@ tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
@@ -63,24 +60,11 @@ sha2 = "0.10"
 ed25519-dalek = "3"
 flate2 = "1.1.10"
 thiserror = "1"
-# `windows-native` n'est pas optionnel par defaut dans keyring 3 : sans lui, le
-# magasin par defaut sur Windows est `mock` (`pub use mock as default` dans
-# lib.rs), c'est-a-dire une ecriture **reussie et jetee**. Mesure le 2026-10-08 :
-# `definir_cle_gemini` repondait Ok, `cle_gemini_configuree` valait toujours
-# false et `cmdkey /list` ne montrait aucune entree — donc aucune cle API n'a
-# jamais pu etre stockee, et la traduction en ligne ne pouvait pas fonctionner.
-keyring = { version = "3", features = ["windows-native"] }
-hex = "0.4"
-dirs-next = "2"
-async-trait = "0.1"
 jsonschema = "0.17"
-rand = "0.9"
-# Transitives de Tauri rendues explicites pour `pack.rs` :
-# - dunce : canonicalisation sans préfixe `\\?\` sur Windows
-# - windows-sys : GetDiskFreeSpaceExW pour la vérification d'espace disque
+# Transitives de Tauri rendues explicites pour la canonicalisation de chemins
+# (`custom_source.rs`) : dunce canonicalise sans préfixe `\\?\` sur Windows.
 dunce = "1"
-[target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
+dirs-next = "2"
 
 [dev-dependencies]
 proptest = "1.11.0"

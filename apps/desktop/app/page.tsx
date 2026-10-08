@@ -13,8 +13,6 @@ import {
 import { useApparence } from './apparence';
 import { useI18n, type MessageKey } from './i18n';
 import { notifActive, notifie, setNotifActive, texteNotification } from './notification';
-import type { BlocTraduction, PageTranslation } from './types/traduction';
-import { blocsSuperposables } from './types/traduction';
 import {
   lireDemarrage,
   reglerDemarrage,
@@ -332,8 +330,6 @@ type Reader = {
    *  la progression, sans dépendre d'une fiche ouverte. */
   mangaUrl?: string;
   coverUrl?: string | null;
-  /** Blocs de traduction par index de page, quand la surcouche est activée. */
-  blocsParPage?: Record<number, PageTranslation>;
 };
 type Tag = { key: string; title: string };
 type LibraryItem = {
@@ -1087,46 +1083,12 @@ export default function Home() {
   const [rating, setRating] = useState('SUGGESTIVE');
   const [onePageOnly, setOnePageOnly] = useState(false);
   const [listTimeout, setListTimeout] = useState(60);
-  const [cleGemini, setCleGemini] = useState('');
-  const [consentementTraduction, setConsentementTraduction] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<LibraryItem | null>(null);
   // Sélecteur de chapitre d'un webtoon téléchargé : avant, « Lire » ouvrait
   // toujours le premier chapitre, ce qui est inutilisable sur une série de 137.
   const [chapitresVisibles, setChapitresVisibles] = useState<LibraryItem | null>(null);
   const [reader, setReader] = useState<Reader | null>(null);
   const [readerLoading, setReaderLoading] = useState(false);
-  const [blocsTraduction, setBlocsTraduction] = useState<Record<number, PageTranslation>>({});
-  const afficherTraductionRef = useRef(false);
-  const [afficherTraduction, setAfficherTraduction] = useState(false);
-  // Ref miroir, mais à jour pour les callbacks capturés — même raison que
-  // `afficherTraductionRef`. Sans elle, le garde « déjà chargée » de
-  // `chargerTraductionPage` lit un état figé du montage et l'analyse repart
-  // à chaque intersection observée.
-  const blocsTraductionRef = useRef<Record<number, PageTranslation>>({});
-  useEffect(() => {
-    blocsTraductionRef.current = blocsTraduction;
-  }, [blocsTraduction]);
-  // F3 (mesuré le 2026-10-08) : sans fournisseur configuré, la bascule FR ne
-  // produisait **rien** à l'écran — l'échec ne partait que dans `console.warn`
-  // (`page.tsx` ~3050). Un toast de 3 s ne survit pas aux 15 à 60 s d'analyse,
-  // donc l'état est un message de lecteur qui reste jusqu'à ce que ça passe.
-  const [traductionEchec, setTraductionEchec] = useState(false);
-  // File d'attente des analyses de page (voir `enFileTraduction`) : une seule à
-  // la fois, sinon les trois pages que déclenche l'observateur se disputent les
-  // tuiles et chacune dépasse le délai de 10 s.
-  const chaineTraductionRef = useRef<Promise<unknown>>(Promise.resolve());
-  // Index **déjà en file**, pas encore analysés. La garde `blocsTraductionRef`
-  // ne couvre que les pages terminées : sans ce jeu, l'observateur qui
-  // redéclenche la page visible la remettait en file, et la vision — 30 à 60 s
-  // par page — refait le même travail, devant les pages voisines.
-  const enAttenteTraductionRef = useRef<Set<number>>(new Set());
-  const setAfficherTraductionComputed = (v: boolean) => {
-    afficherTraductionRef.current = v;
-    setAfficherTraduction(v);
-    // Le message d'échec vaut pour la session FR courante : le rebascule doit
-    // le retirer, sinon il reste affiché après que la cause soit corrigée.
-    setTraductionEchec(false);
-  };
   const [challenge, setChallenge] = useState<string | null>(null);
   const [challengeBusy, setChallengeBusy] = useState(false);
   // Vérification demandée par un TÉLÉCHARGEMENT (et non par une lecture).
@@ -1425,34 +1387,6 @@ export default function Home() {
     // trois lignes plus bas. La raison est dans le commentaire de l'effet.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [langue]);
-
-  // T3 — charge la clé Gemini au démarrage (stockée par Rust dans la base).
-  useEffect(() => {
-    void invoke<boolean>('cle_gemini_configuree')
-      .then((configuree) => {
-        if (configuree) {
-          // La clé elle-même n'est jamais renvoyée au frontend : on masque
-          // le champ pour indiquer qu'elle est présente, et on ne l'affiche
-          // jamais en clair.
-          setCleGemini('••••••••');
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  // T3.6 — charge le consentement à la traduction en ligne au démarrage.
-  // Chaîne `.then()` et non `async` : `await` suivi d'un `setState` fait
-  // signaler `set-state-in-effect` en erreur (la forme voisine
-  // `chargerSources` ne se fait pas signaler). Erreur introduite par e741d20.
-  const chargerConsentementTraduction = useCallback(() => {
-    invoke<boolean>('obtenir_consentement_traduction')
-      .then(setConsentementTraduction)
-      .catch((e) => setError(String(e)));
-  }, []);
-
-  useEffect(() => {
-    void chargerConsentementTraduction();
-  }, [chargerConsentementTraduction]);
 
   const chargerPlan = useCallback(() => {
     invoke<PlanReglages>('reglages_planificateur')
@@ -2673,34 +2607,6 @@ function nomSource(s: Source): string {
     }
   }
 
-  async function sauverCleGemini() {
-    try {
-      await invoke('definir_cle_gemini', { cle: cleGemini.trim() });
-      setNotice(t('reglages.traduction.cle_ok'));
-    } catch (e) {
-      setError(String(e));
-    }
-  }
-
-  async function supprimerCleGemini() {
-    try {
-      await invoke('definir_cle_gemini', { cle: '' });
-      setCleGemini('');
-      setNotice(t('reglages.traduction.cle_supprimee'));
-    } catch (e) {
-      setError(String(e));
-    }
-  }
-
-  async function definirConsentementTraduction(valeur: boolean) {
-    try {
-      await invoke('definir_consentement_traduction', { valeur });
-      setConsentementTraduction(valeur);
-    } catch (e) {
-      setError(String(e));
-    }
-  }
-
   async function restaurerDossier() {
     try {
       const chemin = await invoke<string>('reset_downloads_dir');
@@ -2957,199 +2863,12 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
       mangaUrl: openManga?.url,
       coverUrl: openManga?.coverUrl ?? null,
     });
-    setBlocsTraduction({});
-    afficherTraductionRef.current = false;
-    setAfficherTraduction(false);
   } catch (e) {
     setError(t('erreur.lecture', { raison: String(e) }));
   } finally {
     setReaderLoading(false);
   }
 }
-
-/**
- * Clé d'une série pour le glossaire et le cache de traduction.
- *
- * `source` + `\u001f` + `manga_url` : c'est la convention déjà employée pour
- * fusionner les favoris (`cumul.set(item.source + '\u001f' + item.manga_url)`),
- * donc une série a une seule clé dans tout le produit. Le lecteur opened hors
- * ligne n'a pas d'URL de manga : la clé retombe alors sur le chapitre, ce qui
- * isole les glossaires plutôt que de les mélanger.
- */
-function cleSerie(): string {
-  const source = reader?.source ?? '';
-  const manga = reader?.mangaUrl ?? '';
-  return manga ? `${source}${manga}` : `${source}${reader?.chapter.url ?? ''}`;
-}
-
-/** Convertit une longueur en pixels **source** vers l'unité qui suit l'image.
- *
- * Les boîtes viennent du modèle dans les pixels de l'image d'origine, alors que
- * l'image est affichée à une taille choisie par l'utilisateur — et à la taille
- * du bandeau. Les deux n'ont aucun rapport.
- *
- * Mesuré le 2026-10-07 (`.mesures/mesure-surchouche.cjs`, 6 cas : bandeau
- * 900/1400 px × zoom 100/120/200 %) : en posant `left: 538px`, l'écart avec la
- * position réelle de la bulle atteint **1345 px** — et il est déjà de 67 px à
- * zoom 100 %, parce que la page source (800 px) n'a pas la taille du bandeau.
- * La surcouche n'était donc alignée à **aucun** zoom.
- *
- * Le conteneur devient une référence de largeur (`container-type`), et toutes
- * les longueurs — position, taille **et police** — passent en `cqw`. Le même
- * facteur sert donc à tout : plus rien à calculer côté JavaScript, et le zoom
- * cesse d'être une donnée du code de rendu.
- */
-function enCqw(pixelsSource: number, largeurPage: number): string {
-  return `${(pixelsSource / largeurPage) * 100}cqw`;
-}
-
-/** Taille de police du bloc, en pixels source.
- *
- * `fontSize` n'est pas encore produit par la mise en page (T4.4). En attendant,
- * on **mesure** : la hauteur du bloc divisée par le nombre de lignes du texte
- * source. Sur la page du corpus, 107 px pour 5 lignes donnent 21 px par ligne,
- * et 12 px pour une ligne unique donnent 12 px. C'est une estimation, pas une
- * garantie — mais c'est une valeur tirée de la mesure, là où `16px` en dur
- * n'était qu'un souhait qui ne suivait pas le zoom.
- */
-function taillePoliceSource(b: BlocTraduction): number {
-  if (b.fontSize) return b.fontSize;
-  const lignes = (b.originalText ?? '').split('\n').filter(Boolean).length || 1;
-  return Math.max(10, b.bbox.h / lignes);
-}
-
-/** Charge la traduction d'une page du chapitre courant, si la surcouche est activée.
- *
- * Deux étapes, et l'ordre est mesuré :
- *
- * 1. `analyser_page` — la vision lit la page : tuiles, détection de bulles,
- *    lecture, regroupement. C'est **lent** (détection ~2,2 s par tuile, lecture
- *    ~0,5 s par bulle sur la machine cible), donc c'est du travail de fond.
- * 2. `traduire_page` — la traduction des blocs trouvés.
- *
- * L'analyse de page ne fait AUCUNE requête réseau : elle lit les octets depuis le
- * cache, donc elle analyse exactement l'image affichée.
- *
- * Le glossaire est **par série** : la clé reprend la convention de fusion déjà
- * employée pour les favoris. Elle est obligatoire côté Rust — sans elle, Tauri
- * refuse l'appel, et l'erreur était avalée par un `catch {}` vide.
- */
-async function chargerTraductionPage(index: number, page: Page) {
-  if (!afficherTraductionRef.current) return;
-  if (blocsTraductionRef.current[index]) return; // déjà chargée
-  if (enAttenteTraductionRef.current.has(index)) return; // déjà en file
-  enAttenteTraductionRef.current.add(index);
-  // L'analyse est photographiée **au moment de l'appel** : une mise en file
-  // devient inutile si le lecteur n'est plus sur la même page avant son tour.
-  // Mesuré le 2026-10-08 : sans cette garde, une analyse en file partait après
-  // un changement de chapitre et répondait « page inconnue ou déjà évacuée du
-  // cache » — un message qui ne parle pas du lecteur, sur une page qui n'a rien
-  // à voir avec lui.
-  const chapitre = reader?.chapter.url ?? '';
-  await enFileTraduction(async () => {
-    try {
-      if (!afficherTraductionRef.current) return;
-      // Deux critères, pas un : le chapitre **et** le jeton de la page. Rouvrir le
-      // MÊME chapitre ré-enregistre les pages, donc les jetons changent — et une
-      // analyse en file partie sur l'ancien jeton répond « page inconnue ou déjà
-      // évacuée du cache » (mesuré le 2026-10-08). Comparer l'URL ne le voit pas :
-      // elle est identique.
-      if ((reader?.chapter.url ?? '') !== chapitre) return;
-      if ((reader?.pages[index]?.token ?? '') !== page.token) return;
-      if (blocsTraductionRef.current[index]) return; // chargée entre-temps
-      await analyserPage(index, page);
-    } finally {
-      // Toujours libérer l'index : une tâche sautée par une garde ne doit pas
-      // rester « en attente » pour le reste de la session.
-      enAttenteTraductionRef.current.delete(index);
-    }
-  });
-}
-
-/**
- * Une seule analyse de page à la fois.
- *
- * **Ce que la file corrige, mesuré le 2026-10-08** : l'observateur
- * d'intersection déclenche `i`, `i+1` et `i-1`, donc jusqu'à trois
- * `analyser_page` d'affilée. La vision est le goulot (11 à 43 s par page) et
- * elle monopolise les deux cœurs : trois analyses simultanées, c'est trois fois
- * plus de latence pour l'utilisateur, sur une fonction de fond. La file borne
- * le débit à une analyse, comme le fait déjà le taux par source côté moteur.
- *
- * **Ce qu'elle ne corrige pas** — et qu'il ne faut pas lui attribuer : le
- * `detect vision : délai dépassé (10s)` du 2026-10-08. Mesuré ensuite
- * (`.mesures/pilot-109-preuve-file.cjs`) : sur cette machine **une seule** page
- * est analysée à la fois de toute façon, et l'analyse aboutit dans les deux cas,
- * file ou pas. La concurrence n'était donc pas la cause ; l'hypothèse restante
- * est le sidecar vision à froid (process neuf, ~800 Mo de modèles), non encore
- * mesurée.
- *
- * `then(tache, tache)` : la tâche s'exécute même si la précédente a échoué, et
- * la chaîne aval avale l'erreur, donc un échec ne fige pas la file.
- *
- * La chaîne vit dans un `useRef`, **pas** dans une `let` du corps : ce fichier
- * déclare ses fonctions à l'intérieur du composant (`Home()` commence ligne
- * 943, son JSX ligne 3157), donc une `let` ici serait recréée à chaque rendu et
- * la file ne verrouillerait rien.
- */
-function enFileTraduction(tache: () => Promise<void>): Promise<void> {
-  const suivant = chaineTraductionRef.current.then(tache, tache);
-  chaineTraductionRef.current = suivant.catch(() => {});
-  return suivant;
-}
-
-async function analyserPage(index: number, page: Page) {
-  try {
-    const analysee = await invoke<PageTranslation>('analyser_page', {
-      token: page.token,
-      chapterUrl: reader?.chapter.url ?? '',
-      source: reader?.source ?? '',
-    });
-    if (!analysee.blocks?.length) {
-      // Une page d'illustration, ou une page dont le texte n'a pas été détecté.
-      // Ce n'est pas une erreur : c'est le résultat. On l'affiche quand même
-      // pour que la surcouche ait une entrée et ne redemande pas à chaque
-      // défilement.
-      setBlocsTraduction((prev) => (prev[index] ? prev : { ...prev, [index]: analysee }));
-      return;
-    }
-    const resultat = await invoke<PageTranslation>('traduire_page', {
-      page: analysee,
-      seriesKey: cleSerie(),
-    });
-    setBlocsTraduction((prev) => {
-      if (prev[index]) return prev; // évite les races
-      return { ...prev, [index]: resultat };
-    });
-    setTraductionEchec(false);
-  } catch (e) {
-    // Journalisé ET affiché : mesuré le 2026-10-08, `console.warn` seul
-    // laissait l'utilisateur devant une page inchangée, sans comprendre pourquoi.
-    console.warn(`traduction page ${index} : ${String(e)}`);
-    setTraductionEchec(true);
-  }
-}
-
-// Déclenchement au basculement : sans cet effet, rien n'est analysé tant que
-// l'utilisateur ne défile pas — le callback d'IntersectionObserver est la
-// seule autre voie (mesuré le 2026-10-07 : basculer sur FR sur une page
-// statique ne produisait rien, et le porteur d'état — le setState updater en
-// charge — n'était jamais seul à déclencher l'overlay).
-// Même motif que l'effet de chargement des préférences au-dessous : les
-// `setState` arrivent tous après un `await` (et la règle
-// `set-state-in-effect` ne voit pas la frontière d'attente).
-//
-// Le `eslint-disable` qui était ici est **retiré** : il ne servait plus à rien.
-// Le travail est parti dans `analyserPage`, donc plus aucun `setState` n'est
-// dans le corps de l'effet, et la règle n'a plus rien à signaler — ESLint le
-// signalait comme directive inutilisée. Faux positif vérifié : le chargement
-// initial des préférences, où le disable est encore nécessaire.
-useEffect(() => {
-  if (!afficherTraduction || !reader) return;
-  const i = reader.index ?? 0;
-  const page = reader.pages[i];
-  if (page) void chargerTraductionPage(i, page);
-}, [afficherTraduction, reader?.index]);
 
 /**
  * Les surcouches de l'application : panneau de vérification et notifications.
@@ -3663,17 +3382,6 @@ useEffect(() => {
       if (meilleure) {
         const { i } = meilleure;
         setReader((r) => (r && r.index !== i ? { ...r, index: i } : r));
-        // T4.6 — précharger la traduction de la page visible et de ses voisines.
-        const page = reader?.pages[i];
-        if (page && afficherTraductionRef.current) {
-          void chargerTraductionPage(i, page);
-          if (reader.pages[i + 1]) {
-            void chargerTraductionPage(i + 1, reader.pages[i + 1]);
-          }
-          if (i > 0 && reader.pages[i - 1]) {
-            void chargerTraductionPage(i - 1, reader.pages[i - 1]);
-          }
-        }
       }
     },
     // `threshold: 0`, et non 0.6 : dans une fenêtre de 627 px, une page webtoon
@@ -3897,48 +3605,6 @@ useEffect(() => {
             </select>
           </label>
           <p className="muted">{t('reglages.langue.note')}</p>
-        </section>
-
-        <section className="panel">
-          <h2>{t('reglages.traduction')}</h2>
-          <p className="muted">{t('reglages.traduction.note')}</p>
-          <label className="field">
-            {t('reglages.traduction.cle_gemini')}
-            <input
-              type="password"
-              value={cleGemini}
-              onChange={(e) => setCleGemini(e.target.value)}
-              placeholder={t('reglages.traduction.cle_gemini.placeholder')}
-              aria-label={t('reglages.traduction.cle_gemini')}
-            />
-          </label>
-          <p className="muted">{t('reglages.traduction.cle_gemini.note')}</p>
-          <div className="row-actions">
-            <button className="btn btn-primary" onClick={sauverCleGemini}>
-              {t('reglages.traduction.cle_gemini.sauver')}
-            </button>
-            {cleGemini && (
-              <button className="btn btn-ghost" onClick={supprimerCleGemini}>
-                {t('reglages.traduction.cle_gemini.supprimer')}
-              </button>
-            )}
-          </div>
-          <p className="muted">{t('reglages.traduction.consentement.description')}</p>
-          <label className="field">
-            {t('reglages.traduction.consentement')}
-            <input
-              type="checkbox"
-              checked={consentementTraduction}
-              onChange={(e) => definirConsentementTraduction(e.target.checked)}
-            />
-          </label>
-          <p className="muted">
-            {t('reglages.traduction.resume.nbBlocs', { n: 0 })} ·{' '}
-            {t('reglages.traduction.resume.nbBlocsTexte', { n: 0 })} ·{' '}
-            {t('reglages.traduction.resume.taille', { n: 0 })} ·{' '}
-            {t('reglages.traduction.resume.fournisseur', { fournisseur: 'Gemini' })} ·{' '}
-            {t('reglages.traduction.resume.horsLigne')}
-          </p>
         </section>
 
         <section className="panel">
@@ -4785,25 +4451,6 @@ if (reader) {
               {marque ? t('lecteur.signet.actif') : t('lecteur.signet')}
             </button>
 
-            <button
-              className={`seg-btn${afficherTraduction ? ' on' : ''}`}
-              aria-pressed={afficherTraduction}
-              onClick={() => setAfficherTraductionComputed(!afficherTraduction)}
-              title={t('lecteur.traduction.toggle')}
-            >
-              {afficherTraduction ? 'FR' : '原文'}
-            </button>
-            {/* F3 (mesuré le 2026-10-08) : sans fournisseur configuré, la bascule
-                FR ne produisait rien de visible — l'erreur ne partait que dans la
-                console du développeur. Un `<p role="alert">` juste après la
-                bascule : l'échec est annoncé là où l'utilisateur vient de cliquer,
-                et il reste affiché jusqu'à ce qu'une page réussisse. */}
-            {traductionEchec && (
-              <p className="alerte-traduction" role="alert">
-                {t('lecteur.traduction.echec')}
-              </p>
-            )}
-
             {/* Navigation du bandeau, dans la barre du lecteur (demande
                 explicite). En mode webtoon, la navigation vivait sous la
                 barre : changer de page imposait de remonter en haut de
@@ -4951,66 +4598,6 @@ if (reader) {
                   />
                 );
               })}
-              {afficherTraductionRef.current && (
-                <div className="traduction-overlay" aria-live="polite">
-                  {fenetre.map((i) => {
-                    const p = pages[i];
-                    const blocs = blocsTraduction[i];
-                    if (!p || !blocs?.blocks?.length) return null;
-                    // Les dimensions viennent de l'analyse (blocs.width/height)
-                    // — elles n'existent pas dans Page quand la page vient du
-                    // moteur distant.
-                    const sourceWidth = blocs.width > 0 ? blocs.width : 1;
-                    const hauteur = hauteurs[i] || 0;
-                    const top = bandeVirtualisable ? (offsets[i] ?? 0) : undefined;
-                    return (
-                      <div
-                        key={`t-${p.token}`}
-                        data-page={i}
-                        style={{
-                          ...(bandeVirtualisable
-                            ? {
-                                width: `${zoom}%`,
-                                position: 'absolute' as const,
-                                top,
-                                height: hauteur ? `${hauteur}px` : undefined,
-                              }
-                            : { width: `${zoom}%`, position: 'relative' as const }),
-                          // La référence de largeur qui rend les `cqw` possibles.
-                          containerType: 'inline-size',
-                        }}
-                      >
-                        {/* ADR 0011 + garde de longueur : `blocsSuperposables`
-                            est le seul endroit qui décide ce qui est posé sur la
-                            page. Ne pas réintroduire un `.filter` inline ici. */}
-                        {blocsSuperposables(blocs.blocks)
-                          .map((b) => (
-                            <div
-                              key={b.id}
-                              className="bubble-text"
-                              style={{
-                                // `container-type: inline-size` rend ce
-                                // conteneur en référence de largeur : d'ici les
-                                // `cqw`, qui suivent l'image affichée sans
-                                // qu'aucune mesure en JavaScript soit
-                                // nécessaire. Voir `enCqw`.
-                                left: enCqw(b.bbox.x, sourceWidth),
-                                top: enCqw(b.bbox.y, sourceWidth),
-                                width: enCqw(b.bbox.w, sourceWidth),
-                                height: enCqw(b.bbox.h, sourceWidth),
-                                fontFamily: b.fontFamily ?? 'Comic Neue',
-                                fontSize: enCqw(taillePoliceSource(b), sourceWidth),
-                                lineHeight: 1.25,
-                              }}
-                            >
-                              {b.translatedText}
-                            </div>
-                          ))}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           </div>
       </main>

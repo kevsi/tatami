@@ -24,12 +24,7 @@
         "fetchCover",
         "setCookies",
         "health",
-        "shutdown",
-        "detect",
-        "ocr",
-        "inpaint",
-        "loadPack",
-        "capabilities"
+        "shutdown"
       ]
     },
     "errorCode": {
@@ -42,10 +37,7 @@
         "RATE_LIMITED",
         "TIMEOUT",
         "CANCELLED",
-        "INTERNAL",
-        "MODEL_MISSING",
-        "OUT_OF_MEMORY",
-        "TILE_TOO_LARGE"
+        "INTERNAL"
       ]
     },
     "request": {
@@ -158,143 +150,15 @@
       },
       "additionalProperties": true
     },
-    "bbox": {
-      "type": "object",
-      "required": ["x", "y", "w", "h"],
-      "properties": {
-        "x": { "type": "integer", "minimum": 0 },
-        "y": { "type": "integer", "minimum": 0 },
-        "w": { "type": "integer", "minimum": 1 },
-        "h": { "type": "integer", "minimum": 1 }
-      },
-      "additionalProperties": false
-    },
-    "detectionBbox": {
-      "type": "object",
-      "description": "Boîte d'une détection, dans le repère de la tuile 640×640. `x` et `y` peuvent être NÉGATIFS et la boîte peut dépasser la tuile : mesuré le 2026-10-07, une bulle donne (-144, -46, 359, 214) alors que la tuile fait 640×640. C'est le comportement normal d'un détecteur qui raisonne sur sa fenêtre ; le bornage sur la page est la responsabilité de l'appelant. Le `minimum: 0` du `bbox` général ne s'applique donc pas ici — il décrivait une supposition jamais mesurée.",
-      "required": ["x", "y", "w", "h"],
-      "properties": {
-        "x": { "type": "integer" },
-        "y": { "type": "integer" },
-        "w": { "type": "integer", "minimum": 1 },
-        "h": { "type": "integer", "minimum": 1 }
-      },
-      "additionalProperties": false
-    },
-    "capabilitiesResult": {
-      "type": "object",
-      "description": "Forme de `result` pour `capabilities` (sidecar vision). `inpaintDisponible` est `false` tant que le modèle d'effacement n'est pas dans le pack : l'application peut alors l'afficher au lieu d'appeler une méthode qui échouera.",
-      "required": ["packId", "version", "methods", "inpaintDisponible"],
-      "properties": {
-        "packId": { "type": "string" },
-        "version": { "type": "string" },
-        "methods": {
-          "type": "array",
-          "items": { "type": "string", "enum": ["detect", "ocr", "inpaint"] }
-        },
-        "inpaintDisponible": { "type": "boolean" }
-      },
-      "additionalProperties": false
-    },
-    "detectResult": {
-      "type": "object",
-      "description": "Forme de `result` pour `detect`. Une détection porte sa boîte, sa classe et son score. La classe est la classification de T2.3 (0 bubble, 1 text_bubble, 2 text_free) : elle est mesurée par le modèle, donc la jeter ici obligerait l'application à deviner un `type_bloc` que le schéma de traduction exige.",
-      "required": ["detections"],
-      "properties": {
-        "detections": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["bbox", "classe", "score"],
-            "properties": {
-              "bbox": { "$ref": "#/$defs/detectionBbox" },
-              "classe": { "type": "integer", "minimum": 0, "maximum": 2 },
-              "score": { "type": "number", "minimum": 0, "maximum": 1 }
-            },
-            "additionalProperties": false
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "ocrResult": {
-      "type": "object",
-      "description": "Forme de `result` pour `ocr`.",
-      "required": ["lines"],
-      "properties": {
-        "lines": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["text", "bbox"],
-            "properties": {
-              "text": { "type": "string" },
-              "bbox": { "$ref": "#/$defs/bbox" }
-            },
-            "additionalProperties": false
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "inpaintResult": {
-      "type": "object",
-      "description": "Forme de `result` pour `inpaint`.",
-      "required": ["data", "contentType"],
-      "properties": {
-        "data": { "type": "string", "description": "Image nettoyée, base64 standard." },
-        "contentType": { "type": "string", "description": "Type MIME de l'image résultante (ex. image/png)." }
-      },
-      "additionalProperties": false
-    },
-    "packManifest": {
-      "type": "object",
-      "required": ["packId", "version", "models", "sha256"],
-      "properties": {
-        "packId": { "type": "string" },
-        "version": { "type": "string" },
-        "models": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["id", "path", "sha256"],
-            "properties": {
-              "id": { "type": "string" },
-              "path": { "type": "string" },
-              "sha256": { "type": "string" }
-            },
-            "additionalProperties": false
-          }
-        },
-        "sha256": { "type": "string", "description": "Hash du manifeste, pour vérification de cohérence." }
-      },
-      "additionalProperties": false
-    },
-    "loadPackResult": {
-      "type": "object",
-      "description": "Forme de `result` pour `loadPack`.",
-      "required": ["packId", "version"],
-      "properties": {
-        "packId": { "type": "string" },
-        "version": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
     "healthResult": {
-      "description": "Forme de `result` pour `health`. Cette méthode a **deux formes réelles**, et une seule était décrite jusqu'au 2026-10-07 : `health` global (`ok` + version du moteur ou du pack vision) et `health` par source (`source` + `reachable`, sans `ok`). La seconde était invisible parce qu'aucun `$defs` de résultat n'était appliqué par la validation — le trou que le contre-exemple « score de détection au-dessus du maximum » a fait apparaître. Les deux branches sont exclusives : chacune interdit les champs de l'autre.",
+      "description": "Forme de `result` pour `health`. Cette méthode a **deux formes réelles**, et une seule était décrite jusqu'au 2026-10-07 : `health` global (`ok` + version du moteur) et `health` par source (`source` + `reachable`, sans `ok`). La seconde était invisible parce qu'aucun `$defs` de résultat n'était appliqué par la validation — le trou que le contre-exemple « score de détection au-dessus du maximum » a fait apparaître. Les deux branches sont exclusives : chacune interdit les champs de l'autre.",
       "oneOf": [
         {
           "type": "object",
           "required": ["ok"],
           "properties": {
             "ok": { "type": "boolean" },
-            "engineVersion": { "type": "string" },
-            "packId": { "type": "string" },
-            "version": { "type": "string" },
-            "models": {
-              "type": "array",
-              "items": { "type": "string" }
-            }
+            "engineVersion": { "type": "string" }
           },
           "additionalProperties": false
         },

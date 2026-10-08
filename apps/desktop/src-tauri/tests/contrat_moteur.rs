@@ -164,24 +164,20 @@ impl std::fmt::Display for Violation {
 
 /// Le schéma de `result` de chaque méthode, quand il existe.
 ///
-/// **Trou trouvé le 2026-10-07** : `detectResult`, `ocrResult`,
-/// `inpaintResult`, `loadPackResult` et `healthResult` étaient déclarés dans
-/// `$defs` et **référencés par rien** — `response.result` est un simple
-/// `{type: object}`. La validation passait donc la forme de ces résultats sans
-/// jamais la juger. Le contre-exemple « score de détection au-dessus du maximum »
-/// l'a rendu visible : il était accepté.
+/// **Trou trouvé le 2026-10-07** : `healthResult` était déclaré dans
+/// `$defs` et **référencé par rien** — `response.result` est un simple
+/// `{type: object}`. La validation passait donc la forme de ce résultat sans
+/// jamais la juger. Le contre-exemple « score de détection au-dessus du
+/// maximum » l'a rendu visible : il était accepté.
 ///
 /// L'association méthode → schéma est donc écrite ici, et une porte vérifie
 /// qu'elle couvre tout schéma de résultat du contrat — sinon un nouveau `$defs`
 /// serait ajouté sans être appliqué, en silence.
-const RESULTATS_PAR_METHODE: &[(&str, &str)] = &[
-    ("health", "healthResult"),
-    ("capabilities", "capabilitiesResult"),
-    ("detect", "detectResult"),
-    ("ocr", "ocrResult"),
-    ("inpaint", "inpaintResult"),
-    ("loadPack", "loadPackResult"),
-];
+///
+/// Elle ne contient plus que `health` : les cinq entrées du sidecar vision
+/// (`capabilities`, `detect`, `ocr`, `inpaint`, `loadPack`) ont été retirées
+/// avec le sous-système de traduction, et leurs `$defs` avec elles.
+const RESULTATS_PAR_METHODE: &[(&str, &str)] = &[("health", "healthResult")];
 
 /// Le nom du `$defs` qui décrit le `result` d'une méthode, s'il existe.
 fn schema_de_resultat(methode: &str) -> Option<&'static str> {
@@ -519,12 +515,13 @@ fn le_nombre_de_reponses_enregistrees_est_stable() {
     // pour une méthode orpheline… non : elle le ferait échouer. Mais une fixture
     // perdue doit se voir tout de suite, pas dans six mois.
     let n = charger().len();
-    // 16 réponses du moteur de sources, plus 6 du sidecar vision enregistrées le
-    // 2026-10-07 : `hello`, `loadPack`, `detect`, `ocr`, `inpaint` et
-    // `capabilities`. Voir `fixtures/README.md`.
+    // 16 réponses du moteur de sources. Elles ont été 22 jusqu'au
+    // 2026-10-08 : les 6 du sidecar vision (`hello`, `loadPack`, `detect`,
+    // `ocr`, `inpaint`, `capabilities`) sont parties avec le sous-système de
+    // traduction, dont la trace reste dans l'historique git.
     assert_eq!(
-        n, 22,
-        "22 réponses enregistrées attendues (16 moteur + 6 vision). Changer ce nombre est \
+        n, 16,
+        "16 réponses enregistrées attendues (moteur de sources). Changer ce nombre est \
          normal (nouvelle méthode, nouveau cas mesuré) — mais il faut le faire exprès et le \
          noter dans fixtures/README.md."
     );
@@ -573,38 +570,33 @@ fn le_validateur_refuse_les_reponses_invalides() {
             "`result` qui n'est pas un objet",
             serde_json::json!({ "id": "x", "ok": true, "result": [] }),
         ),
-        // Contre-exemple du mot-clé `maximum` (ajouté le 2026-10-07 avec
-        // `detectResult`) : sans lui, le validateur laisserait passer un score
-        // de 1,5 — donc une porte qui aurait l'air verte et ne jugerait rien.
+        // Contre-exemple du mot-clé `minimum` : sans lui, le validateur
+        // laisserait passer un délai nul — donc une porte qui aurait l'air verte
+        // et ne jugerait rien. Il remplace le contre-exemple de `maximum` sur le
+        // score de détection, retiré avec `detectResult`.
         (
-            "score de détection au-dessus du maximum",
-            serde_json::json!({
-                "id": "x", "ok": true,
-                "result": { "detections": [{
-                    "bbox": { "x": 0, "y": 0, "w": 10, "h": 10 },
-                    "classe": 0, "score": 1.5
-                }] }
-            }),
+            "`timeoutMs` nul, sous le minimum",
+            serde_json::json!({ "id": "x", "method": "hello", "params": {}, "timeoutMs": 0 }),
         ),
+        // Contre-exemple de la forme de `result` : `health` a **deux** branches
+        // exclusives, et mélanger leurs champs doit être refusé par chacune.
+        // Sans ce cas, la validation du `result` pourrait ne rien voir.
         (
-            "classe de détection hors de l'enum 0..2",
+            "health : branches `ok` et `source` mélangées",
             serde_json::json!({
                 "id": "x", "ok": true,
-                "result": { "detections": [{
-                    "bbox": { "x": 0, "y": 0, "w": 10, "h": 10 },
-                    "classe": 7, "score": 0.9
-                }] }
+                "result": { "ok": true, "source": "X", "reachable": true }
             }),
         ),
     ];
 
     for (nom, enveloppe) in cas {
-        // Les deux derniers cas concernent la forme d'un `result` : ils
-        // passent par `valider_enveloppe`, sinon la méthode serait inconnue et
-        // le schéma de résultat ne s'appliquerait pas — donc le contre-exemple
-        // ne prouverait rien du tout.
-        let methode = if nom.contains("détection") {
-            "detect"
+        // Le dernier cas concerne la forme d'un `result` : il passe par
+        // `valider_enveloppe`, sinon la méthode serait inconnue et le schéma de
+        // résultat ne s'appliquerait pas — donc le contre-exemple ne prouverait
+        // rien du tout.
+        let methode = if nom.starts_with("health") {
+            "health"
         } else {
             ""
         };

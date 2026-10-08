@@ -49,4 +49,3 @@ downloads/
 # Cibles Cargo de travail annexes (mesures, clippy isole) : plusieurs Go
 # qui ne doivent jamais joins le depot.
 target-*/
-sidecar-vision/target*/

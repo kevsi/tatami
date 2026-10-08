@@ -8,14 +8,14 @@
 //! Les migrations sont **forward-only** et versionnées par `PRAGMA user_version`.
 //! Le fichier de base est sauvegardé avant toute migration appliquée.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Version du schéma attendue par ce binaire.
-const SCHEMA_VERSION: i64 = 10;
+const SCHEMA_VERSION: i64 = 11;
 
 #[derive(Serialize)]
 pub struct Favorite {
@@ -111,44 +111,6 @@ fn bookmark_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Bookmark> {
     })
 }
 
-/// Page de webtoon traduite, telle qu'écrite dans `page_translations`.
-#[derive(Debug, Clone, Serialize)]
-pub struct PageTranslationRow {
-    pub page_id: String,
-    pub manga_url: Option<String>,
-    pub chapter_url: String,
-    pub source: String,
-    pub width: i64,
-    pub height: i64,
-    pub pipeline_version: String,
-    pub models: String,
-    pub source_lang: String,
-    pub target_lang: String,
-    pub clean_image_ref: Option<String>,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
-
-/// Bloc de traduction, tel qu'écrit dans `blocks`.
-#[derive(Debug, Clone, Serialize)]
-pub struct BlockRow {
-    pub id: String,
-    pub page_id: String,
-    pub type_bloc: String,
-    pub bbox_x: i64,
-    pub bbox_y: i64,
-    pub bbox_w: i64,
-    pub bbox_h: i64,
-    pub original_text: Option<String>,
-    pub translated_text: Option<String>,
-    pub reading_order: i64,
-    pub status: String,
-    pub confidence: Option<f64>,
-    pub overrides: Option<String>,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
-
 /// Source personnalisée installée par l'utilisateur (script JavaScript local).
 ///
 /// Le moteur JVM charge ces scripts depuis le dossier `sources/` au démarrage.
@@ -160,17 +122,6 @@ pub struct CustomSource {
     pub lang: String,
     pub path: String,
     pub installed_at: i64,
-}
-
-/// Entrée du glossaire par série.
-///
-/// Stocke un terme source et sa traduction attendue, avec un registre
-/// optionnel (tutoiement / vouvoiement).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GlossaryEntry {
-    pub term: String,
-    pub translation: String,
-    pub register: Option<String>,
 }
 
 pub struct Store {
@@ -368,56 +319,9 @@ impl Store {
         // de constante, jamais une entrée utilisateur. Réécrire la même valeur
         // est sans effet ; on ne l'écrit que si elle change pour éviter de
         // toucher au fichier à chaque démarrage.
-        // v8 : tables de traduction (T1.2). Une page de webtoon peut avoir
-        // plusieurs blocs ; les corrections manuelles sont stockées dans
-        // `overrides` et survivent aux mises à jour du pipeline.
-        if current < 8 {
-            tx.execute_batch(
-                r#"
-                CREATE TABLE IF NOT EXISTS page_translations (
-                     page_id        TEXT    NOT NULL PRIMARY KEY,
-                     manga_url      TEXT,
-                     chapter_url    TEXT    NOT NULL,
-                     source         TEXT    NOT NULL,
-                     width          INTEGER NOT NULL,
-                     height         INTEGER NOT NULL,
-                     pipeline_version TEXT NOT NULL,
-                     models         TEXT    NOT NULL,
-                     source_lang    TEXT    NOT NULL DEFAULT 'en',
-                     target_lang    TEXT    NOT NULL DEFAULT 'fr',
-                     clean_image_ref TEXT,
-                     created_at     INTEGER NOT NULL,
-                     updated_at     INTEGER NOT NULL
-                 );
-                 CREATE INDEX IF NOT EXISTS page_translations_chapter
-                     ON page_translations (chapter_url);
-                 CREATE INDEX IF NOT EXISTS page_translations_source
-                     ON page_translations (source);
-
-                 CREATE TABLE IF NOT EXISTS blocks (
-                     id             TEXT    NOT NULL PRIMARY KEY,
-                     page_id        TEXT    NOT NULL
-                                         REFERENCES page_translations(page_id) ON DELETE CASCADE,
-                     type           TEXT    NOT NULL,
-                     bbox_x         INTEGER NOT NULL,
-                     bbox_y         INTEGER NOT NULL,
-                     bbox_w         INTEGER NOT NULL,
-                     bbox_h         INTEGER NOT NULL,
-                     original_text  TEXT,
-                     translated_text TEXT,
-                     reading_order  INTEGER NOT NULL,
-                     status         TEXT    NOT NULL,
-                     confidence     REAL,
-                     overrides      TEXT,
-                     created_at     INTEGER NOT NULL,
-                     updated_at     INTEGER NOT NULL
-                 );
-                 CREATE INDEX IF NOT EXISTS blocks_page_order
-                     ON blocks (page_id, reading_order);
-                 "#,
-            )
-            .map_err(|e| format!("migration v8 : {e}"))?;
-        }
+        // v8 : `page_translations` et `blocks`, tables du sous-système de
+        // traduction. Le bloc de création a été retiré le 2026-10-08 ; les
+        // tables sont supprimées par la migration v11, plus bas.
         // v9 : sources personnalisées scriptées (JavaScript). Installées par
         // l'utilisateur depuis un fichier .js local ; le chemin est absolu et
         // validé à l'import (anti path-traversal). `installed_at` est un
@@ -436,27 +340,26 @@ impl Store {
             )
             .map_err(|e| format!("migration v9 : {e}"))?;
         }
-        // v10 : glossaire par série. Stocke les termes spécifiques (noms propres,
-        // locutions, registre) associés à une clé de série. Un même terme peut
-        // apparaître plusieurs fois avec des traductions différentes selon la série.
-        if current < 10 {
+        // v11 : suppression des tables du sous-système de traduction.
+        //
+        // Elles étaient créées par les blocs v8 (`page_translations`, `blocks`)
+        // et v10 (`glossary`), retirés le 2026-10-08 avec la fonctionnalité
+        // elle-même. **Ces deux blocs ne sont pas réécrits** : une migration
+        // appliquée ne se réécrit pas, donc une base existante les a déjà
+        // jouées et garde ses tables sans ce DROP. D'où ce bloc, qui est le seul
+        // moyen autorisé de s'en débarrasser.
+        //
+        // `IF EXISTS` rend l'opération idempotente : une base neuve n'a jamais
+        // eu ces tables, et le DROP ne fait alors rien.
+        if current < 11 {
             tx.execute_batch(
                 r#"
-                CREATE TABLE IF NOT EXISTS glossary (
-                    id           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                    series_key   TEXT    NOT NULL,
-                    term         TEXT    NOT NULL,
-                    translation  TEXT    NOT NULL,
-                    register     TEXT,
-                    created_at   INTEGER NOT NULL,
-                    updated_at   INTEGER NOT NULL,
-                    UNIQUE (series_key, term)
-                );
-                CREATE INDEX IF NOT EXISTS glossary_series
-                    ON glossary (series_key);
+                DROP TABLE IF EXISTS blocks;
+                DROP TABLE IF EXISTS page_translations;
+                DROP TABLE IF EXISTS glossary;
                 "#,
             )
-            .map_err(|e| format!("migration v10 : {e}"))?;
+            .map_err(|e| format!("migration v11 : {e}"))?;
         }
         if current < SCHEMA_VERSION {
             tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
@@ -845,182 +748,6 @@ impl Store {
         Ok(())
     }
 
-    /// Clé de cache déterministe pour une page traduite.
-    ///
-    /// La clé combine : hash du contenu de la page + version du pipeline +
-    /// versions des modèles + langue cible + version du glossaire.
-    /// Toute variation de ces éléments invalide le cache.
-    pub fn translation_cache_key(
-        page_content_hash: &str,
-        pipeline_version: &str,
-        models: &str,
-        target_lang: &str,
-        glossary_version: &str,
-    ) -> String {
-        format!(
-            "{}:{}:{}:{}:{}",
-            page_content_hash, pipeline_version, models, target_lang, glossary_version
-        )
-    }
-
-    /// Sauvegarde une page traduite et ses blocs dans la base.
-    ///
-    /// Écrase la page existante si `page_id` est déjà présent.
-    pub fn save_page_translation(
-        &self,
-        page: &PageTranslationRow,
-        blocks: &[BlockRow],
-    ) -> Result<(), String> {
-        let mut conn = self
-            .conn
-            .lock()
-            .map_err(|_| "base verrouillée".to_string())?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| format!("transaction : {e}"))?;
-        tx.execute(
-            r#"INSERT OR REPLACE INTO page_translations
-               (page_id, manga_url, chapter_url, source, width, height,
-                pipeline_version, models, source_lang, target_lang, clean_image_ref,
-                created_at, updated_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"#,
-            rusqlite::params![
-                &page.page_id,
-                &page.manga_url,
-                &page.chapter_url,
-                &page.source,
-                page.width,
-                page.height,
-                &page.pipeline_version,
-                &page.models,
-                &page.source_lang,
-                &page.target_lang,
-                &page.clean_image_ref,
-                page.created_at,
-                page.updated_at,
-            ],
-        )
-        .map_err(|e| format!("insert page_translation : {e}"))?;
-        for b in blocks {
-            tx.execute(
-                r#"INSERT OR REPLACE INTO blocks
-                   (id, page_id, type, bbox_x, bbox_y, bbox_w, bbox_h,
-                    original_text, translated_text, reading_order, status,
-                    confidence, overrides, created_at, updated_at)
-                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"#,
-                rusqlite::params![
-                    &b.id,
-                    &b.page_id,
-                    &b.type_bloc,
-                    b.bbox_x,
-                    b.bbox_y,
-                    b.bbox_w,
-                    b.bbox_h,
-                    &b.original_text,
-                    &b.translated_text,
-                    b.reading_order,
-                    &b.status,
-                    b.confidence,
-                    &b.overrides,
-                    b.created_at,
-                    b.updated_at,
-                ],
-            )
-            .map_err(|e| format!("insert block : {e}"))?;
-        }
-        tx.commit()
-            .map_err(|e| format!("commit traduction : {e}"))?;
-        Ok(())
-    }
-
-    /// Récupère une page traduite et ses blocs depuis la base.
-    ///
-    /// Retourne `None` si la page n'est pas en cache.
-    pub fn get_page_translation(
-        &self,
-        page_id: &str,
-    ) -> Result<Option<(PageTranslationRow, Vec<BlockRow>)>, String> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| "base verrouillée".to_string())?;
-
-        // Récupérer la page
-        let mut stmt = conn
-            .prepare(
-                r#"SELECT page_id, manga_url, chapter_url, source, width, height,
-                          pipeline_version, models, source_lang, target_lang, clean_image_ref,
-                          created_at, updated_at
-                     FROM page_translations
-                     WHERE page_id = ?1"#,
-            )
-            .map_err(|e| format!("select page_translation : {e}"))?;
-
-        let page: Option<PageTranslationRow> = stmt
-            .query_row(rusqlite::params![page_id], |row| {
-                Ok(PageTranslationRow {
-                    page_id: row.get(0)?,
-                    manga_url: row.get(1)?,
-                    chapter_url: row.get(2)?,
-                    source: row.get(3)?,
-                    width: row.get(4)?,
-                    height: row.get(5)?,
-                    pipeline_version: row.get(6)?,
-                    models: row.get(7)?,
-                    source_lang: row.get(8)?,
-                    target_lang: row.get(9)?,
-                    clean_image_ref: row.get(10)?,
-                    created_at: row.get(11)?,
-                    updated_at: row.get(12)?,
-                })
-            })
-            .optional()
-            .map_err(|e| format!("query page_translation : {e}"))?;
-
-        let page = match page {
-            Some(p) => p,
-            None => return Ok(None),
-        };
-
-        // Récupérer les blocs
-        let mut stmt = conn
-            .prepare(
-                r#"SELECT id, page_id, type, bbox_x, bbox_y, bbox_w, bbox_h,
-                          original_text, translated_text, reading_order, status,
-                          confidence, overrides, created_at, updated_at
-                     FROM blocks
-                     WHERE page_id = ?1
-                     ORDER BY reading_order"#,
-            )
-            .map_err(|e| format!("select blocks : {e}"))?;
-
-        let blocks: Vec<BlockRow> = stmt
-            .query_map(rusqlite::params![page_id], |row| {
-                Ok(BlockRow {
-                    id: row.get(0)?,
-                    page_id: row.get(1)?,
-                    type_bloc: row.get(2)?,
-                    bbox_x: row.get(3)?,
-                    bbox_y: row.get(4)?,
-                    bbox_w: row.get(5)?,
-                    bbox_h: row.get(6)?,
-                    original_text: row.get(7)?,
-                    translated_text: row.get(8)?,
-                    reading_order: row.get(9)?,
-                    status: row.get(10)?,
-                    confidence: row.get(11)?,
-                    overrides: row.get(12)?,
-                    created_at: row.get(13)?,
-                    updated_at: row.get(14)?,
-                })
-            })
-            .map_err(|e| format!("query blocks : {e}"))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("collect blocks : {e}"))?;
-
-        Ok(Some((page, blocks)))
-    }
-
     /// Does this page already carry a bookmark? Derived on the interface side
     /// from `list_bookmarks`: one call feeds both the reader button state and
     /// the chapter grid badges, so an extra command would be dead weight.
@@ -1348,112 +1075,6 @@ impl Store {
         conn.execute("DELETE FROM history", [])
             .map_err(|e| format!("historique : {e}"))?;
         Ok(())
-    }
-
-    // ---------- Glossaire ----------
-
-    /// Ajoute ou met à jour une entrée de glossaire pour une série.
-    ///
-    /// # Paramètres
-    /// - `series_key` : identifiant stable de la série (ex. URL manga)
-    /// - `term` : terme anglais à traduire
-    /// - `translation` : traduction française attendue
-    /// - `register` : registre optionnel ("tu" / "vous" / None)
-    pub fn upsert_glossary_entry(
-        &self,
-        series_key: &str,
-        term: &str,
-        translation: &str,
-        register: Option<&str>,
-    ) -> Result<(), String> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| "base verrouillée".to_string())?;
-        let now = now_ms();
-        conn.execute(
-            "INSERT INTO glossary (series_key, term, translation, register, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5)
-             ON CONFLICT(series_key, term) DO UPDATE SET
-                translation = excluded.translation,
-                register = excluded.register,
-                updated_at = excluded.updated_at",
-            params![series_key, term, translation, register, now],
-        )
-        .map_err(|e| format!("glossaire upsert impossible : {e}"))?;
-        Ok(())
-    }
-
-    /// Supprime une entrée du glossaire.
-    pub fn remove_glossary_entry(&self, series_key: &str, term: &str) -> Result<(), String> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| "base verrouillée".to_string())?;
-        conn.execute(
-            "DELETE FROM glossary WHERE series_key = ?1 AND term = ?2",
-            params![series_key, term],
-        )
-        .map_err(|e| format!("glossaire suppression impossible : {e}"))?;
-        Ok(())
-    }
-
-    /// Liste les entrées du glossaire pour une série.
-    ///
-    /// Retourne les entrées triées par ordre alphabétique de terme.
-    pub fn list_glossary(&self, series_key: &str) -> Result<Vec<GlossaryEntry>, String> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| "base verrouillée".to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT term, translation, register FROM glossary
-                 WHERE series_key = ?1
-                 ORDER BY term COLLATE NOCASE ASC",
-            )
-            .map_err(|e| format!("glossaire liste impossible : {e}"))?;
-        let entries = stmt
-            .query_map(params![series_key], |row| {
-                Ok(GlossaryEntry {
-                    term: row.get(0)?,
-                    translation: row.get(1)?,
-                    register: row.get(2)?,
-                })
-            })
-            .map_err(|e| format!("glossaire lecture impossible : {e}"))?;
-        entries
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("glossaire collecte impossible : {e}"))
-    }
-
-    /// Recherche une entrée de glossaire par série et terme.
-    pub fn get_glossary_entry(
-        &self,
-        series_key: &str,
-        term: &str,
-    ) -> Result<Option<GlossaryEntry>, String> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| "base verrouillée".to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT translation, register FROM glossary
-                 WHERE series_key = ?1 AND term = ?2",
-            )
-            .map_err(|e| format!("glossaire recherche impossible : {e}"))?;
-        let result = stmt
-            .query_row(params![series_key, term], |row| {
-                Ok(GlossaryEntry {
-                    term: term.into(),
-                    translation: row.get(0)?,
-                    register: row.get(1)?,
-                })
-            })
-            .optional()
-            .map_err(|e| format!("glossaire lecture impossible : {e}"))?;
-        Ok(result)
     }
 }
 
@@ -2125,54 +1746,5 @@ mod tests {
         s.remove_custom_source("test-src").unwrap(); // deuxième fois : sans erreur
         assert!(s.list_custom_sources().unwrap().is_empty());
         nettoyer(&path);
-    }
-
-    #[test]
-    fn glossaire_ajouter_lister_et_supprimer() {
-        let store = Store::open_in_memory().expect("base en mémoire");
-        // Ajout d'une entrée.
-        store
-            .upsert_glossary_entry("series-1", "Naruto", "Naruto", Some("tu"))
-            .unwrap();
-        // Liste : une entrée.
-        let liste = store.list_glossary("series-1").unwrap();
-        assert_eq!(liste.len(), 1);
-        assert_eq!(liste[0].term, "Naruto");
-        assert_eq!(liste[0].translation, "Naruto");
-        assert_eq!(liste[0].register, Some("tu".into()));
-
-        // Mise à jour de la même entrée.
-        store
-            .upsert_glossary_entry("series-1", "Naruto", "Naruto", Some("vous"))
-            .unwrap();
-        let liste = store.list_glossary("series-1").unwrap();
-        assert_eq!(liste.len(), 1);
-        assert_eq!(liste[0].register, Some("vous".into()));
-
-        // Ajout d'une deuxième entrée pour la même série.
-        store
-            .upsert_glossary_entry("series-1", "Sasuke", "Sasuke", None)
-            .unwrap();
-        let liste = store.list_glossary("series-1").unwrap();
-        assert_eq!(liste.len(), 2);
-
-        // Recherche par terme.
-        let entree = store.get_glossary_entry("series-1", "Naruto").unwrap();
-        assert!(entree.is_some());
-        assert_eq!(entree.unwrap().translation, "Naruto");
-
-        // Terme inexistant.
-        let entree = store.get_glossary_entry("series-1", "Inexistant").unwrap();
-        assert!(entree.is_none());
-
-        // Suppression.
-        store.remove_glossary_entry("series-1", "Naruto").unwrap();
-        let liste = store.list_glossary("series-1").unwrap();
-        assert_eq!(liste.len(), 1);
-        assert_eq!(liste[0].term, "Sasuke");
-
-        // Autre série : isolée.
-        let liste_autre = store.list_glossary("series-2").unwrap();
-        assert!(liste_autre.is_empty());
     }
 }

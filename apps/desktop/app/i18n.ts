@@ -214,27 +214,6 @@ const FR = {
   'reglages.langue.en': 'English',
   'reglages.langue.note': 'Change la langue de toute l’interface. Les titres restent dans leur langue d’origine.',
 
-  // --- Traduction des bulles (T3) ---
-  'reglages.traduction': 'Traduction des bulles',
-  'reglages.traduction.cle_gemini': 'Clé API Gemini (optionnel)',
-  'reglages.traduction.cle_gemini.placeholder': 'Collez votre clé Gemini ici…',
-  'reglages.traduction.cle_gemini.sauver': 'Enregistrer la clé',
-  'reglages.traduction.cle_gemini.supprimer': 'Supprimer la clé',
-  'reglages.traduction.cle_gemini.note':
-    'Gratuit sur aistudio.google.com/apikey (quota journalier). Sans clé, seule la traduction hors ligne est utilisée.',
-  'reglages.traduction.note':
-    'La traduction est asynchrone : l’original s’affiche d’abord, le français apparaît ensuite en surcouche.',
-  'reglages.traduction.cle_ok': 'Clé Gemini enregistrée.',
-  'reglages.traduction.cle_supprimee': 'Clé Gemini supprimée.',
-  'reglages.traduction.consentement': 'Consentement à la traduction en ligne',
-  'reglages.traduction.consentement.description':
-    'Autoriser l’envoi du texte des bulles vers le fournisseur en ligne. Les images ne sont pas envoyées.',
-  'reglages.traduction.resume.nbBlocs': '{n} bloc{s}',
-  'reglages.traduction.resume.nbBlocsTexte': '{n} bloc{s} avec texte',
-  'reglages.traduction.resume.taille': '{n} caractères',
-  'reglages.traduction.resume.fournisseur': 'Fournisseur : {fournisseur}',
-  'reglages.traduction.resume.horsLigne': 'Mode hors ligne disponible',
-
   // --- Catalogue
   'catalogue.sources.disponibles': '{n} sources disponibles',
   'catalogue.sources.desactivees': '{n} désactivée{s}',
@@ -414,10 +393,6 @@ const FR = {
   // --- Lecteur
   'lecteur.signet': 'Signet',
   'lecteur.signet.actif': 'Signet ✓',
-  'lecteur.traduction.toggle': 'Afficher la traduction',
-  // F3 : l'échec doit se voir dans l'interface, pas seulement dans la console.
-  'lecteur.traduction.echec':
-    'Traduction impossible pour l’instant. Configurez une clé de traduction dans les réglages, ou attendez : la page est longue à analyser.',
 
   // --- Erreurs
   'erreur.lecture': 'Lecture impossible : {raison}',
@@ -605,27 +580,6 @@ const EN: Record<Cle, string> = {
   'reglages.langue.note':
     'Changes the language of the whole interface. Titles stay in their original language.',
 
-  // --- Bubble translation (T3) ---
-  'reglages.traduction': 'Bubble translation',
-  'reglages.traduction.cle_gemini': 'Gemini API key (optional)',
-  'reglages.traduction.cle_gemini.placeholder': 'Paste your Gemini key here…',
-  'reglages.traduction.cle_gemini.sauver': 'Save key',
-  'reglages.traduction.cle_gemini.supprimer': 'Delete key',
-  'reglages.traduction.cle_gemini.note':
-    'Free at aistudio.google.com/apikey (daily quota). Without a key, only offline translation is used.',
-  'reglages.traduction.note':
-    'Translation is asynchronous: the original shows first, then the French appears as an overlay.',
-  'reglages.traduction.cle_ok': 'Gemini key saved.',
-  'reglages.traduction.cle_supprimee': 'Gemini key deleted.',
-  'reglages.traduction.consentement': 'Online translation consent',
-  'reglages.traduction.consentement.description':
-    'Allow sending bubble text to the online provider. Images are not sent.',
-  'reglages.traduction.resume.nbBlocs': '{n} block{s}',
-  'reglages.traduction.resume.nbBlocsTexte': '{n} block{s} with text',
-  'reglages.traduction.resume.taille': '{n} characters',
-  'reglages.traduction.resume.fournisseur': 'Provider: {fournisseur}',
-  'reglages.traduction.resume.horsLigne': 'Offline mode available',
-
   'catalogue.sources.disponibles': '{n} sources available',
   'catalogue.sources.desactivees': '{n} disabled',
   'catalogue.rechercher': 'Search a catalogue…',
@@ -786,10 +740,6 @@ const EN: Record<Cle, string> = {
 
   'lecteur.signet': 'Bookmark',
   'lecteur.signet.actif': 'Bookmark ✓',
-  'lecteur.traduction.toggle': 'Show translation',
-  // F3 : the failure has to be visible in the interface, not only in the console.
-  'lecteur.traduction.echec':
-    'Translation unavailable for now. Configure a translation key in the settings, or wait: the page takes a while to analyse.',
 
   'erreur.lecture': 'Cannot read: {raison}',
   'erreur.chapitres': 'Chapters unavailable: {raison}',

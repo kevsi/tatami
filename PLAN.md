@@ -429,3 +429,38 @@ refuse le non-https · capability minimale (`dialog:allow-open` seule).
   ne l'est plus, sans commit ni crochet git ni hook qui l'expliquerait (`.git/hooks` = samples
   seuls). Le contenu est identique à `HEAD`. À surveiller : si T3.6 attendait un
   enregistrement de commande dans `main.rs`, il manque.
+
+### Journal 2026-10-09 — commit `9df864e` : correctifs lecteur webtoon (P0, P2, ADR 0012)
+
+**Tâches réalisées** : P0 (`loading` conditionnel), P2 (`scrollToPage` robuste + garde
+`bandeVirtualisable`), P3 TODO commenté dans `openReaderAt`, ADR
+`docs/decisions/0012-dimensions-pages-distantes.md` créée (statut « proposée »).
+
+**Résultats des cinq portes front** (`cd apps\desktop`) — attestés en itération de
+correction du finding « Portes non attestées dans le journal » (revue commit `9df864e`) :
+
+```
+pnpm typecheck
+  → tsc --noEmit   ✓  0 erreur
+
+pnpm lint
+  → eslint
+     page.tsx:1338  warning  exhaustive-deps (chargerSources, refreshDownloads, setNotice, t)
+     page.tsx:1713  warning  exhaustive-deps (refreshShelf, refreshSignets)
+     page.tsx:3479  warning  exhaustive-deps (reader)
+     page.tsx:3517  warning  exhaustive-deps (closeReader, scrollToPage)
+     4 problems (0 errors, 4 warnings)  ✓  4 warnings connus, 0 erreur
+
+pnpm i18n:check
+  → clés FR : 307 | clés EN : 307 | littéraux : 307
+     aucune clé morte, aucune traduction manquante, aucun placeholder nu.  ✓
+
+pnpm hooks:check
+  → 7 modules lus, aucune dépendance d'effet instable.  ✓
+
+pnpm chemins:check
+  → 7 modules lus, 4 affichage(s) via cheminLisible, aucune valeur brute.  ✓
+```
+
+Toutes les portes vertes. 0 erreur typecheck, 4 warnings lint connus (préexistants, hors scope
+du correctif).

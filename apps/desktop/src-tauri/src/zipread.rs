@@ -98,6 +98,14 @@ pub enum ErreurZip {
         annonce: u64,
         plafond: u64,
     },
+    /// Le répertoire central annonce plus d'octets que le plafond : c'est lui
+    /// qu'on alloue (`vec![0u8; taille_repertoire]`), donc la borne doit le
+    /// couvrir aussi. Un `u32` lu dans l'EOCD allows 4 Gio sur une machine
+    /// qui en a 12.
+    RepertoireTropGros {
+        annonce: u64,
+        plafond: u64,
+    },
     /// Le CRC ne correspond pas : fichier corrompu ou modifié.
     CrcInattendu {
         attendu: u32,
@@ -126,6 +134,11 @@ impl std::fmt::Display for ErreurZip {
                 f,
                 "entrée annonçant {annonce} octets, au-delà du plafond de {plafond} : \
                  refusé avant allocation"
+            ),
+            ErreurZip::RepertoireTropGros { annonce, plafond } => write!(
+                f,
+                "répertoire central annonçant {annonce} octets, au-delà du plafond de \
+                 {plafond} : refusé avant allocation"
             ),
             ErreurZip::CrcInattendu { attendu, obtenu } => write!(
                 f,
@@ -213,6 +226,15 @@ pub fn lire_entrees(chemin: &Path) -> Result<Vec<Entree>, ErreurZip> {
         return Err(ErreurZip::Zip64NonSupporte);
     }
 
+    // Le répertoire central est alloué **avant** d'être lu, donc sa taille
+    // annoncée doit être bornée elle aussi : c'est un `u32` de l'EOCD, donc
+    // 4 Gio sont déclarables sur une machine de 12 Go.
+    if taille_repertoire > TAILLE_ENTREE_MAX {
+        return Err(ErreurZip::RepertoireTropGros {
+            annonce: taille_repertoire,
+            plafond: TAILLE_ENTREE_MAX,
+        });
+    }
     let mut repertoire = vec![0u8; taille_repertoire as usize];
     f.seek(SeekFrom::Start(offset_repertoire)).map_err(io)?;
     f.read_exact(&mut repertoire).map_err(io)?;
@@ -321,14 +343,16 @@ pub fn lire_entree(f: &mut File, e: &Entree) -> Result<Vec<u8>, ErreurZip> {
     // l'allocation. Une entrée dont l'auteur n'a pas renseigné la taille
     // décompressée porte 0 : on retombe alors sur la taille compressée, qui
     // borne aussi — un zip bomb déclare toujours *quelque chose*.
-    let plafond = if e.taille_reelle == 0 {
-        e.taille_compressee
-    } else {
-        e.taille_reelle
-    };
-    if plafond > TAILLE_ENTREE_MAX {
+    //
+    // Il porte sur **les deux**, parce qu'on alloue la compressée : ne borner
+    // que la décompressée laissait passer une entrée « 1 octet réel, 256 Mio
+    // compressés », qui allouait 256 Mio avant d'échouer à la lecture
+    // (mesuré le 2026-10-08 ; le test
+    // `la_taille_compressee_annoncee_est_bornee_avant_allocation` le prouve en
+    // distinguant `EntreeTropGrosse` de `Io`).
+    if e.taille_reelle > TAILLE_ENTREE_MAX || e.taille_compressee > TAILLE_ENTREE_MAX {
         return Err(ErreurZip::EntreeTropGrosse {
-            annonce: e.taille_reelle,
+            annonce: e.taille_reelle.max(e.taille_compressee),
             plafond: TAILLE_ENTREE_MAX,
         });
     }
@@ -754,6 +778,81 @@ mod tests {
     /// Le refus d'une taille décompressée absurde doit arriver **avant**
     /// l'allocation, sinon un *zip bomb* tue la machine avant qu'on puisse
     /// répondre « non ».
+    /// Le plafond doit couvrir **les deux** tailles annoncées, pas seulement la
+    /// taille décompressée.
+    ///
+    /// Défaut mesuré le 2026-10-08 : le plafond portait sur
+    /// `taille_reelle` quand elle était renseignée, et l'allocation portait sur
+    /// `taille_compressee` (`vec![0u8; e.taille_compressee]`). Une entrée
+    /// déclarant « 1 octet décompressé, 1 Gio compressés » passait donc le
+    /// contrôle et allouait 1 Gio avant même d'essayer de lire — le refus
+    /// arrivait ensuite, en erreur de lecture, donc **après** l'allocation.
+    ///
+    /// Le test ne vérifie pas qu'une erreur sort (les deux codes en sortent une,
+    /// donc le test passerait avec le défaut) : il vérifie **laquelle**, parce
+    /// que `EntreeTropGrosse` signifie « refusé avant allocation » et `Io`
+    /// signifie « on a déjà alloué et essayé de lire ». C'est la seule
+    /// différence observable entre les deux comportements.
+    #[test]
+    fn la_taille_compressee_annoncee_est_bornee_avant_allocation() {
+        use std::io::Write;
+
+        let mut archive = archive_zip("petit.bin", b"x", 0);
+        // 1 Gio compressés pour 1 octet réel : au-delà du plafond de 512 Mio,
+        // donc le refus doit tomber avant le `vec![0u8; …]`.
+        let menteur = 1024 * 1024 * 1024u32;
+        archive[18..22].copy_from_slice(&menteur.to_le_bytes()); // local : compressée
+        let pos_repertoire = position_repertoire_central(&archive);
+        archive[pos_repertoire + 20..pos_repertoire + 24].copy_from_slice(&menteur.to_le_bytes());
+
+        let chemin = dossier_unique("bomb-compresse").join("bomb.zip");
+        std::fs::File::create(&chemin)
+            .unwrap()
+            .write_all(&archive)
+            .unwrap();
+
+        let mut f = std::fs::File::open(&chemin).unwrap();
+        let entrees = lire_entrees(&chemin).unwrap();
+        let e = lire_entree(&mut f, &entrees[0]).unwrap_err();
+        assert!(
+            matches!(e, ErreurZip::EntreeTropGrosse { .. }),
+            "le plafond doit refuser la taille **compressée**, donc avant \
+             l'allocation ; obtenu : {e:?}"
+        );
+        let _ = std::fs::remove_file(&chemin);
+    }
+
+    /// Même règle pour le répertoire central : c'est la deuxième allocation non
+    /// bornée du fichier, et elle est lue d'un simple `u32` de l'EOCD.
+    #[test]
+    fn le_repertoire_central_annonce_est_borne_avant_allocation() {
+        use std::io::Write;
+
+        let archive = archive_zip("petit.bin", b"x", 0);
+        // L'EOCD porte la taille du répertoire 12 octets après sa signature.
+        let pos_eocd = archive
+            .windows(4)
+            .rposition(|w| w == [0x50, 0x4b, 0x05, 0x06])
+            .expect("EOCD");
+        let geant = 2 * 1024 * 1024 * 1024u32; // 2 Gio, dans un u32
+        let mut archive = archive;
+        archive[pos_eocd + 12..pos_eocd + 16].copy_from_slice(&geant.to_le_bytes());
+
+        let chemin = dossier_unique("bomb-repertoire").join("bomb.zip");
+        std::fs::File::create(&chemin)
+            .unwrap()
+            .write_all(&archive)
+            .unwrap();
+
+        let e = lire_entrees(&chemin).unwrap_err();
+        assert!(
+            matches!(e, ErreurZip::RepertoireTropGros { .. }),
+            "un répertoire central de 2 Gio doit être refusé avant allocation ; \
+             obtenu : {e:?}"
+        );
+        let _ = std::fs::remove_file(&chemin);
+    }
+
     #[test]
     fn une_entree_geantesque_est_refusee_avant_allocation() {
         use std::io::{Seek, Write};

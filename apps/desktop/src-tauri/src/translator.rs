@@ -5,8 +5,11 @@
 //! (`Traducteur`). Le modèle local (ADR 0008) sera ajouté en T3.1
 //! quand le runtime ONNX sera branché.
 
+use std::sync::Arc;
+
 use super::prompt::{construire_prompt, schema_traduction, GlossaryEntry};
 use super::traduction::{ErreurTraduction, PageTranslation, StatutBloc, Traducteur};
+use super::vision_superviseur::SuperviseurVision;
 
 /// Trait de traduction EN → FR.
 ///
@@ -21,6 +24,18 @@ use super::traduction::{ErreurTraduction, PageTranslation, StatutBloc, Traducteu
 pub trait Translator: Send + Sync {
     /// Traduit un texte anglais vers le français.
     async fn translate(&self, text: &str) -> Result<String, ErreurTraduction>;
+
+    /// `true` si ce fournisseur traduit **une bulle à la fois** au lieu de
+    /// prendre toute la page en un seul échange.
+    ///
+    /// Mesuré le 2026-10-06 (`docs/spike-traduction.md` §8.5) : opus-mt traduit
+    /// correctement un dialogue complet, et s'effondre ligne par ligne. Lui
+    /// envoyer le prompt de page ne peut donc rien produire de bon — et c'est
+    /// ce qui rendait le repli local inutilisable tant qu'il essayait le même
+    /// échange que le fournisseur en ligne.
+    fn par_bulle(&self) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -52,11 +67,10 @@ impl Translator for GeminiTranslator {
 // Implémentation locale (stub — modèle ONNX à brancher en T3/T4)
 // ---------------------------------------------------------------------------
 
-/// Fournisseur local (stub).
+/// Fournisseur local : le modèle opus-mt du sidecar vision.
 ///
-/// Ce fournisseur n'est fonctionnel que quand un modèle ONNX est chargé
-/// et exposé via les méthodes de `Traducteur`. Pour l'instant, il renvoie
-/// systématiquement `LocalIndisponible`.
+/// Sans sidecar, `translate` renvoie `LocalIndisponible` : c'est le comportement
+/// d'une installation dont pack n'a pas `traduction/`.
 #[derive(Debug, Default)]
 pub struct LocalTranslator {
     inner: Traducteur,
@@ -68,12 +82,23 @@ impl LocalTranslator {
             inner: Traducteur::new(),
         }
     }
+
+    /// Variante branchée sur le sidecar vision, qui détient les poids.
+    pub fn avec_vision(vision: Arc<SuperviseurVision>) -> Self {
+        Self {
+            inner: Traducteur::new().avec_vision(vision),
+        }
+    }
 }
 
 #[async_trait::async_trait]
 impl Translator for LocalTranslator {
     async fn translate(&self, text: &str) -> Result<String, ErreurTraduction> {
         self.inner.traduire_local(text).await
+    }
+
+    fn par_bulle(&self) -> bool {
+        true
     }
 }
 
@@ -160,6 +185,13 @@ async fn traduire_avec_fallback<F>(
 where
     F: Translator,
 {
+    // Un modèle seq2seq ne comprend pas un prompt de page : on lui donne les
+    // bulles une par une. C'est aussi ce qui supprime la troncature JSON — il
+    // n'y a plus de réponse à tronquer, seulement des textes courts.
+    if fallback.par_bulle() {
+        return traduire_bulles_par_bulle(fallback, page).await;
+    }
+
     let prompt = construire_prompt(page, glossaire);
     let schema = schema_traduction();
 
@@ -182,6 +214,59 @@ where
         bloc.status = StatutBloc::Fallback;
     }
     Ok(page_fallback)
+}
+
+/// Traduit chaque bloc par un fournisseur qui travaille bulle par bulle.
+///
+/// C'est le chemin du modèle local (opus-mt). Un bloc en échec passe `Fallback`
+/// **sans** faire échouer la page : une bulle illisible ne doit pas priver le
+/// lecteur des autres.
+pub async fn traduire_bulles_par_bulle<F>(
+    fallback: &F,
+    page: &PageTranslation,
+) -> Result<PageTranslation, ErreurTraduction>
+where
+    F: Translator,
+{
+    let mut page_traduite = page.clone();
+    let mut reussis = 0usize;
+    for bloc in &mut page_traduite.blocks {
+        let Some(original) = bloc.original_text.clone() else {
+            bloc.translated_text = None;
+            bloc.status = StatutBloc::Fallback;
+            continue;
+        };
+        if original.trim().is_empty() {
+            bloc.translated_text = None;
+            bloc.status = StatutBloc::Ok;
+            continue;
+        }
+        match fallback.translate(&original).await {
+            Ok(fr) if !fr.trim().is_empty() => {
+                bloc.translated_text = Some(fr);
+                bloc.status = StatutBloc::Ok;
+                reussis += 1;
+            }
+            // Réponse vide : le modèle n'a rien produit pour cette bulle. Ce n'est
+            // pas un échec du pipeline, donc on n'affiche rien et on ne marque
+            // pas `Fallback` — sinon un seul bloc vide ferait retomber toute la
+            // page en `Fallback`.
+            Ok(_) => {
+                bloc.translated_text = None;
+                bloc.status = StatutBloc::Ok;
+            }
+            Err(e) => {
+                tracing::warn!("bloc {} non traduit : {e}", bloc.id);
+                bloc.translated_text = None;
+                bloc.status = StatutBloc::Fallback;
+            }
+        }
+    }
+    tracing::debug!(
+        "traduction locale : {reussis}/{} blocs",
+        page_traduite.blocks.len()
+    );
+    Ok(page_traduite)
 }
 
 /// Valide la réponse JSON du fournisseur.

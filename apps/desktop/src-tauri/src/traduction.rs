@@ -19,6 +19,7 @@ use tauri::State;
 use thiserror::Error;
 
 use crate::store::Store;
+use crate::vision_superviseur::SuperviseurVision;
 
 // ---------------------------------------------------------------------------
 // Erreurs
@@ -161,9 +162,24 @@ pub struct PageTranslation {
 // Traducteur
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Traducteur {
     http: reqwest::Client,
+    /// Sidecar vision, seul détenteur des poids opus-mt. `None` = cette
+    /// installation n'a pas de pack de traduction, et `traduire_local` le dit.
+    vision: Option<Arc<SuperviseurVision>>,
+}
+
+/// Écrit à la main : `SuperviseurVision` n'implémente pas `Debug` (canaux,
+/// verrous, processus), et personne n'a besoin de le dumping — seulement de
+/// savoir s'il est branché.
+impl std::fmt::Debug for Traducteur {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Traducteur")
+            .field("http", &self.http)
+            .field("vision", &self.vision.is_some())
+            .finish()
+    }
 }
 
 impl Traducteur {
@@ -171,7 +187,14 @@ impl Traducteur {
     pub fn new() -> Self {
         Self {
             http: reqwest::Client::new(),
+            vision: None,
         }
+    }
+
+    /// Attache le sidecar vision, qui détient les poids de traduction.
+    pub fn avec_vision(mut self, vision: Arc<SuperviseurVision>) -> Self {
+        self.vision = Some(vision);
+        self
     }
 
     /// Lit la clé Gemini depuis le trousseau de l'OS.
@@ -278,9 +301,44 @@ impl Traducteur {
         Ok(texte_reponse.trim().to_string())
     }
 
-    /// Traduit via le modèle local (stub — ONNX à brancher en T2).
-    pub async fn traduire_local(&self, _texte: &str) -> Result<String, ErreurTraduction> {
-        Err(ErreurTraduction::LocalIndisponible)
+    /// Traduit via le modèle local du sidecar vision (opus-mt).
+    ///
+    /// Le cœur ne parle jamais à ONNX : il émet la méthode `translate` du contrat,
+    /// et c'est le sidecar qui détient les 840 Mo de poids (mesurés). Sans
+    /// sidecar, ou sans `traduction/` dans le pack, c'est `LocalIndisponible` —
+    /// la même réponse que celle d'un pack absent, parce que c'est le même
+    /// état de fait pour l'utilisateur.
+    pub async fn traduire_local(&self, texte: &str) -> Result<String, ErreurTraduction> {
+        let Some(vision) = self.vision.as_ref() else {
+            return Err(ErreurTraduction::LocalIndisponible);
+        };
+        if texte.trim().is_empty() {
+            return Ok(String::new());
+        }
+        // Mesuré le 2026-10-08 : 111 à 322 ms par bulle sur cette machine, plus
+        // ~4 s au tout premier appel (chargement des poids, paresseux). La marge
+        // est large parce qu'elle doit couvrir une machine plus lente, pas parce
+        // que l'appel est lent.
+        let delai = std::time::Duration::from_secs(30);
+        let reponse = match vision
+            .demander("translate", serde_json::json!({ "text": texte }), delai)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("sidecar vision `translate` : {e}");
+                return Err(ErreurTraduction::LocalIndisponible);
+            }
+        };
+        match reponse.get("translatedText").and_then(|v| v.as_str()) {
+            Some(fr) => Ok(fr.to_string()),
+            None => {
+                tracing::warn!("`translate` sans `translatedText` : {reponse}");
+                Err(ErreurTraduction::Reponse(format!(
+                    "réponse locale inattendue : {reponse}"
+                )))
+            }
+        }
     }
 
     /// Clé API OpenRouter, dans l'ordre : trousseau, variable d'environnement.
@@ -491,15 +549,19 @@ fn consentement_traduction_en_ligne(store: &Store) -> Result<bool, String> {
 #[tauri::command]
 pub async fn traduire_page(
     store: State<'_, Arc<Store>>,
+    vision: State<'_, Arc<SuperviseurVision>>,
     page: PageTranslation,
     series_key: String,
 ) -> Result<PageTranslation, String> {
-    use crate::translator::{traduire_page, GeminiTranslator, LocalTranslator};
+    use crate::translator::{
+        traduire_bulles_par_bulle, traduire_page, GeminiTranslator, LocalTranslator,
+    };
 
-    // Vérifier le consentement avant tout appel en ligne.
-    if !consentement_traduction_en_ligne(store.inner())? {
-        return Err(ErreurTraduction::ConsentementRefuse.to_string());
-    }
+    // Le consentement porte sur les appels **en ligne**. Le modèle local n'en
+    // dépend pas : sans consentement on saute l'étape en ligne, on ne refuse pas
+    // de traduire. (Refuser ici bloquait aussi le seul chemin qui fonctionne
+    // hors connexion, ce qui rendait le mode local inatteignable.)
+    let consentement = consentement_traduction_en_ligne(store.inner())?;
 
     // 1. Vérifier le cache d'abord.
     if let Ok(Some((cached_page, cached_blocks))) = store.get_page_translation(&page.page_id) {
@@ -561,11 +623,17 @@ pub async fn traduire_page(
         })
         .collect();
 
-    let translator = GeminiTranslator::new();
-    let fallback = LocalTranslator::new();
-    let page_traduite = traduire_page(&translator, &fallback, &page, &glossaire)
-        .await
-        .map_err(|e| e.to_string())?;
+    let fallback = LocalTranslator::avec_vision(Arc::clone(vision.inner()));
+    let page_traduite = if consentement {
+        let translator = GeminiTranslator::new();
+        traduire_page(&translator, &fallback, &page, &glossaire)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        traduire_bulles_par_bulle(&fallback, &page)
+            .await
+            .map_err(|e| e.to_string())?
+    };
 
     // 2. Sauvegarder en cache si la traduction a réussi (au moins un bloc OK).
     if page_traduite

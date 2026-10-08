@@ -347,7 +347,15 @@ fun serve() {
         }
         val id = req.optString("id", "")
         val method = req.optString("method", "")
-        val params = if (req.has("params")) req.getJSONObject("params") else JSONObject()
+        // `optJSONObject`, **jamais** `getJSONObject`. Mesuré le 2026-10-08 :
+        // cette extraction était hors du `try` de la ligne 339, donc
+        // `{"id":"a","method":"hello","params":[]}` levait une JSONException —
+        // une RuntimeException — qui sortait de `while (true)`, de `serve()` et
+        // de `main()`. La JVM mourait, stdout se coupait au milieu d'une ligne
+        // selon le flush, et le superviseur Rust croyait le moteur cassé.
+        // `opt*` rend une valeur par défaut au lieu de lever : ici, `params`
+        // manquant ou mal typé vaut `{}`.
+        val params = req.optJSONObject("params") ?: JSONObject()
         val timeoutMs = req.optLong("timeoutMs", DEFAULT_TIMEOUT_MS)
         workers.execute {
             enVol.incrementAndGet()
@@ -553,30 +561,92 @@ internal suspend fun dispatchCustom(
         "fetchCover" -> {
             // Les sources custom servent les images directement par URL.
             val mangaUrl = p.reqString("mangaUrl")
-            val coverUrl = p.optString("coverUrl", "")
-                .takeIf { it.startsWith("https://") }
-                ?: throw ParamException("no cover URL for custom source $id / $mangaUrl")
-            val req = okhttp3.Request.Builder().url(coverUrl).get().build()
-            val context2 = EngineContext()
-            context2.httpClient.newCall(req).execute().use { resp ->
-                val bytes = resp.body?.bytes() ?: throw IllegalStateException("empty cover body")
-                JSONObject()
-                    .put("data", java.util.Base64.getEncoder().encodeToString(bytes))
-                    .put("contentType", resp.body?.contentType()?.toString() ?: "image/jpeg")
-            }
+            val coverUrl = validerUrlImage(
+                p.optString("coverUrl", ""),
+                "cover URL for custom source $id / $mangaUrl",
+            )
+            telechargerImage(coverUrl, "cover body")
         }
         "fetchImage" -> {
-            val pageUrl = p.reqString("pageUrl")
-            val req = okhttp3.Request.Builder().url(pageUrl).get().build()
-            val context2 = EngineContext()
-            context2.httpClient.newCall(req).execute().use { resp ->
-                val bytes = resp.body?.bytes() ?: throw IllegalStateException("empty image body")
-                JSONObject()
-                    .put("data", java.util.Base64.getEncoder().encodeToString(bytes))
-                    .put("contentType", resp.body?.contentType()?.toString() ?: "image/jpeg")
-            }
+            // Même validation que `fetchCover`, et pour la même raison : sans
+            // elle, `pageUrl` partait tel quel dans OkHttp. Mesuré le
+            // 2026-10-08 : un script `.js` — donc du code que le moteur exécute
+            // — pouvait faire sortir une requête vers `http://127.0.0.1:…`,
+            // `http://192.168.0.1/…` ou la métadonnée d'instance d'un
+            // hébergeur, et les octets revenaient en base64 pour finir dans un
+            // `.cbz`. Le test `FetchImageReseauLocalTest` le prouve en
+            // vérifiant qu'un serveur local n'a reçu **aucune** requête.
+            val pageUrl = validerUrlImage(p.reqString("pageUrl"), "page URL for custom source $id")
+            telechargerImage(pageUrl, "image body")
         }
         else -> throw ParamException("method $method not supported for custom sources")
+    }
+}
+
+/**
+ * Contrôle une URL d'image servie par une source scriptée.
+ *
+ * Deux règles, dans cet ordre :
+ *
+ *  1. **HTTPS obligatoire.** Un `http://` est refusé : le trafic d'images
+ *     n'a aucune raison d'être en clair, et c'est aussi la règle qu'applique
+ *     déjà `HttpBridge` pour les requêtes des scripts.
+ *  2. **Pas d'hôte interne.** Le préfixe `https://` seul laisse passer
+ *     `https://192.168.0.1/` et `https://127.0.0.1/` — c'est-à-dire
+ *     l'interface d'administration du routeur, ou un service local. On refuse
+ *     donc les plages privées, la boucle locale et le lien local.
+ *
+ * Le refus est une `ParamException`, donc le client reçoit un code d'erreur du
+ * contrat au lieu d'une image.
+ */
+private fun validerUrlImage(url: String, quoi: String): String {
+    fun refuser(raison: String): Nothing =
+        throw ParamException("no $quoi : $raison (refuse : ${url.take(80)})")
+
+    if (url.isBlank()) refuser("URL vide")
+    val uri = try {
+        java.net.URI(url)
+    } catch (e: Exception) {
+        refuser("URL illisible (${e.javaClass.simpleName})")
+    }
+    if (!uri.scheme.equals("https", ignoreCase = true)) {
+        refuser("seul https:// est accepte")
+    }
+    val hote = uri.host?.lowercase() ?: refuser("hote absent de l'URL")
+    if (hote == "localhost" || hote.endsWith(".localhost") || hote.endsWith(".local")) {
+        refuser("hote local")
+    }
+    // Une IPv4 littérale : on la borne. Un nom public n'est pas borne, donc
+    // un nom qui resolve vers une IP privee passe — c'est assume : on ne couvre
+    // que ce qu'on peut prouver sans resoudre le nom, et faire un `getaddrinfo`
+    // ici ouvrirait la porte a un DNS rebinding, c'est-a-dire un detournement
+    // de regle. Le prefixe `https://` reste obligatoire dans tous les cas.
+    val ipv4 = Regex("^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$").find(hote)
+    if (ipv4 != null) {
+        val octets = ipv4.destructured.toList().map { it.toInt() }
+        if (octets.any { it > 255 }) refuser("adresse IPv4 invalide")
+        val (a, b, _, _) = octets
+        val privee = a == 10 ||
+            (a == 172 && b in 16..31) ||
+            (a == 192 && b == 168) ||
+            (a == 127) ||
+            (a == 169 && b == 254) ||
+            (a == 0)
+        if (privee) refuser("reseau prive, boucle locale ou lien local")
+    }
+    if (hote.startsWith("[")) refuser("adresse IPv6 litterale non geree")
+    return url
+}
+
+/** Télécharge une image déjà validée et la rend en base64, comme le contrat l'attend. */
+private fun telechargerImage(url: String, quoi: String): JSONObject {
+    val req = okhttp3.Request.Builder().url(url).get().build()
+    val context2 = EngineContext()
+    return context2.httpClient.newCall(req).execute().use { resp ->
+        val bytes = resp.body?.bytes() ?: throw IllegalStateException("empty $quoi")
+        JSONObject()
+            .put("data", java.util.Base64.getEncoder().encodeToString(bytes))
+            .put("contentType", resp.body?.contentType()?.toString() ?: "image/jpeg")
     }
 }
 

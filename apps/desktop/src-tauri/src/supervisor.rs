@@ -340,7 +340,7 @@ impl Supervisor {
                     }
                 };
                 let id = value.get("id").and_then(Value::as_str).unwrap_or("");
-// Un challenge se compte, pas seulement sa longueur.
+                // Un challenge se compte, pas seulement sa longueur.
                 //
                 // Mesuré le 2026-10-09 : le journal ne notait que `len=169`, donc un
                 // cycle de vérification Cloudflare y était **invisible** : impossible

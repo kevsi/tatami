@@ -448,6 +448,12 @@ const FR = {
   'libelle.webtoon.sans.chapitre': "Ce webtoon n'a plus aucun chapitre lisible.",
   'libelle.verification.note':
     "Ce site demande une vérification anti-robot. Résous-la dans la fenêtre qui va s'ouvrir, puis reviens ici : les cookies seront transmis au moteur et la requête rejouée.",
+  'libelle.verification.resoudre': 'Résoudre la vérification',
+  'libelle.verification.applique': "C'est fait, réessayer",
+  'libelle.verification.cookies': '{n} cookie(s) transmis à {source}.',
+  'libelle.verification.fenetre.fermee':
+    'La fenêtre de vérification est fermée : ses cookies sont illisibles. Rouvre la fenêtre, passe la vérification, puis clique ici.',
+  'libelle.verification.non.appliquee': 'Vérification non appliquée :',
   'libelle.tout': 'Tout',
   'libelle.supprimer': 'Supprimer',
   'libelle.telecharger': 'Télécharger',
@@ -844,6 +850,12 @@ const EN: Record<Cle, string> = {
   'libelle.webtoon.sans.chapitre': 'This webtoon has no readable chapter left.',
   'libelle.verification.note':
     'This site asks for an anti-robot check. Solve it in the window that is about to open, then come back: the cookies are sent to the engine and the request is replayed.',
+  'libelle.verification.resoudre': 'Solve the check',
+  'libelle.verification.applique': "Done, retry",
+  'libelle.verification.cookies': '{n} cookie(s) sent to {source}.',
+  'libelle.verification.fenetre.fermee':
+    'The check window is closed, so its cookies cannot be read. Reopen the window, solve the check, then click here.',
+  'libelle.verification.non.appliquee': 'Check not applied:',
   'libelle.tout': 'All',
   'libelle.supprimer': 'Delete',
   'libelle.telecharger': 'Download',

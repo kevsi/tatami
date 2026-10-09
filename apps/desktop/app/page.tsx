@@ -2754,21 +2754,41 @@ function nomSource(s: Source): string {
     }
   }
 
-  /** Après résolution : pousse les cookies au moteur et rejoue la requête. */
+  /** Après résolution : pousse les cookies au moteur et rejoue la requête.
+   *
+   *  **Ne pas effacer `challenge` avant le résultat.** Mesuré le 2026-10-09 :
+   *  un `setError(null)` en tête faisait disparaître le bandeau pendant
+   *  l'appel, et surtout, si `solve_challenge` échouait ensuite, le `catch`
+   *  posait une erreur **sans** remettre `challenge` — donc l'écran basculait
+   *  sur « Réessayer » et le bouton de vérification disparaissait. Symptôme vu :
+   *  « après avoir fermé la fenêtre, plus rien, même pas le bouton ».
+   *
+   *  Ici on garde `challenge` pendant toute l'opération, et on ne le vide qu'en
+   *  cas de succès. Un échec laisse donc les trois boutons disponibles.
+   */
   async function applyChallenge() {
     if (!challenge || !selected) return;
+    const url = challenge;
     setChallengeBusy(true);
-    setError(null);
     try {
       const n = await invoke<number>('solve_challenge', {
         source: selected.name,
-        url: challenge,
+        url,
       });
-      setNotice(`${n} cookie(s) transmis à ${nomSource(selected)}.`);
+      setNotice(t('libelle.verification.cookies', { n, source: nomSource(selected) }));
       setChallenge(null);
+      setError(null);
       await loadSource(selected, 0);
     } catch (e) {
-      setError(`Vérification non appliquée : ${e}`);
+      // L'échec est souvent « la fenêtre est fermée » : dans ce cas les cookies
+      // sont illisibles, et c'est justement le moment de proposer de rouvrir la
+      // fenêtre plutôt que d'abandonner.
+      const msg = String(e);
+      setError(
+        /fenêtre de vérification est fermée/.test(msg)
+          ? t('libelle.verification.fenetre.fermee')
+          : `${t('libelle.verification.non.appliquee')} ${msg}`,
+      );
     } finally {
       setChallengeBusy(false);
     }
@@ -5188,14 +5208,14 @@ if (reader) {
                     disabled={challengeBusy}
                     onClick={() => void startChallenge()}
                   >
-                    Résoudre la vérification
+                    {t('libelle.verification.resoudre')}
                   </button>
                   <button
                     className="btn"
                     disabled={challengeBusy}
                     onClick={() => void applyChallenge()}
                   >
-                    C&apos;est fait, réessayer
+                    {t('libelle.verification.applique')}
                   </button>
                   <button className="btn btn-ghost" onClick={() => void cancelChallenge()}>
                     {t('libelle.annuler')}

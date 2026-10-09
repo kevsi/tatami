@@ -61,9 +61,22 @@ pub async fn open_challenge(
         return Err(format!("schéma non autorisé : {}", parsed.scheme()));
     }
     let label = challenge_label(&source);
+    // La fenêtre de vérification n'était journalisée **nulle part**. Mesuré le
+    // 2026-10-09 : `setCookies` a été appelé 0 fois sur 6 tentatives, et rien ne
+    // distinguait « la fenêtre ne s'est pas ouverte » de « elle s'est ouverte et
+    // l'utilisateur n'a pas cliqué » de « elle s'est ouverte, il a cliqué, et les
+    // cookies étaient vides ». Trois causes, trois remèdes : il fallait une trace.
+    tracing::info!("challenge: ouverture demandée source={source} label={label}");
     if let Some(existing) = app.get_webview_window(&label) {
         // Déclenchée deux fois : on réutilise la fenêtre. Refermer puis recréer
         // échoue, car `close()` est asynchrone et le label existe encore.
+        // Mesuré le 2026-10-09 : ce chemin rendait `Ok(())` sans rien laisser au
+        // journal. Symptôme vu de l'extérieur : « la fenêtre revient » alors
+        // qu'elle ne se recrée pas — la réutilisation est silencieuse, donc la
+        // fenêtre semble réapparaître sans jamais être refermée.
+        tracing::info!(
+            "challenge: fenêtre DÉJÀ ouverte, réutilisation label={label} (rien n'est recréé)"
+        );
         let _ = existing.set_focus();
         return Ok(());
     }
@@ -103,6 +116,7 @@ pub async fn solve_challenge(
         .ok_or("hôte introuvable dans l'URL de challenge")?
         .to_string();
 
+    tracing::info!("challenge: lecture des cookies source={source} label={label}");
     let cookies = window
         .cookies_for_url(parsed)
         .map_err(|e| format!("lecture des cookies : {e}"))?;
@@ -120,6 +134,12 @@ pub async fn solve_challenge(
         })
         .collect();
 
+    tracing::info!(
+        "challenge: {n} cookie(s) lu(s) sur {host}, {k} retenu(s)",
+        n = cookies.len(),
+        host = host,
+        k = payload.len()
+    );
     if payload.is_empty() {
         return Err(
             "aucun cookie pour ce site : la vérification n'est probablement pas terminée"

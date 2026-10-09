@@ -1345,15 +1345,26 @@ export default function Home() {
     // moteur ne signale alors aucun challenge (il ne voit que 403/503). C'est
     // Rust qui constate l'absence d'image ou l'URL vide et demande l'ouverture
     // de la fenêtre ; l'utilisateur y confirme lui-même.
+    //
+    // `tCourant.current`, et non `t` : cet écouteur est abonné **une seule fois**
+    // (tableau de dépendances vide), donc `t` serait capturé au rendu de montage
+    // et toute la closure resterait dans la langue de ce moment-là. Mesuré le
+    // 2026-10-09 (audit) : après un basculement FR→EN, « La fenêtre de
+    // vérification a été ouverte » restait en français. Même défaut que celui des
+    // notifications, corrigé ligne ~1386 avec le même miroir — d'où le
+    // `// eslint-disable` de l'effet : `t` est recréé à chaque rendu, donc
+    // l'ajouter relancerait l'abonnement et relancerait deux requêtes.
     const unlistenVerif = listen<{ source: string; url: string; reason: string }>(
       'download://challenge',
       (event) => {
         const { source, url, reason } = event.payload;
         setVerif({ source, url, reason });
         invoke('open_challenge', { source, url })
-          .then(() => setNotice(t('telechargements.verification.ouverte', { source })))
+          .then(() => setNotice(tCourant.current('telechargements.verification.ouverte', { source })))
           .catch((e) =>
-            setError(t('telechargements.verification.erreur', { detail: String(e) })),
+            setError(
+              tCourant.current('telechargements.verification.erreur', { detail: String(e) }),
+            ),
           );
       },
     );
@@ -2890,8 +2901,21 @@ function nomSource(s: Source): string {
 
   async function cancelChallenge() {
     if (!selected) return;
-    setChallenge(null);
-    await invoke('cancel_challenge', { source: selected.name }).catch(() => {});
+    // **L'ordre compte.** Mesuré le 2026-10-09 (audit) : `setChallenge(null)`
+    // venait AVANT l'appel, et le `catch(() => {})` avalait l'erreur. Si
+    // `cancel_challenge` échouait, l'écran affichait « annulé » alors que la
+    // fenêtre de vérification restait ouverte — et cette fenêtre n'a pas
+    // d'icône de zone, donc l'utilisateur ne pouvait plus la ramener.
+    //
+    // On ferme d'abord, et on ne nettoie l'état qu'en cas de succès. L'erreur
+    // est dite : `cancel_challenge` peut rendre `Ok(())` même sans fenêtre
+    // (elle fait `if let Some(w) = w.close()`), donc un échec ici est réel.
+    try {
+      await invoke('cancel_challenge', { source: selected.name });
+      setChallenge(null);
+    } catch (e) {
+      setError(t('libelle.verification.annulation', { raison: String(e) }));
+    }
   }
 
   /** L'utilisateur a confirmé dans la fenêtre du site : on transmet les
@@ -4866,7 +4890,7 @@ if (reader) {
                 // continuait à tourner : on lisait « 50 » en étant page 4
                 // (mesuré), donc la reprise paraissait ne pas reprendre.
                 onBlur={() => setPageJump('')}
-                aria-label="Aller à la page"
+                aria-label={t('lia.aller.page')}
               />
               <span className="muted">/ {pages.length}</span>
             </form>
@@ -5094,7 +5118,7 @@ if (reader) {
           >
             {downloading ? t('dl.en.cours') : t('dl.selection', { n: checked.size })}
           </button>
-          <div className="pick-bar" role="group" aria-label="Sélection rapide des chapitres">
+          <div className="pick-bar" role="group" aria-label={t('lia.selection.rapide')}>
             <span className="pick-label">
               {chapterQuery ? 'Sur les chapitres filtrés' : 'Choisir'}
             </span>
@@ -5122,7 +5146,7 @@ if (reader) {
           <input
             className="search chapter-search"
             type="search"
-            aria-label="Filtrer les chapitres par numéro ou titre"
+            aria-label={t('lia.filtrer')}
             placeholder="Filtrer un chapitre…"
             value={chapterQuery}
             onChange={(e) => setChapterQuery(e.target.value)}

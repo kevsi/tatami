@@ -1419,6 +1419,38 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+/* Bilan des pages que la source ne sert pas (mesuré le 2026-10-09 : un
+   chapitre FR sert 7/8 pages, un autre 0/8, par le même code). Le ton est
+   celui d'un avertissement, pas d'une erreur : ce n'est pas l'application qui
+   est en cause, et le texte le dit. */
+.reader-pages-manquantes {
+  margin: 0;
+  padding: var(--s1) var(--s3);
+  border: 1px solid var(--notice-line);
+  border-radius: var(--r);
+  font-size: 0.85em;
+  color: var(--notice-ink);
+  background: var(--notice-surface);
+}
+
+/* Emplacement d'une page que la source ne sert pas : meme geometrie que
+   l'image qu'elle remplace, sinon la bande se reagrege au fil du defilement et
+   la position des pages suivantes bouge sous le doigt. */
+.sheet-indisponible {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 180px;
+  padding: var(--s4);
+  text-align: center;
+  font-size: 0.85em;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+}
+
 .seg {
   display: flex;
   gap: 2px;

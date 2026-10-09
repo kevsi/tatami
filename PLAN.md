@@ -614,3 +614,56 @@ changement, le 404 restait muet et rien n'aurait permis de distinguer un
 problème de données d'un problème d'accès — ce dernier demande justement de
 regarder si l'API répond, et c'est en ayant le refus documenté qu'on s'y est
 mis.
+### Correctif 2026-10-09 — le lecteur dit qu'une page n'est pas servie
+
+**Ce qui est corrigé.** Le lecteur affichait une `<img>` cassée, sans message,
+pour toute page que la source ne sert pas. C'était le **seul défaut qui
+restait de notre côté** : le 404 lui-même vient de MangaDex et aucun code ne
+le changera.
+
+**La mesure qui le fonde** (`custom:mangadex-api`, Dragon Ball, chapitres FR,
+par le même code et dans la même seconde) :
+
+| chapitre | pages annoncées | servies |
+|---|---|---|
+| ch. 1 | 32 | **7/8** sondées, ~200 Ko de JPEG chacune |
+| ch. 3 | 15 | **0/8** sondées, toutes refusées en 404 |
+
+MangaDex sert certains chapitres et en perd d'autres. Ni le moteur, ni le
+script, ni l'interface ne sont en cause — le chemin complet a été éprouvé
+par le vrai script de la source, ce qui n'avait jamais été fait.
+
+**Le correctif.** Un `<img>` sans `onError` laisse le 404 muet : le lecteur
+remplace l'image par un encart « page indisponible chez la source », et la
+barre d'outils affiche le bilan (« n pages sur total ne sont pas servies par
+la source »). L'état `pagesEnErreur` est remis à zéro à chaque ouverture de
+chapitre — sinon les index du chapitre précédent s'afficheraient sur le
+suivant, qui peut être intact.
+
+Le message **accuse la source, pas le réseau** : c'est vérifié, et un message
+qui accuserait le réseau serait faux.
+
+**Porte** : `pnpm pages:check` (`scripts/check-pages-indisponibles.mjs`),
+ajoutée aux scripts `package.json` et à la liste des portes d'`AGENTS.md`.
+Rouge prouvée en retirant le `onError`, verte après. Elle a dû être réécrite :
+sa regex s'arrêtait à la première `/>` interne et ne voyait pas la balise.
+
+**Portes** : typecheck 0 · lint 0 erreur (4 warnings `exhaustive-deps` connus)
+· i18n 309 = 309 · hooks · chemins · pages · build.
+
+**Leçon du même jour, consignée dans AGENTS.md** : cinq tokens CSS inventés
+(`--t-petit`, `--r2`, `--fond-doux`, `--texte-doux`, `--bordure`) — un `var()`
+non défini ne casse rien, donc rien ne le signale ; et une porte restée verte
+parce que sa regex était fausse, pas parce que le code était bon.
+**Vérifié dans l'application réelle** (pilotage CDP, 2026-10-09, source
+`custom:mangadex-api`, Dragon Ball FR, 27 chapitres parcourus) :
+
+| Mesure | Valeur |
+|---|---|
+| Images affichées **sans message** | **0** (avant : toutes les pages en échec) |
+| Chapitres entièrement servis | encarts « page indisponible » + bilan |
+| Chapitre 27 (mixte) | **1 image servie + 6 encarts**, bilan « 6 pages sur 7 » |
+
+Les 27 chapitres parcourus n'ont produit **aucune** image cassée sans message.
+Le chapitre 27 prouve les deux comportements dans le même écran : une image
+qui s'affiche, et des pages nommées.

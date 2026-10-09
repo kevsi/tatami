@@ -151,6 +151,12 @@ Cinquième porte de l'interface : `pnpm chemins:check`
 `cheminLisible(...)`, c'est-à-dire sans retrait de la forme longue `\\?\`.
 Voir la leçon « la forme longue affichée telle quelle » en §14.
 
+Sixième porte de l'interface : `pnpm pages:check`
+(`scripts/check-pages-indisponibles.mjs`) refuse que le `<img>` du lecteur
+n'ait pas de `onError`, donc qu'une page que la source ne sert pas
+s'affiche en image cassée **sans message**. Voir la leçon « un 404 sans corps
+n'est pas une panne » en §14.
+
 **Commandes de vérification** (figées le 2026-10-05, tâche 0.12). Chacune
 précise son dossier, parce que la plupart échouent depuis la racine :
 
@@ -162,6 +168,7 @@ pnpm lint               # eslint ; 4 warnings exhaustive-deps connus, 0 erreur
 pnpm i18n:check         # aucune clé morte ni manquante (152 clés)
 pnpm hooks:check        # aucune dépendance d'effet recréée à chaque rendu
 pnpm chemins:check      # aucun chemin affiché sans cheminLisible(…)
+pnpm pages:check        # le <img> du lecteur gère l'échec et le dit
 pnpm build              # next build
 
 # Cœur Rust — dossier apps\desktop\src-tauri
@@ -1498,3 +1505,47 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   est une porte dont le mors n'est pas encore monté ; la seule façon de savoir
   s'il mord, c'est de casser le code qu'il protège et de lire **le nom du
   test qui échoue** — pas le nombre de tests verts.
+
+- **Le lecteur affichait une image cassée sans rien dire, et c'était le seul
+  défaut qui nous restait.** Mesuré le 2026-10-09 sur `custom:mangadex-api`
+  (Dragon Ball, chapitres FR), **par le même code et dans la même seconde** :
+
+  | chapitre | pages annoncées | servies |
+  |---|---|---|
+  | ch. 1 | 32 | **7/8** sondées, ~200 Ko de JPEG chacune |
+  | ch. 3 | 15 | **0/8** sondées, toutes refusées en 404 |
+
+  MangaDex sert certains chapitres et en perd d'autres : ce n'est pas notre
+  erreur, et **aucun code à écrire ne le changera**. Mais l'absence de message
+  en était une : l'utilisateur lisait « la source ne sert pas cette page »
+  comme « l'application est cassée », et rien à l'écran ne permettait de les
+  distinguer. Corollaire : **dire « je ne sais pas » est un correctif.** Le
+  404 est rapporté avec `[type=inconnu] sans corps` (`79d90c8`), ce qui permet
+  d'afficher « page indisponible chez la source » — vrai, et vérifiable — au
+  lieu d'une `<img>` muette. La distinction compte : un message qui accuse le
+  réseau serait faux, et le prochain qui le lirait cherishait cette fausse
+  piste comme moi.
+
+- **Cinq tokens CSS que j'ai inventés, et que le navigateur aurait acceptés.**
+  J'ai écrit `--t-petit`, `--r2`, `--fond-doux`, `--texte-doux`, `--bordure` :
+  aucun n'existait. Le rendu aurait été « correct » — une valeur invalide
+  retombe sur l'héritée — et **aucune porte ne l'aurait vu**. Le nom réel
+  était `--text-2`, `--surface-2`, `--line`, `--r`, et il existait déjà une
+  paire `notice-*` pour un avertissement. Corollaire : un `var(--x)` non
+  défini ne casse rien, donc il ne se signale jamais ; la seule vérification est
+  de **chercher le token dans `globals.css` avant de l'écrire**, car le grep
+  coûte une seconde et la faute coûte une lecture de CSS qui ne mène nulle
+  part.
+
+- **Une porte peut rester verte parce que sa regex est fausse, pas parce que
+  le code est bon.** Mesuré le même jour : en retirant le `onError`, la porte
+  est restée verte — j'ai d'abord conclu « ma neutralisation n'a rien fait »,
+  ce qui était vrai, mais j'allais enchaîner sur « la porte ne mord pas ». La
+  porte en réalité ne cherchait pas le bon motif : `<img\b[\s\S]*?/>` s'arrêtait
+  à la première `/>` **interne**, donc jamais au `/>` de la balise. Elle a été
+  réécrite pour signaler séparément « balise de page sans `data-index` », ce
+  qui rend le diagnostic exact au lieu de dire « aucun <img> trouvé » alors
+  qu'elle en voyait un. Corollaire : **quand une porte reste verte après une
+  casse, vérifier d'abord que la casse a eu lieu** (`git diff`, lecture du
+  motif) avant de conclure sur la porte. C'est le même réflexe que pour le
+  `mtime` conservé par `Move-Item`.

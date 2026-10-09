@@ -1140,6 +1140,22 @@ export default function Home() {
   });
   const stripRef = useRef<HTMLDivElement>(null);
   const stripImages = useRef<(HTMLImageElement | null)[]>([]);
+  /** Index des pages que la source ne sert pas, dans le chapitre ouvert.
+   *
+   *  Ce n'est pas rare, et ce n'est pas notre défaut : mesuré le 2026-10-09 sur
+   *  `custom:mangadex-api` (Dragon Ball, chapitres FR), **par le même code et
+   *  dans la même seconde** :
+   *
+   *  | chapitre | pages annoncées | servies |
+   *  |---|---|---|
+   *  | ch. 1    | 32               | **7/8** sondées, ~200 Ko de JPEG |
+   *  | ch. 3    | 15               | **0/8** sondées, toutes en 404 |
+   *
+   *  MangaDex sert certains chapitres et en perd d'autres. Sans cet état, la
+   *  page manquante s'affichait en `<img>` cassée **sans aucun message**, et
+   *  l'utilisateur lisait « MangaDex ne sert pas cette page » comme « l'app
+   *  est cassée » — ce qu'aucun pixel ne permet de distinguer. */
+  const [pagesEnErreur, setPagesEnErreur] = useState<Set<number>>(new Set());
   /** Page sur laquelle la bande doit se placer à la prochaine ouverture.
    *
    *  Déclarée ici, et non près de l'effet qui la consomme : `openReaderAt` la
@@ -2887,6 +2903,11 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
   }
   setReaderLoading(true);
   setError(null);
+  // Un nouveau chapitre repart d'un etat d'echec vide : sinon les index
+  // indisponibles du chapitre precedent s'afficheraient sur le suivant, qui
+  // peut etre intact (mesure : ch.3 = 0/8 servies, ch.1 = 7/8 — l'inverse
+  // existe aussi).
+  setPagesEnErreur(new Set());
   try {
     const locales = await invoke<LocalPage[]>('local_chapter_pages', {
       source: src,
@@ -4523,6 +4544,25 @@ if (reader) {
           </span>
 
           <div className="reader-tools">
+            {/* Bilan des pages que la source ne sert pas.
+                *
+                * Le compteur seul ne suffit pas : il se lit comme un compteur
+                * de pages, alors que ces pages **n'existent pas** de l'icros de
+                * la source. Sans cette ligne, l'utilisateur ne peut pas
+                * distinguer un chapitre incomplet d'une application cassee —
+                * les deux affichent des images absentes.
+                *
+                * Mesuré le 2026-10-09 : ch.3 = 0/8 pages servies, ch.1 =
+                * 7/8, par le meme code. C'est un fait de la source, pas de
+                * l'application. */}
+            {pagesEnErreur.size > 0 && (
+              <p className="reader-pages-manquantes" role="status">
+                {t('lecteur.pages.manquantes', {
+                  n: pagesEnErreur.size,
+                  total: pages.length,
+                })}
+              </p>
+            )}
             <button
               className={`seg-btn${marque ? ' on' : ''}`}
               aria-pressed={marque}
@@ -4654,6 +4694,32 @@ if (reader) {
                 const p = pages[i];
                 if (!p) return null;
                 const hauteur = hauteurs[i] || 0;
+                // Page que la source ne sert pas : on **le dit** plutot que
+                // d'afficher une image cassee sans message (voir l'etat
+                // `pagesEnErreur` pour la mesure).
+                if (pagesEnErreur.has(i)) {
+                  return (
+                    <div
+                      key={p.token}
+                      className="sheet-indisponible"
+                      data-index={i}
+                      role="img"
+                      aria-label={`Page ${i + 1} : ${t('lecteur.page.indisponible')}`}
+                      style={
+                        bandeVirtualisable
+                          ? {
+                              width: `${zoom}%`,
+                              position: 'absolute',
+                              top: offsets[i] ?? 0,
+                              height: hauteur ? `${hauteur}px` : undefined,
+                            }
+                          : { width: `${zoom}%` }
+                      }
+                    >
+                      <span>{t('lecteur.page.indisponible')}</span>
+                    </div>
+                  );
+                }
                 return (
                   <img
                     key={p.token}
@@ -4662,6 +4728,18 @@ if (reader) {
                     }}
                     src={pageSrc(p.token)}
                     alt={`Page ${i + 1}`}
+                    // Une page que la source ne sert pas **le dit**. Sans ceci,
+                    // le 404 de MangaDex s'affiche en image cassee muette :
+                    // l'utilisateur lit « la source ne sert pas cette page »
+                    // comme « l'application est cassee ».
+                    onError={() =>
+                      setPagesEnErreur((prec) => {
+                        if (prec.has(i)) return prec;
+                        const suivant = new Set(prec);
+                        suivant.add(i);
+                        return suivant;
+                      })
+                    }
                     // `lazy` **inconditionnel**, et non `lazy` seulement quand la
                     // bande est virtualisable.
                     //

@@ -13,6 +13,7 @@
     "i18n:check": "node scripts/check-i18n.mjs",
     "hooks:check": "node scripts/check-hooks.mjs",
     "chemins:check": "node scripts/check-chemins.mjs",
+    "pages:check": "node scripts/check-pages-indisponibles.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

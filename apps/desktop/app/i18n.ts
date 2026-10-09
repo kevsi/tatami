@@ -322,6 +322,9 @@ const FR = {
   'telechargements.chapitres.aucun': 'Aucun chapitre téléchargé pour le moment.',
   'lecteur.horsligne': 'Hors ligne',
   'lecteur.chargement': 'Chargement du chapitre…',
+    'lecteur.page.indisponible': 'Page indisponible chez la source.',
+    'lecteur.pages.manquantes':
+    '{n} page(s) sur {total} ne sont pas servies par la source. Le reste du chapitre est lisible.',
   'telechargements.aucun': 'Aucun webtoon téléchargé pour l’instant.',
   'telechargements.recap': 'Récapitulatif des téléchargements',
   'telechargements.stat.webtoons': 'webtoon{s}',
@@ -700,6 +703,13 @@ const EN: Record<Cle, string> = {
   'telechargements.chapitres.aucun': 'No chapter downloaded yet.',
   'lecteur.horsligne': 'Offline',
   'lecteur.chargement': 'Loading chapter…',
+  // « not served by the source » : the wording matters. Measured on
+  // `custom:mangadex-api` (2026-10-09) — chapter 1 serves 7/8 pages as ~200 KB
+  // JPEGs, chapter 3 serves 0/8, same code, same second. The 404 is MangaDex's,
+  // so the English must not blame the network or the app.
+  'lecteur.page.indisponible': 'Page not served by the source.',
+  'lecteur.pages.manquantes':
+    '{n} of {total} pages are not served by the source. The rest of the chapter is readable.',
   'telechargements.aucun': 'No webtoon downloaded yet.',
   'telechargements.recap': 'Downloads summary',
   'telechargements.stat.webtoons': 'webtoon{s}',

@@ -526,6 +526,13 @@ button:disabled {
   gap: var(--s3);
 }
 
+/* Espace entre deux grilles de langues consécutives (ex: card "Sources importées"
+   + grille des tuiles de langues). Le `gap` ne s'applique qu'aux enfants d'une
+   même grille, pas entre deux grilles distinctes. */
+.lang-grid + .lang-grid {
+  margin-top: var(--s4);
+}
+
 .lang-tile {
   display: flex;
   flex-direction: column;

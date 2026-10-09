@@ -282,7 +282,7 @@ private fun fetch_octets(
     context: EngineContext,
     url: String,
     referer: String,
-): Pair<ByteArray, String> {
+): Pair<ByteArray, String> = LIMITES_IMAGES.autourDe {
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
         throw ParamException("not an http(s) url: $url")
     }
@@ -301,7 +301,7 @@ private fun fetch_octets(
         val body = checkNotNull(it.body) { "Empty image body" }
         val bytes = body.bytes()
         if (bytes.isEmpty()) throw IllegalStateException("empty image body for $url")
-        return bytes to (body.contentType()?.toString() ?: "application/octet-stream")
+        bytes to (body.contentType()?.toString() ?: "application/octet-stream")
     }
 }
 
@@ -639,10 +639,10 @@ private fun validerUrlImage(url: String, quoi: String): String {
 }
 
 /** Télécharge une image déjà validée et la rend en base64, comme le contrat l'attend. */
-private fun telechargerImage(url: String, quoi: String): JSONObject {
+private fun telechargerImage(url: String, quoi: String): JSONObject = LIMITES_IMAGES.autourDe {
     val req = okhttp3.Request.Builder().url(url).get().build()
     val context2 = EngineContext()
-    return context2.httpClient.newCall(req).execute().use { resp ->
+    context2.httpClient.newCall(req).execute().use { resp ->
         val bytes = octetsImage(resp, quoi)
         JSONObject()
             .put("data", java.util.Base64.getEncoder().encodeToString(bytes))

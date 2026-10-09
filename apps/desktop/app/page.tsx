@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { hauteursBande, offsetsBande } from '../lib/bande-hauteurs';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   isPermissionGranted,
@@ -3297,25 +3298,19 @@ async function basculerPleinEcran() {
 // retourne avant d'y arriver selon la vue affichée.
 const pagesBande = reader?.pages ?? EMPTY_PAGES;
 const formatBande = zoom / 100;
-const hauteurs = useMemo(() => {
-  const l = largeurBande || 1;
-  return pagesBande.map((p) => {
-    const w = p.largeur ?? 0;
-    const h = p.hauteur ?? 0;
-    if (w <= 0 || h <= 0) return 0;
-    return Math.round((l * formatBande * h) / w);
-  });
-}, [pagesBande, largeurBande, formatBande]);
+// Logique déplacée dans `lib/bande-hauteurs.ts` le 2026-10-09 : elle était
+  // ici, donc **aucune porte ne pouvait la vérifier** (les portes du front
+  // lisent le JSX, pas le comportement). Le calcul change au passage : une page
+  // sans dimensions reçoit une hauteur de repli au lieu de 0, parce que le
+  // seuil de virtualisation est `h > 0` pour TOUTES les pages — une seule page
+  // en échec désactivait donc toute la bande (mesuré dans l'app le 2026-10-09 :
+  // ch.6, 12 images chargées à 967 px, bande pourtant non virtualisée).
+  const hauteurs = useMemo(
+    () => hauteursBande(pagesBande, largeurBande * formatBande),
+    [pagesBande, largeurBande, formatBande],
+  );
 
-const offsets = useMemo(() => {
-  const out: number[] = [];
-  let y = 0;
-  for (const h of hauteurs) {
-    out.push(y);
-    y += h;
-  }
-  return out;
-}, [hauteurs]);
+const offsets = useMemo(() => offsetsBande(hauteurs), [hauteurs]);
 
 /** `true` quand chaque page a une hauteur calculée : la bande est virtualisable.
  *

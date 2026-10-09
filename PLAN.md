@@ -667,3 +667,83 @@ parce que sa regex était fausse, pas parce que le code était bon.
 Les 27 chapitres parcourus n'ont produit **aucune** image cassée sans message.
 Le chapitre 27 prouve les deux comportements dans le même écran : une image
 qui s'affiche, et des pages nommées.
+#### Les trois pistes fausses du 2026-10-09 — ce qu'il aurait fallu mesurer
+
+Elles sont consignées en §14, mais le **chemin** compte autant que la
+conclusion : chacune a été franchie parce qu'une vérification simple a été
+sautée. Le tableau dit quoi faire, pas seulement quoi écrire.
+
+| # | Piste fausse | Ce qui la rendait fausse | La vérification sautée | Le geste qui l'aurait arrêtee |
+|---|---|---|---|---|
+| 1 | « le moteur embarqué est périmé » | le JAR contenait la classe ; on lisait des JAR de dépendances tierces (`asm-*`, inchangés) | **ne pas lire l'artefact, lire son horodatage** | lister le contenu du JAR et chercher la classe |
+| 2 | « le CDN ne sert qu'en HTTP/1.1 » | OkHttp en h2 rend 200 sur la même URL | **varier le transport avant d'accuser le protocole** | un client h2 sur l'URL qui échoue |
+| 3 | « MangaDex bloque notre IP » | l'API répond 200 en Node ; seul `curl` est refusé | **tester le producteur de l'URL, pas l'URL** | `fetch` sur l'API avant de conclure sur l'image |
+
+**La règle qui les couvre toutes les trois :** une conclusion tirée d'un
+échec doit être testée par **un second chemin qui devrait réussir**. Si les
+deux échouent, la cause est plus haute ; si le second réussit, la première
+mesure était fausse. C'est le pendant direct du filet déjà cité (§2.9) :
+ne pas attribuer un correctif à la première cause plausible — ici, ne pas
+attribuer une **cause** au premier échec plausible.
+
+Coût des trois détours : une session entière. Coût du geste : une commande.
+### Les trois chantiers de la note 7/10 — 2026-10-09
+
+#### 1. Dimensions et virtualisation (corrigé, mesuré dans l'app)
+
+**Deux défauts distincts, trouvés l'un après l'autre.**
+
+**(a) Les dimensions ne survivaient pas au redémarrage.** `ecrire_cache` les
+calcule sur les octets en mémoire et les confie à `stocker_dims` ; rien n'est
+écrit sur le fichier. Au lancement suivant, `lire_dims` rendait `None` pour
+toute page, donc `bandeVirtualisable` valait `false`. Or les octets **sont**
+sur le disque et leur en-tête porte ces deux nombres : `lire_dims` les relit
+désormais, et mémorise le résultat. Coût : un `read` de l'en-tête, et
+`image::dimensions` s'arrête au marqueur `SOF`/`IHDR` sans jamais encoder.
+
+**Ce correctif a supprimé un test qui figeait le défaut.**
+`dims_absentes_apres_redemarrage_du_cache` affirmait l'absence de
+persistance et attribuait ce comportement à l'ADR-0012. Un test qui décrit le
+défaut comme une intention empêche de le corriger ; il est remplacé par
+`l_index_est_vide_apres_redemarrage_du_cache` (l'index, lui, doit bien se
+remettre à zéro).
+
+**(b) Une page sans dimensions désactivait toute la virtualisation.** Découvert
+en mesurant (a) : `bandeVirtualisable` exige `h > 0` pour **toutes** les
+pages, or une page que la source ne sert pas vaut `0`. Une seule suffisait.
+Mesuré dans l'app avant correctif :
+
+| chapitre | pages | images affichées | hauteur | bande |
+|---|---|---|---|---|
+| ch. 6 | 50 | 12, toutes chargées | 967 px | **non virtualisée** |
+
+Les dimensions étaient donc connues — c'est la bande qui était bloquée. Une
+hauteur de repli (1 600 px, médiane d'une page de webtoon) rend la hauteur
+toujours positive.
+
+**Vérifié dans l'application réelle** : 50 pages annoncées, **5 dans le DOM**,
+bande à hauteur fixe, hauteurs 897 px, 0 page en échec. Virtualisation active
+dès la première ouverture.
+
+Rust : 174 tests verts. Front : `pnpm test` 8 tests, typecheck, lint, i18n,
+hooks, chemins, pages, build.
+
+#### 2. Tests unitaires côté front (créés)
+
+`lib/bande-hauteurs.ts` extrait de `page.tsx`, avec `lib/bande-hauteurs.test.ts`
+(8 tests, `node --test` natif, aucune dépendance). La logique était dans le
+composant, donc **aucune porte ne pouvait la vérifier** : c'est la fragilité
+relevée dans la note.
+
+Porte rouge prouvée en neutralisant la hauteur de repli : 3 tests échouent.
+`pnpm test` câblé dans `package.json`, `**/*.test.ts` exclu de `tsc` (il
+n'importe qu'en `.ts`, que le bundler refuse).
+
+#### 3. Les trois pistes fausses (consignées)
+
+Un tableau dans le journal de cette session : pour chaque piste, ce qui la
+rendait fausse et **le geste qui l'aurait arrêtée**. La règle qui les couvre
+toutes : **une conclusion tirée d'un échec doit être testée par un second chemin
+qui devrait réussir.**
+
+Coût des trois détours : une session. Coût du geste : une commande.

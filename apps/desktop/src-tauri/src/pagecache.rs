@@ -124,14 +124,42 @@ impl PageCache {
             .insert(token.to_string(), dims);
     }
 
-    /// Retourne les dimensions mémorisées pour ce jeton, ou `None` si l'image
-    /// n'est pas encore en cache.
+    /// Retourne les dimensions d'un jeton, ou `None` si elles sont inconnues.
+    ///
+    /// **Mémoire d'abord, disque ensuite.** Les dimensions sont posées en
+    /// mémoire à l'écriture (`stocker_dims`), mais rien n'était écrit sur le
+    /// fichier : après un redémarrage, la mémoire est vide et l'interface ne
+    /// connaissait plus la taille d'aucune page — donc `bandeVirtualisable`
+    /// valait `false` et le lecteur rendait **tout** le chapitre d'un coup
+    /// (mesuré le 2026-10-09 dans l'application réelle).
+    ///
+    /// Or les octets **sont** sur le disque, et leur en-tête porte exactement
+    /// ces deux nombres. On les relit donc à la demande : `image::dimensions`
+    /// s'arrête au marqueur `SOF`/`IHDR` et n'encode jamais l'image, donc le
+    /// coût est un `read` de quelques kilo-octets — et il n'a lieu que pour
+    /// une page déjà téléchargée, donc déjà sur le disque.
+    ///
+    /// Le résultat est mémorisé : la seconde lecture ne relit pas le fichier.
     pub fn lire_dims(&self, token: &str) -> Option<(u32, u32)> {
-        self.dims
+        if let Some(d) = self
+            .dims
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .get(token)
             .copied()
+        {
+            return Some(d);
+        }
+        // Reprise depuis le disque. Un fichier illisible ou absent donne
+        // `None` — jamais `(0, 0)`, qui ferait croire à une dimension connue.
+        let chemin = self.cache_path(token);
+        let lu = std::fs::read(&chemin)
+            .ok()
+            .and_then(|b| crate::image::dimensions(&b));
+        if let Some(d) = lu {
+            self.stocker_dims(token, d);
+        }
+        lu
     }
 
     /// Enregistre (ou retrouve) une page distante.
@@ -468,6 +496,14 @@ mod tests {
         (PageCache::new(garde.chemin()), garde)
     }
 
+    /// `ecrire_cache` est une fonction libre : sans ce pont, un test ne peut
+    /// l'atteindre que si elle devient `pub`, ce qui ouvrirait l'API interne
+    /// du cache pour une seule raison de test. Le pont reste donc dans le
+    /// module de test.
+    fn ecrire_cache_de_test(c: &PageCache, token: &str, bytes: &[u8]) -> Result<(), String> {
+        super::ecrire_cache(c, token, bytes, "cette page").map(|_| ())
+    }
+
     #[test]
     fn le_meme_url_redonne_le_meme_jeton() {
         let (c, _garde_cache) = cache();
@@ -476,6 +512,98 @@ mod tests {
         assert_eq!(a, b, "un URL identique doit réutiliser le jeton");
         // Une source différente = une autre image, donc un autre jeton.
         assert_ne!(a, c.register("MANGAFR", "https://x/1.jpg"));
+    }
+
+    /// Un PNG dont l'en-tête déclare `l x h`, fabriqué à la main.
+    ///
+    /// On n'encode pas une vraie image : `image::dimensions` s'arrête au
+    /// marqueur `IHDR`, donc ces quelques octets suffisent — et le test reste
+    /// déterministe, sans encodeur dans le chemin critique.
+    fn png_entete(largeur: u32, hauteur: u32) -> Vec<u8> {
+        let mut v = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        v.extend_from_slice(&13u32.to_be_bytes());
+        v.extend_from_slice(b"IHDR");
+        v.extend_from_slice(&largeur.to_be_bytes());
+        v.extend_from_slice(&hauteur.to_be_bytes());
+        v.extend_from_slice(&[8, 6, 0, 0, 0]);
+        v
+    }
+
+    /// Les dimensions doivent survivre au **redémarrage**.
+    ///
+    /// Mesuré le 2026-10-09 : `ecrire_cache` calcule les dimensions sur les
+    /// octets en mémoire et les confie à `stocker_dims`. Rien n'est écrit sur
+    /// disque — donc, au redémarrage suivant, `lire_dims` renvoie `None` pour
+    /// toute page. Or le fichier **est** sur le disque, et ses octets portent
+    /// l'en-tête JPEG/PNG/WebP qui contient exactement ces deux nombres.
+    ///
+    /// Conséquence mesurée dans l'application : au premier ouverture d'un
+    /// chapitre, aucune dimension n'est connue, donc `bandeVirtualisable`
+    /// vaut `false`, la bande n'est pas virtualisée et **toutes** les pages
+    /// sont rendues d'un coup. Le lecteur n'a de dimensions qu'à la seconde
+    /// ouverture.
+    ///
+    /// La relecture ne coûte qu'un `read` de l'en-tête : `image::dimensions`
+    /// s'arrête au marqueur SOF et n'encode jamais l'image.
+    #[test]
+    fn les_dimensions_survivent_a_un_rechargement_du_cache() {
+        let (c, _garde) = cache();
+        let token = c.register("MANGADEX", "https://x/1.png");
+        // Un PNG minimal 2x3, écrit **par le chemin de production**.
+        let png = png_entete(2, 3);
+        ecrire_cache_de_test(&c, &token, &png).expect("ecriture");
+        assert_eq!(
+            c.lire_dims(&token),
+            Some((2, 3)),
+            "les dimensions doivent etre connues immediatement"
+        );
+
+        // On simule le redémarrage : un cache neuf sur **le meme dossier**, donc
+        // le fichier est bien relisible, mais l'index mémoire est vide.
+        let relu = PageCache::new(c.dir.clone());
+        let token2 = relu.register("MANGADEX", "https://x/1.png");
+        assert_eq!(
+            relu.lire_dims(&token2),
+            Some((2, 3)),
+            "apres redemarrage, les dimensions doivent venir du fichier sur disque, \
+             pas de la memoire : sans elles, la bande n'est pas virtualisable et le \
+             lecteur rend toutes les pages d'un coup (mesure le 2026-10-09)"
+        );
+    }
+
+    /// Contre-test : une page **absente** du disque n'a pas de dimensions.
+    ///
+    /// Sans ce cas, une fonction qui renverrait toujours `Some((0, 0))`
+    /// passerait le test précédent — et `bandeVirtualisable` croirait alors
+    /// savoir des dimensions qu'elle ne sait pas.
+    #[test]
+    fn une_page_absente_du_disque_na_pas_de_dimensions() {
+        let (c, _garde) = cache();
+        let token = c.register("MANGADEX", "https://x/absent.png");
+        assert_eq!(
+            c.lire_dims(&token),
+            None,
+            "une page jamais écrite n'a pas de dimensions : les inventer rendrait \
+             la bande virtualisable avec des hauteurs fausses"
+        );
+    }
+
+    /// Contre-test nominal : une image **présente** mais dont l'en-tête est
+    /// illisible ne doit pas faire paniquer, ni renvoyer de dimensions.
+    #[test]
+    fn une_entree_corrompue_ne_produit_pas_de_dimensions() {
+        let (c, _garde) = cache();
+        let token = c.register("MANGADEX", "https://x/corrompu.png");
+        // On ecrit directement dans le cache : `ecrire_cache` refuserait des
+        // octets non-image, et c'est justement ce qu'on veut contourner ici.
+        std::fs::write(c.cache_path(&token), b"pas une image du tout").unwrap();
+        let relu = PageCache::new(c.dir.clone());
+        let t = relu.register("MANGADEX", "https://x/corrompu.png");
+        assert_eq!(
+            relu.lire_dims(&t),
+            None,
+            "une entree illisible doit rester « dimensions inconnues », jamais 0"
+        );
     }
 
     #[test]
@@ -594,17 +722,21 @@ mod tests {
         );
     }
 
-    /// Frontière inter-sessions : une nouvelle instance de `PageCache` sur le
-    /// même dossier démarre avec `dims` vide, même si le cache disque contient
-    /// des fichiers de la session précédente.
+    /// Frontière inter-sessions : l'**index** est bien remis à zéro.
     ///
-    /// C'est le comportement documenté dans l'ADR-0012 : les dimensions sont
-    /// recalculées au fil du défilement, pas rechargées au démarrage.
-    /// (Option B — lecture des dims depuis les fichiers existants — était
-    /// l'alternative rejetée en raison du coût I/O au démarrage.)
+    /// Le token n'est plus résoluble après redémarrage, et c'est normal :
+    /// l'index se reconstruit par `register`.
+    ///
+    /// En revanche les **dimensions** se relisent désormais sur le disque
+    /// (`lire_dims`), donc elles, elles survivent. C'est le correctif du
+    /// 2026-10-09. L'ancien test `dims_absentes_apres_redemarrage_du_cache`
+    /// affirmait ici l'absence de persistance en attribuant ce comportement à
+    /// l'ADR-0012 — autrement dit, **un test figeait le défaut au lieu de le
+    /// décrire**, et il aurait empêché de le corriger. La persistance est
+    /// désormais prouvée par `les_dimensions_survivent_a_un_rechargement_du_cache`.
     #[test]
-    fn dims_absentes_apres_redemarrage_du_cache() {
-        let garde = crate::download::DossierDeTest::new("cache-restart");
+    fn l_index_est_vide_apres_redemarrage_du_cache() {
+        let garde = crate::download::DossierDeTest::new("cache-restart2");
         let chemin = garde.chemin();
 
         // Session 1 : créer un cache, enregistrer un token, stocker ses dims.
@@ -622,15 +754,10 @@ mod tests {
 
         // Session 2 : nouvelle instance sur le MÊME dossier (simule un redémarrage).
         let c2 = PageCache::new(chemin);
-        assert_eq!(
-            c2.lire_dims(&token),
-            None,
-            "après redémarrage, les dims ne sont plus disponibles (pas de persistance inter-sessions)"
-        );
-        // Le token lui-même n'est plus résolvable non plus (index remis à zéro).
         assert!(
             c2.resolve(&token).is_none(),
-            "l'index est également vide après redémarrage"
+            "l'index est remis à zéro au redémarrage : le token se résout à nouveau \
+             par register, ce qui est le comportement attendu"
         );
     }
 }

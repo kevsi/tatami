@@ -643,11 +643,40 @@ private fun telechargerImage(url: String, quoi: String): JSONObject {
     val req = okhttp3.Request.Builder().url(url).get().build()
     val context2 = EngineContext()
     return context2.httpClient.newCall(req).execute().use { resp ->
-        val bytes = resp.body?.bytes() ?: throw IllegalStateException("empty $quoi")
+        val bytes = octetsImage(resp, quoi)
         JSONObject()
             .put("data", java.util.Base64.getEncoder().encodeToString(bytes))
             .put("contentType", resp.body?.contentType()?.toString() ?: "image/jpeg")
     }
+}
+
+/**
+ * Extrait les octets d'une réponse d'image, ou refuse.
+ *
+ * Extrait en fonction pour être épruvable **sans réseau** : `OkHttpClient` est
+ * construit sur place dans `EngineContext` (un `val`, pas un injectable), donc
+ * la seule façon de prouver le comportement sur un 403 est de fabriquer la
+ * `Response` — ce qu'OkHttp permet sans socket.
+ */
+internal fun octetsImage(resp: okhttp3.Response, quoi: String): ByteArray {
+    // Le statut d'abord. Un CDN bloqué renvoie 403/404/429, parfois avec un
+    // corps (page de challenge HTML) : le servir comme une image produirait une
+    // page illisible dans le `.cbz`. `HttpBridge` consultait déjà le statut
+    // (HttpBridge.kt:60) ; ce chemin-ci ne le faisait pas.
+    if (!resp.isSuccessful) {
+        throw IllegalStateException("HTTP ${resp.code} pour $quoi")
+    }
+    val bytes = resp.body?.bytes() ?: throw IllegalStateException("empty $quoi")
+    // Un corps vide est un échec, pas une image de zéro octet. OkHttp rend un
+    // tableau **vide** — pas `null` — pour un corps absent, donc le `?: throw`
+    // ci-dessus ne le voyait jamais : le moteur répondait `ok: true` avec
+    // `data: ""`, et Rust concluait « corps vide » sans que l'interface ne
+    // puisse dire pourquoi (mesuré le 2026-10-09 sur custom:mangadex-api :
+    // 17 pages sur 30 en image cassée, 145 « corps vide » au journal).
+    if (bytes.isEmpty()) {
+        throw IllegalStateException("empty $quoi")
+    }
+    return bytes
 }
 
 /**

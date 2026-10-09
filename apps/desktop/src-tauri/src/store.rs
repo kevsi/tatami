@@ -335,9 +335,16 @@ impl Store {
         // l'utilisateur depuis un fichier .js local ; le chemin est absolu et
         // validé à l'import (anti path-traversal). `installed_at` est un
         // horodatage Unix en millisecondes produit par `now_ms()`.
-        if current < 9 {
-            tx.execute_batch(
-                r#"
+        // Par PRÉSENCE, et non par version. C'est la règle énoncée 100 lignes
+        // plus haut (`:233-238`) pour les colonnes, et le bloc v9 la violait
+        // avec son `if current < 9`. Cas mesuré : une base estampillée 9 ou 10
+        // par un binaire dont ce bloc n'était pas encore présent sautait la
+        // création pour toujours, et `add_custom_source` échouait ensuite sur
+        // *no such table* — exactement le symptôme de `favorites.content_rating`
+        // qui, lui, avait son test. `CREATE TABLE IF NOT EXISTS` est déjà
+        // idempotent, donc le retirer du `if` est le correctif entier.
+        tx.execute_batch(
+            r#"
                 CREATE TABLE IF NOT EXISTS custom_sources (
                     id           TEXT    NOT NULL PRIMARY KEY,
                     name         TEXT    NOT NULL,
@@ -346,9 +353,8 @@ impl Store {
                     installed_at INTEGER NOT NULL
                 );
                 "#,
-            )
-            .map_err(|e| format!("migration v9 : {e}"))?;
-        }
+        )
+        .map_err(|e| format!("migration v9 : {e}"))?;
         // v11 : suppression des tables du sous-système de traduction.
         //
         // Elles étaient créées par les blocs v8 (`page_translations`, `blocks`)
@@ -1294,6 +1300,45 @@ mod tests {
             "Titre",
             "et les donnees doivent survivre"
         );
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn une_table_disparue_est_retablie_meme_si_la_version_annonne_le_contraire() {
+        // Le pendant, pour une TABLE, du défaut de colonne mesuré le
+        // 2026-10-04 (`store.rs:233-238`) : un binaire intermédiaire écrit
+        // `user_version` sans appliquer sa migration, et la base reste cassée
+        // pour toujours — parce que le code suivant compare la version et
+        // conclut « déjà fait ».
+        //
+        // Ce commentaire dit explicitement : « Les colonnes sont ajoutées par
+        // PRÉSENCE, pas seulement par version. » Le bloc v9 de `custom_sources`
+        // faisait l'inverse : `if current < 9`. Une base estampillée 9 ou 10 par
+        // un binaire dont le bloc n'était pas encore là sautait donc la
+        // création définitivement, et `add_custom_source` échouait ensuite sur
+        // *no such table*.
+        //
+        // `CREATE TABLE IF NOT EXISTS` est déjà idempotent : le retirer du
+        // `if` est le correctif entier.
+        let (s, path) = store_vierge();
+        {
+            let conn = s.conn.lock().unwrap();
+            conn.execute_batch("DROP TABLE custom_sources").unwrap();
+            // La version ment : elle annonce une v9 pourtant appliquée.
+            conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))
+                .unwrap();
+        }
+        s.migrate().unwrap();
+        let dispo = s.list_custom_sources().is_ok();
+        assert!(
+            dispo,
+            "la table custom_sources doit exister après migration, \
+             même si user_version annonce qu'elle est déjà faite"
+        );
+        // Et l'écriture doit marcher, pas seulement la lecture.
+        s.add_custom_source("ma-source", "Ma Source", "fr", "C:\\sources\\ma-source.js")
+            .expect("l'enregistrement doit fonctionner après réparation");
+        assert_eq!(s.list_custom_sources().unwrap().len(), 1);
         nettoyer(&path);
     }
 

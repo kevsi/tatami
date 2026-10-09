@@ -299,10 +299,11 @@ private fun fetch_octets(
     val response = context.httpClient.newCall(request).execute()
     response.use {
         if (!it.isSuccessful) throw IllegalStateException("HTTP ${it.code}")
-        val body = checkNotNull(it.body) { "Empty image body" }
-        val bytes = body.bytes()
+        // Plafonné : voir `MAX_OCTETS_IMAGE`. Sans borne, quatre lectures
+        // simultanées d'une réponse de 500 Mo suffisaient à gonfler le sidecar.
+        val bytes = lireOctetsBornes(it, "image", MAX_OCTETS_IMAGE)
         if (bytes.isEmpty()) throw IllegalStateException("empty image body for $url")
-        bytes to (body.contentType()?.toString() ?: "application/octet-stream")
+        bytes to (it.body?.contentType()?.toString() ?: "application/octet-stream")
     }
 }
 
@@ -570,11 +571,36 @@ internal suspend fun dispatchCustom(
         "pages" -> {
             val chapterUrl = p.reqString("chapterUrl")
             val pages = parser.getPages(chapterUrl)
+            // **On jette une page sans URL d'image.** Mesuré le 2026-10-09
+            // (audit) : sans ce contrôle, `pages` renvoyait 45 entrées dont
+            // certaines à URL vide. L'interface les rendait, `onError` les
+            // marquait, et l'écran affichait « page indisponible chez la
+            // source » — un message **vrai** mais qui accuse la source, alors
+            // que le moteur avait reçu une page de vérification d'âge déguisée
+            // en succès (HTTP 200 + corps HTML).
+            //
+            // Le garde de `fetchImage` (URL vide) ne rattrapait qu'au moment du
+            // téléchargement, jamais la liste.
+            val gardees = JSONArray()
+            var jetees = 0
             for (i in 0 until pages.length()) {
                 val pg = pages.getJSONObject(i)
-                cache.putCustomPage(sourceName, pg.optString("url", ""), pg)
+                val url = pg.optString("url", "")
+                if (url.isBlank() || (!url.startsWith("http://") && !url.startsWith("https://"))) {
+                    jetees += 1
+                    continue
+                }
+                cache.putCustomPage(sourceName, url, pg)
+                gardees.put(pg)
             }
-            JSONObject().put("pages", pages)
+            if (jetees > 0) {
+                System.err.println(
+                    "pages: $jetees entree(s) sans URL d'image ignoree(s) pour " +
+                        "$sourceName — la source a probablement renvoye une page " +
+                        "de verification au lieu de la liste",
+                )
+            }
+            JSONObject().put("pages", gardees)
         }
         "fetchCover" -> {
             // Les sources custom servent les images directement par URL.
@@ -709,7 +735,7 @@ internal fun octetsImage(resp: okhttp3.Response, quoi: String): ByteArray {
         // opposés, et confondus ils ont fait dévier deux diagnostics.
         throw IllegalStateException(messageDeRefus(resp, quoi))
     }
-    val bytes = resp.body?.bytes() ?: throw IllegalStateException("empty $quoi")
+    val bytes = lireOctetsBornes(resp, quoi, MAX_OCTETS_IMAGE)
     // Un corps vide est un échec, pas une image de zéro octet. OkHttp rend un
     // tableau **vide** — pas `null` — pour un corps absent, donc le `?: throw`
     // ci-dessus ne le voyait jamais : le moteur répondait `ok: true` avec

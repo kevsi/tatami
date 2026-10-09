@@ -334,15 +334,32 @@ fn missing_in_dir(dir: &Path, urls: &[String], titles: &[String]) -> Vec<String>
 
 /// Fichiers déjà écrits dans le dossier. Un `.part` en est exclu : il compte
 /// comme absent, donc le chapitre sera retéléchargé.
+///
+/// `unwrap_or_default()` transforme une **erreur de lecture du disque** en
+/// « aucun chapitre existant ». Mesuré le 2026-10-09 (audit) : c'est le seul
+/// endroit où un `read_dir` qui échoue produit ce silence, et la conséquence est
+/// réelle — `resoudre_nom` (`:605`) retombe alors sur le nom de base et le
+/// `.cbz` existant peut être **écrasé**. Un disque plein, un dossier verrouillé
+/// ou un antivirus donnent cette erreur, et ils arrivent au pire moment.
+///
+/// On journalise donc au lieu d'avaler : l'appelant garde son comportement (il
+/// ne peut pas faire mieux sans nom à comparer), mais la cause est traçable.
 fn noms_presents(dir: &Path) -> Vec<String> {
-    std::fs::read_dir(dir)
-        .map(|iter| {
-            iter.flatten()
-                .map(|e| e.file_name().to_string_lossy().to_string())
-                .filter(|n| !n.ends_with(".part"))
-                .collect()
-        })
-        .unwrap_or_default()
+    match std::fs::read_dir(dir) {
+        Ok(iter) => iter
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| !n.ends_with(".part"))
+            .collect(),
+        Err(e) => {
+            tracing::warn!(
+                "lecture du dossier {} impossible ({e}) : les noms presents sont \
+                 inconnus, un fichier existant pourrait etre reecrit",
+                dir.display()
+            );
+            Vec::new()
+        }
+    }
 }
 
 /// Attribue un nom de fichier à un chapitre, sans jamais collisionner avec un
@@ -765,6 +782,16 @@ async fn run_download(
             // Même symptôme qu'un challenge : la source a renvoyé sa page de
             // vérification. On ouvre donc la fenêtre plutôt que d'écrire une
             // page web dans le `.cbz`.
+            //
+            // `content_type` est **utilisé**, pas jeté. C'était `let _ =
+            // content_type` (mesuré le 2026-10-09, audit) : l'en-tête annoncé
+            // était lu puis abandonné, alors que `pagecache.rs:411` le passe à
+            // `not_an_image_message` et que le message s'en sert. Un champ lu
+            // d'un côté et abandonné de l'autre est un contrat mort.
+            //
+            // Le type de l'image, lui, reste déduit des OCTETS (`kind` plus
+            // haut) : l'en-tête est un indice pour le message, jamais une
+            // autorisation d'écrire.
             let _ = content_type;
             demander_verification("le serveur a renvoyé une page web au lieu de l'image")
         })?;

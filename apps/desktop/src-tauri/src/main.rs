@@ -255,8 +255,13 @@ fn main() {
             shelf::get_downloads_dir,
             shelf::set_downloads_dir,
             shelf::reset_downloads_dir,
-            shelf::forget_history,
-            shelf::add_bookmark,
+            // `shelf::forget_history` et `shelf::add_bookmark` étaient enregistrés
+            // DEUX fois (ici et juste en dessous). Le test
+            // `aucune_commande_tauri_nest_morte` ne le voyait pas : il fait
+            // `sort_unstable()` puis `dedup()` (`main.rs:364-365`), donc deux
+            // entrées identiques fusionnent. Sans effet fonctionnel — le premier
+            // bras gagne — mais c'est une duplication invisible, et un `dedup`
+            // qui masque un doublon est un `dedup` qui masquera le prochain.
             tray::set_libelles,
             journal::exporter_rapport,
             journal::purger_journal,

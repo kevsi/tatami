@@ -357,8 +357,24 @@ fun serve() {
         // manquant ou mal typé vaut `{}`.
         val params = req.optJSONObject("params") ?: JSONObject()
         val timeoutMs = req.optLong("timeoutMs", DEFAULT_TIMEOUT_MS)
+        // `enVol` compte l'**acceptation**, pas l'exécution en cours : il est
+        // incrémenté **avant** la soumission, pas dans la tâche.
+        //
+        // Mesuré le 2026-10-09 : incrémenté dans la tâche, il restait à 0
+        // pendant toute la fenêtre entre `execute` et le démarrage du thread.
+        // La boucle de vidage qui suit la fermeture de stdin teste
+        // `enVol > 0` : elle pouvait donc lire 0 alors que des requêtes
+        // étaient en file, conclure qu'il n'y avait rien à attendre et laisser
+        // `main` rendre. Les workers étant des threads **daemon**, la JVM les
+        // tuait alors en plein vol — 0 réponse sur 5, une fois sur deux
+        // environ, ce qui rendait `FermetureStdinTest` flaker alors que le
+        // défaut était dans le moteur et pas dans le test.
+        //
+        // Le décrément reste dans la tâche : il doit durer jusqu'à ce que la
+        // réponse soit **écrite et vidée** sur stdout, sinon la boucle peut
+        // repartir trop tôt.
+        enVol.incrementAndGet()
         workers.execute {
-            enVol.incrementAndGet()
             val response = try {
                 val result = runBlocking {
                     withTimeout(timeoutMs) { dispatch(context, pool, cache, scriptLoader, method, params) }

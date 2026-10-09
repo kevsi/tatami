@@ -466,6 +466,14 @@ Toutes les portes vertes. 0 erreur typecheck, 4 warnings lint connus (préexista
 du correctif).
 ### Journal 2026-10-09 — pilotage réel de l'app, et diagnostic des images cassées
 
+> **Correction du 2026-10-09 09:41.** La conclusion « une partie des pages
+> annoncées par `pages` n'existe pas sur le CDN » écrite plus bas est **fausse**,
+> et la section « Ce que le refus disait » a été réécrite en conséquence.
+> La cause réelle est un **blocage TLS de MangaDex sur cette machine**. Le
+> commit `79d90c8` est conservé — il améliore le diagnostic — mais sa
+> justification était erronée. Détail dans « Blocage MangaDex (2026-10-09) »
+> plus bas.
+
 **Contexte.** Session de clôture : vérification par pilotage de l'application réelle
 (webview pilotée en CDP, port 9224 — le port 9223 était tenu par **Vaultly**, autre
 application, laissée intacte). Aucun des correctifs du 2026-10-08 n'avait encore été
@@ -493,7 +501,7 @@ journal Rust, qui écrit une ligne par requête partie.
 
 La rafale est donc bornée — `e765e8e` fonctionne, mesuré.
 
-**Cause des images cassées — isolée.** Le journal portait
+**Ce que le refus disait — et ce qu'il ne disait pas.** Le journal portait
 `IllegalStateException: HTTP 404 pour image body`. Après ajout du corps de la
 réponse au refus (`79d90c8`), le message est :
 
@@ -502,13 +510,20 @@ HTTP 404 pour image body [type=inconnu] sans corps
 ```
 
 Ni corps ni type de contenu : ce n'est pas une page d'erreur, c'est un refus de
-connexion. Vérification décisive, **hors du moteur** : `curl` sur la page 5 du
-chapitre sondé donne **404 / 0 octet, reproductiblement**, quand la page 1
-donne **200 / 114 478 octets**.
+connexion.
 
-**Conclusion : une partie des pages annoncées par `pages` n'existe pas sur le CDN
-de MangaDex.** Ce n'est pas un défaut du client, et ce n'est pas réparable depuis
-ce dépôt.
+**Ce que ce 404 signifiait réellement — relire avant de conclure « page
+manquante ».** J'en avais conclu qu'une partie des pages n'existait pas sur le
+CDN, parce que `curl` donnait 404 / 0 octet sur la page 5 et 200 / 114 478
+octets sur la page 1. **C'était un raisonnement arrêté trop tôt** : je n'avais
+pas vérifié si l'**API** répondait, alors que c'est elle qui produit ces URL.
+Elle ne répondait plus — voir « Blocage MangaDex » plus bas. Le 404 venait du
+blocage, pas d'une page absente.
+
+**Règle qui en découle : avant d'accuser la donnée, vérifier que le producteur
+de cette donnée répond.** Une URL est une valeur *reçue* ; quand elle échoue,
+la question n'est pas « cette URL est-elle bonne ? » mais « qui me l'a donnée,
+et répond-il encore ? ». Ici le producteur était `at-home`, et il était mort.
 
 **Deux fausses causes payées avant la bonne** (à relire avant d'accuser une couche) :
 
@@ -532,15 +547,16 @@ comme limite assumée.
 
 **État non résolu, à ne pas perdre de vue :**
 
-- **Le lecteur reste cassé** sur les chapitres dont certaines pages manquent chez
-  MangaDex. La rafale est corrigée et les échecs sont désormais *nommés* à
-  l'écran, ce qui est honnête mais pas confortable. L'objectif de lecture n'est
-  **pas** atteint.
-- **`package-lock.json`** (36 Ko, non suivi) dans `apps/desktop/`, alors que le
-  projet n'a pas de `pnpm-lock.yaml`. Ni produit par cette session ni par l'autre
-  de façon identifiée ; non supprimé, décision humaine.
-- **175 commits non poussés** sur `master`. Rien n'a été poussé : décision de
-  dépôt, hors périmètre de l'agent.
+- **Le lecteur reste cassé**, et la cause est **extérieure à ce dépôt** :
+  MangaDex bloque l'API en TLS depuis cette machine (voir « Blocage MangaDex »).
+  La rafale est corrigée et les échecs sont désormais *nommés* à l'écran — ce qui
+  est honnête mais pas confortable. L'objectif de lecture n'est **pas** atteint,
+  et **aucun code à écrire ne le changera** tant que le blocage dure.
+- **`package-lock.json`** (36 Ko, non suivi) : **supprimé** le 2026-10-09 sur
+  décision humaine ; le projet suit `pnpm-lock.yaml`. Non suivi, donc la
+  suppression n'a produit aucun commit.
+- **Commits poussés** : 176 commits envoyés sur `origin/master` (`b6ba03b`),
+  après recherche de secrets dans l'historique et vérification de divergence.
 - **9 commits depuis `9df864e` n'étaient pas consignés** avant cette entrée, dont
   la suppression du sous-système de traduction (`20e4287`, 2026-10-08) et 13
   correctifs d'audit du même jour, également hors journal.
@@ -549,3 +565,52 @@ comme limite assumée.
 devenus inutiles après `20e4287`) et `cache` (4 339 fichiers, 1 111 Mo). Le cache
 ne contient **aucun** fichier vide — cohérent avec le refus qui refuse désormais
 d'écrire des octets non-image.
+
+### Blocage MangaDex (2026-10-09 09:41) — la cause réelle des images cassées
+
+Mesuré sur cette machine, `curl` :
+
+| Cible | Code |
+|---|---|
+| `mangadex.org` (site) | **000** |
+| `api.mangadex.org/ping` | **000** |
+| `api.mangadex.org` forcé sur son IP (`--resolve`) | **000** |
+| `*.mangadex.network` (nœud d'images) | **200** |
+| `kitsu.io`, `github.com`, `example.com` | **200** |
+
+Le domaine **résout** (`45.129.229.1`, `45.129.229.2`), mais le handshake TLS
+échoue en `SEC_E_ILLEGAL_MESSAGE` : MangaDex ferme la connexion au niveau TLS.
+
+**Ce n'est pas un blocage d'IP**, et la mesure le prouve : les images servent
+du 200 depuis la même machine et le même réseau, et tous les autres sites
+répondent. Le frontal de l'API et le site web nous rejettent ; le réseau
+d'images non. Forcer `--tlsv1.2` ou `-k` ne change rien (`000` dans les deux
+cas) — ce n'est pas un problème de certificat.
+
+**Pourquoi cela explique la contradiction des mesures.** Le lecteur fait deux
+appels distincts : l'API (`at-home`, qui produit les URL) puis les images.
+L'API est coupée, les images passent. D'où des 404 sur certaines pages et des
+200 sur d'autres, sans que rien ne manque du côté du contenu.
+
+**Conséquence : aucun correctif applicatif.** Le lecteur fonctionnera de nouveau
+seul quand MangaDex cessera de nous bloquer. Tester le lecteur suppose donc
+soit d'attendre, soit de viser une autre source.
+
+**Piège à ne pas rejouer.** J'avais écrit dans ce journal qu'une partie des
+pages n'existait pas chez MangaDex. C'était faux, et la faute est précise :
+j'avais vérifié que l'**URL** d'une image échouait, sans vérifier que
+l'**API qui l'a produite** répondait. Une URL est une valeur *reçue* ; quand
+elle échoue, il faut demander « qui me l'a donnée ? » avant de conclure qu'elle
+est mauvaise. Ici `at-home` était mort depuis le début de la session — et rien,
+dans mes sondes, ne le demandait.
+
+**Au sujet du message du commit `79d90c8`.** Il affirme que « la cause réelle
+est qu'une partie des pages n'existe pas sur le CDN ». C'est faux, et le message
+reste dans l'historique : il a été **poussé**, donc le réécrire réécrirait
+l'historique distant. On l'amende ici, ce qui est la pratique pour un commit
+déjà publié. Ce que `79d90c8` apporte reste **juste et utile** : le refus
+d'image nomme désormais sa cause (`[type=inconnu] sans corps`). Sans ce
+changement, le 404 restait muet et rien n'aurait permis de distinguer un
+problème de données d'un problème d'accès — ce dernier demande justement de
+regarder si l'API répond, et c'est en ayant le refus documenté qu'on s'y est
+mis.

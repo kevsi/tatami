@@ -1466,25 +1466,29 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   question, et une garde appliquée trop large supprime une fonction entière au
   lieu de la protéger.
 
-- **Un refus qui ne dit pas pourquoi fait passer une donnée manquante pour une
-  panne réseau.** Mesuré le 2026-10-09 sur `custom:mangadex-api` : le journal
-  portait `HTTP 404 pour cette page`, et j'en ai conclu deux fois à une panne
-  (le moteur « pas à jour », puis « le CDN ne sert qu'en HTTP/1.1 » — les
-  deux fois infirmé, la seconde après avoir écrit le correctif et son test).
-  Or `curl` rendait 200 sur la **même** URL, dans la même seconde. Le
-  404 venait en réalité du **fichier de page** : sur le chapitre sondé, la
-  page 5 répond 404 reproductible et 0 octet **hors du moteur**, alors que la
-  page 1 répond 200. Autrement dit, une partie des pages annoncées par
-  `pages` n'existe pas sur le CDN — et une application qui affiche 21 échecs
-  sur 24 images avait l'air d'être en panne réseau.
-  Corollaire : **`404 sans corps` n'est pas une page d'erreur, c'est un refus
-  de connexion** — et il se distingue d'une image manquante par son type de
-  contenu absent. C'est ce qui a permis de trancher, et il a fallu
-  l'ajouter au refus (`DiagnosticImageTest`) : le message seul ne suffisait
-  pas. Corollaire plus général : **avant d'accuser la couche réseau,
-  demander à `curl` une URL qui vient d'échouer.** Si `curl` réussit, le
-  réseau n'est pas en cause ; si `curl` échoue aussi, l'URL est fausse et
-  l'accusation du client était prématurée.
+- **Un refus qui ne dit pas pourquoi fait passer une panne d'accès pour une
+  donnée manquante.** Mesuré le 2026-10-09 sur `custom:mangadex-api` : le journal
+  portait `HTTP 404 pour cette page`, et j'en ai conclu **trois** fois à une
+  panne — le moteur « pas à jour », puis « le CDN ne sert qu'en HTTP/1.1 » (les
+  deux fois infirmé, la seconde après avoir écrit le correctif et son test), puis
+  « des pages n'existent pas sur le CDN ». Les trois étaient fausses. La
+  cause réelle : **MangaDex bloque l'API en TLS depuis cette machine** —
+  `api.mangadex.org` et `mangadex.org` en `http=000` avec un handshake
+  `SEC_E_ILLEGAL_MESSAGE`, quand le nœud d'images répond 200 et que tous les
+  autres sites répondent. Les URL d'images étaient produites par cette API
+  morte.
+  Corollaire : **`404 sans corps` n'est pas une page d'erreur, c'est un refus de
+  connexion** — il se distingue d'une image manquante par son type de contenu
+  absent. C'est ce qui a permis de poser la question utile, et il a fallu
+  l'ajouter au refus (`DiagnosticImageTest`) : le message seul ne suffisait pas.
+  Corollaire général, le plus important des trois : **quand une URL échoue,
+  demander d'abord « qui me l'a donnée, et ce producteur répond-il ? »** Une URL
+  est une valeur *reçue* ; je l'avais testée avec `curl` sans jamais tester
+  l'API. Le piège est que les deux moitiés de la chaîne peuvent être coupées
+  séparément — ici l'API morte, les images vivantes — ce qui produit un mélange
+  de 404 et de 200 sans qu'aucune donnée ne manque. **Avant d'accuser la
+  donnée, vérifier que son producteur répond.**
+
 - **Une porte peut mordre et rester verte sur le mauvais chemin.** Mesuré le
   même jour : le test « le refus ne fuit aucune URL » passait **avant** le
   correctif — il ne pouvait pas échouer, puisque rien n'était encore écrit.

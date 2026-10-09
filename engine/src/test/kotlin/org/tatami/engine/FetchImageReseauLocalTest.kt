@@ -100,6 +100,7 @@ class FetchImageReseauLocalTest {
                     dispatchCustom(
                         loader, SessionCache(), "custom:ma-source", "fetchImage",
                         JSONObject().put("pageUrl", "http://127.0.0.1:$port/image.jpg"),
+                        EngineContext(),
                     )
                 }
             } catch (e: Throwable) {
@@ -139,6 +140,7 @@ class FetchImageReseauLocalTest {
                         // `.invalid` est réservé (RFC 2606) : jamais résolu, donc
                         // l'échec vient du DNS et non de la validation.
                         JSONObject().put("pageUrl", "https://exemple.invalid/image.jpg"),
+                        EngineContext(),
                     )
                 }
             } catch (e: Throwable) {
@@ -183,6 +185,7 @@ class FetchImageReseauLocalTest {
                         dispatchCustom(
                             loader, SessionCache(), "custom:ma-source", "fetchImage",
                             JSONObject().put("pageUrl", url),
+                            EngineContext(),
                         )
                     }
                 } catch (e: Throwable) {
@@ -218,6 +221,7 @@ class FetchImageReseauLocalTest {
                         JSONObject()
                             .put("mangaUrl", "/manga/1")
                             .put("coverUrl", "http://127.0.0.1:$port/couv.jpg"),
+                        EngineContext(),
                     )
                 }
             } catch (e: Throwable) {

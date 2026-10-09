@@ -202,6 +202,7 @@ class DispatchPersonnaliseeTest {
             val r = dispatchCustom(
                 loader, SessionCache(), "custom:ma-source", "search",
                 JSONObject().put("query", "").put("offset", 0).put("limit", 20),
+                EngineContext(),
             )
             val liste = r.getJSONArray("list")
             assertEquals(1, liste.length())
@@ -229,10 +230,12 @@ class DispatchPersonnaliseeTest {
             dispatchCustom(
                 loader, cache, sourceName, "search",
                 JSONObject().put("query", "").put("offset", 0).put("limit", 20),
+                EngineContext(),
             )
             val details = dispatchCustom(
                 loader, cache, sourceName, "details",
                 JSONObject().put("url", "/manga/1"),
+                EngineContext(),
             )
             assertEquals("Manga 1", details.getJSONObject("manga").getString("title"))
             // `scriptMinimal` ne renvoie pas d'`url` dans getDetails : c'est la
@@ -242,11 +245,13 @@ class DispatchPersonnaliseeTest {
             val chapitres = dispatchCustom(
                 loader, cache, sourceName, "chapters",
                 JSONObject().put("mangaUrl", "/manga/1"),
+                EngineContext(),
             )
             assertEquals(1, chapitres.getJSONArray("chapters").length())
             val pages = dispatchCustom(
                 loader, cache, sourceName, "pages",
                 JSONObject().put("chapterUrl", "/ch/1"),
+                EngineContext(),
             )
             assertEquals(1, pages.getJSONArray("pages").length())
         } finally {
@@ -267,6 +272,7 @@ class DispatchPersonnaliseeTest {
             val r = dispatchCustom(
                 loader, SessionCache(), "custom:ma-source", "details",
                 JSONObject().put("url", "/manga/1"),
+                EngineContext(),
             )
             val manga = r.getJSONObject("manga")
             assertTrue(manga.has("status"), "précondition : le script renvoie status")
@@ -287,6 +293,7 @@ class DispatchPersonnaliseeTest {
                 dispatchCustom(
                     loader, SessionCache(), "custom:fantome", "search",
                     JSONObject().put("query", ""),
+                    EngineContext(),
                 )
             }
             assertTrue(

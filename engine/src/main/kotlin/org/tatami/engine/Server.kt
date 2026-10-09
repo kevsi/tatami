@@ -10,6 +10,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.Cookie
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
@@ -477,7 +478,7 @@ private suspend fun dispatch(
     "search", "latest" -> {
         val sourceName = p.optString("source", "")
         if (sourceName.startsWith(CUSTOM_PREFIX)) {
-            dispatchCustom(scriptLoader, cache, sourceName, method, p)
+            dispatchCustom(scriptLoader, cache, sourceName, method, p, context)
         } else {
             dispatchNatif(context, pool, cache, method, p)
         }
@@ -485,7 +486,7 @@ private suspend fun dispatch(
     "details", "chapters", "pages", "fetchCover", "fetchImage" -> {
         val sourceName = p.optString("source", "")
         if (sourceName.startsWith(CUSTOM_PREFIX)) {
-            dispatchCustom(scriptLoader, cache, sourceName, method, p)
+            dispatchCustom(scriptLoader, cache, sourceName, method, p, context)
         } else {
             dispatchNatif(context, pool, cache, method, p)
         }
@@ -502,6 +503,7 @@ internal suspend fun dispatchCustom(
     sourceName: String,
     method: String,
     p: JSONObject,
+    context: EngineContext,
 ): JSONObject {
     val id = sourceName.removePrefix(CUSTOM_PREFIX)
     val parser = scriptLoader.sources()[id]
@@ -581,7 +583,7 @@ internal suspend fun dispatchCustom(
                 p.optString("coverUrl", ""),
                 "cover URL for custom source $id / $mangaUrl",
             )
-            telechargerImage(coverUrl, "cover body")
+            telechargerImage(coverUrl, "cover body", context)
         }
         "fetchImage" -> {
             // Même validation que `fetchCover`, et pour la même raison : sans
@@ -593,7 +595,7 @@ internal suspend fun dispatchCustom(
             // `.cbz`. Le test `FetchImageReseauLocalTest` le prouve en
             // vérifiant qu'un serveur local n'a reçu **aucune** requête.
             val pageUrl = validerUrlImage(p.reqString("pageUrl"), "page URL for custom source $id")
-            telechargerImage(pageUrl, "image body")
+            telechargerImage(pageUrl, "image body", context)
         }
         else -> throw ParamException("method $method not supported for custom sources")
     }
@@ -654,17 +656,36 @@ private fun validerUrlImage(url: String, quoi: String): String {
     return url
 }
 
+/**
+ * Le client HTTP à utiliser pour télécharger une image.
+ *
+ * Extrait en fonction pour une raison précise : **c'est exactement là que se
+ * trouvait le défaut**. Le code était `val context2 = EngineContext()`, et
+ * `context2.httpClient` — un contexte neuf par image, donc un magasin de cookies
+ * vide et l'UA par défaut, alors que `setCookies` avait posé le cookie de
+ * challenge sur le contexte de `serve()`. Toutes les images repartaient en 403.
+ * Effet de bord du même défaut : un `OkHttpClient` par image, donc aucune
+ * réutilisation de connexion, donc un handshake TLS par page.
+ *
+ * Un test d'intégration avec serveur local ne peut pas couvrir ce point :
+ * `validerUrlImage` refuse `http://`, et un serveur en `https://` exigerait un
+ * certificat de confiance. La couture est ici, et `CookieRejoueTest` vérifie que
+ * le client rendu est bien celui du contexte — donc que le cookie et l'UA
+ * survivent au chemin scripté.
+ */
+internal fun clientPourImage(context: EngineContext): OkHttpClient = context.httpClient
+
 /** Télécharge une image déjà validée et la rend en base64, comme le contrat l'attend. */
-private fun telechargerImage(url: String, quoi: String): JSONObject = LIMITES_IMAGES.autourDe {
-    val req = okhttp3.Request.Builder().url(url).get().build()
-    val context2 = EngineContext()
-    context2.httpClient.newCall(req).execute().use { resp ->
-        val bytes = octetsImage(resp, quoi)
-        JSONObject()
-            .put("data", java.util.Base64.getEncoder().encodeToString(bytes))
-            .put("contentType", resp.body?.contentType()?.toString() ?: "image/jpeg")
+private fun telechargerImage(url: String, quoi: String, context: EngineContext): JSONObject =
+    LIMITES_IMAGES.autourDe {
+        val req = okhttp3.Request.Builder().url(url).get().build()
+        clientPourImage(context).newCall(req).execute().use { resp ->
+            val bytes = octetsImage(resp, quoi)
+            JSONObject()
+                .put("data", java.util.Base64.getEncoder().encodeToString(bytes))
+                .put("contentType", resp.body?.contentType()?.toString() ?: "image/jpeg")
+        }
     }
-}
 
 /**
  * Extrait les octets d'une réponse d'image, ou refuse.

@@ -4662,7 +4662,22 @@ if (reader) {
                     }}
                     src={pageSrc(p.token)}
                     alt={`Page ${i + 1}`}
-                    loading={bandeVirtualisable ? 'lazy' : 'eager'}
+                    // `lazy` **inconditionnel**, et non `lazy` seulement quand la
+                    // bande est virtualisable.
+                    //
+                    // Mesuré le 2026-10-09 : un chapitre de 30 pages ouvert pour
+                    // la première fois n'a **aucune** dimension connue — Rust ne
+                    // connaît que les pages déjà en cache (`commands.rs:302`) —
+                    // donc `bandeVirtualisable` valait `false`, `loading` passait
+                    // à `eager`, et les 30 requêtes partaient d'un coup. Le CDN a
+                    // répondu 403 à corps vide aux 17 premières.
+                    //
+                    // `lazy` règle la rafale **sans dépendre** de la
+                    // virtualisation, donc y compris quand elle est inactive :
+                    // c'est le navigateur qui ne descend que le voisinage de la
+                    // fenêtre. La page courante est dans le champ, donc elle
+                    // reste prioritaire — rien ne se perd sur le premier écran.
+                    loading="lazy"
                     decoding="async"
                     data-index={i}
                     style={

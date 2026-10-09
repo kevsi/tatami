@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { bandeVirtualisableEst, decalageAncrage, hauteurRendueMesuree, hauteursBande, offsetsBande } from '../lib/bande-hauteurs';
+import { lireListeSources } from '../lib/prefs-tolérantes';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   isPermissionGranted,
@@ -359,6 +360,18 @@ type QueueItem = {
   failed: number;
   state: 'attente' | 'téléchargement' | 'terminé' | 'erreur' | 'pause';
   current?: string;
+  /** Pourquoi le téléchargement s'est arrêté, quand il s'est arrêté.
+   *
+   *  Mesuré le 2026-10-09 (audit) : le `catch` de la boucle faisait
+   *  `failed += 1` et **jetait la cause**. L'item passait en `erreur` avec
+   *  `current` = le libellé du chapitre, et rien d'autre. Or le chemin simple
+   *  (`downloadChapter`) affiche `t('erreur.telechargement', { raison })` — la
+   *  file, elle, perd l'information au moment où l'utilisateur en a le plus
+   *  besoin : un téléchargement de 40 chapitres qui échoue au 37ᵉ.
+   *
+   *  Un 403 du CDN, un challenge non résolu et un disque plein sont trois
+   *  problèmes à trois remèdes différents. */
+  raison?: string;
 };
 type Progress = {
   source: string;
@@ -435,12 +448,16 @@ function loadPrefs(): {
   const rawTimeout = window.localStorage.getItem(TIMEOUT_KEY);
   return {
     pageSize: raw ? Number(raw) || PAGE : PAGE,
-    enabled: rawSources ? (JSON.parse(rawSources) as string[]) : null,
+    // **JSON.parse gardé** par `lireListeSources`. Mesuré le 2026-10-09 : un
+    // `JSON.parse` nu ici faisait échouer l'effet de montage **avant**
+    // `chargerSources()`, `refreshDownloads()` et les trois `listen` — donc
+    // l'app démarrait sans bibliothèque, sans téléchargements et sans écouteur
+    // d'événements, sans le dire. Voir `lib/prefs-tolérantes.ts` et ses tests.
+    enabled: lireListeSources(rawSources),
     rating: rawRating || 'SUGGESTIVE',
     listTimeout: rawTimeout ? Number(rawTimeout) || 60 : 60,
   };
 }
-
 const TABS = [
   { id: 'home', cle: 'nav.accueil' },
   { id: 'catalog', cle: 'nav.catalogues' },
@@ -2430,7 +2447,20 @@ function nomSource(s: Source): string {
         }
         return r;
       })
-      .catch(() => setInfo(null));
+      .catch((e) => {
+        // **Ne pas avaler.** Mesuré le 2026-10-09 (audit) : la source pouvait
+        // répondre pour `chapters` mais échouer sur `details` (timeout,
+        // `PARSE_ERROR`, 404). `setInfo(null)` faisait alors disparaître le bloc
+        // `(summary || rows.length > 0 || fiche.coverUrl)` — donc le résumé, les
+        // genres et la couverture — **sans le moindre message**, alors qu'un
+        // échec identique sur `chapters` est affiché deux lignes plus bas.
+        //
+        // L'utilisateur voyait une liste de chapitres nue et en concluait que la
+        // source ne fournissait rien. Le message dit maintenant laquelle des
+        // deux a échoué, ce qui est la seule information utile ici.
+        setInfo(null);
+        setError(t('erreur.fiche', { raison: String(e) }));
+      });
     try {
       const r = await invoke<{ chapters: Chapter[] }>('chapters', {
         source: m.source,
@@ -2641,6 +2671,9 @@ function nomSource(s: Source): string {
 
       let done = 0;
       let failed = 0;
+      // Pourquoi le dernier échec, et sur quel chapitre : voir `QueueItem.raison`.
+      let derniereRaison = '';
+      let chapitreEnEchec = '';
       for (const c of todo) {
         if (cancelQueue.current) {
           patch({ done, failed, state: 'pause' });
@@ -2649,8 +2682,12 @@ function nomSource(s: Source): string {
         try {
           await fetchOneChapter(m.source, m, c, list.length);
           done += 1;
-        } catch {
+        } catch (e) {
           failed += 1;
+          // La cause est conservée, et **le chapitre nommé** : un message qui ne
+          // dit pas lequel des 40 a échoué oblige à les rejouer tous.
+          derniereRaison = String(e);
+          chapitreEnEchec = chapterLabel(c);
         }
         patch({ done, failed, current: chapterLabel(c) });
       }
@@ -2659,6 +2696,18 @@ function nomSource(s: Source): string {
         skipped,
         failed,
         state: cancelQueue.current ? 'pause' : failed > 0 ? 'erreur' : 'terminé',
+        // Le message n'est posé qu'en cas d'échec : un `raison: undefined` sur
+        // un téléchargement réussi ferait afficher « Téléchargement : undefined ».
+        ...(failed > 0 && derniereRaison
+          ? {
+              raison: chapitreEnEchec
+                ? t('erreur.telechargement.chapitre', {
+                    chapitre: chapitreEnEchec,
+                    raison: derniereRaison,
+                  })
+                : t('erreur.telechargement', { raison: derniereRaison }),
+            }
+          : {}),
       });
 
       if (!cancelQueue.current) {
@@ -4445,13 +4494,21 @@ useEffect(() => {
                     </div>
                     <span className="queue-detail">
                       {q.total > 0
-                        ? `${q.done + q.skipped}/${q.total} chapitres${q.skipped > 0 ? ` (${q.skipped} déjà là)` : ''}${q.failed > 0 ? ` · ${q.failed} en échec` : ''}`
+                        ? `${q.done + q.skipped}/${q.total} ${t('telechargements.chapitres', { s: q.total > 1 ? 's' : '' })}${q.skipped > 0 ? ` (${q.skipped} ${t('telechargements.deja.la')})` : ''}${q.failed > 0 ? ` · ${q.failed} ${t('telechargements.en.echec')}` : ''}`
                         : 'préparation…'}
                       {q.state === 'téléchargement' && progressParSource.get(q.source)?.total
                         ? ` · ${progressParSource.get(q.source)!.chapter}, page ${progressParSource.get(q.source)!.page}/${progressParSource.get(q.source)!.total}`
                         : q.current
                           ? ` · ${q.current}`
                           : ''}
+                      {/* La cause de l'échec, quand il y en a une. Mesuré le
+                          2026-10-09 : elle était calculée puis **jetée**, donc
+                          un téléchargement de 40 chapitres échouant au 37ᵉ
+                          n'affichait que « 37/40 chapitres · 1 en échec » —
+                          sans dire lequel ni pourquoi. */}
+                      {q.raison ? (
+                        <span className="queue-raison">{q.raison}</span>
+                      ) : null}
                     </span>
                   </div>
                 );
@@ -4471,7 +4528,14 @@ useEffect(() => {
         )}
 
         {bibliothequeCharge ? (
-          <div className="dl-list" aria-busy="true" aria-label={t('telechargements.chargement')}>
+          // `.dl-grid`, et non `dl-list` : mesuré le 2026-10-09, la classe
+          // n'était **définie nulle part**. Le squelette ne suivait donc aucune
+          // géométrie, et `.dl-card` à l'intérieur n'était pas mis en grille —
+          // les trois cartes s'empilaient au lieu de s'aligner sur la vraie
+          // liste. Même famille que `note-ok` : une classe utilisée et jamais
+          // définie est invisible, parce qu'une classe inconnue ne casse rien.
+          // La porte `pnpm styles:check` le cherche désormais.
+          <div className="dl-grid" aria-busy="true" aria-label={t('telechargements.chargement')}>
             {Array.from({ length: 3 }).map((_, i) => (
               <div className="dl-card squelette-ligne" key={i} aria-hidden="true" />
             ))}
@@ -5428,7 +5492,16 @@ if (reader) {
                         </span>
                       )}
                       {cardTotal[key] > 0 && (
-                        <span className="card-count" title={t('telechargements.chapitres.compte', { n: cardTotal[key], total: cardTotal[key] })}>
+                        // Une clé, UN seul nombre. Mesuré le 2026-10-09 :
+                        // `t('…compte', { n, total })` recevait **le même**
+                        // nombre deux fois, donc l'infobulle affichait
+                        // « 7/7 chapitres » — une fraction qui n'en est pas une.
+                        // Le badge porte déjà le compte ; l'infobulle doit dire
+                        // ce que ce compte veut dire, pas le répéter en fraction.
+                        <span
+                          className="card-count"
+                          title={t('telechargements.chapitres.nouveaux', { n: cardTotal[key] })}
+                        >
                           {cardTotal[key]} ch.
                         </span>
                       )}

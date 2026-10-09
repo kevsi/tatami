@@ -1878,6 +1878,22 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* La cause d'un échec de téléchargement.
+   Mesuré le 2026-10-09 : elle était calculée puis **jetée**, donc un
+   téléchargement de 40 chapitres échouant au 37ᵉ n'affichait que
+   « 37/40 chapitres · 1 en échec » — sans dire lequel ni pourquoi.
+   Sépare visuellement du décompte, sinon les deux se lisent comme une
+   seule phrase. La ligne parente tronque, donc un message très long
+   reste coupé à l'écran — c'est voulu, la cause complète est dans le journal. */
+.queue-raison {
+  color: var(--danger-texte);
+  font-weight: 500;
+}
+
+.queue-raison::before {
+  content: ' — ';
+}
+
 /* ---------------- Panneaux / messages ---------------- */
 .panel {
   background: var(--surface);

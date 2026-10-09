@@ -421,6 +421,12 @@ const FR = {
   'erreur.categories.ordre': 'Ordre des catégories : {raison}',
   'erreur.suppression': 'Suppression impossible : {raison}',
   'erreur.telechargement': 'Téléchargement : {raison}',
+  'erreur.telechargement.chapitre': 'Chapitre « {chapitre} » : {raison}',
+  'erreur.fiche': 'Fiche indisponible : {raison}',
+  'telechargements.chapitres': '{s} chapitre{s}',
+  'telechargements.deja.la': 'déjà là',
+  'telechargements.en.echec': 'en échec',
+  'telechargements.chapitres.nouveaux': '{n} nouveau(x) chapitre(s)',
 
   // --- Libellés qui étaient écrits en français dans le JSX (audit 2026-10-08) ---
   //
@@ -841,6 +847,12 @@ const EN: Record<Cle, string> = {
   'erreur.categories.ordre': 'Category order: {raison}',
   'erreur.suppression': 'Cannot delete: {raison}',
   'erreur.telechargement': 'Download: {raison}',
+  'erreur.telechargement.chapitre': 'Chapter "{chapitre}": {raison}',
+  'erreur.fiche': 'Details unavailable: {raison}',
+  'telechargements.chapitres': '{s} chapter{s}',
+  'telechargements.deja.la': 'already there',
+  'telechargements.en.echec': 'failed',
+  'telechargements.chapitres.nouveaux': '{n} new chapter(s)',
 
   // --- Labels that were written in French inside the JSX (audit 2026-10-08) ---
   //

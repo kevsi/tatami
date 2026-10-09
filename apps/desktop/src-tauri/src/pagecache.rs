@@ -93,6 +93,13 @@ pub struct PageCache {
     /// restent dans cette map jusqu'au redémarrage — c'est inoffensif : un jeton
     /// évincé puis recréé pour la même paire (source, url) est **identique**
     /// (seeds déterministes dans la session), donc les dimensions correspondent.
+    /// **Borne de croissance** : dans le pire cas raisonnable (session longue,
+    /// 10 chapitres × 300 pages = 3 000 entrées), chaque `(String, (u32, u32))`
+    /// coûte ~50 octets → ~150 Ko. Acceptable pour la v1 ; si un chapitre est
+    /// évincé de l'index, ses dims restent ici jusqu'au redémarrage.
+    ///
+    /// TODO (post-v1) : connecter cette map à l'éviction de l'index pour borner
+    /// la croissance à `CAP_PAGE + CAP_COVER` entrées.
     dims: Mutex<HashMap<String, (u32, u32)>>,
 }
 
@@ -584,6 +591,46 @@ mod tests {
             c.lire_dims(&token2),
             Some((800, 2171)),
             "les dims stockées avant éviction sont retrouvées via le même token"
+        );
+    }
+
+    /// Frontière inter-sessions : une nouvelle instance de `PageCache` sur le
+    /// même dossier démarre avec `dims` vide, même si le cache disque contient
+    /// des fichiers de la session précédente.
+    ///
+    /// C'est le comportement documenté dans l'ADR-0012 : les dimensions sont
+    /// recalculées au fil du défilement, pas rechargées au démarrage.
+    /// (Option B — lecture des dims depuis les fichiers existants — était
+    /// l'alternative rejetée en raison du coût I/O au démarrage.)
+    #[test]
+    fn dims_absentes_apres_redemarrage_du_cache() {
+        let garde = crate::download::DossierDeTest::new("cache-restart");
+        let chemin = garde.chemin();
+
+        // Session 1 : créer un cache, enregistrer un token, stocker ses dims.
+        let token = {
+            let c1 = PageCache::new(chemin.clone());
+            let tok = c1.register("MANGADEX", "https://x/1.jpg");
+            c1.stocker_dims(&tok, (800, 2171));
+            assert_eq!(
+                c1.lire_dims(&tok),
+                Some((800, 2171)),
+                "dims lisibles dans la même session"
+            );
+            tok
+        }; // c1 dropped = session 1 terminée
+
+        // Session 2 : nouvelle instance sur le MÊME dossier (simule un redémarrage).
+        let c2 = PageCache::new(chemin);
+        assert_eq!(
+            c2.lire_dims(&token),
+            None,
+            "après redémarrage, les dims ne sont plus disponibles (pas de persistance inter-sessions)"
+        );
+        // Le token lui-même n'est plus résolvable non plus (index remis à zéro).
+        assert!(
+            c2.resolve(&token).is_none(),
+            "l'index est également vide après redémarrage"
         );
     }
 }

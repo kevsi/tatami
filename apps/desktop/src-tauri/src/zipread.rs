@@ -410,6 +410,18 @@ pub fn lire_entree(f: &mut File, e: &Entree) -> Result<Vec<u8>, ErreurZip> {
 /// suffisent largement pour un en-tête JPEG (le segment APP0 fait 16 octets, le
 /// SOF arrive donc vers l'offset 20-40) comme pour PNG et WebP.
 pub fn lire_entree_partielle(f: &mut File, e: &Entree, max: usize) -> Result<Vec<u8>, ErreurZip> {
+    if e.methode == 8 {
+        // DEFLATE : les octets de l'image ne sont pas là où on les lit. Refuser
+        // rendait les dimensions inconnues pour tout `.cbz` compressé, donc la
+        // virtualisation se désactivait (le lecteur rendait toutes les pages).
+        // On retombe donc sur la lecture complète, qui décompresse déjà.
+        //
+        // On ne triche pas avec `take(max)` avant le décodage : un flux DEFLATE
+        // tronqué coupe au milieu d'un bloc et le remplissage de sortie n'est
+        // alors pas encore dans un état lisible. `lire_entree` borne déjà les
+        // deux tailles **avant** d'allouer, donc borner ici n'ajouterait rien.
+        return lire_entree(f, e);
+    }
     if e.methode != 0 {
         return Err(ErreurZip::MethodeNonSupporte(e.methode));
     }
@@ -432,9 +444,19 @@ pub fn lire_entree_partielle(f: &mut File, e: &Entree, max: usize) -> Result<Vec
 
 /// Dimensions d'une entrée, lues dans son en-tête. `None` si l'image est
 /// illisible ou d'un format dont on ne lit pas l'en-tête.
+///
+/// Mesuré le 2026-10-09 : une entrée DEFLATE renvoyait `None`, parce que
+/// `lire_entree_partielle` refusait toute méthode non nulle. Or
+/// `download.rs:478-483` reporte ce `None` en `(0, 0)`, et l'interface exige
+/// **toutes** les hauteurs positives pour virtualiser la bande : un seul `.cbz`
+/// compressé suffisait à désactiver toute la virtualisation.
 pub fn dimensions_entree(f: &mut File, e: &Entree) -> Option<(u32, u32)> {
-    let debut = lire_entree_partielle(f, e, EN_TETE_MAX).ok()?;
-    super::image::dimensions(&debut)
+    let octets = if e.methode == 8 {
+        lire_entree(f, e).ok()?
+    } else {
+        lire_entree_partielle(f, e, EN_TETE_MAX).ok()?
+    };
+    super::image::dimensions(&octets)
 }
 
 /// Liste les pages d'un `.cbz` : `(index d'entrée, nom)`.
@@ -1084,6 +1106,69 @@ mod tests {
             "la méthode 8 doit se lire, pas être refusée : {:?}",
             lu.err()
         );
+        let _ = std::fs::remove_file(&chemin);
+    }
+
+    /// Le défaut moyen mesuré le 2026-10-09 : une entrée **compressée** n'a
+    /// jamais de dimensions, donc un `.cbz` DEFLATE perdait la virtualisation.
+    ///
+    /// `lire_entree_partielle` (`:412-415`) refuse `methode != 0` — logique
+    /// pour lire des octets *bruts*, fausse pour lire un en-tête : en DEFLATE,
+    /// les octets de l'image ne sont pas là où on les lit. `dimensions_entree`
+    /// s'appuyait dessus et renvoyait donc `None`, `download.rs:478-483` reportait
+    /// `(0, 0)`, et `bandeVirtualisable` (exige **toutes** les hauteurs > 0)
+    /// passait à `false` : le lecteur rendait toutes les pages d'un coup.
+    ///
+    /// Ce n'est pas rare : `Compress-Archive`, l'outil de maintenance du projet,
+    /// produit du DEFLATE, et `lire_entree` décompresse déjà correctement pour
+    /// *lire* la page (`:379-385`). Seule la lecture d'en-tête était bloquée.
+    #[test]
+    fn les_dimensions_dune_entree_deflate_sont_lues() {
+        // JPEG minimal 800x2171, le format d'une page de webtoon.
+        let jpeg: Vec<u8> = {
+            let mut v = vec![0xFF, 0xD8, 0xFF];
+            v.extend_from_slice(&[0xE0, 0x00, 0x04, 0x00, 0x00]);
+            v.extend_from_slice(&[0xFF, 0xC0, 0x00, 0x11, 0x08]);
+            v.extend_from_slice(&2171u16.to_be_bytes());
+            v.extend_from_slice(&800u16.to_be_bytes());
+            v.extend_from_slice(&[0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01]);
+            v
+        };
+        let archive = archive_zip("001.jpg", &jpeg, 8);
+        let chemin = dossier_unique("deflate-dims").join("p.zip");
+        std::fs::write(&chemin, &archive).unwrap();
+        let mut f = File::open(&chemin).unwrap();
+        let entrees = lire_entrees(&chemin).unwrap();
+        assert_eq!(entrees.len(), 1);
+        assert_eq!(
+            dimensions_entree(&mut f, &entrees[0]),
+            Some((800, 2171)),
+            "une entrée DEFLATE doit rendre ses dimensions : sans elles la \
+             virtualisation se désactive et le lecteur rend tout d'un coup"
+        );
+        let _ = std::fs::remove_file(&chemin);
+    }
+
+    /// Le cas nominal à côté du DEFLATE : une entrée STORED doit continuer de
+    /// donner ses dimensions. Un test « un X est refusé » ne prouve jamais que
+    /// le cas légitime fonctionne encore (leçon AGENTS.md §14).
+    #[test]
+    fn les_dimensions_dune_entree_stored_sont_lues() {
+        let jpeg: Vec<u8> = {
+            let mut v = vec![0xFF, 0xD8, 0xFF];
+            v.extend_from_slice(&[0xE0, 0x00, 0x04, 0x00, 0x00]);
+            v.extend_from_slice(&[0xFF, 0xC0, 0x00, 0x11, 0x08]);
+            v.extend_from_slice(&2171u16.to_be_bytes());
+            v.extend_from_slice(&800u16.to_be_bytes());
+            v.extend_from_slice(&[0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01]);
+            v
+        };
+        let archive = archive_zip("001.jpg", &jpeg, 0);
+        let chemin = dossier_unique("stored-dims").join("p.zip");
+        std::fs::write(&chemin, &archive).unwrap();
+        let mut f = File::open(&chemin).unwrap();
+        let entrees = lire_entrees(&chemin).unwrap();
+        assert_eq!(dimensions_entree(&mut f, &entrees[0]), Some((800, 2171)));
         let _ = std::fs::remove_file(&chemin);
     }
 }

@@ -57,6 +57,30 @@ impl PageRef {
     }
 }
 
+/// Clé métier d'une entrée, reconstituée depuis sa référence : c'est
+/// exactement la clé que `inserer` a posée dans `by_key`.
+///
+/// `None` pour une page locale, qui n'a pas de clé métier — `register_local`
+/// écrit dans `map` et dans `ordre` sans jamais passer par `by_key`.
+///
+/// Cette fonction est le miroir de ce que fait `inserer`, donc elle doit vivre
+/// à côté : sans elle, purger `by_key` demandait de redouter à la main les trois
+/// formes de `PageRef`, et une quatrième forme l'aurait oublié en silence —
+/// c'est-à-dire exactement le défaut qu'elle corrige.
+fn cle_metier(token: &str, r: &PageRef) -> Option<(u8, String, String)> {
+    // `l…` = local : `register_local` n'inscrit jamais de clé métier.
+    if token.starts_with('l') {
+        return None;
+    }
+    match r {
+        PageRef::Moteur { source, page_url } => Some((1, source.clone(), page_url.clone())),
+        PageRef::Couverture {
+            source, manga_url, ..
+        } => Some((2, source.clone(), manga_url.clone())),
+        PageRef::Local { .. } => None,
+    }
+}
+
 /// Index inversé (clé métier -> jeton) + file d'insertion pour l'éviction.
 struct Index {
     map: HashMap<String, PageRef>,
@@ -220,13 +244,33 @@ impl PageCache {
                 file.pop_front()
             };
             let Some(victime) = victime else { break };
+            // L'index inversé DOIT être purgé pour la victime. Le commentaire
+            // d'avant (« ses clones ont d'autres jetons ») expliquait le défaut
+            // critique mesuré le 2026-10-09 : l'entrée devenait absente de
+            // `map` mais restait dans `by_key`, donc `inserer` la rendait à
+            // nouveau SANS la réinscrire — et `main.rs:200` répondait
+            // `not_found` sans jamais consulter le cache disque ni le moteur.
+            // Un chapitre déjà lu s'ouvrait donc en images cassées, avec un
+            // `.cbz` parfaitement intact.
+            //
+            // Les clones n'ont pas d'autres jetons : `token` dérive de
+            // `(kind, source, cle)` par hachage (`:203-208`), donc deux
+            // enregistrements de la même clé partagent le jeton et `map` ne
+            // peut détenir qu'une entrée.
             if let Some(r) = ix.map.remove(&victime) {
+                // Une entrée locale n'a pas de clé métier : elle n'est jamais
+                // passée par `by_key`, donc il n'y a rien à purger.
+                if let Some(cle) = cle_metier(&victime, &r) {
+                    // Un clone a pu réinscrire la même clé entre-temps : ne
+                    // purger que si `by_key` désigne ENCORE la victime.
+                    if ix.by_key.get(&cle).is_some_and(|t| *t == victime) {
+                        ix.by_key.remove(&cle);
+                    }
+                }
                 if r.est_cache() {
                     let _ = std::fs::remove_file(self.cache_path(&victime));
                 }
             }
-            // L'index inversé n'est pas purgé pour la victime : ses clones ont
-            // d'autres jetons, et le reconstruire coûterait plus qu'il ne rend.
         }
         if let Some(prec) = ix.map.insert(token.clone(), valeur.clone()) {
             if prec.est_cache() {
@@ -635,6 +679,43 @@ mod tests {
         assert!(
             taille <= CAP_PAGE,
             "le cache ne doit pas dépasser le plafond"
+        );
+    }
+
+    /// Le défaut critique mesuré le 2026-10-09 : rouvrir un chapitre déjà lu
+    /// après saturation du cache donnait des images cassées, sans erreur.
+    ///
+    /// L'index tient trois structures : `map` (jeton → référence), `by_key`
+    /// (clé métier → jeton) et `ordre` (file d'éviction). L'éviction ne purge
+    /// que `map` et le fichier disque — le commentaire de `pagecache.rs:228`
+    /// explique que `by_key` n'est pas purgé « car ses clones ont d'autres
+    /// jetons ». Mais `inserer` (`:200-202`) fait `if let Some(existant) =
+    /// by_key.get(&key) { return existant.clone() }` : réenregistrer la même
+    /// paire `(kind, source, url)` rend donc l'ancien jeton **sans jamais le
+    /// réinsérer dans `map`**.
+    ///
+    /// Résultat : l'évincée est absente de `map` mais présente dans `by_key`.
+    /// `main.rs:200` voit `resolve() == None` et répond `not_found` **avant**
+    /// `serve_page` — donc ni le fichier local ni le moteur ne sont consultés,
+    /// et le réseau ne peut pas réparer. Le `.cbz` est intact, la page est morte.
+    ///
+    /// Le test précédent passe néanmoins : il vérifie que l'évincée n'est plus
+    /// résolvable, ce qui est vrai, et ne demande jamais l'inverse.
+    #[test]
+    fn une_page_evincee_reenregistree_redevient_resolvable() {
+        let (c, _garde_cache) = cache();
+        c.register("MANGADEX", "https://x/0.jpg");
+        for i in 1..(CAP_PAGE + 50) {
+            c.register("MANGADEX", &format!("https://x/{i}.jpg"));
+        }
+        // On rouvre le premier chapitre : même source, même URL.
+        let token = c.register("MANGADEX", "https://x/0.jpg");
+        assert!(
+            c.resolve(&token).is_some(),
+            "une page réenregistrée après éviction doit redevenir \
+             résolvable : le jeton rendu pointait vers une entrée retirée de \
+             `map`, donc `main.rs` répondait not_found SANS consulter le cache \
+             disque ni le moteur"
         );
     }
 

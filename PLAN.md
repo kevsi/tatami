@@ -464,3 +464,88 @@ pnpm chemins:check
 
 Toutes les portes vertes. 0 erreur typecheck, 4 warnings lint connus (préexistants, hors scope
 du correctif).
+### Journal 2026-10-09 — pilotage réel de l'app, et diagnostic des images cassées
+
+**Contexte.** Session de clôture : vérification par pilotage de l'application réelle
+(webview pilotée en CDP, port 9224 — le port 9223 était tenu par **Vaultly**, autre
+application, laissée intacte). Aucun des correctifs du 2026-10-08 n'avait encore été
+éprouvé dans l'application : ils n'avaient passé que des portes.
+
+**Portes au moment de la clôture**
+
+```
+engine : gradle test --rerun-tasks  →  64 tests, 0 échec, 15 classes
+rust   : cargo clippy --all-targets -- -D warnings  →  0 avertissement
+front  : inchangé depuis ca79689 (typecheck, i18n 307=307, hooks, chemins, build)
+```
+
+**Ce que le pilotage a mesuré (source : journal Rust, pas le compteur de pages).**
+
+Le protocole `tatami://` n'apparaît dans **aucun** événement `Network` de CDP
+(0 événement pour 12 images réellement chargées) : le débit se lit donc dans le
+journal Rust, qui écrit une ligne par requête partie.
+
+| Mesure | Valeur |
+|---|---|
+| Attribut `loading` servi | `lazy` ✓ |
+| Requêtes `fetchImage` à l'ouverture (chapitre de 50 pages) | **7 à 24** (au lieu des 50) |
+| Images dans le DOM | 10 à 24 (au lieu de 50) |
+
+La rafale est donc bornée — `e765e8e` fonctionne, mesuré.
+
+**Cause des images cassées — isolée.** Le journal portait
+`IllegalStateException: HTTP 404 pour image body`. Après ajout du corps de la
+réponse au refus (`79d90c8`), le message est :
+
+```
+HTTP 404 pour image body [type=inconnu] sans corps
+```
+
+Ni corps ni type de contenu : ce n'est pas une page d'erreur, c'est un refus de
+connexion. Vérification décisive, **hors du moteur** : `curl` sur la page 5 du
+chapitre sondé donne **404 / 0 octet, reproductiblement**, quand la page 1
+donne **200 / 114 478 octets**.
+
+**Conclusion : une partie des pages annoncées par `pages` n'existe pas sur le CDN
+de MangaDex.** Ce n'est pas un défaut du client, et ce n'est pas réparable depuis
+ce dépôt.
+
+**Deux fausses causes payées avant la bonne** (à relire avant d'accuser une couche) :
+
+1. « le moteur embarqué a trois jours de retard » — lu sur des JAR de
+   dépendances tierces (`asm-*`, inchangés depuis le 7 octobre), qui ne disent
+   rien du code de la session. Faux : le JAR contenait bien la classe.
+2. « le CDN ne sert les images qu'en HTTP/1.1 » — un 400 en clair du CDN
+   (`You must set an appropriate User-Agent header`) rendait la piste
+   convaincante. Correctif **écrit**, test rouge **prouvé**, moteur **reconstruit** ;
+   une sonde Java l'a ensuite infirmée (OkHttp en h2 rend 200 sur la même URL).
+   Correctif **et** test retirés — ils ne sont pas dans le dépôt.
+
+Le filet : AGENTS.md §2.9 « ne pas attribuer un correctif à la première cause
+plausible ». Sans elle, une modification fausse aurait été livrée et documentée.
+
+**Portes prouvées rouges puis vertes** (`DiagnosticImageTest`, hors réseau —
+`Response` fabriquée) : rapport du texte du CDN et du type de contenu ; anti-fuite
+d'URL ; bornage de la longueur. Le test de bornage ne mord qu'en retirant **deux**
+bornes d'un coup (`peekBody` et `take` se recouvrent partiellement) — consigné
+comme limite assumée.
+
+**État non résolu, à ne pas perdre de vue :**
+
+- **Le lecteur reste cassé** sur les chapitres dont certaines pages manquent chez
+  MangaDex. La rafale est corrigée et les échecs sont désormais *nommés* à
+  l'écran, ce qui est honnête mais pas confortable. L'objectif de lecture n'est
+  **pas** atteint.
+- **`package-lock.json`** (36 Ko, non suivi) dans `apps/desktop/`, alors que le
+  projet n'a pas de `pnpm-lock.yaml`. Ni produit par cette session ni par l'autre
+  de façon identifiée ; non supprimé, décision humaine.
+- **175 commits non poussés** sur `master`. Rien n'a été poussé : décision de
+  dépôt, hors périmètre de l'agent.
+- **9 commits depuis `9df864e` n'étaient pas consignés** avant cette entrée, dont
+  la suppression du sous-système de traduction (`20e4287`, 2026-10-08) et 13
+  correctifs d'audit du même jour, également hors journal.
+
+**Hors dépôt, non touché** : `%APPDATA%\Tatami\packs` (1 102 Mo de modèles ONNX
+devenus inutiles après `20e4287`) et `cache` (4 339 fichiers, 1 111 Mo). Le cache
+ne contient **aucun** fichier vide — cohérent avec le refus qui refuse désormais
+d'écrire des octets non-image.

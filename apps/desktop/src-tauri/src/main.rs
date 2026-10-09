@@ -309,10 +309,24 @@ fn main() {
         .run(|handle, event| {
             // Arrêt propre : tuer le sidecar avant de quitter, sinon le java reste orphelin.
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                // **Le drapeau casse la boucle.** `h.exit(0)` déclenche un nouveau
+                // `ExitRequested`, donc sans cette garde on prévient, on relance une
+                // tâche dont le `shutdown()` est un no-op, et rien n'interrompt la
+                // boucle. `doit_prevenir_exit` porte la règle et ses tests.
+                //
+                // `QUITTER` existait déjà mais n'était lu que par
+                // `sur_evenement_fenetre` — pas ici. C'est pourquoi une sortie par
+                // le menu pouvait ne jamais aboutir.
+                if !tray::doit_prevenir_exit(tray::en_cours_de_quitter(), true) {
+                    // Déjà en cours d'extinction : on laisse la sortie se faire.
+                    return;
+                }
                 api.prevent_exit();
                 let h = handle.clone();
                 tauri::async_runtime::spawn(async move {
                     h.state::<Arc<Supervisor>>().shutdown().await;
+                    // On marque AVANT de sortir : c'est ce que la garde lit.
+                    tray::marquer_quitter();
                     h.exit(0);
                 });
             }

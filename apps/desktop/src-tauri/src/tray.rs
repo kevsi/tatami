@@ -88,6 +88,30 @@ pub fn doit_cacher(quitte: bool, tray_visible: bool) -> bool {
     !quitte && tray_visible
 }
 
+/// Faut-il **empêcher** la sortie pour tuer le sidecar d'abord ?
+///
+/// Le symétrique de `doit_cacher`, et pour le même défaut de forme : une
+/// décision laissée dans un gestionnaire d'évènement ne se teste pas, donc ne
+/// se prouve pas.
+///
+/// `false` = laisser la sortie se faire sans intervention. `true` = la
+/// retarder d'un tour pour éteindre le moteur.
+///
+/// La garde qui compte est `deja` : sans elle, `app.exit(0)` déclenche un
+/// **nouveau** `ExitRequested`, qui rappelle cette fonction, qui redémarre une
+/// tâche dont le `shutdown()` est un no-op (le sidecar est déjà mort) — donc
+/// plus rien n'interrompt la boucle, et l'application ne se ferme pas.
+/// C'est le défaut que `QUITTER` était censé couvrir et qu'il ne couvrait pas :
+/// `en_cours_de_quitter()` n'était lu que dans `sur_evenement_fenetre`, jamais
+/// dans le gestionnaire de sortie (`main.rs`).
+///
+/// Ce défaut est **prouvé rouge, pas mesuré au runtime** : il faut cliquer
+/// « Quitter » et surveiller `Get-Process tatami-desktop` pour le confirmer.
+/// La fonction pure le rend au moins testable.
+pub fn doit_prevenir_exit(deja: bool, quitte: bool) -> bool {
+    !deja && quitte
+}
+
 /// Un libellé est exploitable s'il reste quelque chose à afficher.
 fn libelle_exploitable(texte: &str) -> bool {
     !texte.trim().is_empty()
@@ -334,6 +358,36 @@ mod tests {
         );
         // Les deux : sortie volontaire ET pas de tray.
         assert!(!doit_cacher(true, false));
+    }
+
+    /// Le symétrique de `doit_cacher`, côté sortie.
+    ///
+    /// Le défaut : `h.exit(0)` déclenche un **nouveau** `ExitRequested`. Sans
+    /// garde, on prévient, on relance une tâche dont le `shutdown()` est un
+    /// no-op (le sidecar est déjà mort), et rien n'interrompt la boucle —
+    /// l'application ne se ferme pas. `QUITTER` existait déjà mais n'était lu
+    /// que par `sur_evenement_fenetre`, jamais par le gestionnaire de sortie.
+    ///
+    /// **Prouvé rouge, pas mesuré au runtime** : confirmer exige de cliquer
+    /// « Quitter » et de surveiller `Get-Process tatami-desktop`.
+    #[test]
+    fn on_ne_previent_la_sortie_quune_seule_fois() {
+        // Premier passage : on veut sortir, donc on retarde pour tuer le sidecar.
+        assert!(
+            doit_prevenir_exit(false, true),
+            "la première demande doit etre retardee pour eteindre le moteur"
+        );
+        // Second passage (après `marquer_quitter()`) : on laisse la sortie se
+        // faire. C'est CETTE ligne qui casse la boucle.
+        assert!(
+            !doit_prevenir_exit(true, true),
+            "une seconde demande doit passer, sinon la sortie boucle sans fin"
+        );
+        // Contre-épreuve : sans intention de quitter, la garde n'a rien à faire.
+        // Si elle prévenait ici, elle retarderait les fermetures de fenêtre —
+        // le défaut inverse.
+        assert!(!doit_prevenir_exit(false, false));
+        assert!(!doit_prevenir_exit(true, false));
     }
 
     /// Seule la fenêtre **principale** se met dans la zone.

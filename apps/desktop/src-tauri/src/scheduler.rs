@@ -892,7 +892,22 @@ impl ReglagesVue {
 #[tauri::command]
 pub fn reglages_planificateur(store: State<'_, Arc<Store>>) -> Result<ReglagesVue, String> {
     let r = reglages(&store);
-    let dernier_pass = charger(&store).map(|e| e.dernier_pass).unwrap_or(0);
+    let dernier_pass = match charger(&store) {
+        Ok(e) => e.dernier_pass,
+        // **Un état illisible n'est pas « jamais tourné ».** Mesuré le
+        // 2026-10-09 (audit) : `unwrap_or(0)` faisait afficher `0` — « la veille
+        // n'a jamais tourné » — alors que `boucle_tache` journalise `état du
+        // planificateur illisible`. L'écran et le journal se contredisent, et
+        // l'écran ment le premier : c'est lui que l'utilisateur lit.
+        //
+        // On journalise au même niveau, et on rend `0` faute de mieux. Il n'y a
+        // pas de valeur honnête pour un état qu'on ne sait pas lire, mais au
+        // moins la cause est traçable des deux côtés.
+        Err(e) => {
+            tracing::warn!("reglages_planificateur: {e}");
+            0
+        }
+    };
     tracing::info!("reglages_planificateur: {r:?}");
     Ok(ReglagesVue::depuis(&r, dernier_pass))
 }
@@ -932,7 +947,13 @@ pub fn set_reglages_planificateur(
     let json = serde_json::to_string(&r).map_err(|e| format!("réglages illisibles : {e}"))?;
     store.set_setting(CLE_REGLAGES, &json)?;
     tracing::info!("set_reglages_planificateur: {r:?}");
-    let dernier_pass = charger(&store).map(|e| e.dernier_pass).unwrap_or(0);
+    let dernier_pass = match charger(&store) {
+        Ok(e) => e.dernier_pass,
+        Err(e) => {
+            tracing::warn!("set_reglages_planificateur: {e}");
+            0
+        }
+    };
     Ok(ReglagesVue::depuis(&r, dernier_pass))
 }
 

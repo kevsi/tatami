@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "i18n:check": "node scripts/check-i18n.mjs",
     "hooks:check": "node scripts/check-hooks.mjs",
-    "chemins:check": "node scripts/check-chemins.mjs",
+    "chemins:check": "node scripts/check-chemins.mjs && node scripts/check-chemins-toast.mjs",
     "pages:check": "node scripts/check-pages-indisponibles.mjs",
     "perso:check": "node scripts/check-tuile-perso.mjs",
     "test": "node --test --experimental-strip-types \"lib/**/*.test.ts\"",

@@ -2503,7 +2503,11 @@ function nomSource(s: Source): string {
     setError(null);
     try {
       const file = await fetchOneChapter(selected.name, openManga, c, chapters.length);
-      setNotice(t('notice.telecharge', { f: file }));
+      // `file` vient de `downloads_root()`, donc canonicalisé, donc préfixé de
+      // `\\?\` (forme longue). Le toast est un texte destiné à l'écran : sans ce
+      // retrait, l'utilisateur lisait `\\?\C:\Users\…` — valide mais illisible,
+      // et incollable dans un explorateur.
+      setNotice(t('notice.telecharge', { f: cheminLisible(file) }));
       refreshDownloads();
     } catch (e) {
       setError(t('erreur.telechargement', { raison: String(e) }));

@@ -157,6 +157,12 @@ n'ait pas de `onError`, donc qu'une page que la source ne sert pas
 s'affiche en image cassée **sans message**. Voir la leçon « un 404 sans corps
 n'est pas une panne » en §14.
 
+Septième porte de l'interface : `pnpm perso:check`
+(`scripts/check-tuile-perso.mjs`) refuse que les sources personnalisées
+occupent toute la largeur (`grid-column: 1 / -1`) au lieu d'être une tuile
+comme les 19 autres, et que le bouton « importer » reste dans la tuile — deux
+boutons s'imbriqueraient, du HTML invalide.
+
 **Commandes de vérification** (figées le 2026-10-05, tâche 0.12). Chacune
 précise son dossier, parce que la plupart échouent depuis la racine :
 
@@ -169,6 +175,8 @@ pnpm i18n:check         # aucune clé morte ni manquante (152 clés)
 pnpm hooks:check        # aucune dépendance d'effet recréée à chaque rendu
 pnpm chemins:check      # aucun chemin affiché sans cheminLisible(…)
 pnpm pages:check        # le <img> du lecteur gère l'échec et le dit
+pnpm perso:check        # les sources perso sont une tuile, pas un encart
+pnpm test               # tests unitaires du front (node:test, lib/)
 pnpm build              # next build
 
 # Cœur Rust — dossier apps\desktop\src-tauri

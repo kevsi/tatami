@@ -566,41 +566,27 @@ button:disabled {
   font-size: 12px;
 }
 
-/* Card « Sources importées » (S2.3) dans la grille des langues.
-   Elle occupe toute la largeur : elle porte une liste, donc elle ne peut pas
-   être une tuile de langue. La forme vient de `.lang-tile` (fond, bordure,
-   rayon, alignement) — aucune nouvelle couleur ni nouvelle police.
-   `.custom-row` vient du panneau Réglages ; sur un <button> il faut
-   `font: inherit`, sinon le texte hérite du style par défaut du navigateur. */
+/* Tuile « Sources personnalisées » (S2.3), dans la grille des langues.
+   Le 2026-10-09 : elle portait `grid-column: 1 / -1` et occupait toute la
+   largeur, ce qui la faisait lire comme un encart parmi les 19 tuiles. Elle
+   est devenue une tuile ordinaire — le clic ouvre la vue des sources
+   personnalisées, comme le clic sur une tuile de langue ouvre sa liste.
+
+   La forme vient donc de `.lang-tile` (fond, bordure, rayon, survol) : aucune
+   nouvelle couleur, aucune nouvelle police. Seul le titre est plus petit,
+   parce que « Sources personnalisées » est un mot, pas un code de langue à
+   deux lettres — d'où l'absence du `b` à 26 px des tuiles de langue. */
 .import-card {
-  grid-column: 1 / -1;
-  gap: var(--s2);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
 }
 
 .import-card > b {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.import-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--s1);
-}
-
-.import-row {
-  width: 100%;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.import-row:hover {
-  border-color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .grid {

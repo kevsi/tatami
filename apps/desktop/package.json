@@ -14,6 +14,7 @@
     "hooks:check": "node scripts/check-hooks.mjs",
     "chemins:check": "node scripts/check-chemins.mjs",
     "pages:check": "node scripts/check-pages-indisponibles.mjs",
+    "perso:check": "node scripts/check-tuile-perso.mjs",
     "test": "node --test --experimental-strip-types \"lib/**/*.test.ts\"",
     "tauri": "tauri"
   },

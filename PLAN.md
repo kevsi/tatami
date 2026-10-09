@@ -747,3 +747,37 @@ toutes : **une conclusion tirée d'un échec doit être testée par un second ch
 qui devrait réussir.**
 
 Coût des trois détours : une session. Coût du geste : une commande.
+### Tuile « Sources personnalisées » — 2026-10-09
+
+**Demande** : que la card soit comme les autres cards du catalogue, et que le clic
+ouvre les sources personnalisées.
+
+**Avant** : une `<section className="lang-tile import-card">` avec
+`grid-column: 1 / -1` — donc **toute la largeur**, ce qui la faisait lire comme un
+encart parmi les 20 tuiles. Elle portait en plus la liste des sources et le bouton
+« importer ».
+
+**Après** : une tuile ordinaire dans la grille des langues. Le clic mène à une vue
+dédiée (sur le modèle exact de `lang`), qui porte le bouton « importer » et le
+retour à la grille. Choix humain explicite : tout dans le panneau.
+
+**Vérifié dans l'application réelle** (pilotage CDP) :
+
+| Mesure | Avant | Après |
+|---|---|---|
+| Largeur de la tuile perso | 100 % de la grille | **203 px**, identique à une tuile de langue |
+| Hauteur | — | **259 px**, identique |
+| Tuiles dans la grille | 19 langues + 1 encart | **20 tuiles homogènes** |
+| Clic | — | grille disparue, **« MangaDex (API) »** affichée, 2 boutons, bandeau « 1 source · Sources personnalisées » |
+
+**Un bug que seule la mesure a trouvé.** J'avais mis `enTiles` à `true` pour
+`perso` (« c'est une vue en tuiles, donc retour possible »). Le clic alors
+**changeait bien `lang`** — mesuré : le chip actif passait de « Toutes » à
+aucun — mais la grille restait affichée : la tuile ne menait nulle part. La
+grille et la vue liste sont deux branches **exclusives** ; `perso` doit tomber
+dans la seconde.
+
+**Porte** `pnpm perso:check`. Rouge prouvée, verte après. Elle a dû être réécrite :
+elle cherchait `grid-column: 1 / -1` dans **tout** le CSS, donc elle tombait sur
+le **commentaire** qui explique l'ancien défaut. Un motif cité n'est pas un motif
+appliqué — même famille que la porte `pages:check`.

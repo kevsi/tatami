@@ -1087,6 +1087,14 @@ export default function Home() {
   // filtrables par langue, avec leur nom lisible), à distinguer de
   // `sourcesPerso` qui est la liste de la base, celle des réglages.
   const sourcesImportees = useMemo(() => sources.filter((s) => s.custom), [sources]);
+  // La tuile « sources personnalisées » est une entrée du catalogue parmi les
+  // autres, pas un encart à part (demande du 2026-10-09). Le clic ouvre donc une
+  // vue dédiée, sur le modèle exact de `lang` : tuile → vue.
+  //
+  // L'état vit ici, **pas** dans le rendu du catalogue : le composant retourne
+  // avant d'atteindre le bloc du lecteur selon la vue affichée, donc un
+  // `useState` déclaré plus bas serait `undefined` à la lecture.
+  const [vueSourcesPerso, setVueSourcesPerso] = useState(false);
   // Tâche 1.7 : signets. Un signet = une page précise d'un chapitre.
   const [signets, setSignets] = useState<Bookmark[]>([]);
   // Tâche 1.5 : catégories de favoris. Une seule par favori (choix humain,
@@ -2026,7 +2034,17 @@ export default function Home() {
     // sources désactivées »).
     return voirDesactives ? base : base.filter((s) => !sourcesOff.includes(s.name));
   }, [sources, enabled, sourcesOff, voirDesactives]);
-  const byLang = lang === 'all' ? visibleSources : visibleSources.filter((s) => s.lang === lang);
+  // `lang === 'perso'` n'est pas une langue : c'est la vue des sources
+    // personnalisées (tuile du catalogue, ouverte le 2026-10-09). Elle affiche
+    // les sources importées **toutes langues confondues** — les filtrer par
+    // `s.lang` viderait la vue, puisque leur langue est `ja`, `fr`… et jamais
+    // `perso`.
+    const byLang =
+    lang === 'all'
+      ? visibleSources
+      : lang === 'perso'
+        ? visibleSources.filter((s) => s.custom)
+        : visibleSources.filter((s) => s.lang === lang);
   const filtered = byLang.filter((s) => s.name.toLowerCase().includes(nameFilter.toLowerCase()));
 
   // Tri appliqué à TOUT ce qui est chargé, pas seulement à la page courante :
@@ -2063,6 +2081,11 @@ export default function Home() {
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }, [visibleSources]);
 
+  // `perso` est une **vue** comme une langue, pas une tuile de plus : le clic sur
+    // la tuile doit mener à la LISTE, pas redessiner la grille. Mesuré le
+    // 2026-10-09 : en le laissant dans `enTiles`, le clic changeait bien `lang`
+    // (le chip actif passait à aucun) mais la grille restait affichée — donc la
+    // tuile ne menait nulle part.
   const enTiles = lang === 'all' && nameFilter.trim().length === 0;
 
   // Tâche 0.15 : filtre de la grille de chapitres. Un terme numérique compare
@@ -5865,43 +5888,24 @@ if (reader) {
               boutons (ouvrir une source, importer), et deux <button> imbriqués
               seraient du HTML invalide — cf. AGENTS.md §14. */}
           <div className="lang-grid">
-            <section className="lang-tile import-card" data-card-import="">
+            <button
+              className="lang-tile import-card"
+              data-card-perso=""
+              onClick={() => {
+                setVueSourcesPerso(true);
+                setLang('perso');
+              }}
+            >
               <b>{t('sources.perso.titre')}</b>
+              <span className="lang-nom">{t('sources.perso.note')}</span>
               <span className="muted">
                 {t('catalogue.import.compte', {
                   n: sourcesImportees.length,
                   s: sourcesImportees.length > 1 ? 's' : '',
                 })}
               </span>
-              {sourcesImportees.length === 0 ? (
-                <p className="muted">{t('sources.perso.vide')}</p>
-              ) : (
-                <ul className="import-list">
-                  {sourcesImportees.map((s) => (
-                    <li key={s.name}>
-                      <button
-                        className="custom-row import-row"
-                        onClick={() => openSource(s)}
-                      >
-                        <span className="custom-row-name">{s.displayName ?? s.name}</span>
-                        <span className="custom-row-lang">{s.lang}</span>
-                        <span className="badge custom-badge">{t('catalogue.perso')}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <button
-                className="btn"
-                disabled={importPersoEnCours}
-                onClick={() => void importerSourcePerso()}
-              >
-                {importPersoEnCours ? t('sources.perso.en.cours') : t('sources.perso.importer')}
-              </button>
-            </section>
-          </div>
+            </button>
 
-          <div className="lang-grid">
             {langCounts.map(([code, n]) => (
               <button
                 key={code}
@@ -5928,8 +5932,33 @@ if (reader) {
               ? t('catalogue.source1', { n: filtered.length })
               : t('catalogue.source', { n: filtered.length })}
             {nameFilter ? ` pour « ${nameFilter} »` : ''}
-            {lang !== 'all' ? ` · langue ${lang.toUpperCase()}` : ''}
+            {lang === 'perso' ? ` · ${t('sources.perso.titre')}` : ''}
+            {lang !== 'all' && lang !== 'perso' ? ` · langue ${lang.toUpperCase()}` : ''}
           </p>
+
+          {/* Vue des sources personnalisées : le bouton « importer » vit ici,
+              pas dans la tuile (choix humain du 2026-09). Deux boutons dans la
+              tuile l'imbriqué seraient du HTML invalide — AGENTS.md §14. */}
+          {lang === 'perso' && (
+            <div className="setting-bar">
+              <button
+                className="btn"
+                disabled={importPersoEnCours}
+                onClick={() => void importerSourcePerso()}
+              >
+                {importPersoEnCours ? t('sources.perso.en.cours') : t('sources.perso.importer')}
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  setLang('all');
+                  setVueSourcesPerso(false);
+                }}
+              >
+                {t('catalogue.bandeau.langues')}
+              </button>
+            </div>
+          )}
 
           {filtered.length === 0 ? (
             <div className="empty">

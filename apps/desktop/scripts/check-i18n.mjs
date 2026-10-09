@@ -117,7 +117,35 @@ const viaTernaire = [
 const viaTable = [...pageSansCommentaires.matchAll(new RegExp(`'(${K})'`, 'g'))]
   .map((m) => m[1])
   .filter((cle) => frSet.has(cle));
-const utilisees = new Set([...litteraux, ...viaTables, ...viaTernaire, ...viaTable]);
+// **Clés construites par gabarit** : `t(\`fiche.etat.${state}\`)\`. La partie
+// fixe du gabarit est un littéral ; la partie variable ne l'est pas — or les
+// DEUX sont de vraies clés. Mesuré le 2026-10-09 : les huit `fiche.etat.*`
+// étaient déclarées mortes alors que la fiche affiche l'état de la série.
+// `tsc` ne voit rien (`t()` accepte `Cle`, et \`${state}\` est typé `string`),
+// donc sans cette passe la porte crie à tort.
+//
+// On ne peut pas deviner les suffixes depuis l'appel : on part du gabarit
+// trouvé, et on complète par **toute clé déclarée qui commence par ce
+// préfixe**. Le risque d'un préfixe trop large est couvert par le fait que
+// seule une clé réellement déclarée dans le dictionnaire compte (les clés FR
+// existent sinon la fabrication serait visible dans le compte total).
+//
+// Le `/\.$/` retire le point de terminaison, que le motif a déjà avalé : sans
+// lui le préfixe vaut `fiche.etat..` (double point) et `startsWith` ne matche
+// **jamais** rien — mesuré, la porte restait rouge en déclarant 8 clés mortes
+// alors que la passe était censée les couvrir.
+const viaTemplate = (
+  [...pageSansCommentaires.matchAll(new RegExp('\\bt\\(\\s*`([a-z][a-zA-Z0-9_.-]*)\\$\\{', 'g'))].map(
+    (m) => m[1].replace(/\.$/, '') + '.',
+  )
+).flatMap((prefixe) => fr.filter((cle) => cle.startsWith(prefixe)));
+const utilisees = new Set([
+  ...litteraux,
+  ...viaTables,
+  ...viaTernaire,
+  ...viaTable,
+  ...viaTemplate,
+]);
 
 const echecs = [];
 

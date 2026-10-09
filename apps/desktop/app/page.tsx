@@ -613,41 +613,54 @@ function plainText(raw?: string | null): string {
     .trim();
 }
 
-/** Libellé lisible de l'état d'une série, tel que le moteur l'énumère. */
-const STATE_FR: Record<string, string> = {
-  ONGOING: 'En cours',
-  FINISHED: 'Terminé',
-  ABANDONED: 'Abandonné',
-  LICENSED: 'Sous licence',
-  PUBLISHING_FINISHED: 'Publication terminée',
-  ON_HIATUS: 'En pause',
-  NOT_YET: 'Pas encore publié',
-  DISCONTINUED: 'Interrompu',
-  UNKNOWN: '',
-};
+/** Les états de série que le moteur énumère, dans l'ordre.
+ *
+ *  La traduction est dans le dictionnaire (`fiche.etat.*`), pas ici : cette
+ *  table ne sert plus qu'à savoir si une clé est traduisible. Mesuré le
+ *  2026-10-09 : elle était `Record<string, string>` avec les libellés français
+ *  en dur, et `infoRows` était une fonction de module — donc sans `t`.
+ *  En anglais, la fiche affichait « Statut / Auteur / Genres » au milieu d'un
+ *  reste traduit.
+ */
+const ETATS_SERIE = [
+  'ONGOING',
+  'FINISHED',
+  'ABANDONED',
+  'LICENSED',
+  'PUBLISHING_FINISHED',
+  'ON_HIATUS',
+  'NOT_YET',
+  'DISCONTINUED',
+  'UNKNOWN',
+] as const;
 
 /** Les lignes de la table d'informations : on n'affiche que ce que la source a
  *  réellement donné, une ligne vide est pire qu'une ligne absente. */
-function infoRows(m: Manga | null): { label: string; value: string }[] {
+function infoRows(
+  m: Manga | null,
+  t: (k: MessageKey, v?: Record<string, string | number>) => string,
+): { label: string; value: string }[] {
   if (!m) return [];
   const rows: { label: string; value: string }[] = [];
-  const state = m.state ? (STATE_FR[m.state] ?? '') : '';
-  if (state) rows.push({ label: 'Statut', value: state });
+  const state = m.state ? ETATS_SERIE.find((e) => e === m.state) : undefined;
+  if (state && state !== 'UNKNOWN') {
+    rows.push({ label: t('fiche.statut'), value: t(`fiche.etat.${state}`) });
+  }
   if (m.authors && m.authors.length > 0) {
-    rows.push({ label: 'Auteur', value: m.authors.join(', ') });
+    rows.push({ label: t('fiche.auteur'), value: m.authors.join(', ') });
   }
   const genres = m.tags ?? [];
   if (genres.length > 0) {
-    rows.push({ label: 'Genres', value: genres.map((t) => t.title).join(', ') });
+    rows.push({ label: t('fiche.genres'), value: genres.map((g) => g.title).join(', ') });
   }
   const alt = plainText(m.altTitle);
   if (alt.length > 0) {
-    rows.push({ label: 'Titre alternatif', value: alt });
+    rows.push({ label: t('fiche.titre.alternatif'), value: alt });
   }
   if (m.rating != null && m.rating > 0) {
-    rows.push({ label: 'Note', value: `${m.rating.toFixed(1)} / 5` });
+    rows.push({ label: t('fiche.note'), value: t('fiche.note.valeur', { note: m.rating.toFixed(1) }) });
   }
-  rows.push({ label: 'Source', value: m.source });
+  rows.push({ label: t('fiche.source'), value: m.source });
   return rows;
 }
 
@@ -4869,7 +4882,7 @@ if (reader) {
     const pct = progress && progress.total > 0 ? Math.round((progress.page / progress.total) * 100) : 0;
     // `info` peut être en retard sur les chapitres : on affiche ce qu'on a.
     const fiche = info ?? openManga;
-    const rows = infoRows(info);
+    const rows = infoRows(info, t);
     const summary = plainText(info?.description);
     return (
       <main>

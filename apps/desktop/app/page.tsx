@@ -359,8 +359,7 @@ type QueueItem = {
   skipped: number;
   failed: number;
   state: 'attente' | 'téléchargement' | 'terminé' | 'erreur' | 'pause';
-  current?: string;
-  /** Pourquoi le téléchargement s'est arrêté, quand il s'est arrêté.
+  current?: string;  /** Pourquoi le téléchargement s'est arrêté, quand il s'est arrêté.
    *
    *  Mesuré le 2026-10-09 (audit) : le `catch` de la boucle faisait
    *  `failed += 1` et **jetait la cause**. L'item passait en `erreur` avec
@@ -381,6 +380,30 @@ type Progress = {
   done: boolean;
   error: string | null;
 };
+
+/** Ce que l'historique sait d'une lecture, tel que `derniere_lecture` le rend.
+ *
+ *  `chapterUrl` est la seule clé **stable** : c'est elle qui permet de retrouver
+ *  le chapitre dans la liste. `chapterIndex` est un rang au moment de la lecture
+ *  — une source qui réordonne sa liste le rendrait faux — donc il ne sert qu'à
+ *  afficher un numéro, jamais à adresser le chapitre. */
+type Progression = {
+  chapterUrl: string | null;
+  chapterTitle: string | null;
+  chapterIndex: number;
+  pageIndex: number;
+  pageCount: number;
+};
+
+/** La reprise est-elle assez complète pour être proposée ?
+ *
+ *  Un `chapterUrl` manquant veut dire « on a lu ce webtoon, mais on ne sait pas
+ *  à quel chapitre » — cas réel d'une reprise depuis l'accueil, qui ne charge pas
+ *  la fiche. Proposer « reprendre » sans chapitre enverrait vers une liste
+ *  complète sans savoir où aller : c'est pire que rien. */
+function repriseUtile(p: Progression | null): p is Progression {
+  return !!p && !!p.chapterUrl;
+}
 
 const PAGE = 24;
 // Une source peut renvoyer plusieurs centaines de chapitres : on n'en rend
@@ -1005,6 +1028,18 @@ export default function Home() {
   // à part : les deux appels sont indépendants et l'un ne doit pas masquer l'autre.
   const [info, setInfo] = useState<Manga | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  /** Où on s'était arrêté sur le webtoon ouvert, relu depuis l'historique.
+   *
+   *  `null` = jamais lu, ou lu sans que le chapitre soit connu (reprise depuis
+   *  l'accueil, qui ne charge pas la fiche). Les deux cas se ressemblent à
+   *  l'écran — « pas de mention de reprise » — et c'est voulu : proposer de
+   *  reprendre un chapitre inconnu serait pire que ne rien proposer.
+   *
+   *  Le champ utile est `chapterUrl` : c'est la seule clé stable pour retrouver
+   *  le chapitre dans la liste. `chapterIndex` est un rang **au moment de la
+   *  lecture** — une source qui réordonne sa liste le renderait faux, il ne sert
+   *  donc qu'à afficher « chapitre n˚ 12 », jamais à adresser le chapitre. */
+  const [progression, setProgression] = useState<Progression | null>(null);
   const [chapterLimit, setChapterLimit] = useState(CHAPTER_PAGE);
   const [chapterQuery, setChapterQuery] = useState('');
   // Nombre de chapitres à cocher d'un clic dans la barre de sélection.
@@ -2433,6 +2468,22 @@ function nomSource(s: Source): string {
     setChapterLimit(CHAPTER_PAGE);
     setChapterQuery('');
     setChecked(new Set());
+    // **La reprise est lue ici, et pas seulement par le lecteur.** Le lecteur
+    // écrit sa position dans l'historique (`save_progress`, effet plus bas), et
+    // cette donnée n'était relue nulle part. Mesuré le 2026-10-09 : revenir sur
+    // la fiche ne montrait ni le dernier chapitre lu, ni la liste des chapitres
+    // marquée — l'utilisateur devait se souvenir où il en était.
+    //
+    // La lecture est **séparée** du chargement des chapitres, et son échec est
+    // silencieux : une reprise est un confort, pas une donnée sans laquelle
+    // l'écran ne fonctionne pas. Une base illisible ne doit pas empêcher
+    // d'afficher la liste.
+    void invoke<Progression | null>('derniere_lecture', {
+      source: m.source,
+      mangaUrl: m.url,
+    })
+      .then(setProgression)
+      .catch(() => setProgression(null));
     // La fiche et les chapitres partent en parallèle : une source lente pour
     // l'une ne doit pas retarder l'autre.
     void invoke<{ manga: Manga }>('details', {
@@ -5039,6 +5090,32 @@ if (reader) {
           </button>
         </header>
 
+        {/* **La reprise, sur la fiche.** Mesuré le 2026-10-09 : revenir sur un
+            webtoon déjà lu ne montrait rien — ni le dernier chapitre, ni un
+            moyen d'y retourner. Le lecteur écrivait pourtant sa position dans
+            l'historique, et rien ne la relisait ici.
+
+            C'est un bouton, pas un texte : l'information seule obligerait à
+            chercher le chapitre dans une liste de 200. Un clic y va.
+
+            Le garde-fou `chapters.length > 0` est nécessaire : reprise vers un
+            chapitre qui n'est plus dans la liste (source réorganisée, chapitre
+            retiré) ouvrirait `openReader(undefined)` — un lecteur vide, sans
+            message. */}
+        {repriseUtile(progression) && chapters.length > 0 && (
+          <button
+            className="btn btn-primary reprendre"
+            onClick={() => {
+              const c = chapters.find((x) => x.url === progression.chapterUrl);
+              if (c) void openReader(c);
+            }}
+          >
+            {progression.chapterTitle
+              ? t('fiche.reprendre.chapitre', { chapitre: progression.chapterTitle })
+              : t('fiche.reprendre')}
+          </button>
+        )}
+
         {/* La catégorie n'a de sens que si le titre est déjà favori : on ne
             propose pas de classer ce qu'on n'a pas choisi de garder. */}
         {isFavorite(fiche) && (
@@ -5204,8 +5281,22 @@ if (reader) {
             {filteredChapters.slice(0, chapterLimit).map((c) => {
               const date = chapterDate(c);
               const on = checked.has(c.url);
+              // **Le chapitre courant est marqué.** Mesuré le 2026-10-09 :
+              // aucun marqueur n'existait — ni classe, ni attribut — donc
+              // relire la liste ne disait pas où on en était. L'utilisateur
+              // devait se souvenir, ou compter.
+              //
+              // `data-courant` plutôt qu'une classe seule : un attribut se lit
+              // dans le DOM (une sonde peut le vérifier), et `aria-current`
+              // le rend annonçable par un lecteur d'écran. La classe, elle,
+              // ne sert qu'au style.
+              const courant = !!progression?.chapterUrl && c.url === progression.chapterUrl;
               return (
-                <div className={`chapter-cell${on ? ' on' : ''}`} key={c.url}>
+                <div
+                  className={`chapter-cell${on ? ' on' : ''}${courant ? ' courant' : ''}`}
+                  key={c.url}
+                  data-courant={courant ? '' : undefined}
+                >
                   <label className="chapter-check">
                     <input
                       type="checkbox"
@@ -5218,11 +5309,36 @@ if (reader) {
                     className="chapter-open"
                     disabled={readerLoading}
                     onClick={() => void openReader(c)}
-                    aria-label={`Lire ${chapterLabel(c)}`}
+                    aria-label={
+                      courant
+                        ? t('libelle.chapitre.courant', { chapitre: chapterLabel(c) })
+                        : `Lire ${chapterLabel(c)}`
+                    }
+                    // `aria-current="true"` et non `aria-selected` : ce n'est pas
+                    // un onglet, c'est l'élément **actif** d'une liste. Confondu
+                    // avec `aria-selected`, un lecteur d'écran annonce
+                    // « sélectionné », ce qui décrit la case à cocher juste à
+                    // côté et non la position de lecture.
+                    aria-current={courant ? 'true' : undefined}
                   >
                     <span className="chapter-num">{chapterShort(c)}</span>
                     <span className="chapter-sub">
                       {date ?? chapterLabel(c)}
+                      {/* La mention « vous êtes ici ». Sans elle, le seul
+                          signe est une couleur — invisible pour qui ne la
+                          distingue pas, et absent pour un lecteur d'écran.
+                          Le nombre de pages lues est inclu : il dit où
+                          reprendre, pas seulement quel chapitre. */}
+                      {courant && (
+                        <span className="chapter-ici">
+                          {progression && repriseUtile(progression) && progression.pageCount > 0
+                            ? t('libelle.chapitre.en.cours', {
+                                page: progression.pageIndex + 1,
+                                total: progression.pageCount,
+                              })
+                            : t('libelle.chapitre.ici')}
+                        </span>
+                      )}
                     </span>
                   </button>
                   <button

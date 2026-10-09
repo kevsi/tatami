@@ -238,6 +238,7 @@ fn main() {
             shelf::save_progress,
             shelf::note_content_rating,
             shelf::list_recent,
+            shelf::derniere_lecture,
             shelf::list_disabled_sources,
             shelf::set_source_enabled,
             shelf::enable_all_sources,

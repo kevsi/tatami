@@ -1243,6 +1243,44 @@ button:disabled {
   background: var(--accent-dim);
   border-color: var(--accent);
 }
+/* Le chapitre qu'on est en train de lire.
+   Mesuré le 2026-10-09 : aucun marqueur n'existait, donc relire la liste ne
+   disait pas où on en était — ni classe, ni attribut, ni texte.
+
+   La bordure est **doublée**, pas remplacée : `.on` (sélection pour
+   téléchargement) et `.courant` (position de lecture) sont deux faits
+   distincts, et l'un ne doit pas pouvoir effacer l'autre.
+
+   `aria-current` porte l'information pour un lecteur d'écran ; ce bloc ne
+   sert qu'à l'œil. */
+.chapter-cell.courant {
+  border-color: var(--accent);
+  border-width: 2px;
+  padding: 8px 11px;
+  }
+
+.chapter-cell.courant .chapter-num {
+  color: var(--accent-ink, var(--text));
+  font-weight: 600;
+  }
+
+/* La mention « vous êtes ici ». La couleur seule ne suffit pas : invisible
+   pour un daltonien, absente pour un lecteur d'écran. Le texte est donc
+   explicite, et la page courante y est incluse — dire où reprendre, pas
+   seulement quel chapitre. */
+.chapter-ici {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--accent-ink, var(--text));
+  }
+
+/* Le bouton « reprendre » de la fiche. `btn btn-primary` donne déjà la forme ;
+   cette règle ne fait que l'écarter du titre, sinon il touche le `page-head`. */
+.reprendre {
+  margin: 0 0 var(--s4);
+  }
+
 
 .chapter-check {
   display: flex;

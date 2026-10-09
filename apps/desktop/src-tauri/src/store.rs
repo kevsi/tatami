@@ -1029,6 +1029,61 @@ impl Store {
     /// Lus récemment, du plus récent au plus ancien. `hide_adult` applique le
     /// mode incognito : les titres dont la classification est adulte ne sont
     /// pas listés (ils restent accessibles en recherche, cf. `PLAN.md`).
+    /// Dernière lecture connue d'un webtoon : le chapitre et la page où on s'est arrêté.
+    ///
+    /// `save_progress` écrit tout ça depuis le lecteur (`page.tsx:3313`), et la
+    /// ligne existe donc en base — mais **rien ne la relit** pour la fiche. Mesuré
+    /// le 2026-10-09 : retourner sur la fiche d'un webtoon ne montre ni où on en
+    /// était, ni un moyen d'y revenir. La donnée est là, le raccord manque.
+    ///
+    /// `None` = jamais lu, et ce n'est pas une erreur : l'appelant affiche
+    /// simplement la liste des chapitres sans mention de reprise.
+    pub fn derniere_lecture(
+        &self,
+        source: &str,
+        manga_url: &str,
+    ) -> Result<Option<HistoryEntry>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT source, manga_url, title, cover_url, content_rating, chapter_url,
+                        chapter_title, chapter_index, page_index, page_count, read_at
+                 FROM history WHERE source = ?1 AND manga_url = ?2",
+            )
+            .map_err(|e| format!("derniere lecture : {e}"))?;
+        let mut rows = stmt
+            .query_map(params![source, manga_url], |r| {
+                Ok(HistoryEntry {
+                    source: r.get(0)?,
+                    manga_url: r.get(1)?,
+                    title: r.get(2)?,
+                    cover_url: r.get(3)?,
+                    cover_token: None,
+                    content_rating: r.get(4)?,
+                    chapter_url: r.get(5)?,
+                    chapter_title: r.get(6)?,
+                    chapter_index: r.get(7)?,
+                    page_index: r.get(8)?,
+                    page_count: r.get(9)?,
+                    read_at: r.get(10)?,
+                })
+            })
+            .map_err(|e| format!("derniere lecture : {e}"))?;
+        // La clé primaire est `(source, manga_url)`, donc au plus une ligne.
+        // On prend la première et on ignore le reste : un `next()` de plus
+        // laisserait une rangée non consommée, ce que `query_map` tolère mais
+        // qui rend la lecture plus difficile à lire.
+        match rows.next() {
+            Some(ligne) => ligne
+                .map(Some)
+                .map_err(|e| format!("derniere lecture : {e}")),
+            None => Ok(None),
+        }
+    }
+
     pub fn list_recent(&self, limit: i64, hide_adult: bool) -> Result<Vec<HistoryEntry>, String> {
         let conn = self
             .conn
@@ -1300,6 +1355,165 @@ mod tests {
             "Titre",
             "et les donnees doivent survivre"
         );
+        nettoyer(&path);
+    }
+
+    #[test]
+    /// La reprise existe en base mais n'était jamais relue.
+    ///
+    /// Mesuré le 2026-10-09 : `save_progress` écrit `chapter_url`,
+    /// `chapter_title`, `chapter_index`, `page_index`, `page_count` à chaque
+    /// lecture (`page.tsx:3313`) — la ligne est donc là. Mais aucune commande ne
+    /// la relit pour la fiche : retourner sur un webtoon ne montre ni où on en
+    /// était, ni un moyen d'y revenir, et la liste des chapitres ne marque pas
+    /// le chapitre courant.
+    ///
+    /// `None` n'est **pas** une erreur : jamais lu, donc rien à reprendre.
+    #[test]
+    fn la_derniere_lecture_d_un_webtoon_est_relue() {
+        let (s, path) = store_vierge();
+        // Jamais lu : `None`, et pas une erreur.
+        assert!(
+            s.derniere_lecture("SRC", "/m/1").unwrap().is_none(),
+            "un webtoon jamais lu ne doit pas avoir de reprise",
+        );
+
+        // Deux lectures, la seconde écrase la première : la clé est
+        // `(source, manga_url)` et `save_progress` fait un upsert.
+        s.save_progress(
+            "SRC",
+            "/m/1",
+            "Titre",
+            None,
+            None,
+            Some("/ch/1"),
+            Some("Ch. 1"),
+            0,
+            3,
+            30,
+        )
+        .unwrap();
+        s.save_progress(
+            "SRC",
+            "/m/1",
+            "Titre",
+            None,
+            None,
+            Some("/ch/12"),
+            Some("Ch. 12"),
+            11,
+            7,
+            20,
+        )
+        .unwrap();
+
+        let lu = s
+            .derniere_lecture("SRC", "/m/1")
+            .unwrap()
+            .expect("une lecture existe");
+        assert_eq!(lu.chapter_url.as_deref(), Some("/ch/12"));
+        assert_eq!(lu.chapter_title.as_deref(), Some("Ch. 12"));
+        assert_eq!(lu.chapter_index, 11);
+        assert_eq!(lu.page_index, 7);
+        assert_eq!(lu.page_count, 20);
+        nettoyer(&path);
+    }
+
+    /// La reprise d'un webtoon ne doit pas contaminer celle d'un autre.
+    ///
+    /// La clé est `(source, manga_url)` : deux webtoons de la même source, et
+    /// deux sources pour la même URL, doivent rester indépendants. Sans ce test,
+    /// un `WHERE manga_url = ?` seul ferait remonter la lecture d'un voisin.
+    #[test]
+    fn la_reprise_ne_se_melange_pas_entre_webtoons() {
+        let (s, path) = store_vierge();
+        s.save_progress(
+            "SRC",
+            "/m/1",
+            "Un",
+            None,
+            None,
+            Some("/ch/9"),
+            Some("Ch. 9"),
+            8,
+            1,
+            10,
+        )
+        .unwrap();
+        s.save_progress(
+            "SRC",
+            "/m/2",
+            "Deux",
+            None,
+            None,
+            Some("/ch/3"),
+            Some("Ch. 3"),
+            2,
+            5,
+            12,
+        )
+        .unwrap();
+        // Même URL, autre source.
+        s.save_progress(
+            "AUTRE",
+            "/m/1",
+            "Trois",
+            None,
+            None,
+            Some("/ch/1"),
+            Some("Ch. 1"),
+            0,
+            0,
+            8,
+        )
+        .unwrap();
+
+        assert_eq!(
+            s.derniere_lecture("SRC", "/m/1")
+                .unwrap()
+                .unwrap()
+                .chapter_title
+                .as_deref(),
+            Some("Ch. 9"),
+        );
+        assert_eq!(
+            s.derniere_lecture("SRC", "/m/2")
+                .unwrap()
+                .unwrap()
+                .chapter_title
+                .as_deref(),
+            Some("Ch. 3"),
+        );
+        assert_eq!(
+            s.derniere_lecture("AUTRE", "/m/1")
+                .unwrap()
+                .unwrap()
+                .chapter_title
+                .as_deref(),
+            Some("Ch. 1"),
+        );
+        nettoyer(&path);
+    }
+
+    /// Une reprise sans chapitre connu reste une reprise valide.
+    ///
+    /// Cas réel : lire depuis l'accueil sans charger la fiche transmet
+    /// `chapter_url: None`. La ligne existe, la reprise est partielle — et
+    /// l'appelant doit pouvoir distinguer « jamais lu » de « lu, chapitre
+    /// inconnu », sinon il proposerait de reprendre un chapitre vide.
+    #[test]
+    fn une_lecture_sans_chapitre_connu_est_distincte_d_une_absence() {
+        let (s, path) = store_vierge();
+        s.save_progress("SRC", "/m/1", "Titre", None, None, None, None, -1, 0, 0)
+            .unwrap();
+        let lu = s
+            .derniere_lecture("SRC", "/m/1")
+            .unwrap()
+            .expect("la ligne existe");
+        assert!(lu.chapter_url.is_none(), "le chapitre est inconnu");
+        assert_eq!(lu.title, "Titre", "mais le webtoon, lui, est connu");
+        // Et l'absence de lecture reste une absence.
+        assert!(s.derniere_lecture("SRC", "/jamais").unwrap().is_none());
         nettoyer(&path);
     }
 

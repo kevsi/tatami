@@ -386,6 +386,31 @@ pub async fn list_recent(
     Ok(lignes)
 }
 
+/// Derniere lecture d'un webtoon, pour la fiche et la liste des chapitres.
+///
+/// `save_progress` ecrit la position depuis le lecteur (`page.tsx:3313`), et
+/// aucune commande ne la relisait. Mesure le 2026-10-09 : retourner sur la
+/// fiche ne montrait ni ou on en etait, ni un moyen d'y revenir ; et la liste
+/// des chapitres ne marquait pas le chapitre courant. La donnee etait en
+/// base, le raccord manquait.
+#[tauri::command]
+pub async fn derniere_lecture(
+    store: State<'_, Arc<Store>>,
+    cache: State<'_, Arc<PageCache>>,
+    source: String,
+    manga_url: String,
+) -> Result<Option<HistoryEntry>, String> {
+    requis(&source, &manga_url)?;
+    let mut ligne = store.derniere_lecture(source.trim(), manga_url.trim())?;
+    // Meme traitement que `list_recent` : la couverture passe par un jeton
+    // `tatami://`, jamais par l'URL distante. Sans lui, une reprise affichee
+    // sur la fiche ferait un appel direct a l'hote d'images.
+    if let Some(l) = ligne.as_mut() {
+        l.cover_token = jeton(&cache, &l.source, &l.manga_url, l.cover_url.as_deref());
+    }
+    Ok(ligne)
+}
+
 #[tauri::command]
 pub async fn forget_history(
     store: State<'_, Arc<Store>>,

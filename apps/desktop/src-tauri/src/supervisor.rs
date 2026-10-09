@@ -340,7 +340,26 @@ impl Supervisor {
                     }
                 };
                 let id = value.get("id").and_then(Value::as_str).unwrap_or("");
-                tracing::info!("stdout recu id={id} len={}", line.len());
+// Un challenge se compte, pas seulement sa longueur.
+                //
+                // Mesuré le 2026-10-09 : le journal ne notait que `len=169`, donc un
+                // cycle de vérification Cloudflare y était **invisible** : impossible
+                // de dire si la fenêtre s'ouvrait, si les cookies partaient, ou si le
+                // site refusait. Le contenu de la réponse portait la seule information
+                // utile, et il était jeté.
+                //
+                // On ne note que le **code** : le message peut contenir l'URL du
+                // site, et le journal applique une rédaction (cf. `journal.rs`).
+                let code = value
+                    .get("error")
+                    .and_then(|e| e.get("code"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if code.is_empty() {
+                    tracing::info!("stdout recu id={id} len={}", line.len());
+                } else {
+                    tracing::warn!("stdout erreur id={id} code={code} len={}", line.len());
+                }
                 match pending.lock().await.remove(id) {
                     Some(tx) => {
                         let _ = tx.send(value);

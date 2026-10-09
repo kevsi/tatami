@@ -781,3 +781,53 @@ dans la seconde.
 elle cherchait `grid-column: 1 / -1` dans **tout** le CSS, donc elle tombait sur
 le **commentaire** qui explique l'ancien défaut. Un motif cité n'est pas un motif
 appliqué — même famille que la porte `pages:check`.
+### Challenge Cloudflare — le journal ne le voyait pas (2026-10-09)
+
+**Symptôme rapporté** : sur une source à challenge (TOONFR), la fenêtre de
+résolution se rouvre à chaque essai, et le cycle ne se termine jamais.
+
+**Ce qui a été mesuré.** Le moteur répond bien `CHALLENGE_REQUIRED` avec l'URL
+(directement interrogeé hors interface) :
+
+```
+{"ok":false,"error":{"code":"CHALLENGE_REQUIRED",
+ "message":"challenge at https://toonfr.com/webtoon/","url":"…"}}
+```
+
+Mais le journal Rust n'enregistrait que `stdout recu id=… len=169` — **la
+longueur seule**. Le code d'erreur, qui est la seule information utile, était
+jeté. Un cycle de vérification était donc littéralement **invisible** au
+journal : impossible de dire si la fenêtre s'ouvrait, si les cookies partaient,
+ou si le site refusait.
+
+**Correctif** : le superviseur note désormais le **code** d'erreur quand la
+réponse en porte un (`supervisor.rs`). On ne note que le code, jamais le
+message : celui-ci contient l'URL du site, et le journal applique une rédaction.
+
+**Après correctif, sur TOONFR** :
+
+| Mesure | Avant | Après |
+|---|---|---|
+| Challenges visibles au journal | **0** (invraisemblable) | **2** |
+| `setCookies` | 0 | 0 |
+
+Donc : **2 challenges, 0 cookie transmis**. Le second chiffre est la piste
+suivante — les cookies ne sont jamais renvoyés au moteur.
+
+**Ce qui n'est PAS conclu.** La cause du `setCookies = 0` reste à établir :
+soit l'utilisateur ne valide pas via « C'est fait, réessayer », soit
+`solve_challenge` échoue (`challenge.rs:124` renvoie une erreur si aucun
+cookie n'est trouvé pour le site — message « la vérification n'est probablement
+pas terminée »), soit la fenêtre ne conserve pas ses cookies. **Trois causes,
+trois remèdes** : il ne faut pas conclure ici.
+
+**Une fausse piste qu'il vaut la peine de noter.** En interrogeant les commandes Rust via
+`window.__TAURI_INTERNALS__.invoke` depuis la sonde, on obtient
+`latest not allowed. Plugin not found` — alors que `list_sources` **fonctionne**
+à la même seconde (journal : `1372 sources`). `__TAURI_INTERNALS__.invoke` n'est
+pas le chemin d'appel de l'application, seulement un point d'entrée brut dont
+l'ACL refuse l'usage hors wrapper. Un `not allowed` obtenu ainsi ne prouve rien
+sur l'application. Même famille que le `browser.close()` qui tue la webview :
+**mesurer par un chemin que l'application n'emprunte pas ne mesure rien.**
+
+Rust : 174 tests verts, `clippy -D warnings` propre.

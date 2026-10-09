@@ -1518,6 +1518,14 @@ button:disabled {
   display: block;
   height: auto;
   max-width: none;
+  /* `object-fit: contain` n'est pas décoratif : sans lui, une image dont le
+     `height` inline ne correspond pas à son ratio réel est **distendue** — et
+     rien d'autre ne prévient le navigateur. Le bug mesuré le 2026-10-09
+     (`cb17b06`) venait du repli `HAUTEUR_REPLI` posé en `height` : 6 images
+     sur 6 étirées de 60,9 %. `contain` garantit le ratio même si un style
+     inline impose une boîte de la mauvaise forme — la boîte peut être fausse,
+     l'image, jamais déformée. */
+  object-fit: contain;
   /* `border-box` est indispensable, pas un détail de style : la virtualisation
      calcule la position de chaque page à partir d'une hauteur, et en
      `content-box` (le défaut) toute bordure ou marge s'y ajoute. Mesuré : une

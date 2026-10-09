@@ -66,12 +66,22 @@ export function hauteurPage(
   return Math.round((l * FORMAT_BANDE * h) / w);
 }
 
-/** Hauteurs de toutes les pages de la bande, dans l'ordre. */
+/** Hauteurs de toutes les pages de la bande, dans l'ordre.
+ *
+ * `mesurees` (index → dimensions réelles) **prime** sur les dimensions de la
+ * page : Rust ne connaît que les pages déjà en cache, alors que le navigateur
+ * connaît le ratio de tout ce qu'il a décodé — donc la mesure est à la fois plus
+ * complète et plus fraîche.
+ */
 export function hauteursBande(
   pages: readonly PageMesures[],
   largeurBande: number,
+  mesurees: Readonly<Record<number, { w: number; h: number }>> = {},
 ): number[] {
-  return pages.map((p) => hauteurPage(p, largeurBande));
+  return pages.map((p, i) => {
+    const m = mesurees[i];
+    return hauteurPage(m && m.w > 1 && m.h > 1 ? { largeur: m.w, hauteur: m.h } : p, largeurBande);
+  });
 }
 
 /** Positions cumulées : l'offset de la page `i` est `offsets[i]`. */
@@ -83,4 +93,63 @@ export function offsetsBande(hauteurs: readonly number[]): number[] {
     y += h;
   }
   return out;
+}
+
+/**
+ * Hauteur à poser **sur l'image**, ou `null` pour n'en poser aucune.
+ *
+ * ## Le défaut mesuré le 2026-10-09
+ *
+ * `hauteurPage` sert à **positionner** les pages. Poser le même nombre en
+ * `height` inline sur l'image, elle, **déforme** l'image : un style inline
+ * gagne toujours, donc ni `height: auto` ni `box-sizing: border-box` ne
+ * peuvent Plus rien.
+ *
+ * Rust ne connaît les dimensions que des pages **déjà en cache**
+ * (`commands.rs:304`), donc un chapitre ouvert pour la première fois n'en a
+ * aucune et toutes les pages retombaient sur `HAUTEUR_REPLI` — un ratio de
+ * 1600/900 inventé. Mesuré sur TOOMICSFR, 6 images sur 6 étirées :
+ *
+ * |        | dim. réelles | dim. affichées | `height` inline | écart |
+ * |--------|--------------|----------------|-----------------|-------|
+ * | page 0 | 720x500      | 673x1196       | 1196px          | -60,9%|
+ *
+ * Le repli reste donc juste pour le **défilement** (un décalage de quelques
+ * pixels se voit à peine) mais faux pour le **rendu** (60 % d'écart se voit
+ * immédiatement). D'où deux fonctions au lieu d'une :
+ *
+ * - `hauteurPage` — pour les **offsets**, toujours un nombre positif ;
+ * - `hauteurRendue` — pour le style, `null` quand la mesure manque, afin que
+ *   le navigateur garde le ratio naturel de l'image.
+ *
+ * L'image occupe alors plus ou moins de place que prevu, la bande se
+ * recale : c'est le compromis assume, et il est **discret**, la ou
+ * l'etirement etait immediatement visible.
+ */
+export function hauteurRendue(
+  page: PageMesures,
+  largeurBande: number,
+): number | null {
+  const w = page.largeur ?? 0;
+  const h = page.hauteur ?? 0;
+  // 1x1 est le rapport d'une image qui n'a pas encore décodé, pas une mesure.
+  if (w <= 1 || h <= 1) return null;
+  const l = largeurBande || 1;
+  return Math.round((l * FORMAT_BANDE * h) / w);
+}
+
+/** Hauteur rendue d'une page, mesure du navigateur prioritaire.
+ *
+ *  Même rôle que {@link hauteurRendue}, avec la remontée `onLoad` en plus. Dans
+ *  le lecteur, c'est cette fonction-ci qu'il faut appeler : une page jamais mise
+ *  en cache n'a de dimensions que par ce chemin. */
+export function hauteurRendueMesuree(
+  page: PageMesures,
+  largeurBande: number,
+  mesure: { w: number; h: number } | undefined,
+): number | null {
+  if (mesure && mesure.w > 1 && mesure.h > 1) {
+    return hauteurRendue({ largeur: mesure.w, hauteur: mesure.h }, largeurBande);
+  }
+  return hauteurRendue(page, largeurBande);
 }

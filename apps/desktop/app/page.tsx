@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { hauteursBande, offsetsBande } from '../lib/bande-hauteurs';
+import { hauteurRendueMesuree, hauteursBande, offsetsBande } from '../lib/bande-hauteurs';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   isPermissionGranted,
@@ -1165,6 +1165,34 @@ export default function Home() {
    *  l'utilisateur lisait « MangaDex ne sert pas cette page » comme « l'app
    *  est cassée » — ce qu'aucun pixel ne permet de distinguer. */
   const [pagesEnErreur, setPagesEnErreur] = useState<Set<number>>(new Set());
+  /** Dimensions réelles des pages, mesurées par le navigateur à leur chargement.
+   *
+   *  Rust ne connaît les dimensions que des pages **déjà en cache**
+   *  (`commands.rs:304`) : un chapitre ouvert pour la première fois n'en a donc
+   *  aucune. Mesuré le 2026-10-09 sur TOOMICSFR, c'était la cause de l'étirement
+   *  — 6 images sur 6 déformées de 60,9 %, parce que toutes retombaient sur le
+   *  repli `1600/900` alors que la vraie page mesurait 720x500.
+   *
+   *  Le navigateur, lui, a toujours le ratio : `naturalWidth`/`naturalHeight`.
+   *  On le remonte donc au fil de l'eau, et la bande se recale toute seule.
+   *
+   *  Clé = index de page, valeur = dimensions **en pixels d'image** (pas CSS).
+   *  `null` = pas encore mesurée. */
+  const [dimsPages, setDimsPages] = useState<Record<number, { w: number; h: number }>>({});
+  /** Note les dimensions d'une page et **ne bouge que si elles changent**.
+   *
+   *  Sans cette garde, chaque `onLoad` ferait un `setState` donc un rendu, et le
+   *  rendu recharge l'image qui redéclenche `onLoad` : une boucle de rendus dont
+   *  rien ne prouve qu'elle s'arrêterait. La comparaison rend l'opération
+   *  idempotente, donc elle se stabilise au bout d'un rendu par page. */
+  const noterDims = useCallback((i: number, w: number, h: number) => {
+    if (w <= 1 || h <= 1) return;
+    setDimsPages((prec) => {
+      const avant = prec[i];
+      if (avant && avant.w === w && avant.h === h) return prec;
+      return { ...prec, [i]: { w, h } };
+    });
+  }, []);
   /** Page sur laquelle la bande doit se placer à la prochaine ouverture.
    *
    *  Déclarée ici, et non près de l'effet qui la consomme : `openReaderAt` la
@@ -2952,6 +2980,11 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
   // peut etre intact (mesure : ch.3 = 0/8 servies, ch.1 = 7/8 — l'inverse
   // existe aussi).
   setPagesEnErreur(new Set());
+  // Idem pour les dimensions mesurees : elles sont indexees par numero de page,
+  // donc celles du chapitre precedent decaleraient la bande du suivant. Une page
+  // de hauteur 1 200 px dupliquee sur un chapitre ou la vraie page fait 500 px
+  // donnerait une bande de 2,4 fois trop haute.
+  setDimsPages({});
   try {
     const locales = await invoke<LocalPage[]>('local_chapter_pages', {
       source: src,
@@ -3349,8 +3382,8 @@ const formatBande = zoom / 100;
   // en échec désactivait donc toute la bande (mesuré dans l'app le 2026-10-09 :
   // ch.6, 12 images chargées à 967 px, bande pourtant non virtualisée).
   const hauteurs = useMemo(
-    () => hauteursBande(pagesBande, largeurBande * formatBande),
-    [pagesBande, largeurBande, formatBande],
+    () => hauteursBande(pagesBande, largeurBande * formatBande, dimsPages),
+    [pagesBande, largeurBande, formatBande, dimsPages],
   );
 
 const offsets = useMemo(() => offsetsBande(hauteurs), [hauteurs]);
@@ -4731,7 +4764,24 @@ if (reader) {
               {fenetre.map((i) => {
                 const p = pages[i];
                 if (!p) return null;
+                // Hauteur **de positionnement** (toujours un nombre) et hauteur
+                // **rendue** (`null` si la mesure manque). Les deux ne sont pas
+                // la même chose : poser le repli sur l'image la déformait de
+                // 60,9 % (mesuré le 2026-10-09 sur TOOMICSFR, 6 images sur 6).
                 const hauteur = hauteurs[i] || 0;
+                const hauteurCss = hauteurRendueMesuree(
+                  p,
+                  largeurBande * formatBande,
+                  dimsPages[i],
+                );
+                const styleImage: CSSProperties = bandeVirtualisable
+                  ? {
+                      width: `${zoom}%`,
+                      position: 'absolute',
+                      top: offsets[i] ?? 0,
+                      ...(hauteurCss ? { height: `${hauteurCss}px` } : {}),
+                    }
+                  : { width: `${zoom}%` };
                 // Page que la source ne sert pas : on **le dit** plutot que
                 // d'afficher une image cassee sans message (voir l'etat
                 // `pagesEnErreur` pour la mesure).
@@ -4743,16 +4793,7 @@ if (reader) {
                       data-index={i}
                       role="img"
                       aria-label={`Page ${i + 1} : ${t('lecteur.page.indisponible')}`}
-                      style={
-                        bandeVirtualisable
-                          ? {
-                              width: `${zoom}%`,
-                              position: 'absolute',
-                              top: offsets[i] ?? 0,
-                              height: hauteur ? `${hauteur}px` : undefined,
-                            }
-                          : { width: `${zoom}%` }
-                      }
+                      style={styleImage}
                     >
                       <span>{t('lecteur.page.indisponible')}</span>
                     </div>
@@ -4796,16 +4837,16 @@ if (reader) {
                     loading="lazy"
                     decoding="async"
                     data-index={i}
-                    style={
-                      bandeVirtualisable
-                        ? {
-                            width: `${zoom}%`,
-                            position: 'absolute',
-                            top: offsets[i] ?? 0,
-                            height: hauteur ? `${hauteur}px` : undefined,
-                          }
-                        : { width: `${zoom}%` }
-                    }
+                    style={styleImage}
+                    // Remonte le ratio réel au composant : Rust ne connaît que
+                    // les pages déjà en cache, le navigateur connaît tout ce
+                    // qu'il a décodé. Sans cette remontée, une page jamais mise
+                    // en cache garde le repli et l'image est étirée — mesuré à
+                    // -60,9 % avant la correction.
+                    onLoad={(ev) => {
+                      const im = ev.currentTarget;
+                      noterDims(i, im.naturalWidth, im.naturalHeight);
+                    }}
                     onDoubleClick={() => changeZoom(zoom >= 200 ? 100 : 200)}
                   />
                 );

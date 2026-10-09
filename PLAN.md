@@ -831,3 +831,45 @@ sur l'application. Même famille que le `browser.close()` qui tue la webview :
 **mesurer par un chemin que l'application n'emprunte pas ne mesure rien.**
 
 Rust : 174 tests verts, `clippy -D warnings` propre.
+
+### Images webtoon étirées — cause trouvée, corrigée (ac2979)
+
+**Signalé par l'utilisateur** : « la lecture des webtoons est uniforme ; en
+regardant un webtoon, certaines images ou pratiquement tout est étiré ».
+
+**Mesuré dans l'application réelle** (TOOMICSFR, 6 images montée) :
+
+|        | dim. réelles | dim. affichées | height inline | écart |
+|--------|--------------|----------------|-----------------|-------|
+| avant  | 720x500      | 673x1196       | 1196px          | **-60,9 %** |
+| après  | 720x500      | 630x438        | 438px (mesuré)  | **0,1 %** |
+
+**Cause.** Rust ne connaît les dimensions que des pages **déjà en cache**
+(commands.rs:304) : un chapitre ouvert pour la première fois n'en a aucune.
+Toutes les pages retombaient donc sur HAUTEUR_REPLI — un ratio de 1600/900
+inventé, en cb17b06. Or cette valeur était posée en height **inline**, donc
+elle écrasait le ratio naturel de l'image : height: auto et
+ox-sizing: border-box ne pouvaient plus rien.
+
+**Distinction qui manquait.** hauteurPage sert à **positionner** les pages ;
+poser la même valeur sur l'image sert à la **déformer**. Le repli est juste pour
+le défilement (discret) et faux pour le rendu (60 %, immédiatement visible).
+D'où deux fonctions : hauteurPage (offsets, toujours positive) et
+hauteurRendue (style, 
+ull quand la mesure manque → le navigateur garde le
+ratio naturel). La mesure onLoad remonte désormais 
+aturalWidth /
+
+aturalHeight, ce que Rust ne peut pas savoir.
+
+**Réflexe à retenir.** Une valeur d'espacement et une valeur de rendu ne sont
+pas la même quantité, même quand elles sortent de la même fonction. Et :
+object-fit: contain ajouté en défense — une boîte peut être fausse, l'image
+ne doit jamais se déformer.
+
+**Dette résiduelle, mesurée, laissée telle quelle** (décision de l'utilisateur
+le 2026-10-09) : la bande réserve 43 650 px pour 33 015 px de contenu réel, soit
+**24 % de vide**, parce que les pages non encore mesurées gardent la hauteur de
+repli. Navigation par page : **3 sauts justes sur 4**, écart maximal **1 page**.
+Le vide est en bas de la bande, donc invisible à l'écran ; l'écart d'une page
+vient de la page la plus visible au cadre, pas d'une page erronée.

@@ -3400,10 +3400,30 @@ function closeReader() {
 /** Reprise depuis l'accueil : aucune source n'est sélectionnée, on rend donc
  *  l'accueil plutôt qu'une fiche de chapitre orpheline. */
 function apresFermetureLecteur() {
+  // Pas de source sélectionnée : on est arrivé depuis l'accueil ou un favori.
+  // Une fiche de chapitre sans source serait orpheline — pas de bouton
+  // « télécharger », pas de catalogue de retour.
   if (!selected) {
     setTab('home');
     setOpenManga(null);
+    setProgression(null);
+    return;
   }
+  if (!openManga) return;
+  // **La reprise est relue au retour.** Mesuré le 2026-10-09 : elle n'était lue
+  // que dans `loadChapters`, donc à l'**ouverture** du webtoon. Revenir du
+  // lecteur ne relance pas ce chargement, et `progression` restait à sa valeur
+  // d'avant la lecture — `null` au premier passage. Le marqueur et le bouton
+  // « reprendre » n'apparaissaient donc jamais au moment précis où ils servent.
+  //
+  // L'échec est silencieux, comme au chargement : une base illisible ne doit pas
+  // empêcher de revenir à la liste des chapitres.
+  void invoke<Progression | null>('derniere_lecture', {
+    source: selected.name,
+    mangaUrl: openManga.url,
+  })
+    .then(setProgression)
+    .catch(() => setProgression(null));
 }
 
 function changeZoom(next: number) {

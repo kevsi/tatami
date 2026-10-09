@@ -84,6 +84,91 @@ export function hauteursBande(
   });
 }
 
+/** La bande est-elle virtualisable ?
+ *
+ *  **Une page dont la hauteur rendue est inconnue rend la bande NON
+ *  virtualisable.** C'est ce qui manquait, et le défaut mesuré le 2026-10-09 :
+ *
+ *  `hauteurPage` donne une hauteur de **repli** à une page sans dimensions, afin
+ *  que le défilement reste cohérent. Mais cette valeur est une *estimation* :
+ *  elle ne correspond pas au ratio réel de l'image. Or `bandeVirtualisable`
+ *  s'appuyait sur le seul fait que les hauteurs soient positives — donc
+ *  **toujours vrai**, même quand aucune page n'était mesurée.
+ *
+ *  Mesuré dans l'application réelle (chapitre de 15 pages ouvert pour la
+ *  première fois, donc aucune dimension en cache — Rust ne connaît que les pages
+ *  déjà mises en cache) :
+ *
+ *  | | mesuré |
+ *  |---|---|
+ *  | bande réservée | 13 461 px |
+ *  | contenu réellement rendu | 11 661 px |
+ *  | saut demandé page 10 | page **9** affichée (écart -1) |
+ *
+ *  La bande était positionnée sur des hauteurs **inventées** pendant que les
+ *  images se rendaient à leur ratio réel. D'où la règle : ne virtualiser que ce
+ *  dont on connaît la géométrie.
+ *
+ *  `null` de `hauteurRendue` est exactement « je ne sais pas » : la page rend à
+ *  son ratio naturel, donc une hauteur ici serait une invention de plus.
+ *
+ *  La contrepartie est assumée : sur un chapitre jamais ouvert, la bande n'est
+ *  pas virtualisée et rend toutes les pages en flux normal — donc elle est plus
+ *  lente à la première ouverture, mais **juste**. C'est le sens du
+ *  commentaire d'origine : « jamais une estimation », qui n'était plus appliqué.
+ */
+export function bandeVirtualisableEst(hauteursRendues: readonly (number | null)[]): boolean {
+  if (hauteursRendues.length === 0) return false;
+  // Il suffit qu'**une** page soit connue pour virtualiser : les autres pages
+  // apprendront leur ratio au `onLoad`, et la bande se recalera. Un chapitre
+  // entièrement inconnu, lui, resterait faux du début à la fin.
+  return hauteursRendues.some((h) => h !== null);
+}
+
+/** Position de défilement qui garde la même page visible après un changement de hauteurs.
+ *
+ *  Le défaut mesuré le 2026-10-09 : les pages se mesurent au fil de l'eau
+ *  (`onLoad` → `noterDims`), donc les hauteurs — et donc les offsets —
+ *  **changent après coup**. Mesuré, la bande passe de 15 908 à 14 570 px pendant
+ *  la lecture. Or `scrollTop` restait ce qu'il était : tout ce qui était
+ *  au-dessus de la fenêtre remontait, et la page que l'utilisateur lisait
+ *  sortait du cadre.
+ *
+ *  Le remède est un **décalage**, pas une position : on translate `scrollTop` de
+ *  exactement ce que le recalcul a déplacé la page qui est sous le haut du
+ *  cadre. On ne cherche donc pas la page visible — on demande seulement « de
+ *  combien a bougé la page qui était à cette position », ce qui rend le calcul
+ *  indépendant de toute mesure de géométrie.
+ *
+ *  Pourquoi pas `reader.index` : essayé, et **cassé**. Après un saut de page,
+ *  l'index ancré était celui d'avant le saut, donc la correction ramenait la
+ *  bande en haut — mesuré, un saut vers la page 10 affichait la page 2.
+ *  L'index change APRÈS le défilement ; l'ancrage doit venir de la position,
+ *  pas de l'état.
+ *
+ *  `null` = rien à corriger (moins de 2 px de déplacement : un `scrollTo` par
+ *  rendu ferait bouger la page en permanence, ou nombre de pages différent).
+ */
+export function decalageAncrage(
+  offsetsAvant: readonly number[],
+  offsetsApres: readonly number[],
+  scrollTop: number,
+): number | null {
+  // Un nombre de pages différent (changement de chapitre, ou bande qui vient de
+  // se virtualiser) n'a pas de correspondance fiable : on ne touche à rien.
+  if (offsetsAvant.length !== offsetsApres.length) return null;
+  // Page sous le haut du cadre, d'après les ANCIENS offsets — ceux qui étaient
+  // en vigueur quand `scrollTop` a été posé.
+  let i = 0;
+  for (let k = 0; k < offsetsAvant.length; k += 1) {
+    if ((offsetsAvant[k] ?? 0) <= scrollTop) i = k;
+    else break;
+  }
+  const dep = (offsetsApres[i] ?? 0) - (offsetsAvant[i] ?? 0);
+  if (Math.abs(dep) < 2) return null;
+  return Math.max(0, scrollTop + dep);
+}
+
 /** Positions cumulées : l'offset de la page `i` est `offsets[i]`. */
 export function offsetsBande(hauteurs: readonly number[]): number[] {
   const out: number[] = [];

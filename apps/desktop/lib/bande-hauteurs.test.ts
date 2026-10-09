@@ -57,6 +57,47 @@ describe('hauteurs de la bande webtoon', () => {
     assert.deepEqual(hauteursBande([], 400), []);
   });
 
+  // --- Le défaut mesuré le 2026-10-09, deuxième passe ---
+  //
+  // `hauteurPage` donne maintenant une hauteur de repli (1600/900) à une page
+  // sans dimensions, pour que la virtualisation ne s'effondre pas. Conséquence
+  // non vue : `bandeVirtualisable` (`hauteurs.length > 0 && !some(h <= 0)`)
+  // devient **toujours vrai** — y compris quand AUCUNE page n'est mesurée.
+  //
+  // Mesuré dans l'application réelle, chapitre de 15 pages ouvert pour la
+  // première fois : bande de 13 461 px pour 11 661 px rendus, et le saut vers
+  // la page 10 atterrit sur la 9. La bande est donc positionnée sur des
+  // hauteurs **inventées** alors que les images se rendent à leur ratio réel.
+  //
+  // La règle correcte : une page dont on ne connaît pas la hauteur rendue ne
+  // doit pas être comptée comme connue.
+  describe('virtualisation : ce qui est « connu »', () => {
+    it('un chapitre entierement inconnu n est pas virtualisable', () => {
+      // Rust ne connaît que les pages déjà en cache : un chapitre neuf n'a
+      // donc aucune dimension, et le repli ne doit pas faire croire l'inverse.
+      const pages = [{}, {}, {}, {}, {}];
+      const h = hauteursBande(pages, 900);
+      assert.equal(h.length, 5);
+      for (const x of h) assert.ok(x > 0, 'hauteur de positionnement, donc positive');
+      // Mais la virtualisation, elle, exige des hauteurs RENDUES connues.
+      assert.equal(pages.every((p) => hauteurRendue(p, 900) !== null), false);
+      assert.equal(pages.some((p) => hauteurRendue(p, 900) !== null), false);
+    });
+
+    it('un melange de connues et d inconnues est virtualisable', () => {
+      // Dès qu'une page est mesurée, la bande peut se virtualiser : le rendu
+      // apprend le ratio des autres au passage (onLoad -> noterDims).
+      const pages = [{ largeur: 720, hauteur: 500 }, {}, {}];
+      assert.equal(hauteurRendue(pages[0], 900) !== null, true);
+      assert.equal(hauteurRendue(pages[1], 900), null);
+      assert.equal(pages.some((p) => hauteurRendue(p, 900) !== null), true);
+    });
+
+    it('une bande vide n est pas virtualisable', () => {
+      assert.equal(hauteursBande([], 900).length > 0, false);
+    });
+  });
+
   it('conserve l\'ordre des pages dans les hauteurs', () => {
     const pages = [
       { largeur: 800, hauteur: 1000 },

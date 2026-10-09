@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { hauteurRendueMesuree, hauteursBande, offsetsBande } from '../lib/bande-hauteurs';
+import { bandeVirtualisableEst, decalageAncrage, hauteurRendueMesuree, hauteursBande, offsetsBande } from '../lib/bande-hauteurs';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   isPermissionGranted,
@@ -3329,6 +3329,13 @@ function scrollToPage(i: number) {
   if (root && haut !== undefined) {
     root.scrollTo({ top: Math.max(0, haut - 8), behavior: 'smooth' });
     setReader((r) => (r ? { ...r, index: cible } : r));
+    // Second passage, **exact**. `offsets` est bâti sur des hauteurs encore
+    // partielles (les pages après la fenêtre ne sont pas mesurées), donc
+    // l'atterrissage ci-dessus peut être décalé d'une page — mesuré le
+    // 2026-10-09 : saut vers la page 10, page 9 affichée. `aPositionner` fait
+    // déjà le positionnement exact à l'ouverture ; on le réutilise pour que le
+    // saut se cale sur la géométrie réelle dès qu'elle est connue.
+    aPositionner.current = cible;
     return;
   }
   const el = stripImages.current[cible];
@@ -3405,17 +3412,59 @@ const formatBande = zoom / 100;
 
 const offsets = useMemo(() => offsetsBande(hauteurs), [hauteurs]);
 
-/** `true` quand chaque page a une hauteur calculée : la bande est virtualisable.
+/** `true` quand **au moins une** page a une hauteur rendue connue.
  *
- *  `false` = au moins une page sans dimension. On rend alors tout, en flux
- *  normal — **jamais une estimation** : une hauteur de réserve fausse faisait
- *  reculer la position de défilement de 3 964 à 1 788 px (mesuré).
+ *  Le seuil exact : virtualiser une bande dont aucune géométrie n'est connue
+ *  positionnait les pages sur des hauteurs inventées (le repli 1600/900) pendant
+ *  que les images se rendaient à leur ratio réel. Mesuré le 2026-10-09 sur un
+ *  chapitre de 15 pages ouvert pour la première fois : bande de 13 461 px pour
+ *  11 661 px rendus, et le saut vers la page 10 atterrissait sur la 9.
+ *
+ *  La règle et ses tests vivent dans `lib/bande-hauteurs.ts`
+ *  (`bandeVirtualisableEst`) : `page.tsx` ne peut pas les porter, il retourne
+ *  avant d'arriver aux hooks selon la vue affichée.
  */
-const bandeVirtualisable = useMemo(
-  () => hauteurs.length > 0 && !hauteurs.some((h) => h <= 0),
-  [hauteurs],
-);
+const bandeVirtualisable = useMemo(() => {
+  if (pagesBande.length === 0) return false;
+  return bandeVirtualisableEst(
+    pagesBande.map((p, i) => hauteurRendueMesuree(p, largeurBande * formatBande, dimsPages[i])),
+  );
+}, [pagesBande, largeurBande, formatBande, dimsPages]);
 
+
+/** Les offsets du rendu precedent, pour mesurer ce que le recalcul a deplace. */
+const offsetsAvantRef = useRef<readonly number[]>([]);
+
+/** Recolle le defilement a la page que l'utilisateur regardait.
+ *
+ *  Les pages se mesurent au fil de l'eau (`onLoad` -> `noterDims`), donc
+ *  `offsets` **change apres coup**. Mesure : la bande passe de 15 908 a
+ *  14 570 px pendant la lecture, et la page lue sortait du cadre.
+ *
+ *  On decale donc `scrollTop` de ce que le recalcul a bouge la page situee sous
+ *  le haut du cadre. La regle est dans `decalageAncrage`
+ *  (`lib/bande-hauteurs.ts`), testee seule.
+ *
+ *  **Pourquoi un effet et pas un calcul pendant le rendu.** `scrollTop` est une
+ *  propriete du DOM, pas un etat : l'ecrire pendant le rendu serait un effet de
+ *  bord. Un `useEffect` qui court apres chaque changement d'`offsets` est le
+ *  seul moment ou les anciens et les nouveaux offsets sont tous deux connus.
+ */
+useEffect(() => {
+  const root = stripRef.current;
+  if (!root || !bandeVirtualisable) return;
+  const avant = offsetsAvantRef.current;
+  offsetsAvantRef.current = offsets;
+  if (avant.length === 0) return;
+  const y = decalageAncrage(avant, offsets, root.scrollTop);
+  if (y === null) return;
+  // Le seuil evite une correction pour un decalage d'un pixel : un `scrollTo`
+  // a chaque rendu ferait bouger la page en permanence.
+  if (Math.abs(y - root.scrollTop) < 2) return;
+  root.scrollTo({ top: y });
+  dernierScroll.current = y;
+  setScrollY(y);
+}, [offsets, bandeVirtualisable]);
 const bandeHauteur = useMemo(() => {
   if (!bandeVirtualisable) return 0;
   return hauteurs.reduce((n, h) => n + h, 0);

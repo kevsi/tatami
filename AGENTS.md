@@ -1465,3 +1465,32 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   réglage que Rust applique : ce que le garde porte decides où se pose la
   question, et une garde appliquée trop large supprime une fonction entière au
   lieu de la protéger.
+
+- **Un refus qui ne dit pas pourquoi fait passer une donnée manquante pour une
+  panne réseau.** Mesuré le 2026-10-09 sur `custom:mangadex-api` : le journal
+  portait `HTTP 404 pour cette page`, et j'en ai conclu deux fois à une panne
+  (le moteur « pas à jour », puis « le CDN ne sert qu'en HTTP/1.1 » — les
+  deux fois infirmé, la seconde après avoir écrit le correctif et son test).
+  Or `curl` rendait 200 sur la **même** URL, dans la même seconde. Le
+  404 venait en réalité du **fichier de page** : sur le chapitre sondé, la
+  page 5 répond 404 reproductible et 0 octet **hors du moteur**, alors que la
+  page 1 répond 200. Autrement dit, une partie des pages annoncées par
+  `pages` n'existe pas sur le CDN — et une application qui affiche 21 échecs
+  sur 24 images avait l'air d'être en panne réseau.
+  Corollaire : **`404 sans corps` n'est pas une page d'erreur, c'est un refus
+  de connexion** — et il se distingue d'une image manquante par son type de
+  contenu absent. C'est ce qui a permis de trancher, et il a fallu
+  l'ajouter au refus (`DiagnosticImageTest`) : le message seul ne suffisait
+  pas. Corollaire plus général : **avant d'accuser la couche réseau,
+  demander à `curl` une URL qui vient d'échouer.** Si `curl` réussit, le
+  réseau n'est pas en cause ; si `curl` échoue aussi, l'URL est fausse et
+  l'accusation du client était prématurée.
+- **Une porte peut mordre et rester verte sur le mauvais chemin.** Mesuré le
+  même jour : le test « le refus ne fuit aucune URL » passait **avant** le
+  correctif — il ne pouvait pas échouer, puisque rien n'était encore écrit.
+  Il n'a mordu qu'une fois l'assainissement supprimé à la main. Et le test de
+  longueur ne mordait qu'en retirant **deux** bornes d'un coup : l'une était
+  redondante pour ce test. Corollaire : un test qui passe avant le correctif
+  est une porte dont le mors n'est pas encore monté ; la seule façon de savoir
+  s'il mord, c'est de casser le code qu'il protège et de lire **le nom du
+  test qui échoue** — pas le nombre de tests verts.

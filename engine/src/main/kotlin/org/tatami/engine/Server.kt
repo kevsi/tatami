@@ -680,7 +680,13 @@ internal fun octetsImage(resp: okhttp3.Response, quoi: String): ByteArray {
     // page illisible dans le `.cbz`. `HttpBridge` consultait déjà le statut
     // (HttpBridge.kt:60) ; ce chemin-ci ne le faisait pas.
     if (!resp.isSuccessful) {
-        throw IllegalStateException("HTTP ${resp.code} pour $quoi")
+        // **Le refus nomme sa cause.** `HTTP 404 pour cette page` est un
+        // constat, pas une cause : il ne distingue pas un CDN qui refuse (et
+        // dit pourquoi dans son corps — mesuré le 2026-10-09 sur
+        // `*.mangadex.network` : « You must set an appropriate User-Agent
+        // header ») d'une URL périmée. Ces deux cas appellent des remèdes
+        // opposés, et confondus ils ont fait dévier deux diagnostics.
+        throw IllegalStateException(messageDeRefus(resp, quoi))
     }
     val bytes = resp.body?.bytes() ?: throw IllegalStateException("empty $quoi")
     // Un corps vide est un échec, pas une image de zéro octet. OkHttp rend un
@@ -694,6 +700,67 @@ internal fun octetsImage(resp: okhttp3.Response, quoi: String): ByteArray {
     }
     return bytes
 }
+
+/**
+ * Compose le message d'un refus d'image : statut, type de contenu, et le début
+ * du corps rendu par le serveur.
+ *
+ * **Le corps est assaini.** Un CDN de refus répète l'URL demandée, et la
+ * rédaction du journal (`journal.rs`) ne remplace que les jetons **commençant**
+ * par `http` : une URL au milieu d'un texte passerait telle quelle. On retire
+ * donc nous-mêmes toute URL et tout chemin absolu avant d'écrire.
+ *
+ * La longueur est bornée : une page d'erreur de plusieurs kilo-octets noierait
+ * le journal, et c'est précisément le journal qu'on veut rester lisible.
+ *
+ * **Deux bornes, et elles ne font pas la même chose.** `peekBody` borne ce que
+ * le réseau nous fait charger ; `take` borne ce que `nettoyerDiagnostic`
+ * écrit. La seconde n'est donc pas redondante : neutraliser `peekBody` seul
+ * laissait le test vert, ce qui est le comportement attendu puisque `take`
+ * rattrape la longueur.
+ */
+private fun messageDeRefus(resp: okhttp3.Response, quoi: String): String {
+    val ct = resp.body?.contentType()?.toString() ?: "inconnu"
+    // `peekBody` ne consomme pas la réponse, et borne ce que le réseau nous
+    // fait charger : une page d'erreur de plusieurs kilo-octets n'est jamais
+    // lue en entier. La longueur **écrite** est, elle, bornée par `take` dans
+    // `nettoyerDiagnostic` — les deux bornes protègent deux choses distinctes.
+    val extrait = runCatching {
+        resp.peekBody(DIAGNOSTIC_MAX).string()
+    }.getOrDefault("")
+    val corps = nettoyerDiagnostic(extrait)
+    val detail = if (corps.isBlank()) "sans corps" else corps
+    return "HTTP ${resp.code} pour $quoi [type=$ct] $detail"
+}
+
+/** Longueur max du corps repris dans un refus : assez pour une cause, pas pour noyer le journal. */
+private const val DIAGNOSTIC_MAX = 200L
+
+/**
+ * Rend un corps d'erreur lisible et sans fuite : une seule ligne, bornée, et
+ * sans URL ni chemin de fichier.
+ *
+ * Testé par `DiagnosticImageTest` : c'est cette fonction qui empêche le corps
+ * d'un CDN de faire entrer l'URL d'une image dans le journal.
+ */
+internal fun nettoyerDiagnostic(corps: String): String =
+    corps
+        // Tout ce qui ressemble à une URL absolute, avant tout le reste : sans
+        // cela, les substitutions suivantes casseraient la détection.
+        .replace(URL_DANS_UNE_CHAINE, "<url>")
+        // Un chemin de fichier (`/data/abc/1.png`, `C:\…`) trahit la structure
+        // du site et n'apporte rien au diagnostic.
+        .replace(CHEMIN_ABSOLU, "<chemin>")
+        .replace(ASCII_AUX_IMPRIMABLES, " ")
+        .replace(ESPACES_REPETES, " ")
+        .trim()
+        .take(DIAGNOSTIC_MAX.toInt())
+        .trimEnd()
+
+private val URL_DANS_UNE_CHAINE = Regex("""\b[a-zA-Z][a-zA-Z0-9+.-]*://\S+""")
+private val CHEMIN_ABSOLU = Regex("""(^|\s)/[^\s]*""")
+private val ASCII_AUX_IMPRIMABLES = Regex("""[^\p{Print}\p{Space}]""")
+private val ESPACES_REPETES = Regex("""\s+""")
 
 /**
  * Dispatch original pour les sources natives kotatsu-parsers-redo.

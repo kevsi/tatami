@@ -81,13 +81,20 @@ class CookieRejoueTest {
     }
 
     @Test
-    fun `l UA de challenge existe bien sur le contexte du client`() {
+    fun `l UA de challenge existe bien sur le client qui sert les images`() {
         val contexte = EngineContext()
         contexte.userAgentOverride = "Agent/Test"
         // Avant le correctif, un contexte neuf ignorait ce champ : l'UA posé
         // après un challenge ne servait à rien côté scripté.
         assertEquals("Agent/Test", contexte.userAgentOverride)
-        kotlin.test.assertSame(contexte.httpClient, clientPourImage(contexte))
+        // `assertSame` sur `httpClient` ne tient plus depuis que
+        // `clientPourImage` rend `clientImage` — un client dérivé, sans
+        // redirections (`RedirectionImageTest`). L'identité du client même
+        // n'a jamais été la garantie : ce qui compte, c'est que le client rendu
+        // soit **dérivé** du principal, donc qu'il porte le même magasin de
+        // cookies et les mêmes intercepteurs.
+        kotlin.test.assertNotSame(contexte.httpClient, clientPourImage(contexte))
+        kotlin.test.assertSame(contexte.cookieJar, clientPourImage(contexte).cookieJar)
     }
 
     @Test

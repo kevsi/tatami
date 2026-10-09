@@ -68,6 +68,43 @@ class EngineContext : MangaLoaderContext() {
         .writeTimeout(20, TimeUnit.SECONDS)
         .build()
 
+    /**
+     * Client dédié au téléchargement d'une image, **sans redirections**.
+     *
+     * Le défaut mesuré le 2026-10-09 (audit) : `validerUrlImage`
+     * (`Server.kt:619-653`) contrôle le schéma et l'hôte de l'URL **reçue**, mais
+     * le client utilisé ensuite ne fixait ni `followRedirects` ni
+     * `followSslRedirects` — donc gardait les défauts d'OkHttp, qui suivent une
+     * redirection sans réexaminer l'hôte.
+     *
+     * Scénario : un script `.js` — donc du code que le moteur exécute — renvoie
+     * `https://cdn.exemple.test/p/1.jpg`, ce serveur répond
+     * `302 Location: http://127.0.0.1:8080/…`, et les octets d'une interface
+     * d'administration locale reviennent en base64 pour finir dans un `.cbz`.
+     * C'est exactement ce que `FetchImageReseauLocalTest` prétend protéger, et ce
+     * que la règle d'ADR 0010 annonce.
+     *
+     * Décision (validée le 2026-10-09) : **désactiver les redirections** plutôt
+     * que les réexaminer. Un intercepteur qui rejouerait `validerUrlImage` à
+     * chaque saut serait plus fidèle au comportement des sites, mais il ajoute du
+     * code — donc de la surface — pour un bénéfice qui ne se voit que sur les
+     * sources qui bougent beaucoup. Sans redirection, l'hôte validé **est** celui
+     * qui est joint : la garantie devient simple à énoncer et à vérifier.
+     *
+     * Coût assumé : une source dont les images passent par une redirection ne
+     * chargera plus ses pages. Ça se verra à l'écran, et ça se mesure.
+     *
+     * Pourquoi un second client et pas le même avec un réglage en plus : ce
+     * client porte le magasin de cookies, les intercepteurs de déchiffrement et
+     * l'UA. `httpClient` sert aussi le HTML des parsers, où une redirection vers
+     * une autre page du même site est normale. Partager le réglage casserait ces
+     * chemins pour une garantie qui ne les concerne pas.
+     */
+    val clientImage: OkHttpClient = httpClient.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
+
     @Suppress("OVERRIDE_DEPRECATION")
     override suspend fun evaluateJs(script: String): String? = evaluateJs("", script, 0L)
 

@@ -699,7 +699,7 @@ private fun validerUrlImage(url: String, quoi: String): String {
  * le client rendu est bien celui du contexte — donc que le cookie et l'UA
  * survivent au chemin scripté.
  */
-internal fun clientPourImage(context: EngineContext): OkHttpClient = context.httpClient
+internal fun clientPourImage(context: EngineContext): OkHttpClient = context.clientImage
 
 /** Télécharge une image déjà validée et la rend en base64, comme le contrat l'attend. */
 private fun telechargerImage(url: String, quoi: String, context: EngineContext): JSONObject =

@@ -2,6 +2,7 @@ package org.tatami.engine
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import javax.script.Invocable
@@ -46,6 +47,34 @@ class ScriptedParser(
     }
 
     private val engine by lazy { creerMoteur() }
+
+    /**
+     * Un seul appel à la fois sur ce script.
+     *
+     * Le défaut mesuré le 2026-10-09 : une instance de moteur Nashorn **unique**
+     * par script, invoquée depuis `Dispatchers.Default` — donc depuis n'importe
+     * quel thread du pool non borné (`Server.kt:329`). Nashorn n'est pas
+     * thread-safe. Le chemin **natif** règle ce problème : `ParserPool.avec`
+     * prend un `Mutex` par source (`ParserPool.kt:111`), et un test le prouve
+     * (`ParserPoolPaginationTest.kt:84`). Le chemin scripté n'avait rien.
+     *
+     * Scénario, **déjà présent en production** : ouvrir une série d'une source
+     * scriptée lance deux appels sur le même `ScriptedParser`. `page.tsx:2397`
+     * appelle `details` en `void …then(…)`, `page.tsx:2422` attend `chapters`, et
+     * `chapters` appelle **aussi** `getDetails` (`Server.kt:560`). Deux
+     * `invokeMethod("SOURCE", "getDetails", …)` simultanés sur le même moteur.
+     *
+     * Résultat indéfini : valeur fausse, `ConcurrentModificationException`, ou
+     * moteur corrompu. Le symptôme se limite à une source scriptée, donc il est
+     * lu comme « cette source marche par fois » — exactement le genre de panne
+     * qu'on attribue au site et pas au client.
+     *
+     * Coût : les requêtes d'un même script se sérialisent. Accepté, parce que
+     * c'est ce que fait déjà le chemin natif pour la même raison, et parce que le
+     * défaut est silencieux. Un débit par source est préservé ailleurs
+     * (`RECENT_INTERVALLE_MS`).
+     */
+    private val verrou = kotlinx.coroutines.sync.Mutex()
 
     /** Métadonnées lues depuis `SOURCE` après évaluation du script. */
     val meta: ScriptedSourceMeta by lazy { lireMeta() }
@@ -136,29 +165,31 @@ class ScriptedParser(
      * requise.
      */
     private suspend inline fun <reified T> appellerAsync(methode: String, vararg args: Any?): T =
-        runInterruptible(Dispatchers.Default) {
-            val resultat = try {
-                engine.invokeMethod(
-                    (engine as javax.script.ScriptEngine).get("SOURCE"),
-                    methode,
-                    *args,
-                )
-            } catch (e: javax.script.ScriptException) {
-                throw ScriptedSourceException("Erreur dans SOURCE.$methode() : ${e.message}", e)
-            } catch (e: NoSuchMethodException) {
-                throw ScriptedSourceException("SOURCE.$methode() introuvable", e)
-            }
+        verrou.withLock {
+            runInterruptible(Dispatchers.Default) {
+                val resultat = try {
+                    engine.invokeMethod(
+                        (engine as javax.script.ScriptEngine).get("SOURCE"),
+                        methode,
+                        *args,
+                    )
+                } catch (e: javax.script.ScriptException) {
+                    throw ScriptedSourceException("Erreur dans SOURCE.$methode() : ${e.message}", e)
+                } catch (e: NoSuchMethodException) {
+                    throw ScriptedSourceException("SOURCE.$methode() introuvable", e)
+                }
 
-            // Le script retourne une String (JSON sérialisé) ou un objet JS.
-            // On normalise en String puis on parse selon T.
-            val json = resultat?.toString()
-                ?: throw ScriptedSourceException("SOURCE.$methode() a retourné null")
+                // Le script retourne une String (JSON sérialisé) ou un objet JS.
+                // On normalise en String puis on parse selon T.
+                val json = resultat?.toString()
+                    ?: throw ScriptedSourceException("SOURCE.$methode() a retourné null")
 
-            @Suppress("UNCHECKED_CAST")
-            when (T::class) {
-                JSONArray::class -> JSONArray(json) as T
-                JSONObject::class -> JSONObject(json) as T
-                else -> throw ScriptedSourceException("Type de retour non supporté : ${T::class}")
+                @Suppress("UNCHECKED_CAST")
+                when (T::class) {
+                    JSONArray::class -> JSONArray(json) as T
+                    JSONObject::class -> JSONObject(json) as T
+                    else -> throw ScriptedSourceException("Type de retour non supporté : ${T::class}")
+                }
             }
         }
 }

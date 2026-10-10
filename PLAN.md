@@ -688,6 +688,49 @@ que le silence.
 moteur a journalisé le retrait), liste blanche revenue à 1372 noms sans le nom
 ajouté, thème remis à `sombre`.
 
+### Journal 2026-10-10 — « chapitre suivant » arrivait au milieu du chapitre
+
+Signalé par l'utilisateur : en lisant un webtoon, changer de chapitre le
+renvoyait sur une page du webtoon au lieu du début.
+
+**Reproduction mesurée** (SCANVF, One Piece) :
+
+| | `scrollTop` | 1ʳᵉ image visible | compteur |
+|---|---|---|---|
+| chapitre 900 ouvert | 0 px | page 0 | 7 / 17 |
+| …descendu à la page 13 | 12 000 px | page 13 | 12 / 17 |
+| **« chapitre suivant »** | **10 335 px** | **page 13** | **1 / 15** |
+
+Le compteur annonçait « 1 / 15 » pendant que la bande montrait la page 13 — le
+piège inverse de celui déjà consigné : ici c'est l'*indicateur* qui a raison et
+l'*écran* qui a tort.
+
+**Cause** : `.webtoon` est un conteneur de défilement **conservé** d'un chapitre
+à l'autre. `aPositionner.current = index > 0 ? index : null` mettait `null`
+pour `index === 0`, et l'effet de positionnement sortait alors sur
+`if (i === null) return` — **personne ne remontait**, donc le `scrollTop` du
+chapitre précédent survivait.
+
+**Ce qui rendait le correctif évident à manquer** : `bandeVirtualisable` ne
+devient vrai qu'à la première image **décodée**. Positionner en attendant cette
+image est un **circularity** : le décalage périmé plaçait le viewport hors de la
+fenêtre de téléchargement, donc **1 image admise sur 10, 0 décodée en 90 s**,
+donc pas de `bandeVirtualisable`, donc pas de repositionnement. Sans casser le
+circularity, ajouter le cas `index === 0` n'aurait rien donné — c'est le premier
+essai, mesuré vert et faux.
+
+**Correctif** : la première page ne dépend d'aucune dimension — le haut est le
+haut. Elle se positionne donc immédiatement, hors de la porte
+`bandeVirtualisable`.
+
+**Non-régression vérifiée sur la branche `i > 0`** : ouvert un chapitre, sauté
+à la page 8 par le formulaire « Page » → `scrollTop` 7 411 px, **page 7**
+affichée, compteur « 8 / 17 ». La branche offset n'a pas bougé.
+
+**Portes** : `pnpm typecheck` 0 · `pnpm lint` 0 erreur, 4 warnings connus ·
+`pnpm hooks:check` vert · `pnpm build` OK · `pnpm test` 84 (inchangé, aucune
+fonction pure touchée). Rust non touché sur ce tour.
+
 ### Journal 2026-10-10 — option A appliquée : une source nouvelle est activée d'elle-même
 
 **Mini-plan.** 1. Test rouge de la réconciliation. 2. Prouver que la porte mord,

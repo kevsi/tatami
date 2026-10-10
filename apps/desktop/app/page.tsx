@@ -3247,7 +3247,17 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
     const index = Math.max(0, Math.min(pages.length - 1, startIndex));
     // La bande devra se placer sur cette page : le mode paginé n'en a pas
     // besoin, le webtoon si (c'est un conteneur de défilement).
-    aPositionner.current = index > 0 ? index : null;
+    //
+    // **`index` et non `index > 0 ? index : null`.** Le `null` disait « ne
+    // positionne pas », ce qui est faux : `.webtoon` est un conteneur de
+    // défilement **conservé** d'un chapitre à l'autre, donc ne rien faire
+    // laisse le `scrollTop` du chapitre précédent. Mesuré le 2026-10-10 :
+    // lu à la page 13, « chapitre suivant » ouvrait la page 13 du chapitre
+    // suivant — le compteur annonçait « 1 / 15 », la bande montrait la 13.
+    // L'effet qui consomme ce ref attend déjà `offsets[i]` et
+    // `bandeVirtualisable`, donc passer par `0` ne défile pas trop tôt : c'est
+    // exactement la protection que le `null` avait fait perdre.
+    aPositionner.current = index;
     // Les premières pages sont admises d'emblée : le quota est une **file**, pas
   // une privation — sans cela le lecteur attendrait le premier crédit, et aucun
   // téléchargement en cours ne pourrait le libérer. C'est ici qu'on connaît
@@ -3808,6 +3818,22 @@ useEffect(() => {
   if (!reader) return;
   const i = aPositionner.current;
   if (i === null) return;
+  const root = stripRef.current;
+  if (!root) return;
+  // **La première page n'attend rien.** `bandeVirtualisable` ne devient vrai
+  // qu'à la première image DÉCODÉE, et attendre cette image pour revenir en
+  // haut est un circularity : mesuré le 2026-10-10, après « chapitre suivant »
+  // le viewport restait à 12 000 px, hors du quota de téléchargement — donc
+  // 1 seule image admise sur 10, 0 décodée en 90 s, donc jamais de
+  // `bandeVirtualisable`, donc jamais de repli. Un offset nul n'a pas d'« état
+  // pas prêt » : le haut est le haut, quelles que soient les hauteurs.
+  if (i === 0) {
+    aPositionner.current = null;
+    root.scrollTo({ top: 0 });
+    dernierScroll.current = 0;
+    setScrollY(0);
+    return;
+  }
   // On ne positionne QUE dans le bandeau virtualisé : c'est le seul cas où
   // l'offset calculé est juste. En flux normal, `offsetTop` d'une image dépend
   // de la hauteur réelle de celles qui la précèdent, connue seulement une fois
@@ -3815,8 +3841,6 @@ useEffect(() => {
   if (!bandeVirtualisable) return;
   const haut = offsets[i];
   if (haut === undefined) return;
-  const root = stripRef.current;
-  if (!root) return;
   aPositionner.current = null;
   const y = Math.max(0, haut - 8);
   root.scrollTo({ top: y });

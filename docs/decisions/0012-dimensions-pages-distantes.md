@@ -1,7 +1,7 @@
 # 0012 — Dimensions des pages distantes
 
 - Date : 2026-10-10
-- Statut : acceptée
+- Statut : **remplacée par 0014** (option B : le lecteur mesure au chargement)
 
 ## Contexte
 

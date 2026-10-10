@@ -90,15 +90,14 @@
 Ajouté le 2026-10-08 (pilotage de l'application réelle — les défauts 1, 2, 3 et 4
 de la section précédente sont **corrigés et mesurés** ; ce qui suit est le reste) :
 
-1. **Les dimensions des pages distantes** — seul point non résolu du défaut 2.
-   `MangaPage` du parser ne porte que `url` et `preview` : il n'existe donc
-   aucune dimension à émettre sans télécharger chaque image. Décision humaine
-   attendue : (a) le moteur fait une requête de dimension par image (coûteuse en
-   bande passante, mais `image.rs` sait déjà lire les en-têtes JPEG/PNG/WebP) ;
-   (b) le lecteur mesure `naturalHeight` des images déjà chargées (aucune
-   requête, mais la virtualisation ne peut pas s'activer tant que toutes les
-   pages ne sont pas connues — donc elle resterait désactivée). En l'état :
-   **22 pages montées** au lieu d'une fenêtre glissante.
+1. ~~**Les dimensions des pages distantes**~~ — **tranché le 2026-10-10**
+   (ADR `0014`, qui remplace `0012`) : option **B**, le lecteur mesure au
+   chargement. C'est **déjà en place** (`noterDims` + `bandeVirtualisableEst`).
+   Mesuré sur un chapitre froid : la bande passe en pages positionnées dès la
+   première image décodée (2,1 s) et **12 pages restent montées** au lieu de
+   toutes. La mesure « 22 pages montées » du 2026-10-08 est **périmée**.
+   Reste à vérifier : la bande saute de 9 003 à 47 478 px à cet instant, donc la
+   position de défilement doit être recalée sur un chapitre froid.
 2. **`analyser_page` est rejoué même quand la page est en cache** — 51 s payés
    pour afficher des blocs déjà en base. Le cache n'est consulté que par
    `traduire_page`.

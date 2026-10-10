@@ -18,7 +18,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::json;
-use tauri::{AppHandle, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
 
 use super::supervisor::Supervisor;
 
@@ -77,6 +79,16 @@ pub async fn open_challenge(
         tracing::info!(
             "challenge: fenêtre DÉJÀ ouverte, réutilisation label={label} (rien n'est recréé)"
         );
+        // **Re-naviguer, ne pas se contenter de focaliser.** La page peut
+        // être restée sur une vérification en boucle (mesuré sur TOONFR) :
+        // refocaliser la même fenêtre ne relance rien, l'utilisateur croit
+        // « réessayer » alors que la page n'a pas bougé. `navigate` recharge
+        // l'URL du challenge dans la fenêtre existante — plus simple que
+        // fermer/recréer, dont `close()` est asynchrone et laisse le label
+        // en place (cf. le commentaire d'origine).
+        existing
+            .navigate(parsed.clone())
+            .map_err(|e| format!("re-navigation vers l'URL de vérification : {e}"))?;
         let _ = existing.set_focus();
         return Ok(());
     }
@@ -92,6 +104,24 @@ pub async fn open_challenge(
     builder
         .build()
         .map_err(|e| format!("ouverture de la fenêtre : {e}"))?;
+    let fenetre = app
+        .get_webview_window(&label)
+        .ok_or("la fenêtre de vérification vient de se fermer")?;
+    // Croix rouge : l'utilisateur renonce. Rien ne suivait cette fermeture —
+    // l'état restait « vérification en cours » (boutons désactivés, fenêtre
+    // fantôme dans le bandeau). On le dit au front, qui remet son
+    // indicateur à zéro ; le bandeau, lui, reste : la source est toujours
+    // bloquée et « Résoudre la vérification » ouvre une fenêtre neuve.
+    let app_pour_fermeture = app.clone();
+    let source_pour_fermeture = source.clone();
+    fenetre.on_window_event(move |evenement| {
+        if let WindowEvent::CloseRequested { .. } = evenement {
+            let _ = app_pour_fermeture.emit(
+                "challenge://fermee",
+                serde_json::json!({ "source": source_pour_fermeture }),
+            );
+        }
+    });
     Ok(())
 }
 

@@ -1525,6 +1525,15 @@ export default function Home() {
           );
       },
     );
+    // Fenêtre de vérification fermée par la croix rouge. Rien, côté app, ne
+    // suivait cette fermeture : l'état restait « vérification en cours » —
+    // boutons désactivés alors que la fenêtre n'existe plus, donc plus
+    // aucun moyen de la rouvrir depuis ce bandeau. On remet l'indicateur à
+    // zéro. Le bandeau, lui, reste : la source est toujours bloquée, et
+    // « Résoudre la vérification » ouvre une fenêtre neuve.
+    const unlistenFermee = listen<{ source: string }>('challenge://fermee', () => {
+      setChallengeBusy(false);
+    });
     // Tâche 3.2 — le flux « mises à jour ». Le planificateur émet
     // `maj://nouveaux-chapitres` avec un bilan de passe, et **rien** quand il
     // n'y a rien de neuf : on ne se réabonne donc pas pour rien.
@@ -1582,6 +1591,7 @@ export default function Home() {
     return () => {
       unlisten.then((off) => off()).catch(() => {});
       unlistenVerif.then((off) => off()).catch(() => {});
+      unlistenFermee.then((off) => off()).catch(() => {});
       unlistenMaj.then((off) => off()).catch(() => {});
     };
     // Montage uniquement : rejouer cet effet à chaque changement de

@@ -1036,15 +1036,15 @@ private suspend fun dispatchNatif(
         JSONObject().put("ok", true)
     }
 
-    "health" -> {
-        if (!p.has("source")) {
-            JSONObject().put("ok", true).put("engineVersion", ENGINE_VERSION)
-        } else {
-            val sourceName = p.getString("source")
-            parseSource(sourceName) // lève si inconnue
-            JSONObject().put("source", sourceName).put("reachable", true)
-        }
-    }
+    // `health` ne rend que la forme globale. La forme par source
+    // (`source` + `reachable`) a été retirée le 2026-10-10 : elle répondait
+    // `reachable: true` après une simple validation d'enum — aucun appel
+    // réseau, donc un champ qui affirmait une disponibilité sans la mesurer.
+    // La méthode n'a par ailleurs aucun appelant dans l'application (aucune
+    // commande du cœur ne l'expose, l'écran « état des sources » lit les
+    // erreurs réelles). Un `source` reçu en paramètre est désormais ignoré au
+    // lieu d'être validé pour une réponse qui ne mesurait rien.
+    "health" -> JSONObject().put("ok", true).put("engineVersion", ENGINE_VERSION)
 
     "shutdown" -> JSONObject().put("ok", true)
 

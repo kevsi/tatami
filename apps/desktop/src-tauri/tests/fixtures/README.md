@@ -90,6 +90,30 @@ concordante ne testerait rien.
 3. Chaque méthode de l'`enum` `method` du schéma a **au moins une** réponse
    enregistrée. C'est la porte qui aurait attrapé `latest` et `fetchCover`,
    implémentées et utilisées mais absentes du contrat jusqu'au 2026-10-04.
+4. Le nombre de réponses enregistrées est **stable** (15). Le changer est
+   normal — nouvelle méthode, nouveau cas mesuré — mais il faut le faire exprès
+   et le noter ici.
+
+## Une fixture retirée : `14-health-source` (2026-10-10)
+
+`health` rendait **deux** formes : `{ok, engineVersion}` pour le moteur global,
+et `{source, reachable}` pour une source précise. La seconde a été retirée avec
+sa fixture, pour deux raisons mesurées :
+
+- elle répondait `reachable: true` après une simple validation d'enum
+  (`Server.kt`, `parseSource`), **sans aucune requête réseau** — un champ qui
+  affirmait une disponibilité sans la mesurer ;
+- la méthode n'a **aucun appelant** dans l'application : aucune des commandes
+  du cœur ne l'expose, et l'écran « état des sources » lit les erreurs réelles
+  capturées pendant l'usage (`noteHealth`, en `localStorage`).
+
+Le contrat ne décrit plus qu'une forme, `additionalProperties: false`, et le
+contre-exemple de `le_validateur_refuse_les_reponses_invalides` prouve que
+l'ancienne forme est désormais **refusée** — sinon le changement de contrat
+n'aurait rien changé.
+
+C'est la seule fixture supprimée depuis le retrait du sidecar vision : le compte
+passe de 16 à 15.
 
 ## Régénérer
 

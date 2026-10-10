@@ -174,9 +174,13 @@ impl std::fmt::Display for Violation {
 /// qu'elle couvre tout schéma de résultat du contrat — sinon un nouveau `$defs`
 /// serait ajouté sans être appliqué, en silence.
 ///
-/// Elle ne contient plus que `health` : les cinq entrées du sidecar vision
+/// Elle ne contient que `health` : les cinq entrées du sidecar vision
 /// (`capabilities`, `detect`, `ocr`, `inpaint`, `loadPack`) ont été retirées
 /// avec le sous-système de traduction, et leurs `$defs` avec elles.
+/// `healthResult` était jusqu'au 2026-10-10 **exempté** de la porte, parce que
+/// `health` rendait deux formes ; il n'en rend plus qu'une depuis le retrait de
+/// la branche par source, donc l'exemption a disparu avec elle — le schéma est
+/// désormais appliqué comme les autres.
 const RESULTATS_PAR_METHODE: &[(&str, &str)] = &[("health", "healthResult")];
 
 /// Le nom du `$defs` qui décrit le `result` d'une méthode, s'il existe.
@@ -455,12 +459,13 @@ fn chaque_schema_de_resultat_est_attribue_a_une_methode() {
     let defs = s.get("$defs").and_then(Value::as_object).expect("$defs");
     // Un `$defs` nommé `*Result` est, par convention du contrat, la forme d'un
     // `result`. Le nom est donc la convention ; la porte la vérifie.
-    // `healthResult` est volontairement absent de la table : `health` a deux
-    // formes et le sidecar vision comme le moteur rendent des choses
-    // différentes — c'est le `$defs` le plus partagé, donc le moins fiable.
+    // Aucune exemption ici depuis le 2026-10-10 : `healthResult` était exclu
+    // parce que `health` rendait deux formes et que le moteur comme le sidecar
+    // vision en rendaient d'autres. Une seule forme reste, donc il est attribué
+    // comme les autres.
     let resultats: Vec<&str> = defs
         .keys()
-        .filter(|k| k.ends_with("Result") && *k != "healthResult")
+        .filter(|k| k.ends_with("Result"))
         .map(String::as_str)
         .collect();
     let attribues: BTreeSet<&str> = RESULTATS_PAR_METHODE.iter().map(|(_, d)| *d).collect();
@@ -515,13 +520,15 @@ fn le_nombre_de_reponses_enregistrees_est_stable() {
     // pour une méthode orpheline… non : elle le ferait échouer. Mais une fixture
     // perdue doit se voir tout de suite, pas dans six mois.
     let n = charger().len();
-    // 16 réponses du moteur de sources. Elles ont été 22 jusqu'au
+    // 15 réponses du moteur de sources. Elles ont été 22 jusqu'au
     // 2026-10-08 : les 6 du sidecar vision (`hello`, `loadPack`, `detect`,
     // `ocr`, `inpaint`, `capabilities`) sont parties avec le sous-système de
     // traduction, dont la trace reste dans l'historique git.
+    // Puis 16 jusqu'au 2026-10-10 : `14-health-source.json` est partie avec la
+    // forme par source de `health` (voir fixtures/README.md).
     assert_eq!(
-        n, 16,
-        "16 réponses enregistrées attendues (moteur de sources). Changer ce nombre est \
+        n, 15,
+        "15 réponses enregistrées attendues (moteur de sources). Changer ce nombre est \
          normal (nouvelle méthode, nouveau cas mesuré) — mais il faut le faire exprès et le \
          noter dans fixtures/README.md."
     );
@@ -578,11 +585,26 @@ fn le_validateur_refuse_les_reponses_invalides() {
             "`timeoutMs` nul, sous le minimum",
             serde_json::json!({ "id": "x", "method": "hello", "params": {}, "timeoutMs": 0 }),
         ),
-        // Contre-exemple de la forme de `result` : `health` a **deux** branches
-        // exclusives, et mélanger leurs champs doit être refusé par chacune.
-        // Sans ce cas, la validation du `result` pourrait ne rien voir.
+        // Contre-exemples de la forme de `result` de `health`. La branche par
+        // source (`source` + `reachable`) a été retirée le 2026-10-10 : elle
+        // répondait `reachable: true` sans aucune requête. Sans ces cas, la
+        // validation du `result` pourrait ne rien voir, et
+        // `additionalProperties: false` serait une décoration.
+        //
+        // Le PREMIER est celui qui compte : c'est la réponse que le moteur
+        // rendait avant le retrait, et que le nouveau schéma doit refuser.
+        // S'il était encore accepté, le changement de contrat n'aurait rien
+        // changé du tout.
         (
-            "health : branches `ok` et `source` mélangées",
+            "health : la forme par source, retirée le 2026-10-10",
+            serde_json::json!({
+                "id": "x", "ok": true,
+                "result": { "source": "MANGADEX", "reachable": true }
+            }),
+        ),
+        // Et le mélange des deux formes, refusé par les deux bornes.
+        (
+            "health : forme globale et forme par source mélangées",
             serde_json::json!({
                 "id": "x", "ok": true,
                 "result": { "ok": true, "source": "X", "reachable": true }

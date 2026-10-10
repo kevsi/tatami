@@ -28,9 +28,9 @@
       ]
     },
     "errorCode": {
+      "description": "Codes stables émis par le moteur ou par le coeur (Rust). `CANCELLED` est émis par le coeur quand un sidecar qui meurt emporte les requêtes en vol (supervisor.rs, `fail_pending`). `SOURCE_UNAVAILABLE` a été retiré le 2026-10-10 : aucune des trois couches ne l'émettait, et un hôte injoignable arrive en `INTERNAL` avec `UnknownHostException` dans le message — ce que l'interface sait déjà lire (`erreur.domaine`).",
       "type": "string",
       "enum": [
-        "SOURCE_UNAVAILABLE",
         "CHALLENGE_REQUIRED",
         "AUTH_REQUIRED",
         "PARSE_ERROR",
@@ -161,27 +161,14 @@
       "additionalProperties": true
     },
     "healthResult": {
-      "description": "Forme de `result` pour `health`. Cette méthode a **deux formes réelles**, et une seule était décrite jusqu'au 2026-10-07 : `health` global (`ok` + version du moteur) et `health` par source (`source` + `reachable`, sans `ok`). La seconde était invisible parce qu'aucun `$defs` de résultat n'était appliqué par la validation — le trou que le contre-exemple « score de détection au-dessus du maximum » a fait apparaître. Les deux branches sont exclusives : chacune interdit les champs de l'autre.",
-      "oneOf": [
-        {
-          "type": "object",
-          "required": ["ok"],
-          "properties": {
-            "ok": { "type": "boolean" },
-            "engineVersion": { "type": "string" }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": ["source", "reachable"],
-          "properties": {
-            "source": { "type": "string" },
-            "reachable": { "type": "boolean" }
-          },
-          "additionalProperties": false
-        }
-      ]
+      "description": "Forme de `result` pour `health`. Cette méthode n'a qu'UNE forme : `ok` + version du moteur. La seconde forme (`source` + `reachable`) a été retirée le 2026-10-10 : elle répondait `reachable: true` après une simple validation d'enum, sans aucune requête réseau — un champ qui affirmait une disponibilité sans la mesurer. Cette méthode n'a par ailleurs aucun appelant dans l'application : aucune des commandes du coeur ne l'expose, et l'écran « état des sources » est alimenté par les erreurs réelles capturées pendant l'usage. Un champ qu'on ne mesure pas et que personne ne lit est un champ qui ment deux fois.",
+      "type": "object",
+      "required": ["ok"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "engineVersion": { "type": "string" }
+      },
+      "additionalProperties": false
     }
   }
 }

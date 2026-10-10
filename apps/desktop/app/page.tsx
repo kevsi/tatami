@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { bandeVirtualisableEst, decalageAncrage, fenetreBande, hauteurRendueMesuree, hauteursBande, largeurImagePx, offsetsBande, pasDeDefilement } from '../lib/bande-hauteurs';
+import { refusMoteur } from '../lib/scripts-refuses';
 import { lireListeSources } from '../lib/prefs-tolérantes';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
@@ -1160,6 +1161,15 @@ export default function Home() {
   const [importPersoEnCours, setImportPersoEnCours] = useState(false);
   // Identifiant de la source en attente de confirmation. `null` = aucune.
   const [aSupprimerPerso, setASupprimerPerso] = useState<string | null>(null);
+  // Scripts que le moteur a REFUSÉS, relayés de son stderr par `scripts_refuses`.
+  // `sourcesPerso` est la liste de la **base** : un fichier y entre dès
+  // l'import, même si le moteur n'a jamais pu l'évaluer. C'est ce qui rendait
+  // l'écran menteur avant que cette liste existe.
+  const [scriptsRefuses, setScriptsRefuses] = useState<string[]>([]);
+  const refusParFichier = useMemo(
+    () => refusMoteur(scriptsRefuses),
+    [scriptsRefuses],
+  );
   // S2.3 — les sources importées **telles que le moteur les voit** (donc
   // filtrables par langue, avec leur nom lisible), à distinguer de
   // `sourcesPerso` qui est la liste de la base, celle des réglages.
@@ -1717,6 +1727,9 @@ export default function Home() {
     invoke<CustomSource[]>('lister_sources_custom')
       .then((cs) => setSourcesPerso(cs ?? []))
       .catch(() => setSourcesPerso([]));
+    invoke<string[]>('scripts_refuses')
+      .then((r) => setScriptsRefuses(r ?? []))
+      .catch(() => setScriptsRefuses([]));
   }, []);
 
   // Le panneau n'existe que dans la vue Réglages : on charge à son ouverture.
@@ -4458,12 +4471,26 @@ useEffect(() => {
             <p className="muted">{t('sources.perso.vide')}</p>
           ) : (
             <ul className="custom-list">
-              {sourcesPerso.map((cs) => (
+              {sourcesPerso.map((cs) => {
+                // Le moteur nomme le fichier par son nom de fichier, l'import
+                // enregistre le nom sans extension : on tente les deux, sinon un
+                // refus passerait inaperçu — exactement le défaut corrigé ici.
+                const refus =
+                  refusParFichier.get(`${cs.name}.js`) ?? refusParFichier.get(cs.name);
+                return (
                 <li className="custom-row" key={cs.id}>
                   <span className="custom-row-name">{cs.name}</span>
                   <span className="muted">
                     {new Date(cs.installed_at).toLocaleDateString(langue)}
                   </span>
+                  {/* Un refus n'est pas une hypothèse : c'est la parole du
+                      moteur, sur son canal stderr. Sans raison lisible, un
+                      fichier cassé ressemble à un fichier chargé. */}
+                  {refus ? (
+                    <span className="custom-row-refus" role="status">
+                      {t('sources.perso.refuse', { raison: refus })}
+                    </span>
+                  ) : null}
                   {aSupprimerPerso === cs.id ? (
                     <>
                       <button
@@ -4491,7 +4518,8 @@ useEffect(() => {
                     </button>
                   )}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </section>

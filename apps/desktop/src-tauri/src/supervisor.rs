@@ -136,6 +136,47 @@ pub struct Supervisor {
     /// User-agent du moteur, appris au `hello`. La fenêtre de résolution
     /// anti-bot s'en sert pour que la clearance soit émise pour le même agent.
     user_agent: Arc<Mutex<String>>,
+    /// Derniers avertissements du moteur sur les **scripts personalized**.
+    ///
+    /// Le moteur écrit sur stderr, jamais sur stdout (cf. contrat) : sans ce
+    /// tampon, un script refusé — `Missing close quote` — ne laissait qu'une
+    /// ligne de journal, invisible de l'utilisateur. Mesuré le 2026-10-10 :
+    /// `mangadexFr.js` était refusé à chaque chargement et l'interface
+    /// n'affichait que le fichier, comme s'il était chargé.
+    ///
+    /// Volontairement borné : le moteur réémet à chaque rechargement, donc une
+    /// liste non bornée grossirait sans fin.
+    avertissements: Arc<Mutex<Vec<String>>>,
+}
+
+/// Nombre d'avertissements de script conservés. Assez pour voir tous les
+/// scripts d'un dossier, assez peu pour que la liste reste lisible.
+const MAX_AVERTISSEMENTS: usize = 20;
+
+/// Retient une ligne de stderr si elle annonce un refus de script.
+///
+/// Le marqueur est le préfixe `AVERTISSEMENT:` que le moteur écrit pour un
+/// script ignoré, et non le seul mot `WARN` : java.util émet des `WARN` à
+/// profusion, et les retenir viderait le tampon en quelques secondes.
+///
+/// Renvoie `true` si la ligne a été retenue, pour que l'appelant puisse ne
+/// journaliser qu'à cet endroit — la ligne doit apparaître dans le journal
+/// **et** dans l'interface, jamais l'une sans l'autre.
+fn retenir_avertissement(ligne: &str, liste: &mut Vec<String>) -> bool {
+    if !ligne.contains("AVERTISSEMENT:") || !ligne.contains("Script ignoré") {
+        return false;
+    }
+    // La ligne java.util est préfixée d'un horodatage et d'une pile d'appels ;
+    // on ne garde que la partie utile, qui commence au marqueur.
+    let utile = ligne
+        .split_once("AVERTISSEMENT:")
+        .map(|(_, suite)| format!("AVERTISSEMENT: {suite}"))
+        .unwrap_or_else(|| ligne.to_string());
+    if liste.len() >= MAX_AVERTISSEMENTS {
+        liste.remove(0);
+    }
+    liste.push(utile);
+    true
 }
 
 impl Supervisor {
@@ -147,7 +188,14 @@ impl Supervisor {
             child: Arc::new(Mutex::new(None)),
             engine_proc: Arc::new(Mutex::new(None)),
             user_agent: Arc::new(Mutex::new(String::new())),
+            avertissements: Arc::new(Mutex::new(Vec::new())),
         })
+    }
+
+    /// Derniers avertissements du moteur sur les scripts personalized, du plus
+    /// ancien au plus récent.
+    pub async fn avertissements(&self) -> Vec<String> {
+        self.avertissements.lock().await.clone()
     }
 
     /// Démarre le moteur, exige un `hello`, puis **l'arrête**. Renvoie son verdict.
@@ -304,9 +352,18 @@ impl Supervisor {
         let stderr = child.stderr.take().ok_or("stderr indisponible")?;
 
         // stderr du moteur => logs (jamais sur stdout, cf. contrat).
+        // Le NIVEAU ne change pas : le journal reste la source de diagnostic
+        // du moteur, et le faire passer en `debug` supprimerait des warnings
+        // java.util utiles. Seule une copie bornée est retenue en plus, pour
+        // que l'interface puisse dire « ce fichier n'est pas chargé ».
+        let avertissements = self.avertissements.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
+                {
+                    let mut garde = avertissements.lock().await;
+                    retenir_avertissement(&line, &mut garde);
+                }
                 tracing::warn!(target: "sidecar", "{line}");
             }
         });
@@ -549,6 +606,62 @@ pub fn dev_sidecar_paths() -> (PathBuf, String) {
 mod tests {
     use super::*;
     use tokio::process::Command as TestCommand;
+
+    /// Un avertissement du moteur sur un script doit être **retenu** : c'est la
+    /// seule trace qui dit à l'utilisateur que son fichier n'est pas chargé.
+    /// Mesuré le 2026-10-10 : `mangadexFr.js` était refusé à chaque
+    /// chargement, le journal Rust le voyait, et l'interface n'en disait rien.
+    #[test]
+    fn un_avertissement_de_script_est_retenu() {
+        let mut v = Vec::new();
+        let retenu = retenir_avertissement(
+            "AVERTISSEMENT: Script ignoré (mangadexFr.js) : <eval>:20:36 Missing close quote",
+            &mut v,
+        );
+        assert!(retenu, "la ligne d'avertissement doit être retenue");
+        assert_eq!(v.len(), 1);
+        assert!(v[0].contains("mangadexFr.js"), "on garde le nom du fichier");
+        assert!(v[0].contains("Missing close quote"), "on garde la raison");
+    }
+
+    /// Les lignes de log ordinaires ne doivent pas remplir la liste : elle est
+    /// bornée, et un WARN de java.util fills la viderait en quelques secondes.
+    #[test]
+    fn les_lignes_hors_avertissement_ne_sont_pas_retenues() {
+        let mut v = Vec::new();
+        for ligne in [
+            "Oct 10, 2026 10:13:13 AM org.tatami.engine.ScriptedSourceLoader charger",
+            "SLF4J: Failed to load class org.slf4j.impl.StaticLoggerBinder",
+            "WARN: un simple mot WARN ne veut pas dire script refusé",
+        ] {
+            assert!(
+                !retenir_avertissement(ligne, &mut v),
+                "ne doit pas être retenue : {ligne}"
+            );
+        }
+        assert!(v.is_empty(), "la liste doit rester vide, elle vaut {v:?}");
+    }
+
+    /// La liste est **bornée** : le moteur peut refuser un script à chaque
+    /// rechargement, et une liste non bornée grossirait sans fin.
+    #[test]
+    fn la_liste_des_avertissements_est_bornee() {
+        let mut v = Vec::new();
+        for i in 0..(MAX_AVERTISSEMENTS + 5) {
+            retenir_avertissement(
+                &format!("AVERTISSEMENT: Script ignoré (source{i}.js) : boom"),
+                &mut v,
+            );
+        }
+        assert_eq!(v.len(), MAX_AVERTISSEMENTS, "la liste doit être bornée");
+        // Le plus récent est conservé, le plus ancien est lâché.
+        assert!(
+            v.last()
+                .unwrap()
+                .contains(&format!("source{}", MAX_AVERTISSEMENTS + 4)),
+            "on garde le plus récent"
+        );
+    }
 
     /// Un processus quelconque qui ne lit jamais son stdin : il ne sert qu'à
     /// obtenir une vraie poignée `ChildStdin`, donc un vrai canal. On n'émule

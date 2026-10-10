@@ -2875,6 +2875,28 @@ button:disabled {
   color: var(--text-3);
 }
 
+/* Refus du moteur, dans la rangée du script.
+ *
+ * Réutilise les jetons `danger-*` déjà définis pour les deux thèmes : un
+ * nouveau jeu de couleurs serait une valeur de plus à garder juste, et
+ * l'avertissement est le même objet qu'une erreur d'import — un script que le
+ * moteur n'a pas pu charger.
+ *
+ * `flex: 1` pour que la rangée reste alignée quand un seul script est refusé :
+ * sans lui, le message vole la place du nom et les ✕ se décalent. */
+.custom-row-refus {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  background: var(--danger-fond);
+  border: 1px solid var(--danger-bordure);
+  color: var(--danger-texte);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Badge « Perso » dans la grille du catalogue.
    Variante de .badge : même forme, couleur d'accent pour se distinguer
    du badge de langue (text-3/surface-2) et du dead-badge (danger). */

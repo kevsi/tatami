@@ -243,6 +243,12 @@ const FR = {
   'sources.perso.erreur': 'Import impossible : {raison}',
   'sources.perso.suppr.ok': 'Source « {nom} » supprimée.',
   'sources.perso.suppr.erreur': 'Suppression impossible : {raison}',
+  // Un fichier importé n'est pas un fichier CHARGÉ : le moteur peut refuser de
+  // l'évaluer, et il ne l'annonce que sur stderr. Sans cette ligne, l'écran
+  // montrait un script cassé comme s'il fonctionnait (mesuré le 2026-10-10).
+  // On n'affiche que le refus : une mention « chargée » sur chaque rangée serait
+  // de la décoration, et surtout une clé que rien ne prouve.
+  'sources.perso.refuse': 'Refusée par le moteur : {raison}',
   // Confirmation en deux temps : le bouton de suppression s'intègre par
   // « Confirmer », avec une issue (Annuler). Pas de dialogue natif : la
   // capability ne vaut que `dialog:allow-open` (AGENTS.md §7, strict minimum).
@@ -692,6 +698,11 @@ const EN: Record<Cle, string> = {
   'sources.perso.erreur': 'Import failed: {raison}',
   'sources.perso.suppr.ok': 'Source "{nom}" deleted.',
   'sources.perso.suppr.erreur': 'Deletion failed: {raison}',
+  // An imported file is not a LOADED file: the engine can refuse to evaluate it,
+  // and it only says so on stderr. Without this line the settings screen showed
+  // a broken script as if it worked (measured 2026-10-10). Only the refusal is
+  // shown: a "loaded" note on every row would be decoration.
+  'sources.perso.refuse': 'Refused by the engine: {raison}',
   'sources.perso.confirmer': 'Delete {nom}',
   'sources.perso.annuler': 'Cancel',
   'catalogue.perso': 'Custom',

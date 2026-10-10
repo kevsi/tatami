@@ -222,6 +222,7 @@ fn main() {
             commands::chapters,
             commands::pages,
             commands::list_sources,
+            commands::scripts_refuses,
             commands::latest,
             commands::filter_options,
             commands::est_base_en_memoire,

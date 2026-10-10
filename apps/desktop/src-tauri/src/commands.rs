@@ -112,6 +112,19 @@ pub async fn list_sources(sup: State<'_, Arc<Supervisor>>) -> Result<serde_json:
     Ok(r)
 }
 
+/// Scripts que le moteur a **refusés** de charger, avec la raison qu'il a
+/// donnée sur stderr.
+///
+/// Le moteur écrit ses refus sur stderr, jamais sur stdout (cf. contrat), donc
+/// `list_sources` ne peut pas les porter : l'interface ne pouvait que montrer
+/// le fichier, comme s'il était chargé. Mesuré le 2026-10-10 — `mangadexFr.js`
+/// refusé à chaque démarrage (`Missing close quote`), invisible pour
+/// l'utilisateur alors que le fichier était là depuis trois jours.
+#[tauri::command]
+pub async fn scripts_refuses(sup: State<'_, Arc<Supervisor>>) -> Result<Vec<String>, String> {
+    Ok(sup.avertissements().await)
+}
+
 /// Classification demandée pour une liste de titres.
 ///
 /// `None` = **aucun filtre** (option « Toutes » des réglages). Une chaîne vide

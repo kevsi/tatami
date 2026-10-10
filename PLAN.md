@@ -1413,3 +1413,25 @@ le 2026-10-09) : la bande réserve 43 650 px pour 33 015 px de contenu réel, so
 repli. Navigation par page : **3 sauts justes sur 4**, écart maximal **1 page**.
 Le vide est en bas de la bande, donc invisible à l'écran ; l'écart d'une page
 vient de la page la plus visible au cadre, pas d'une page erronée.
+
+### Journal 2026-10-10 — suppression de pack.rs orphelin
+
+**Tâche** : supprimer `apps/desktop/src-tauri/src/pack.rs`, orphelin depuis le
+commit `20e4287` (retrait du sous-système de traduction, ADR 0013).
+
+**Constat** : le fichier n'était pas tracké par git — il avait déjà été supprimé
+par `20e4287` (confirmé par `git log --all -- pack.rs` : `D apps/desktop/src-tauri/src/pack.rs`).
+Il subsistait comme fichier non suivi dans le répertoire de travail, probablement
+laissé par un outil. Aucune déclaration `mod pack` dans `lib.rs` ni dans aucun
+autre `.rs` (grep confirmé).
+
+**Actions** :
+1. `grep pack apps/desktop/src-tauri/src/**/*.rs` → seul `pack.rs` lui-même
+   et deux commentaires dans `main.rs`/`supervisor.rs`. Aucune référence active.
+2. `Remove-Item apps/desktop/src-tauri/src/pack.rs` → suppression physique.
+3. Pas de commit nécessaire : git avait déjà supprimé ce fichier en `20e4287`.
+
+**Portes** (depuis `apps/desktop/src-tauri`) :
+- `cargo fmt --check` : EXIT 0
+- `cargo clippy --all-targets -- -D warnings` : EXIT 0, `Finished dev profile`
+- `cargo test -j 2` : EXIT 0, tous les tests passent (doc-tests inclus)

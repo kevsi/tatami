@@ -688,7 +688,58 @@ que le silence.
 moteur a journalisé le retrait), liste blanche revenue à 1372 noms sans le nom
 ajouté, thème remis à `sombre`.
 
-### Journal 2026-10-10 — flèches haut/bas : de 546 px à 85 px par appui
+### Journal 2026-10-10 — saut de page 3 à 48 : la page ne s'affichait pas
+
+Signalé par l'utilisateur : « quand je passe de la page 3 à la page 48, la page
+ne s'affiche pas ; je dois revenir à la page 3 et continuer la lecture pour
+qu'elle s'affiche ».
+
+**Cause, lue dans le code** : `admis` est l'ensemble des pages qui ont le droit
+de recevoir un `src` — donc de demander une image. Il ne grandissait **que** sur
+un `onLoad` : les 6 premières pages à l'ouverture, puis une par décodage (le
+quota est une **file** contre le `Mutex` du moteur, cf. `page.tsx` l. 1291).
+
+Un **saut** cassait ce mécanisme. La fenêtre de montage se déplace sur la cible,
+mais aucune de ses pages n'est admise : pas de `src` → pas de chargement → pas
+de `onLoad` → plus aucune admission. **La bande reste vierge**, et seule une
+remontée manuelle débloque.
+
+C'est le **même circularity** que le changement de chapitre corrigé quelques
+heures plus tôt : une garantie qui ne se déclenche que sur un événement qui ne
+peut pas arriver n'en est pas une.
+
+**Correctif** : `lib/quota-pages.ts` — `admettreLaCible(prec, cible)`, appelée
+depuis les trois branches de `scrollToPage`. `admettreUne` est **déplacée** dans
+le même module : écrite à côté du lecteur, aucune porte ne pouvait la vérifier
+(même leçon que `bande-hauteurs.ts`).
+
+Le quota reste une file : admettre la cible ne vide pas le mécanisme, et un test
+vérifie que la page suivante entre quand même.
+
+**Preuve rouge** : neutraliser `admettreLaCible` fait échouer
+`un saut admet la page demandée` **et**
+`un saut puis la lecture normale continuent d’admettre` — la file ne se remplit
+plus, ce qui est le défaut décrit par l'utilisateur.
+
+**Portes** : `pnpm test` 92 · `typecheck` 0 · `lint` 0 erreur, 4 warnings connus ·
+`hooks` vert · `build` OK.
+
+**Ce qui n'est PAS mesuré** : pas de vérification sur l'application réelle, et
+c'est un manque que j'assume ici. Ton `tauri dev` n'expose pas le port CDP 9224,
+et lancer une seconde instance échoue sur un conflit de profil WebView2
+(HRESULT 0x8007139F). Le lien de causalité est donc **établi par le code et par
+une preuve rouge**, pas par une mesure du geste.
+
+**Pour lever ce manque, une ligne** dans le shell qui lance `tauri dev` :
+
+```powershell
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9224'
+pnpm tauri dev
+```
+
+Avec ça, je rejoue le saut 3 → 48 et je mesure `scrollTop`, la page visible et
+les `admis` avant/après — la même preuve que pour les deux défauts précédents.
+
 
 Signalé par l'utilisateur : « le défilement par flèches haut et bas fait encore
 des sauts, je préfère que ça défoule progressivement, sans saut, comme CDisplayEx ».

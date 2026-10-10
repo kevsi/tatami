@@ -6,6 +6,7 @@ import { listen } from '@tauri-apps/api/event';
 import { bandeVirtualisableEst, decalageAncrage, fenetreBande, hauteurRendueMesuree, hauteursBande, largeurImagePx, offsetsBande, pasDeDefilement } from '../lib/bande-hauteurs';
 import { refusMoteur } from '../lib/scripts-refuses';
 import { reconcilierListeBlanche } from '../lib/liste-blanche';
+import { admettreLaCible, admettreUne } from '../lib/quota-pages';
 import { lireListeSources } from '../lib/prefs-tolérantes';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
@@ -3579,6 +3580,14 @@ function scrollToPage(i: number) {
   if (root && haut !== undefined) {
     root.scrollTo({ top: Math.max(0, haut - 8), behavior: 'smooth' });
     setReader((r) => (r ? { ...r, index: cible } : r));
+    // **La page demandée entre dans le quota.** Mesuré le 2026-10-10 : sans
+    // cette ligne, un saut de la page 3 à la page 48 n'affichait rien. La
+    // fenêtre de montage se déplaçait sur la cible, mais `admis` ne contenait
+    // que les premières pages — donc pas de `src`, donc pas de chargement,
+    // donc pas de `onLoad`, donc plus aucune admission. La bande restait
+    // vierge, et seule une remontée manuelle à la page 3 débloquait la
+    // lecture. Même circularity que le changement de chapitre corrigé plus tôt.
+    setAdmis((prec) => admettreLaCible(prec, cible));
     // Second passage, **exact**. `offsets` est bâti sur des hauteurs encore
     // partielles (les pages après la fenêtre ne sont pas mesurées), donc
     // l'atterrissage ci-dessus peut être décalé d'une page — mesuré le
@@ -3597,10 +3606,14 @@ function scrollToPage(i: number) {
       stripImages.current[cible]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 0);
     setReader((r) => (r ? { ...r, index: cible } : r));
+    // Même raison qu'au-dessus : hors virtualisation, la page visée doit être
+    // admise pour que son image arrive.
+    setAdmis((prec) => admettreLaCible(prec, cible));
   } else {
     // Fallback sans bande rendue : positionne l'état, la bande se replace
     // à son effet suivant via `bandeVirtualisable`.
     setReader((r) => (r ? { ...r, index: cible } : r));
+    setAdmis((prec) => admettreLaCible(prec, cible));
   }
 }
 
@@ -3743,11 +3756,10 @@ const FENETRE_TELECHARGEMENT = 6;
  *  Le crédit se libère au `onLoad` **et à l'`onError`** : une page que la
  *  source ne sert pas ne se décodera jamais, donc elle ne rendrait jamais sa
  *  place et le lecteur se viderait de plus en plus.
+ *
+ *  La règle vit dans `lib/quota-pages.ts` : ici, aucune porte ne pouvait la
+ *  vérifier (même leçon que pour `bande-hauteurs.ts`).
  */
-function admettreUne(prec: number[], fenetre: readonly number[]): number[] {
-  const manque = fenetre.filter((i) => !prec.includes(i));
-  return manque.length === 0 ? prec : [...prec, manque[0]];
-}
 
 // La largeur du conteneur décide de la hauteur affichée : il faut la mesurer,
 // sinon la première bande est dimensionnée sur une largeur nulle.

@@ -1155,6 +1155,10 @@ changement, le 404 restait muet et rien n'aurait permis de distinguer un
 problème de données d'un problème d'accès — ce dernier demande justement de
 regarder si l'API répond, et c'est en ayant le refus documenté qu'on s'y est
 mis.
+
+> **Périmètre, 2026-10-10 — suivi externe (AniList/MAL/Shikimori/Kitsu) et synchronisation cross-device retirés du périmètre v1** (ADR 0015). Aucun code n'existait pour ces fonctionnalités. Reportés en v1.1.
+>
+> Note : aucune mention de ces fonctionnalités n'existe dans les sections de tâches de PLAN.md (la seule occurrence de `kitsu.io` est dans un tableau de test réseau, ligne 1120). L'ADR documente la décision de périmètre sans modification de tâches existantes.
 ### Correctif 2026-10-09 — le lecteur dit qu'une page n'est pas servie
 
 **Ce qui est corrigé.** Le lecteur affichait une `<img>` cassée, sans message,

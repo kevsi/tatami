@@ -2,6 +2,23 @@
 
 ## État actuel (2026-10-06)
 
+> **Périmètre, 2026-10-10 — la traduction de manga est retirée du produit**
+> (ADR `docs/decisions/0013-traduction-retiree.md`, qui remplace les ADR 0007,
+> 0008 et 0011). La chaîne T1→T4 a été **retirée du code** : ni modules Rust, ni
+> commandes Tauri, ni fichiers Kotlin de vision, ni méthodes dans
+> `contract/protocol.json`, ni tables SQLite (`page_translations` et `blocks`
+> sont supprimées par une migration).
+>
+> Ce qui suit décrit donc un **historique**, pas une feuille de route. Les items
+> 21 à 69 et « Phase T4 livrée » disent ce qui **a été fait puis retiré** ; ils
+> ne sont plus des tâches. Les documents `docs/spike-traduction.md`,
+> `docs/notes/licences-traduction.md` et les ADR 0007/0008/0011 sont **conservés**
+> comme measurements de référence.
+>
+> Attention à ne pas confondre avec l'**i18n de l'interface**, qui est bien vivant
+> : `pnpm i18n:check` interdit toute clé morte, et le lecteur reste traduit en
+> français et en anglais.
+
 ### Terminé ✅
 
 1. **Mode webtoon uniquement** — suppression complète du mode "page" dans le lecteur.
@@ -89,9 +106,10 @@ de la section précédente sont **corrigés et mesurés** ; ce qui suit est le r
    « CERTAIN IT IS CRAZY » devient « CERTAINS C'EST CRAZY ». Aucun garde ne filtre
    une reconnaissance douteuse — le `confidence` vaut 1 partout, donc il ne peut
    rien servir de seuil.
-4. **Écran pour saisir la clé de traduction** — le repli local étant coupé et le
-   quota Gemini gratuit étant de 20 pages par jour, il manque l'écran qui permet
-   de configurer le fournisseur. C'est la dette 3 de la section précédente.
+4. ~~**Écran pour saisir la clé de traduction**~~ — **sans objet depuis le
+   2026-10-10.** La traduction de manga est retirée du produit (ADR 0013) : la
+   commande `definir_cle_gemini` n'existe plus, donc cet écran n'aurait rien à
+   configurer. Ne pas le faire.
 5. **`listSources` à 10 s** au démarrage à froid (défaut 5 ci-dessus).
 6. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
 7. **Retirer la liste blanche S2** de `main.rs:387-393` : les trois commandes sont maintenant

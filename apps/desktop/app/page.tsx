@@ -387,12 +387,24 @@ type Progress = {
  *  le chapitre dans la liste. `chapterIndex` est un rang au moment de la lecture
  *  — une source qui réordonne sa liste le rendrait faux — donc il ne sert qu'à
  *  afficher un numéro, jamais à adresser le chapitre. */
+/** **snake_case, parce que c'est ce que le cœur sérialise.** `HistoryEntry`
+ *  porte un `#[derive(Serialize)]` **sans** `rename_all`, donc ses champs
+ *  sortent en `chapter_url`, `page_index`… et non en camelCase. Mesuré le
+ *  2026-10-09 : le type était déclaré en camelCase, donc `chapterUrl` valait
+ *  `undefined`, `repriseUtile` renvoyait `false`, et le marqueur comme le bouton
+ *  « reprendre » **n'apparaissaient jamais** — pour une raison invisible à
+ *  `tsc`, qui ne vérifie pas ce que le cœur sérialise réellement.
+ *
+ *  Corollaire : tout `invoke<Type>` est une **affirmation**, pas une conversion
+ *  vérifiée. Le garde qui l'empêche de mentir est `check-type-ipc.mjs`
+ *  (`pnpm ipc:check`), et le test Rust `les_champs_de_history_entry_sont_snake_case`.
+ */
 type Progression = {
-  chapterUrl: string | null;
-  chapterTitle: string | null;
-  chapterIndex: number;
-  pageIndex: number;
-  pageCount: number;
+  chapter_url: string | null;
+  chapter_title: string | null;
+  chapter_index: number;
+  page_index: number;
+  page_count: number;
 };
 
 /** La reprise est-elle assez complète pour être proposée ?
@@ -402,7 +414,7 @@ type Progression = {
  *  la fiche. Proposer « reprendre » sans chapitre enverrait vers une liste
  *  complète sans savoir où aller : c'est pire que rien. */
 function repriseUtile(p: Progression | null): p is Progression {
-  return !!p && !!p.chapterUrl;
+  return !!p && !!p.chapter_url;
 }
 
 const PAGE = 24;
@@ -5126,12 +5138,12 @@ if (reader) {
           <button
             className="btn btn-primary reprendre"
             onClick={() => {
-              const c = chapters.find((x) => x.url === progression.chapterUrl);
+              const c = chapters.find((x) => x.url === progression.chapter_url);
               if (c) void openReader(c);
             }}
           >
-            {progression.chapterTitle
-              ? t('fiche.reprendre.chapitre', { chapitre: progression.chapterTitle })
+            {progression.chapter_title
+              ? t('fiche.reprendre.chapitre', { chapitre: progression.chapter_title })
               : t('fiche.reprendre')}
           </button>
         )}
@@ -5310,7 +5322,7 @@ if (reader) {
               // dans le DOM (une sonde peut le vérifier), et `aria-current`
               // le rend annonçable par un lecteur d'écran. La classe, elle,
               // ne sert qu'au style.
-              const courant = !!progression?.chapterUrl && c.url === progression.chapterUrl;
+              const courant = !!progression?.chapter_url && c.url === progression.chapter_url;
               return (
                 <div
                   className={`chapter-cell${on ? ' on' : ''}${courant ? ' courant' : ''}`}
@@ -5351,10 +5363,10 @@ if (reader) {
                           reprendre, pas seulement quel chapitre. */}
                       {courant && (
                         <span className="chapter-ici">
-                          {progression && repriseUtile(progression) && progression.pageCount > 0
+                          {progression && repriseUtile(progression) && progression.page_count > 0
                             ? t('libelle.chapitre.en.cours', {
-                                page: progression.pageIndex + 1,
-                                total: progression.pageCount,
+                                page: progression.page_index + 1,
+                                total: progression.page_count,
                               })
                             : t('libelle.chapitre.ici')}
                         </span>

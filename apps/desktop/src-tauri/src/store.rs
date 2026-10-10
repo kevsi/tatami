@@ -1358,7 +1358,6 @@ mod tests {
         nettoyer(&path);
     }
 
-    #[test]
     /// La reprise existe en base mais n'était jamais relue.
     ///
     /// Mesuré le 2026-10-09 : `save_progress` écrit `chapter_url`,
@@ -2014,5 +2013,60 @@ mod tests {
         s.remove_custom_source("test-src").unwrap(); // deuxième fois : sans erreur
         assert!(s.list_custom_sources().unwrap().is_empty());
         nettoyer(&path);
+    }
+
+    /// **Le format de `HistoryEntry` sur le fil est un contrat, pas un détail.**
+    ///
+    /// Mesuré le 2026-10-09 : `HistoryEntry` ne porte qu'un `#[derive(Serialize)]`
+    /// sans `rename_all`, donc serde envoie les champs **tels qu'ils sont écrits**
+    /// — `chapter_url`, `page_index` — et non en camelCase. Le type équivalent de
+    /// l'interface était déclaré en camelCase : `progression.chapterUrl` valait
+    /// `undefined`, et ni le marqueur de chapitre courant ni le bouton
+    /// « reprendre » n'apparaissaient. `tsc` est resté vert : un
+    /// `invoke<Type>` est une **affirmation**, que rien ne vérifie.
+    ///
+    /// Ce test fige les noms **émis**, du côté qui les émet. Le pendant côté
+    /// interface est `pnpm ipc:check` (`check-type-ipc.mjs`), qui lit ce fichier :
+    /// les deux moitiés se contrôlent mutuellement, donc ajouter un champ d'un
+    /// seul côté échoue quelque part — cf. AGENTS.md §14, « une constante partagée
+    /// entre deux langages a besoin d'un test qui lit l'autre fichier ».
+    #[test]
+    fn les_champs_de_history_entry_sont_en_snake_case() {
+        let entree = HistoryEntry {
+            source: "SRC".into(),
+            manga_url: "/m".into(),
+            title: "T".into(),
+            cover_url: None,
+            cover_token: None,
+            content_rating: Some("SAFE".into()),
+            chapter_url: Some("/c".into()),
+            chapter_title: Some("Chapitre 2".into()),
+            chapter_index: 1,
+            page_index: 0,
+            page_count: 63,
+            read_at: 0,
+        };
+        let v = serde_json::to_value(&entree).expect("serialisation");
+        let obj = v.as_object().expect("objet");
+        let mut noms: Vec<&str> = obj.keys().map(String::as_str).collect();
+        noms.sort_unstable();
+        assert_eq!(
+            noms,
+            vec![
+                "chapter_index",
+                "chapter_title",
+                "chapter_url",
+                "content_rating",
+                "cover_token",
+                "cover_url",
+                "manga_url",
+                "page_count",
+                "page_index",
+                "read_at",
+                "source",
+                "title",
+            ],
+            "les noms émis par le cœur ont changé : `pnpm ipc:check` va accuser le type TypeScript"
+        );
     }
 }

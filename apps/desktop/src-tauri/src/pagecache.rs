@@ -374,11 +374,33 @@ pub async fn serve_page(
     page: &PageRef,
     token: &str,
 ) -> Result<(Vec<u8>, String), String> {
+    // Sonde de temps, 2026-10-10. Mesuré côté navigateur : **10,4 s** entre
+    // l'émission d'une requête et sa première réponse, alors que le moteur étale
+    // ses requêtes de 800 ms en 800 ms et devrait répondre à la première en
+    // ~800 ms. Il restait donc ~8 s **non localisés**. Plutôt que de deviner
+    // (quatre fausses conclusions dans cette session), on horloge les étapes :
+    //
+    //   entree  → relecture du cache
+    //   cache   → appel moteur (`sup.request`)
+    //   moteur  → décodage base64 + écriture du cache disque
+    //   ecriture→ rendu de la réponse à la webview
+    //
+    // Les quatre lignes se lisent dans l'ordre dans `tatami.log`. Elles sont
+    // permanentes : une sonde qu'on retire après s'emploi est une sonde qui
+    // manque au prochain problème.
+    let debut = std::time::Instant::now();
+    let court = &token[..token.len().min(8)];
+    tracing::info!("page entree {court}");
+
     // Un chapitre téléchargé se lit dans son `.cbz`, sans moteur ni réseau.
     if let PageRef::Local { cbz, entry } = page {
         return servir_local(cbz, *entry);
     }
     if let Some(bytes) = relire_cache(cache, token) {
+        tracing::info!(
+            "page {court} servie du cache en {} ms",
+            debut.elapsed().as_millis()
+        );
         let ct = crate::image::detect(&bytes)
             .map(|k| k.content_type().to_string())
             .unwrap_or_else(|| "application/octet-stream".to_string());
@@ -407,12 +429,27 @@ pub async fn serve_page(
         PageRef::Local { .. } => unreachable!("traité ci-dessus"),
     };
 
+    tracing::info!(
+        "page {court} cache absente apres {} ms, appel moteur",
+        debut.elapsed().as_millis()
+    );
     let value = sup
         .request(methode, params, std::time::Duration::from_secs(120))
         .await
         .map_err(|e| format!("engine: {e}"))?;
+    tracing::info!(
+        "page {court} moteur a repondu en {} ms",
+        debut.elapsed().as_millis()
+    );
     let bytes = decoder(value, quoi)?;
-    ecrire_cache(cache, token, &bytes, quoi)
+    let r = ecrire_cache(cache, token, &bytes, quoi);
+    tracing::debug!(
+        "page {court} servie en {} ms ({} octets, cache ecrit={})",
+        debut.elapsed().as_millis(),
+        bytes.len(),
+        r.is_ok()
+    );
+    r
 }
 
 /// Extrait les octets base64 d'une réponse `fetchImage` / `fetchCover`.

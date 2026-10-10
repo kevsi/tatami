@@ -46,6 +46,31 @@ private fun scriptSansMethode(methodeManquante: String) = """
     };
 """.trimIndent()
 
+/**
+ * Script qui **restitue la page qu'il reçoit**, dans son `id`.
+ *
+ * Sans lui, un test de pagination ne prouve rien : un moteur qui redemande
+ * systématiquement la page 1 rendrait la même liste qu'un moteur correct, et
+ * l'assertion « la liste contient 1 élément » passerait dans les deux cas.
+ * C'est le défaut exact mesuré le 2026-10-10 sur `custom:aniverse` — 14 séries
+ * rendues 14 fois, parce que `14 / 24` valait 0 en division entière.
+ */
+private fun scriptRapportantLaPage(id: String) = """
+    var SOURCE = {
+        id: "$id", name: "Source Pagination", lang: "fr", baseUrl: "https://example.com",
+        getList: function(page, query) {
+            return JSON.stringify([{id: "p" + page, title: "Page " + page, coverUrl: "", url: "/manga/" + page}]);
+        },
+        getDetails: function(mangaUrl) {
+            return JSON.stringify({
+                title: "M", description: "D", coverUrl: "",
+                status: "ongoing", authors: [], tags: [], chapters: []
+            });
+        },
+        getPages: function(chapterUrl) { return JSON.stringify([]); }
+    };
+""".trimIndent()
+
 // ---------------------------------------------------------------------------
 // Tests HttpBridge
 // ---------------------------------------------------------------------------
@@ -254,6 +279,65 @@ class DispatchPersonnaliseeTest {
                 EngineContext(),
             )
             assertEquals(1, pages.getJSONArray("pages").length())
+        } finally {
+            dossier.deleteRecursively()
+        }
+    }
+
+    /**
+     * Un `offset` **aligné** doit continuer à demander la page suivante.
+     *
+     * Le correctif du doublon (« offset non aligné → liste vide ») aurait pu
+     * être écrit en cassant la pagination normale : ce test est le garde-fou
+     * qui l'interdit. Même famille que « un test qui ne vérifie que des refus
+     * ne prouve pas que le cas nominal marche ».
+     */
+    @Test
+    fun `un offset aligne demande la page suivante`() = runBlocking {
+        val dossier = Files.createTempDirectory("tatami-test-page-aligne").toFile()
+        try {
+            val loader = ScriptedSourceLoader(dossier, client)
+            loader.charger(
+                File(dossier, "pagination.js").also { it.writeText(scriptRapportantLaPage("pagination")) },
+            )
+            val r = dispatchCustom(
+                loader, SessionCache(), "custom:pagination", "latest",
+                JSONObject().put("query", "").put("offset", 24).put("limit", 24),
+                EngineContext(),
+            )
+            val liste = r.getJSONArray("list")
+            assertEquals(1, liste.length(), "la page 2 doit être demandée et rendue")
+            assertEquals("p2", liste.getJSONObject(0).getString("id"))
+        } finally {
+            dossier.deleteRecursively()
+        }
+    }
+
+    /**
+     * Un `offset` **non aligné** ne peut venir que d'une page incomplète.
+     *
+     * C'est le doublon mesuré sur `custom:aniverse` : 14 séries, `limit` 24,
+     * donc `offset=14` → `14 / 24 = 0` → page 1 → les 14 mêmes séries
+     * encore et encore, et l'avertissement « ne renvoie qu'une seule page »
+     * jamais allumé. Ce test rend une liste **vide** : il est le seul endroit
+     * où cette boucle s'arrête.
+     */
+    @Test
+    fun `un offset non aligne renvoie une liste vide`() = runBlocking {
+        val dossier = Files.createTempDirectory("tatami-test-page-non-aligne").toFile()
+        try {
+            val loader = ScriptedSourceLoader(dossier, client)
+            loader.charger(
+                File(dossier, "pagination.js").also { it.writeText(scriptRapportantLaPage("pagination")) },
+            )
+            val r = dispatchCustom(
+                loader, SessionCache(), "custom:pagination", "latest",
+                // La forme exacte relevée dans l'app : 14 elements deja lus,
+                // page de 24.
+                JSONObject().put("query", "").put("offset", 14).put("limit", 24),
+                EngineContext(),
+            )
+            assertEquals(0, r.getJSONArray("list").length(), "une page partielle n'a pas de page suivante")
         } finally {
             dossier.deleteRecursively()
         }

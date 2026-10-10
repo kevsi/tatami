@@ -513,7 +513,29 @@ internal suspend fun dispatchCustom(
     return when (method) {
         "search", "latest" -> {
             val query = p.optString("query", "")
-            val page = p.optInt("offset", 0) / maxOf(1, p.optInt("limit", 20)) + 1
+            val limit = maxOf(1, p.optInt("limit", 20))
+            val offset = p.optInt("offset", 0)
+            // Un `offset` qui n'est pas un multiple de `limit` ne peut venir
+            // que d'une page **incomplète** : la précédente a rendu moins
+            // d'éléments que demandé, donc la suivante n'existe pas.
+            //
+            // Mesuré le 2026-10-10 sur `custom:aniverse` : le site n'expose que
+            // 14 séries et `limit` vaut 24, donc l'interface rappelait
+            // `offset=14`. Or `14 / 24 = 0` en division entière → page 1 → les
+            // **14 mêmes séries** ajoutées à la grille, indéfiniment. La liste
+            // ne revenant jamais vide, l'avertissement « ne renvoie qu'une
+            // seule page » ne s'allumait pas non plus.
+            //
+            // On rend donc une liste vide : l'interface cesse d'ajouter et
+            // `onePageOnly` s'allume — le comportement prévu depuis le début.
+            //
+            // `dispatchNatif` n'est pas concerné : les sources natives
+            // reçoivent `offset` et fenêtrent elles-mêmes, il n'y a pas de
+            // conversion offset→page. La règle est donc propre au scripté.
+            if (offset > 0 && offset % limit != 0) {
+                return JSONObject().put("list", JSONArray())
+            }
+            val page = offset / limit + 1
             val arr = parser.getList(page, query)
             // Le script ne connaît pas l'identifiant de contrat qu'il reçoit à la
             // recherche. Or c'est l'interface qui le renvoie ensuite à `details`,

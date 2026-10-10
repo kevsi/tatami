@@ -526,6 +526,68 @@ demander de relever la liste avant de la détruire.
 **Portes** : aucune porte du dépôt n'a été touchée — cette session n'a modifié
 aucun code. `docs/smoke-test.md` et ce journal sont les seules écritures.
 
+### Journal 2026-10-10 — temps de chargement et de réception des données webtoons
+
+Exploration **par mesures**, sans une ligne de code applicatif modifié. Rapport
+complet et reproductible : `docs/rapport-temps-chargement-2026-10-10.md`
+(scripts dans `.mesures/smoke/`, hors dépôt : `synthese-temps.cjs`,
+`journal.cjs`, `temps-1` à `temps-9`).
+
+**Méthode** : le journal Rust est la source autoritative. La ligne
+`stdout recu id=<méthode>-<epoch_ms>-<n>` porte l'instant d'**envoi** dans son
+identifiant et l'horodatage de la ligne est l'**arrivée** — la différence est
+donc l'aller-retour complet. L'interface, elle, ne mesure que la réponse ; les
+deux sont rapportées séparément, jamais fusionnées.
+
+**Ce qui a été mesuré**
+
+| Chaîne | Valeur |
+|---|---|
+| Fenêtre existe (CDP répond) | **1 156 ms** |
+| Accueil utilisable — **sans** attendre le moteur | **2 609 ms** |
+| Grille des langues (« 1372 sources disponibles ») | **5 084 ms** |
+| `listSources` à froid | **2 883 ms** d'instanciation de parseurs, **aucun réseau** |
+| Source ouverte, 1ʳᵉ carte | **1 601 – 2 734 ms** |
+| Fiche, machine calme, 1ʳᵉ chapitre | **3 126 – 3 658 ms** |
+| Fiche, **pendant** la rafale de fond | **jusqu'à 12 305 ms** |
+| Lecteur, chapitre froid, 1ʳᵉ image **décodée** | **2 851 – 3 268 ms** |
+| Lecteur, fond saturé, 1ʳᵉ image décodée | **13 571 ms** |
+| Couverture à froid, 12ᵉ de la grille | **11 319 ms** (créneau ~720 ms) |
+
+**Le mécanisme, lu dans le code et non deviné** : `ParserPool.kt` tient **un
+`Mutex` par source** (l. 85, `withLock` l. 111), et `latest`, `search`,
+`chapters`, `details`, `pages`, `fetchImage` comme `fetchCover` passent tous par
+`avec(source)`. Preuve dans le journal : 6 images demandées en 11 ms d'écart,
+répondues à ~1 000 ms d'intervalle, chacune déclarant 4 700 → 9 814 ms. Sur 442
+images froides, **22 min des 59 min** de temps moteur ne sont que de l'attente.
+
+**Ce que ça change pour la suite** : le rapport `fetchImage` p10 → médiane est de
+**17,2×**. Ce n'est pas le réseau qui est lent, c'est la file. Le cache disque
+porte 4 039 images contre 442 réseau, pour une médiane de **1 ms** contre
+**3 698 ms**.
+
+**Deux leviers, aucun implémenté** (§2.9 impose de demander) : (1) sortir
+`fetchImage` / `fetchCover` du `Mutex` — ils ne consultent pas de `Paginator`,
+donc le motif du `Mutex` ne s'applique pas, **à condition de vérifier** que le
+`MangaLoaderContext` n'a pas d'état partagé qui l'interdirait ; (2) ne demander
+au fond que ce qui est visible.
+
+**Deux défauts de mesure rencontrés en route, consignés parce qu'ils coûtent
+cher** :
+
+- **Ma regex d'image ratait les jetons.** `page ([0-9a-f]+)` ne matche pas
+  `pa5a93fe` : les jetons commencent souvent par `p`. Elle en ratait **337 lignes
+  sur 4 481**, dont **234 « moteur a repondu »** — donc un biais **contre** les
+  images froides, invisible parce que le résultat rendu disait « aucune image »,
+  ce qui se lit comme « instantané ». Corrigée en `[0-9a-z]+`, toute l'analyse
+  refaite. Les tableaux du rapport totalisent bien 4 481.
+- **« 0 `fetchCover` en 150 s » n'était pas une file.** C'était
+  `<img loading="lazy">` : `PageRef::Couverture` n'est résolu que quand la
+  webview réclame le jeton. Je n'avais pas fait défiler — je mesurais une
+  absence de demande. Refait avec défilement : 0 → 12 couvertures, créneau
+  ~720 ms, latences 1 861 → 11 319 ms, et **1 seule** requête `chapters` sur la
+  fenêtre — donc le plancher est intrinsèque, pas de la contention.
+
 ### Journal 2026-10-09 — commit `9df864e` : correctifs lecteur webtoon (P0, P2, ADR 0012)
 
 **Tâches réalisées** : P0 (`loading` conditionnel), P2 (`scrollToPage` robuste + garde

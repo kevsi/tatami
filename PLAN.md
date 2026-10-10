@@ -588,6 +588,164 @@ cher** :
   ~720 ms, latences 1 861 → 11 319 ms, et **1 seule** requête `chapters` sur la
   fenêtre — donc le plancher est intrinsèque, pas de la contention.
 
+### Journal 2026-10-10 — D1 localisé : la liste blanche des sources ; et le refus de script rendu visible
+
+**Mini-plan (écrit avant de coder, 5 lignes).**
+1. Prouver par le chemin réel (`invoke('list_sources')`) où sont les sources perso.
+2. Si l'écart vient d'un comptage erroné, le dire et corriger le document — pas de code.
+3. Corriger le vrai défaut visible : un script refusé par le moteur doit l'être à l'écran.
+4. Rouge d'abord : le test qui prouve que l'avertissement du moteur est retenu.
+5. Vert, portes, journal, commit.
+
+**D1 est un VRAI défaut, reproduit.** J'ai conclu le contraire deux fois, et
+les deux fois à tort : un `invoke` rendait 1372, et je n'avais pas vérifié que
+le journal contenait aussi 1373. Il en contient **42 appels**.
+
+| Étape, mesurée | Moteur | Liste blanche | En-tête affiché |
+|---|---|---|---|
+| Avant dépôt | 1372 | 1372 | 1372 |
+| `autre-source.js` déposé, chargé par le moteur | **1373** | 1372 | **1372** |
+| **On ajoute le seul nom manquant à la liste** | 1373 | **1373** | **1373** |
+| Fichier retiré | 1372 | 1372 | 1372 |
+
+L'écart est **stable sur 8 relits espacés de 10 s** : ce n'est pas React en
+retard. La troisième ligne est le « second chemin qui doit réussir » — on ne
+change que le nom dans la liste, et l'écart disparaît. **Cause prouvée.**
+
+**Le mécanisme, lu dans le code** : l'en-tête affiche `visibleSources.length`,
+et `visibleSources` applique
+`enabled === null ? sources : sources.filter(s => enabled.includes(s.name))`.
+`enabled` vient de `localStorage['tatami.enabledSources']` — une **liste
+fermée** de 1372 noms, écrite par « Tout activer » et par le basculement d'une
+source.
+
+**Conséquence, plus large que les sources perso** : toute source apparue
+**après** l'enregistrement de la liste est filtrée en silence — un script
+importé, mais aussi une source neuve apportée par une mise à jour du
+catalogue. L'utilisateur a demandé « tout activer » et obtient « tout sauf ce
+qui est arrivé ensuite », sans un mot.
+
+**Ce que la correction ne peut pas être** : réconcilier en ajoutant les noms
+manquants au chargement. Une source **désactivée** par l'utilisateur est
+précisément un nom **absent** de la liste — la réconciliation la réactiverait.
+Il faut distinguer « absent parce que désactivé » de « absent parce que jamais
+vu », ce qui est un **changement de modèle de persistance**. §2.9 : décision
+d'architecture, donc **à trancher par l'humain, pas par l'agent**. Les options
+chiffrées sont dans `docs/rapport-smoke-test-2026-10-10.md`.
+
+**Le second défaut, lui, est corrigé dans ce journal** : les Réglages listaient
+`mangadexFr.js` exactement comme les deux scripts qui, eux, fonctionnaient.
+L'utilisateur n'avait aucun moyen de savoir que le sien ne chargeait pas.
+
+Le moteur écrit ses refus sur **stderr**, jamais sur stdout (cf. contrat), donc
+`list_sources` ne pouvait pas les porter, et le superviseur les jetait après
+journalisation. Chaîne tirée :
+
+1. `retenir_avertissement(ligne, &mut Vec<String>)` — fonction **pure** et
+   testée. Elle ne garde que `AVERTISSEMENT: … Script ignoré …`, la liste est
+   bornée à 20, et l'horodatage java.util est retiré. Le niveau de log **n'a
+   pas changé** : le journal reste la source de diagnostic du moteur.
+2. `Supervisor::avertissements()` + commande `scripts_refuses` → `Vec<String>`.
+3. `lib/scripts-refuses.ts` : `refusMoteur()` transforme les lignes en
+   `Map<fichier, raison>`. Fonction pure, 7 tests.
+4. Panneau Réglages : une puce rouge sur la rangée du script refusé, avec la
+   raison du moteur. Jetons `danger-*` **existants**, vérifiés dans les deux
+   thèmes ; aucune couleur inventée.
+
+**Portes** : `cargo fmt --check` 0 · `cargo clippy --all-targets -D warnings` 0 ·
+`cargo test` 186 (dont `aucune_commande_tauri_nest_morte`, qui prouve que
+`scripts_refuses` est bien appelée) · `pnpm typecheck` 0 · `pnpm lint` 0 erreur,
+4 warnings connus · `i18n:check` 345 = 345 · `hooks`, `chemins`, `pages`,
+`perso`, `ipc` verts · `pnpm test` 77.
+
+**Preuve rouge avant le correctif** : remplacer le marqueur `AVERTISSEMENT:` par
+`WARN` fait échouer **2** tests nommés — `un_avertissement_de_script_est_retenu`
+et `la_liste_des_avertissements_est_bornee`. C'est le **nom** des tests qui
+prouve que la porte vise la bonne chose.
+
+**Preuve sur l'application réelle** (pas sur le code) :
+
+| | sombre | clair |
+|---|---|---|
+| Lignes affichées | 3 | 3 |
+| Lignes **avec** refus | **1** — `mangadexFr` | **1** |
+| Texte rendu | `Refusée par le moteur : … <eval>:20:36 Missing close quote` | idem |
+| Largeur de la puce | 508 px (donc visible, pas de largeur nulle) | 508 px |
+| Couleur **calculée** du texte | `rgb(255,176,176)` — jeton sombre | `rgb(161,27,27)` — jeton **clair** |
+| Contraste sur fond **composé** | **8,16:1** | **6,37:1** — AA |
+
+La preuve qui distingue les deux cas : `scan-manga` et `mangadex-api` n'ont
+**aucune** puce. Une preuve qui ne les distingue pas ne prouverait rien.
+
+**Ce que ce correctif ne prouve pas** : l'absence de puce signifie « le moteur
+n'a rien signalé », pas « le moteur a chargé le fichier ». Un script importé
+après le démarrage que le `WatchService` n'aurait pas vu resterait sans puce. Je
+n'ai pas voulu inventer une heuristique « absent du registre → refusé » : elle
+produirait un faux positif dans la minute qui suit un import, ce qui est pire
+que le silence.
+
+**État de la machine, restauré et vérifié** : `autre-source.js` retiré (le
+moteur a journalisé le retrait), liste blanche revenue à 1372 noms sans le nom
+ajouté, thème remis à `sombre`.
+
+**§S.2 du smoke test reste donc en échec**, et sa cause est la liste blanche.
+Le contrôle lui-même était juste : il comparait bien ce qui est enregistré à ce
+qui est servi. Ce qui manquait, c'était le **troisième** terme — la liste
+blanche, qui n'est ni dans `list_sources` ni dans `list_disabled_sources`.
+Il faut la lire (`localStorage['tatami.enabledSources']`) avant de conclure
+qu'une source est perdue.
+
+**Le vrai défaut, corrigé dans le même mouvement** : les Réglages listaient
+`mangadexFr.js` exactement comme les deux scripts qui, eux, fonctionnaient.
+L'utilisateur n'avait aucun moyen de savoir que le sien ne chargeait pas.
+
+Le moteur écrit ses refus sur **stderr**, jamais sur stdout (cf. contrat), donc
+`list_sources` ne pouvait pas les porter, et le superviseur les jetait après
+journalisation. Chaîne tirée :
+
+1. `retenir_avertissement(ligne, &mut Vec<String>)` — fonction **pure** et
+   testée. Elle ne garde que `AVERTISSEMENT: … Script ignoré …`, la liste est
+   bornée à 20, et l'horodatage java.util est retiré. Le niveau de log **n'a
+   pas changé** : le journal reste la source de diagnostic du moteur.
+2. `Supervisor::avertissements()` + commande `scripts_refuses` → `Vec<String>`.
+3. `lib/scripts-refuses.ts` : `refusMoteur()` transforme les lignes en
+   `Map<fichier, raison>`. Fonction pure, 7 tests.
+4. Panneau Réglages : une puce rouge sur la rangée du script refusé, avec la
+   raison du moteur. Jetons `danger-*` **existants**, vérifiés dans les deux
+   thèmes ; aucune couleur inventée.
+
+**Portes** : `cargo fmt --check` 0 · `cargo clippy --all-targets -D warnings` 0 ·
+`cargo test` 186 (dont `aucune_commande_tauri_nest_morte`, qui prouve que
+`scripts_refuses` est bien appelée) · `pnpm typecheck` 0 · `pnpm lint` 0 erreur,
+4 warnings connus · `i18n:check` 345 = 345 · `hooks`, `chemins`, `pages`,
+`perso`, `ipc` verts · `pnpm test` 77.
+
+**Preuve rouge avant le correctif** : remplacer le marqueur `AVERTISSEMENT:` par
+`WARN` fait échouer **2** tests nommés — `un_avertissement_de_script_est_retenu`
+et `la_liste_des_avertissements_est_bornee`. C'est le **nom** des tests qui
+prouve que la porte vise la bonne chose.
+
+**Preuve sur l'application réelle** (pas sur le code) :
+
+| | sombre | clair |
+|---|---|---|
+| Lignes affichées | 3 | 3 |
+| Lignes **avec** refus | **1** — `mangadexFr` | **1** |
+| Texte rendu | `Refusée par le moteur : … <eval>:20:36 Missing close quote` | idem |
+| Largeur de la puce | 508 px (donc visible, pas de largeur nulle) | 508 px |
+| Couleur **calculée** du texte | `rgb(255,176,176)` — jeton sombre | `rgb(161,27,27)` — jeton **clair** |
+| Contraste sur fond **composé** | **8,16:1** | **6,37:1** — AA |
+
+La preuve qui distingue les deux cas : `scan-manga` et `mangadex-api` n'ont
+**aucune** puce. Une preuve qui ne les distingue pas ne prouverait rien.
+
+**Ce que ce correctif ne prouve pas** : l'absence de puce signifie « le moteur
+n'a rien signalé », pas « le moteur a chargé le fichier ». Un script importé
+après le démarrage que le `WatchService` n'aurait pas vu resterait sans puce. Je
+n'ai pas voulu inventer une heuristique « absent du registre → refusé » : elle
+produirait un faux positif dans la minute qui suit un import, ce qui est pire
+que le silence.
+
 ### Journal 2026-10-09 — commit `9df864e` : correctifs lecteur webtoon (P0, P2, ADR 0012)
 
 **Tâches réalisées** : P0 (`loading` conditionnel), P2 (`scrollToPage` robuste + garde

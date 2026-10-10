@@ -119,6 +119,8 @@ même page.
 ### D1 — Une source servie par le moteur peut rester invisible au catalogue
 
 **Gravité : moyenne.** C'est le critère de sortie de la phase S.
+**Cause trouvée et reproduite le 2026-10-10 — voir « D1, cause » plus bas.
+La lecture initiale était incomplète, pas fausse : il manquait un terme.**
 
 | Grandeur, **au même instant** (un seul `evaluate`) | Valeur |
 |---|---|
@@ -126,7 +128,6 @@ même page.
 | `list_sources` — sources `custom` | **3** (`custom:autre-source`, `custom:scan-manga`, `custom:mangadex-api`) |
 | Second appel, 2 s plus tard | **1373 / 3**, identique |
 | `list_disabled_sources` | **`[]`** |
-| Liste blanche `localStorage` | **absente** |
 | En-tête de l'écran | « **1372** sources disponibles » |
 | Tuiles de la vue « Sources personnalisées » | **2** — `custom:autre-source` absente |
 
@@ -141,18 +142,62 @@ fichier (`identiteDe`), donc le même `SOURCE.id` **ne crée pas** de collision 
 la règle d'ADR 0010 tient. Le retrait du fichier fait bien disparaître la source
 (`Source personnalisée retirée : autre-source`).
 
-**Ce qui ne l'est pas** : pourquoi la réponse du moteur est 1373 alors que le
-tableau `sources` de l'interface n'en compte que 1372. Les deux seuls filtres
-possibles — `sourcesOff` et `enabled` — ont été mesurés **vides**. Reste à lire
-`chargerSources()` et le routage `serve` du côté Rust.
+#### D1, cause — la liste blanche `tatami.enabledSources` (2026-10-10)
+
+Il manquait un troisième terme à la comparaison : ni `list_sources` ni
+`list_disabled_sources` ne décrivent la liste blanche, qui vit dans
+`localStorage`.
+
+| Étape, mesurée | Moteur | Liste blanche | En-tête affiché |
+|---|---|---|---|
+| Avant dépôt | 1372 | 1372 | 1372 |
+| `autre-source.js` déposé et chargé | **1373** | 1372 | **1372** |
+| **On ajoute le seul nom manquant à la liste** | 1373 | **1373** | **1373** |
+| Fichier retiré | 1372 | 1372 | 1372 |
+
+L'écart est stable sur 8 relits espacés de 10 s — ce n'est donc pas React en
+retard. La troisième ligne est la preuve du lien : on ne modifie que le nom
+dans la liste, et l'écart disparaît.
+
+**Mécanisme** : l'en-tête affiche `visibleSources.length`, qui applique
+`enabled === null ? sources : sources.filter(s => enabled.includes(s.name))`.
+`enabled` vient de `localStorage['tatami.enabledSources']`, une **liste fermée**
+écrite par « Tout activer » et par le basculement d'une source. Toute source
+apparue ensuite est donc filtrée en silence.
+
+**Portée plus large que les sources perso** : une source neuve apportée par une
+mise à jour du catalogue disparaît exactement de la même façon.
+
+#### Les deux options, chiffrées — décision humaine requise (§2.9)
+
+Réconcilier en ajoutant les noms manquants au chargement **ne marche pas** : une
+source désactivée par l'utilisateur est précisément un nom *absent* de la liste,
+la réconciliation la réactiverait. Il faut distinguer « absent parce que
+désactivé » de « absent parce que jamais vu ».
+
+| | Option A — deux clés | Option B — inverser le modèle |
+|---|---|---|
+| Données | `enabledSources` (inchangée) + `seenSources` | une seule clé, les **désactivées** |
+| Sens par défaut d'un nom absent | « activée » s'il n'a jamais été vu, sinon inchangé | « activée » |
+| « Tout activer » | écrit `enabledSources` = toutes | vide la liste des désactivées |
+| Migration | au 1ᵉʳ lancement, `seenSources` = `enabledSources` ∪ courante | reconstruire la liste des désactivées = `seenSources` − `enabledSources` — **impossible sans la clé A** |
+| Risque | une clé de plus à maintaining | migration destructive : sans A, les sources désactivées sont **réactivées** |
+
+**Recommandation : option A.** Elle préserve exactement l'intention de
+l'utilisateur, se migre sans perte, et réconcilie les deux sources du problème
+(script importé **et** mise à jour du catalogue). Son coût est une clé de plus.
 
 **Piège à ne pas rejouer** : deux relevés **non simultanés** ne se contredisent
 pas forcément. Trois passes ont comparé un `list_sources` à une capture prise
 autant de secondes plus tôt et ont conclu à une contradiction inexistante. La
 seule mesure qui tranche est celle où les trois grandeurs sont lues dans le même
-`evaluate`.
+`evaluate` — et il fallait en ajouter une **quatrième** : la liste blanche, qui
+n'est visible ni dans `list_sources` ni dans `list_disabled_sources`.
 
 ### D2 — Un script installé et cassé reste listé sans explication
+
+**CORRIGÉ le 2026-10-10.** La description ci-dessous est celle du constat ; la
+cause et le correctif sont dans le journal `PLAN.md` du 2026-10-10.
 
 `mangadexFr.js` est rejeté par le moteur :
 
@@ -164,6 +209,15 @@ AVERTISSEMENT: Script ignoré (mangadexFr.js) : Erreur d'évaluation du script :
 Il reste **listé dans Réglages → Sources personnalisées** et **absent du
 catalogue**. Le joueur voit une source qu'il a installée et qui n'existe nulle
 part, sans message. Le journal est la seule trace, et il n'est pas dans l'écran.
+
+**Pourquoi l'écran ne pouvait rien afficher** : le moteur écrit ses refus sur
+stderr, jamais sur stdout (cf. contrat) ; le superviseur les journalisait puis
+les jetait. `list_sources` ne pouvait donc pas les porter.
+
+**Correctif** : une copie bornée des refus est conservée par le superviseur,
+relayée par la commande `scripts_refuses`, et affichée sur la rangée du script
+avec la raison et sa position. Les deux scripts valides n'ont **aucune** puce —
+c'est ce qui prouve que l'affichage distingue les deux cas.
 
 ### D3 — Doublons de clés React : cause trouvée pour SCANVF
 

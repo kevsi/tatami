@@ -887,24 +887,42 @@ diverger.
 autant de secondes plus tôt — on mesure alors deux choses différentes et on
 conclut à une contradiction qui peut ne pas exister.
 
-**Preuve du 2026-10-10** (`autre-source.js`, copie de `docs/mangadex-api.js`, donc
-le **même** `SOURCE.id`) :
+**Il faut lire QUATRE termes, pas trois.** Les deux premiers sont des commandes ;
+le quatrième est une clé de `localStorage` que **aucune API ne renvoie** :
 
-| Grandeur | Valeur |
-|---|---|
-| `list_sources` — total | **1373** |
-| `list_sources` — sources `custom` | **3** : `custom:autre-source`, `custom:scan-manga`, `custom:mangadex-api` |
-| Deuxième appel, 2 s plus tard | **1373 / 3** — identique |
-| `list_disabled_sources` | **`[]`** |
-| Liste blanche (`localStorage`) | **absente** |
-| En-tête de l'écran | « **1372** sources disponibles » |
-| Tuiles de la vue perso | **2** — `custom:autre-source` **absente** |
+| # | Terme | Où il vit |
+|---|---|---|
+| 1 | Total rendu par le moteur | `invoke('list_sources')` |
+| 2 | Sources `custom` | idem, `s.custom === true` |
+| 3 | Désactivées côté Rust | `invoke('list_disabled_sources')` |
+| 4 | **Liste blanche** | `localStorage['tatami.enabledSources']` |
 
-Deux rechargements de page complets ne changent rien : toujours 1373 côté moteur,
-1372 côté écran. Le même `SOURCE.id` ne crée **pas** de collision côté moteur (le
-registre est indexé sur le nom de fichier, `identiteDe`) — c'est bien la règle
-annoncée par ADR 0010, et elle tient. Mais **une source que le moteur sert peut
-rester invisible dans le catalogue**. À localiser ; voir le rapport de session.
+Le 4ᵉ est celui qui manquait le 2026-10-10 : sans lui, deux API vides
+laissent croire qu'aucun filtre n'existe, alors que l'en-tête affiche
+`visibleSources.length` — donc **`sources` déjà filtré** par cette liste.
+
+**Cause du défaut, mesurée le 2026-10-10** : `enabledSources` est une **liste
+fermée** écrite par « Tout activer ». Un nom absent = source non affichée. Donc
+une source apparue **après** l'enregistrement de la liste — script importé, ou
+source neuve d'une mise à jour du catalogue — disparaît en silence.
+
+| Étape, mesurée | Moteur | Liste blanche | En-tête |
+|---|---|---|---|
+| Avant dépôt | 1372 | 1372 | 1372 |
+| `autre-source.js` déposé et chargé | **1373** | 1372 | **1372** |
+| **On ajoute le seul nom manquant** | 1373 | **1373** | **1373** |
+| Fichier retiré | 1372 | 1372 | 1372 |
+
+La troisième ligne est la preuve du lien : on ne change que le nom, et l'écart
+disparaît. L'écart est **stable sur 8 relits espacés de 10 s** — ce n'est donc
+pas React en retard.
+
+**Ce que le test ne doit PAS conclure** : « une source est perdue ». Elle est
+servie par le moteur et elle est dans l'état React ; elle est **filtrée à
+l'affichage**. La règle d'ADR 0010 tient, et le même `SOURCE.id` ne crée
+toujours pas de collision. Le correctif est une décision d'architecture en
+attente (§2.9) : les deux options chiffrées sont dans
+`docs/rapport-smoke-test-2026-10-10.md`.
 
 ### §S.3 Désactivation et suppression
 
@@ -1021,7 +1039,7 @@ et ce producteur répond-il ?** Une URL est une valeur *reçue* (`AGENTS.md` §1
   | Correction d'ancrage de 507 px au défilement | non revérifié sur ce run |
   | Placeholder qui déborde en fond de bande | **1 205 px** (contre 1 101 px annoncés) — même famille, valeur qui dérive |
   | Avertissement React « clé » | **localisé pour SCANVF** : 41 cartes, 4 clés distinctes, le parseur répète ses entrées. `react/jsx-key` ne le voit pas parce que la clé est correcte — c'est sa **valeur** qui est dupliquée. Reste **une** occurrence non localisée, sur TOOMICSFR, rejouée une fois sur deux parcours propres et jamais reproduite ensuite |
-  | Source personnalisée servie par le moteur mais invisible au catalogue | voir §S.2 bis — moteur 1373 / écran 1372, deux rechargements, aucun désactivé, aucune liste blanche |
+  | Source servie par le moteur mais invisible au catalogue | **cause trouvée le 2026-10-10** : la liste blanche `tatami.enabledSources` est fermée, donc un nom absent de la liste n'est pas affiché. §S.2 bis. Correctif en attente de décision humaine (§2.9) |
 
 - **Un cas observé une fois et non reproduit, à ne pas compter comme un défaut** :
   le 2026-10-10, un signet rouvrant la **dernière** page d'un chapitre a affiché

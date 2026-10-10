@@ -163,6 +163,16 @@ occupent toute la largeur (`grid-column: 1 / -1`) au lieu d'être une tuile
 comme les 19 autres, et que le bouton « importer » reste dans la tuile — deux
 boutons s'imbriqueraient, du HTML invalide.
 
+**Huitième porte de l'interface : `pnpm ipc:check`**
+(`scripts/check-type-ipc.mjs`) refuse qu'un type TypeScript déclaré pour la
+charge utile d'une commande Tauri nomme des champs que le cœur ne sérialise
+pas. Un `invoke<Type>` est une **affirmation** : `tsc` ne la vérifie pas. Mesuré
+le 2026-10-09 — `Progression` en camelCase alors que `HistoryEntry` sort en
+snake_case, donc ni marqueur de chapitre courant ni bouton « reprendre ». Les
+paires type ↔ structure sont **déclarées** dans le script ; son pendant côté
+Rust est `les_champs_de_history_entry_sont_en_snake_case`, qui fige les noms
+**émis**. Les deux se lisent mutuellement.
+
 **Commandes de vérification** (figées le 2026-10-05, tâche 0.12). Chacune
 précise son dossier, parce que la plupart échouent depuis la racine :
 
@@ -176,6 +186,7 @@ pnpm hooks:check        # aucune dépendance d'effet recréée à chaque rendu
 pnpm chemins:check      # aucun chemin affiché sans cheminLisible(…)
 pnpm pages:check        # le <img> du lecteur gère l'échec et le dit
 pnpm perso:check        # les sources perso sont une tuile, pas un encart
+pnpm ipc:check          # un type TS nomme les champs que le cœur sérialise
 pnpm test               # tests unitaires du front (node:test, lib/)
 pnpm build              # next build
 
@@ -1557,3 +1568,35 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   casse, vérifier d'abord que la casse a eu lieu** (`git diff`, lecture du
   motif) avant de conclure sur la porte. C'est le même réflexe que pour le
   `mtime` conservé par `Move-Item`.
+
+- **Un `invoke<Type>` est une affirmation, que rien ne vérifie.** Mesuré le
+  2026-10-09 : `type Progression` déclarait `chapterUrl`, `chapterTitle`,
+  `pageIndex`, alors que `HistoryEntry` ne porte qu'un `#[derive(Serialize)]`
+  **sans** `rename_all` — serde envoie donc les champs tels qu'écrits, soit
+  `chapter_url`, `chapter_title`, `page_index`. `progression.chapterUrl` valait
+  `undefined`, `repriseUtile()` renvoyait `false`, et **ni le marqueur de chapitre
+  courant ni le bouton « reprendre » n'apparaissaient** — exactement les deux
+  défauts que l'utilisateur avait signalés. `tsc` est resté **vert sur les deux
+  versions** : le paramètre générique de `invoke` est une déclaration de
+  l'auteur, jamais une conversion. Corollaire : `catch(() => setX(null))` rend
+  un échec d'IPC **indistinguable** d'une valeur légitimement absente — d'où les
+  deux hypothèses concurrentes (écriture fausse / lecture fausse), tranchées en
+  consultant la base directement (`node:sqlite` en builtin de Node 26) plutôt
+  qu'en devinant. Gardes ajoutées : `pnpm ipc:check` (champs d'un type TS
+  comparés à ceux de la struct Rust qu'il décrit, **paires déclarées** et non
+  devinées : une heuristique sur tous les `invoke<T>` ne distingue pas un type de
+  charge utile d'un type local, et produirait des faux positifs qu'on finirait
+  par ignorer) et `les_champs_de_history_entry_sont_en_snake_case` (les noms
+  **émis**, côté producteur). Les deux se lisent mutuellement — même famille que
+  `les_champs_signes_concordent_avec_le_script` : une valeur partagée entre deux
+  langages a besoin d'un test qui lit l'autre fichier.
+
+- **Un attribut `#[test]` en double ne fait pas perdre un test, il n'en ajoute
+  aucun — et `cargo test` le voit vert.** Mesuré le 2026-10-09 : deux `#[test]`
+  sur la même fonction, laissés par une insertion de bloc précédente. Résultat :
+  **162 tests passants**, comme si de rien n'était, et
+  `cargo clippy --all-targets -- -D warnings` qui refuse de compiler sur
+  `duplicated attribute`. Corollaire général : **`cargo test` n'est pas une porte
+  de compilation du code de test** — c'est `clippy --all-targets` (cf. la leçon
+  où `check` n'est pas une porte). Et l'attribut parasite venait d'une écriture
+  par index : relire la ligne **suivante** du bloc inséré.

@@ -217,6 +217,71 @@ describe('hauteurs de la bande webtoon', () => {
       assert.notEqual(h[0], h[1], 'la mesure n a pas ete prise en compte');
     });
   });
+
+  describe('la largeur est arrondie une seule fois, avant les deux calculs', () => {
+    // Invariant que l'APPELANT doit respecter : la largeur passée à
+    // `hauteursBande` (les offsets) et celle passée à `hauteurRendueMesuree`
+    // (le style) doivent être la MÊME valeur entière.
+    //
+    // Le défaut mesuré le 2026-10-10 : `page.tsx` passait `largeurBande *
+    // (zoom / 100)` — non arrondi — aux offsets, et `largeurImagePx(…)` —
+    // arrondi — au style. À 1 081 px de large et 50 % de zoom, les offsets
+    // valaient 540,5 × h/w et le style 541 × h/w : la boîte et la position de
+    // la page suivante ne portaient pas la même valeur, et l'écart
+    // s'accumulait sur toute la bande — le « trait entre deux pages » que le
+    // bloc ci-dessous dit avoir fermé.
+    //
+    // Ces fonctions sont pures : un test unitaire ne peut pas voir comment
+    // l'appelant les appelle. Il verrouille donc le contrat — « à largeur
+    // égale, hauteur égale » — et c'est la porte `pnpm arrondi:check` qui
+    // lit l'appel dans `page.tsx`.
+    const pages = [
+      { largeur: 800, hauteur: 1600 },
+      { largeur: 720, hauteur: 1280 },
+      { largeur: 1000, hauteur: 2171 },
+      {},
+    ];
+    const mesurees = { 0: { w: 800, h: 1600 }, 2: { w: 1000, h: 2171 } };
+
+    it('offsets et style portent la même hauteur, à largeur entière égale', () => {
+      for (const largeurBande of [1081, 977, 843, 1367, 600]) {
+        for (const zoom of [50, 75, 80, 90, 100]) {
+          const l = largeurImagePx(largeurBande, zoom);
+          const hauteurs = hauteursBande(pages, l, mesurees);
+          for (let i = 0; i < pages.length; i += 1) {
+            const css = hauteurRendueMesuree(pages[i], l, mesurees[i]);
+            // Une page sans dimensions n'a pas de hauteur rendue (le repli
+            // reste à l'offset) : c'est le seul écart voulu.
+            if (css === null) {
+              assert.ok(hauteurs[i] > 0, `repli nul pour la page ${i}`);
+              continue;
+            }
+            assert.equal(
+              hauteurs[i],
+              css,
+              `page ${i} : offset ${hauteurs[i]} ≠ style ${css} ` +
+                `(largeur ${largeurBande}, zoom ${zoom}%)`,
+            );
+          }
+        }
+      }
+    });
+
+    it('la largeur non arrondie casserait cet invariant — preuve que le test mord', () => {
+      // Contre-épreuve : l'ancien appel passait le produit brut. Le test
+      // précédent devient faux, donc il porte bien sur le défaut.
+      const largeurBande = 1081;
+      const zoom = 50;
+      const avecArrondi = hauteursBande(pages, largeurImagePx(largeurBande, zoom), mesurees);
+      const sansArrondi = hauteursBande(pages, largeurBande * (zoom / 100), mesurees);
+      assert.notEqual(
+        avecArrondi[0],
+        sansArrondi[0],
+        "à 1081 px et 50 %, l'arrondi de la largeur change la hauteur : " +
+          'les deux appelants ne pouvaient pas diverger sans conséquence',
+      );
+    });
+  });
 });
 describe('hauteurs sans arrondi : le trait entre deux pages', () => {
   // Mesuré le 2026-10-09 dans l'app : à 630 px de largeur, une page 720x500

@@ -3700,7 +3700,18 @@ async function basculerPleinEcran() {
 // dans le bloc du lecteur violerait l'ordre des hooks, puisque le composant
 // retourne avant d'y arriver selon la vue affichée.
 const pagesBande = reader?.pages ?? EMPTY_PAGES;
-const formatBande = zoom / 100;
+// Largeur **entière** d'une page, arrondie une seule fois ici et partagée par
+// les offsets, le test de virtualisation et le style de l'image.
+//
+// Avant, chaque appelant recalculait sa largeur : les offsets recevaient
+// `largeurBande * (zoom / 100)` — **non arrondi** — et le style
+// `largeurImagePx(…)` — **arrondi**. Les deux valeurs divergent dès que le
+// produit est fractionnaire (largeur 1 081 px à 50 % → 540,5 contre 541), et
+// la divergence s'accumule sur toute la bande : la hauteur totale ne égalait
+// plus la somme des hauteurs rendues. C'est le défaut « trait entre deux
+// pages » que `bande-hauteurs.ts:278-280` dit avoir fermé en arrondissant
+// « une fois » — l'arrondi avait été remis dans un seul des deux chemins.
+const largeurImage = largeurImagePx(largeurBande, zoom);
 // Logique déplacée dans `lib/bande-hauteurs.ts` le 2026-10-09 : elle était
   // ici, donc **aucune porte ne pouvait la vérifier** (les portes du front
   // lisent le JSX, pas le comportement). Le calcul change au passage : une page
@@ -3709,8 +3720,8 @@ const formatBande = zoom / 100;
   // en échec désactivait donc toute la bande (mesuré dans l'app le 2026-10-09 :
   // ch.6, 12 images chargées à 967 px, bande pourtant non virtualisée).
   const hauteurs = useMemo(
-    () => hauteursBande(pagesBande, largeurBande * formatBande, dimsPages),
-    [pagesBande, largeurBande, formatBande, dimsPages],
+    () => hauteursBande(pagesBande, largeurImage, dimsPages),
+    [pagesBande, largeurImage, dimsPages],
   );
 
 const offsets = useMemo(() => offsetsBande(hauteurs), [hauteurs]);
@@ -3730,9 +3741,9 @@ const offsets = useMemo(() => offsetsBande(hauteurs), [hauteurs]);
 const bandeVirtualisable = useMemo(() => {
   if (pagesBande.length === 0) return false;
   return bandeVirtualisableEst(
-    pagesBande.map((p, i) => hauteurRendueMesuree(p, largeurBande * formatBande, dimsPages[i])),
+    pagesBande.map((p, i) => hauteurRendueMesuree(p, largeurImage, dimsPages[i])),
   );
-}, [pagesBande, largeurBande, formatBande, dimsPages]);
+}, [pagesBande, largeurImage, dimsPages]);
 
 
 /** Les offsets du rendu precedent, pour mesurer ce que le recalcul a deplace. */
@@ -5203,9 +5214,8 @@ if (reader) {
                 // la même chose : poser le repli sur l'image la déformait de
                 // 60,9 % (mesuré le 2026-10-09 sur TOOMICSFR, 6 images sur 6).
                 const hauteur = hauteurs[i] || 0;
-                // Largeur **entière** partagée par la boîte et le ratio : voir
-                // `largeurImagePx` pour la mesure qui la motive.
-                const largeurImage = largeurImagePx(largeurBande, zoom);
+                // La largeur vient d'en haut (`largeurImage`) : la même valeur
+                // **entière** sert à la boîte, au ratio et aux offsets.
                 const hauteurCss = hauteurRendueMesuree(
                   p,
                   largeurImage,

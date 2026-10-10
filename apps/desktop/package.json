@@ -19,6 +19,7 @@
     "pages:check": "node scripts/check-pages-indisponibles.mjs",
     "perso:check": "node scripts/check-tuile-perso.mjs",
     "lecteur:check": "node scripts/check-lecteur-etat.mjs",
+    "arrondi:check": "node scripts/check-arrondi-bande.mjs",
     "ipc:check": "node scripts/check-type-ipc.mjs",
     "test": "node --test --experimental-strip-types \"lib/**/*.test.ts\"",
     "tauri": "tauri"

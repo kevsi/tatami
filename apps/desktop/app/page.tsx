@@ -8,6 +8,7 @@ import { refusMoteur } from '../lib/scripts-refuses';
 import { reconcilierListeBlanche } from '../lib/liste-blanche';
 import { admettreLaCible, admettreUne } from '../lib/quota-pages';
 import { lireListeSources } from '../lib/prefs-tolérantes';
+import { memeSignet } from '../lib/signet-cle';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   isPermissionGranted,
@@ -2055,10 +2056,17 @@ export default function Home() {
     const { chapter, index, pages } = reader;
     const manga = info ?? openManga;
     if (!manga) return;
-    const cle = { chapter_url: chapter.url, page_index: index };
-    const dejaLa = signets.some(
-      (b) => b.chapter_url === cle.chapter_url && b.page_index === cle.page_index,
-    );
+    // La clé complète, celle de la table : `(source, manga_url, chapter_url,
+    // page_index)`. Comparer seulement le chapitre et la page confondait deux
+    // sources qui servent la même URL relative (mesuré : `/chapter/456`), et
+    // l'affichage retirait une entrée pendant que SQL en supprimait une autre.
+    const cle = {
+      source: manga.source,
+      manga_url: manga.url,
+      chapter_url: chapter.url,
+      page_index: index,
+    };
+    const dejaLa = signets.some((b) => memeSignet(b, cle));
     // Mise à jour optimiste avec retour arrière, comme pour les favoris et les
     // sources : l'interface ne montre jamais un état qu'elle ne tient pas.
     const avant = signets;
@@ -2074,7 +2082,7 @@ export default function Home() {
       page_count: pages.length,
       created_at: Date.now(),
     };
-    setSignets(dejaLa ? avant.filter((b) => !sameSignet(b, cle)) : [apercu, ...avant]);
+    setSignets(dejaLa ? avant.filter((b) => !memeSignet(b, cle)) : [apercu, ...avant]);
     try {
       await invoke(dejaLa ? 'remove_bookmark' : 'add_bookmark', {
         source: manga.source,
@@ -2093,10 +2101,6 @@ export default function Home() {
       setSignets(avant);
       setError(t('erreur.signet', { raison: String(e) }));
     }
-  }
-
-  function sameSignet(b: Bookmark, cle: { chapter_url: string; page_index: number }): boolean {
-    return b.chapter_url === cle.chapter_url && b.page_index === cle.page_index;
   }
 
   /** Tâche 3.2 — ouvre la fiche d'un favori signalé par le planificateur.
@@ -6251,7 +6255,7 @@ if (reader) {
                     className="btn btn-ghost"
                     onClick={() => {
                       const avant = signets;
-                      setSignets(avant.filter((x) => !sameSignet(x, b) || x.chapter_url !== b.chapter_url || x.page_index !== b.page_index || x.source !== b.source));
+                      setSignets(avant.filter((x) => !memeSignet(x, b)));
                       void invoke('remove_bookmark', {
                         source: b.source,
                         mangaUrl: b.manga_url,

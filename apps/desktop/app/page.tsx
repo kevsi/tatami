@@ -3179,6 +3179,43 @@ async function openReader(c: Chapter) {
  *  et on ne retombe sur la source que si le fichier est absent.
  */
 /**
+ * Remet à zéro l'état du lecteur pour un **nouveau chapitre**.
+ *
+ * Les cinq valeurs partent ensemble parce qu'elles sont toutes indexées par
+ * numéro de page du chapitre **précédent** :
+ *
+ * - `pagesEnErreur` : sinon les index indisponibles de l'ancien chapitre
+ *   s'afficheraient sur le suivant, qui peut être intact (mesuré : ch.3 =
+ *   0/8 servies, ch.1 = 7/8 — l'inverse existe aussi).
+ * - `dimsPages` : une page de 1 200 px dupliquée sur un chapitre dont la vraie
+ *   page fait 500 px donne une bande 2,4× trop haute.
+ * - `pagesDecodees` : idem, le décodage déjà annoncé ne l'est plus.
+ * - `admis` : le quota est une file de **ce** chapitre ; celui du précédent
+ *   affiche une bande sans `src`.
+ * - `aPositionner` : la position à prendre appartient au chapitre qui s'ouvre.
+ *
+ * `nbPages` et `position` sont des **paramètres**, pas une lecture de l'état :
+ * au moment de l'appel, `reader` porte encore l'ancien chapitre.
+ *
+ * **Pourquoi une seule fonction.** Les deux chemins qui posent un lecteur
+ * (`openReaderAt` et `openLocalChapter`) dupliquaient ces cinq lignes, et la
+ * copie en avait perdu cinq : lire un `.cbz` depuis Téléchargements après un
+ * chapitre en ligne héritait de ses dimensions et de son quota. Une fonction
+ * partagée ne peut plus diverger — et `pnpm lecteur:check` vérifie qu'un
+ * troisième chemin l'appellerait bien.
+ */
+function preparerLecture(nbPages: number, position: number) {
+  setPagesEnErreur(new Set());
+  setDimsPages({});
+  setPagesDecodees(new Set());
+  // Les premières pages sont admises d'emblée : le quota est une **file**, pas
+  // une privation — sans cela le lecteur attendrait le premier crédit, et aucun
+  // téléchargement en cours ne pourrait le libérer.
+  setAdmis(Array.from({ length: Math.min(FENETRE_TELECHARGEMENT, nbPages) }, (_, k) => k));
+  aPositionner.current = position;
+}
+
+/**
  * Ouvre un chapitre à une page donnée.
  *
  * `mangaTitre` est un **paramètre**, pas une lecture de `openManga`. Mesuré le
@@ -3220,17 +3257,6 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
   }
   setReaderLoading(true);
   setError(null);
-  // Un nouveau chapitre repart d'un etat d'echec vide : sinon les index
-  // indisponibles du chapitre precedent s'afficheraient sur le suivant, qui
-  // peut etre intact (mesure : ch.3 = 0/8 servies, ch.1 = 7/8 — l'inverse
-  // existe aussi).
-  setPagesEnErreur(new Set());
-  // Idem pour les dimensions mesurees : elles sont indexees par numero de page,
-  // donc celles du chapitre precedent decaleraient la bande du suivant. Une page
-  // de hauteur 1 200 px dupliquee sur un chapitre ou la vraie page fait 500 px
-  // donnerait une bande de 2,4 fois trop haute.
-  setDimsPages({});
-  setPagesDecodees(new Set());
   try {
     const locales = await invoke<LocalPage[]>('local_chapter_pages', {
       source: src,
@@ -3271,13 +3297,10 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
     // L'effet qui consomme ce ref attend déjà `offsets[i]` et
     // `bandeVirtualisable`, donc passer par `0` ne défile pas trop tôt : c'est
     // exactement la protection que le `null` avait fait perdre.
-    aPositionner.current = index;
-    // Les premières pages sont admises d'emblée : le quota est une **file**, pas
-  // une privation — sans cela le lecteur attendrait le premier crédit, et aucun
-  // téléchargement en cours ne pourrait le libérer. C'est ici qu'on connaît
-  // `pages.length`, donc c'est ici que la file se remplit.
-  setAdmis(Array.from({ length: Math.min(FENETRE_TELECHARGEMENT, pages.length) }, (_, k) => k));
-  setReader({
+    // Un seul appel pour les cinq remises à zéro, celui des deux chemins qui
+    // posent un lecteur : voir `preparerLecture`.
+    preparerLecture(pages.length, index);
+    setReader({
       chapter: c,
       pages,
       index,
@@ -3385,6 +3408,10 @@ async function openLocalChapter(item: LibraryItem, chapter: LibraryItem['chapter
       return;
     }
     setPageJump('');
+    // Les cinq mêmes remises à zéro que `openReaderAt` : un `.cbz` ouvert
+    // après un chapitre en ligne ne doit pas hériter de ses dimensions (bande
+    // décalée) ni de son quota `admis` (bande sans `src`).
+    preparerLecture(pages.length, 0);
     setReader({
       chapter: { url: chapter.url, title: chapter.title, number: 0, uploadDate: 0 },
       pages: pages.map((p) => ({ index: p.index, url: '', token: p.token, largeur: p.width, hauteur: p.height })),

@@ -1601,6 +1601,32 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   où `check` n'est pas une porte). Et l'attribut parasite venait d'une écriture
   par index : relire la ligne **suivante** du bloc inséré.
 
+- **Arrondir une géométrie ne la rend pas plus propre : cela déplace l'erreur
+  *dedans*, où elle devient visible.** Mesuré le 2026-10-09 sur le lecteur : la
+  boîte d'une image faisait `height: 438px` alors que le ratio exact à 630 px
+  de large valait **437,5**. `object-fit: contain` centre l'image dans la boîte
+  et laisse donc **0,25 px de fond en haut et en bas** — un trait horizontal fin
+  **à chaque frontière de page**, visible sur fond sombre. Ce n'était **pas** un
+  écart entre deux images : la mesure d'« écart entre images » valait 0, parce
+  qu'il n'y en avait pas. Corollaire : **une mesure d'écart entre deux boîtes ne
+  voit pas une lame *à l'intérieur* d'une boîte** — il faut comparer la boîte à
+  ce qu'elle devrait contenir, donc au ratio. Et l'invariant qui protège le
+  remède vaut mieux que le remède :
+  `hauteurRendue(p, l) === hauteurPage(p, l)`, testé sur 25 couples. Si les deux
+  divergeaient, le demi-pixel irait ailleurs — mais il resterait visible.
+  Dernière leçon : ici, la **capture d'écran de l'utilisateur** a montré ce
+  que mes deux mesures avaient manqué ; un cadre (`écart`, `largeur`) ne dit pas
+  la **forme** du défaut.
+
+- **Le badge de développement se lit « footer inutile » dans une capture.**
+  Mesuré le 2026-10-09 : il n'y a aucun `<footer>` dans le lecteur ; le « footer
+  » en bas à gauche est l'indicateur de `next dev`, posé **par-dessus la page de
+  lecture**. Il n'existe pas dans l'application livrée — donc le signaler comme
+  un défaut de l'application aurait été faux, et le corriger en CSS l'aurait
+  laissé intact. Corollaire : **une capture prise en dev ne décrit pas
+  l'application**, et ce qu'elle montre peut être un outil de développement.
+  Le lire avant d'en faire un défaut de mise en page.
+
 - **Une flèche de navigation et une flèche de défilement ne sont pas le même
   geste, et les mettre dans le même tableau rend les deux mauvais.** Mesuré le
   2026-10-09 : `ArrowDown`/`ArrowUp` étaient rangés avec `ArrowLeft`/`ArrowRight`

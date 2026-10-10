@@ -429,6 +429,31 @@ impl Store {
             .parent()
             .unwrap_or_else(|| Path::new("."))
             .join(name);
+        // La base est en WAL (`Store::open`) : après un `COMMIT`, les pages
+        // modifiées vivent dans le fichier `-wal` jusqu'au point de contrôle
+        // suivant. Copier le seul `.db` livrerait donc une base **antérieure** à
+        // la dernière écriture — pour une sauvegarde dont tout le but est de
+        // permettre un retour arrière si la migration échoue.
+        //
+        // `wal_checkpoint(TRUNCATE)` recopie le WAL dans le `.db` puis le vide.
+        // Il rend `(busy, journal, checkpointed)` : un `busy` non nul signifierait
+        // que la copie repart sans les données, c'est-à-dire une sauvegarde qui
+        // **ment**. On refuse plutôt que d'écrire un faux secours.
+        {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|_| "base verrouillée".to_string())?;
+            let busy: i64 = conn
+                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))
+                .map_err(|e| format!("point de contrôle WAL impossible : {e}"))?;
+            if busy != 0 {
+                return Err(format!(
+                    "point de contrôle WAL bloqué (busy = {busy}) : \
+                     la sauvegarde serait incomplète"
+                ));
+            }
+        }
         std::fs::copy(&self.path, &dest)
             .map_err(|e| format!("sauvegarde avant migration impossible : {e}"))?;
         // Tâche 5.5 : le chemin **complet** est retiré. Il contient
@@ -2068,5 +2093,85 @@ mod tests {
             ],
             "les noms émis par le cœur ont changé : `pnpm ipc:check` va accuser le type TypeScript"
         );
+    }
+
+    /// La sauvegarde d'avant migration doit contenir les écritures récentes.
+    ///
+    /// La base est ouverte en WAL (`Store::open`) : après un `COMMIT`, les
+    /// pages modifiées vivent dans le fichier `-wal` jusqu'au prochain point de
+    /// contrôle. La sauvegarde copiait le seul `.db`, donc elle livrait une base
+    /// **antérieure** à la dernière écriture — pour une sauvegarde dont tout le
+    /// but est de permettre un retour arrière si la migration échoue.
+    ///
+    /// Les deux témoins (`-wal` non vide avant, vide après) sont là parce que
+    /// sans eux le test resterait vert avec l'ancien code : si le WAL était
+    /// déjà vide, « retrouver les données » ne prouverait rien.
+    #[test]
+    fn la_sauvegarde_contient_les_ecritures_recentes_malgre_le_wal() {
+        let (s, path) = store_vierge();
+        s.set_favorite("SRC", "/m/1", "Titre", Some("http://c"), Some("SAFE"), true)
+            .unwrap();
+        s.add_bookmark(
+            "SRC",
+            "/m/1",
+            "/c/1",
+            "Titre",
+            None,
+            Some("Chapitre 1"),
+            4,
+            12,
+        )
+        .unwrap();
+
+        // Témoin d'activité : les écritures sont bien dans le WAL. Sans ce
+        // garde, un système où tout serait déjà dans le `.db` ferait passer le
+        // test avec l'ancien code de sauvegarde.
+        let wal = path.with_extension("db-wal");
+        assert!(
+            wal.exists(),
+            "la base doit être en WAL pour que ce test ait un sens"
+        );
+        assert!(
+            wal.metadata().unwrap().len() > 0,
+            "le WAL doit porter les écritures récentes"
+        );
+
+        // Le même appel que celui d'avant migration (`migrate`).
+        s.backup(SCHEMA_VERSION - 1).unwrap();
+
+        // Le point de contrôle TRUNCATE recopie le WAL dans le `.db` et le
+        // vide : c'est la condition pour que la copie soit complète.
+        assert_eq!(
+            wal.metadata().unwrap().len(),
+            0,
+            "le WAL doit être vidé, sinon la copie du `.db` part incomplète"
+        );
+
+        // Rouvrir la sauvegarde et retrouver les données récentes.
+        let dossier = path.parent().unwrap();
+        let mut sauvegardes: Vec<PathBuf> = std::fs::read_dir(dossier)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("tatami-v") && n.ends_with(".db"))
+            })
+            .collect();
+        assert_eq!(sauvegardes.len(), 1, "exactement une sauvegarde attendue");
+        let rouvert = Store::open(sauvegardes.remove(0)).expect("réouverture de la sauvegarde");
+        let favoris = rouvert.list_favorites().unwrap();
+        assert_eq!(
+            favoris.len(),
+            1,
+            "la sauvegarde doit contenir le favori écrit juste avant elle"
+        );
+        assert_eq!(favoris[0].manga_url, "/m/1");
+        assert_eq!(
+            rouvert.list_bookmarks(50, None).unwrap().len(),
+            1,
+            "la sauvegarde doit contenir le signet écrit juste avant elle"
+        );
+        nettoyer(&path);
     }
 }

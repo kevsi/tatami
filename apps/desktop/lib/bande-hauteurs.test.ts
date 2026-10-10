@@ -18,13 +18,13 @@ import {
 describe('hauteurs de la bande webtoon', () => {
   it('met la hauteur des dimensions a l\'echelle de la fenetre', () => {
     // Page 800x2171 dans une bande de 400 px de large : 2171 * 400/800.
-    assert.equal(hauteurPage({ largeur: 800, hauteur: 2171 }, 400), 1086);
+    assert.equal(hauteurPage({ largeur: 800, hauteur: 2171 }, 400), 1085.5); // ratio exact, pas arrondi
   });
 
   it('double la hauteur quand on double la largeur de la fenetre', () => {
     const p = { largeur: 800, hauteur: 1600 };
-    assert.equal(hauteurPage(p, 400), 800);
-    assert.equal(hauteurPage(p, 800), 1600);
+    assert.equal(hauteurPage(p, 400), 800); // ratio exact (2,0) : deja entier
+    assert.equal(hauteurPage(p, 800), 1600); // idem, a la double largeur
   });
 
   it('donne une hauteur de repli a une page dont les dimensions manquent', () => {
@@ -143,7 +143,7 @@ describe('hauteurs de la bande webtoon', () => {
     });
 
     it('avec dimensions, pose la hauteur calculee', () => {
-      assert.equal(hauteurRendue({ largeur: 720, hauteur: 500 }, 673), 467);
+      assert.equal(hauteurRendue({ largeur: 720, hauteur: 500 }, 673), (673 * 500) / 720); // ratio exact : pas d'arrondi
     });
 
     it('la hauteur de positionnement reste un repli, elle, toujours positive', () => {
@@ -156,7 +156,7 @@ describe('hauteurs de la bande webtoon', () => {
       // Un `<img>` non decode peut renvoyer 1x1. Le prendre pour une mesure
       // reelle ecraserait une bonne dimension par 1 px de haut.
       assert.equal(hauteurRendue({ largeur: 1, hauteur: 1 }, 673), null);
-      assert.equal(hauteurRendue({ largeur: 720, hauteur: 500 }, 673), 467);
+      assert.equal(hauteurRendue({ largeur: 720, hauteur: 500 }, 673), (673 * 500) / 720); // ratio exact : pas d'arrondi
     });
 
     it('ignore une largeur de bande nulle plutot que deReturning zero', () => {
@@ -171,9 +171,9 @@ describe('hauteurs de la bande webtoon', () => {
         { largeur: 800, hauteur: 2000 },
       ];
       const rendues = pages.map((p) => hauteurRendue(p, 673));
-      assert.equal(rendues[0], 467);
+      assert.equal(rendues[0], (673 * 500) / 720); // ratio exact : pas d'arrondi
       assert.equal(rendues[1], null);
-      assert.equal(rendues[2], 1683);
+      assert.equal(rendues[2], 1682.5); // ratio exact : 673*500/720
       for (const h of rendues.filter((x) => x !== null)) {
         assert.ok(h > 0, 'hauteur rendue nulle');
       }
@@ -193,7 +193,7 @@ describe('hauteurs de la bande webtoon', () => {
     it('la mesure prime sur une dimension Rust obsolete', () => {
       // La page a ete reencodee sur le serveur : la mesure du navigateur est
       // plus fraiche que ce que Rust a lu dans l'entete au premier appel.
-      assert.equal(hauteurRendueMesuree({ largeur: 800, hauteur: 800 }, 673, { w: 720, h: 500 }), 467);
+      assert.equal(hauteurRendueMesuree({ largeur: 800, hauteur: 800 }, 673, { w: 720, h: 500 }), (673 * 500) / 720); // ratio exact : pas d'arrondi
     });
 
     it('sans mesure, on retombe sur les dimensions Rust', () => {
@@ -205,19 +205,69 @@ describe('hauteurs de la bande webtoon', () => {
 
     it('une mesure de 1x1 est ignoree, pas prise pour un ratio', () => {
       assert.equal(hauteurRendueMesuree({}, 673, { w: 1, h: 1 }), null);
-      assert.equal(hauteurRendueMesuree({ largeur: 800, hauteur: 2000 }, 673, { w: 1, h: 1 }), 1683);
+      assert.equal(hauteurRendueMesuree({ largeur: 800, hauteur: 2000 }, 673, { w: 1, h: 1 }), 1682.5); // ratio exact
     });
 
     it('hauteur de positionnement : la mesure prime aussi', () => {
       const pages = [{}, {}];
       const h = hauteursBande(pages, 673, { 0: { w: 720, h: 500 } });
-      assert.equal(h[0], 467);
+      assert.equal(h[0], (673 * 500) / 720); // ratio exact : pas d'arrondi
       // La page 1, non mesuree : elle garde le repli, jamais zero.
       assert.ok(h[1] > 0);
       assert.notEqual(h[0], h[1], 'la mesure n a pas ete prise en compte');
     });
   });
 });
+describe('hauteurs sans arrondi : le trait entre deux pages', () => {
+  // Mesuré le 2026-10-09 dans l'app : à 630 px de largeur, une page 720x500
+  // mesurait 437,5 px de haut exactement, mais la boîte posait `height: 438px`.
+  // `object-fit: contain` centre alors l'image dans la boîte et laisse **0,25 px
+  // de fond en haut et en bas** — un trait horizontal fin, **à chaque frontière
+  // de page**. L'utilisateur l'a signalé comme « trait toujours présent ».
+  //
+  // Arrondir la hauteur ne rend pas la géométrie plus propre : cela déplace le
+  // demi-pixel **dedans** (lame visible) au lieu de le laisser **entre** les
+  // pages. La bonne valeur est la valeur exacte.
+  it('la hauteur rendue vaut le ratio exact, sans arrondi', () => {
+    const h = hauteurRendue({ largeur: 720, hauteur: 500 }, 630);
+    assert.equal(h, 437.5, 'le ratio exact ne doit pas etre arrondi au pixel');
+  });
+
+  it('la hauteur de positionnement vaut elle aussi le ratio exact', () => {
+    assert.equal(hauteurPage({ largeur: 720, hauteur: 500 }, 630), 437.5);
+    assert.equal(hauteurPage({ largeur: 720, hauteur: 700 }, 630), 612.5);
+  });
+
+  it('positionnement et rendu donnent la MEME valeur, sinon la lame change de place', () => {
+    // C'est l'invariant qui supprime le trait : les deux doivent coïncider au
+    // demi-pixel pres, sinon la geometrie ne peut pas etre juste des deux cotes.
+    for (const [w, h] of [[720, 500], [720, 700], [720, 297], [800, 2171], [1080, 1620]]) {
+      for (const l of [630, 421, 977, 1081, 500]) {
+        assert.equal(
+          hauteurRendue({ largeur: w, hauteur: h }, l),
+          hauteurPage({ largeur: w, hauteur: h }, l),
+          `lame possible pour ${w}x${h} a ${l} px de large`,
+        );
+      }
+    }
+  });
+
+  it('une page 720x297 a 259,875 px de haut a 630 px de large', () => {
+    assert.equal(hauteurRendue({ largeur: 720, hauteur: 297 }, 630), 259.875);
+  });
+
+  it('la lame reste nulle sur toute la plage', () => {
+    // La lame vaut |boite - ratio exact|. Elle doit etre nulle partout, donc la
+    // hauteur rendue doit etre exactement le ratio : on balaie la plage reelle.
+    for (const l of [400, 421, 500, 630, 843, 977, 1081, 1400]) {
+      for (const [w, h] of [[720, 500], [720, 700], [720, 297], [1080, 1620]]) {
+        const rendu = hauteurRendue({ largeur: w, hauteur: h }, l);
+        assert.equal(rendu, (l * h) / w, `lame a ${l} px pour ${w}x${h}`);
+      }
+    }
+  });
+});
+
 describe('largeur de page : des pixels entiers, jamais un pourcentage', () => {
   // Mesuré le 2026-10-09 : `50 %` d'une largeur impaire vaut 540,5 px, et une
   // image dessinée sur un demi-pixel laisse une colonne translucide à son bord

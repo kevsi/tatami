@@ -62,8 +62,11 @@ export function hauteurPage(
   const l = largeurBande || 1;
   const w = page.largeur ?? 0;
   const h = page.hauteur ?? 0;
+  // **Pas d'arrondi** — voir `hauteurRendue` : arrondir ici et là-bas ensemble
+  // ne fait que déplacer le demi-pixel. Le repli reste arrondi, lui : il n'a
+  // aucune mesure à respecter, et un entier évite une dérive de 53 pages.
   if (w <= 0 || h <= 0) return Math.round((l * FORMAT_BANDE * HAUTEUR_REPLI) / 900);
-  return Math.round((l * FORMAT_BANDE * h) / w);
+  return (l * FORMAT_BANDE * h) / w;
 }
 
 /** Hauteurs de toutes les pages de la bande, dans l'ordre.
@@ -220,7 +223,19 @@ export function hauteurRendue(
   // 1x1 est le rapport d'une image qui n'a pas encore décodé, pas une mesure.
   if (w <= 1 || h <= 1) return null;
   const l = largeurBande || 1;
-  return Math.round((l * FORMAT_BANDE * h) / w);
+  // **Pas d'arrondi.** Mesuré le 2026-10-09 dans l'application : à 630 px de
+  // largeur, une page 720x500 a un ratio exact de **437,5 px**, mais la boîte
+  // posait `height: 438px`. `object-fit: contain` centre alors l'image dans la
+  // boîte et laisse **0,25 px de fond en haut et en bas** — soit un trait
+  // horizontal fin **à chaque frontière de page**, visible sur fond sombre.
+  // L'utilisateur l'a signalé ; le signal persistait après la correction de la
+  // largeur, parce que la largeur était une autre cause, pas celle-ci.
+  //
+  // Arrondir ne rend pas la géométrie plus propre : cela déplace le demi-pixel
+  // **dedans** de la page. Pour que la lame disparaisse, il faut que la boîte
+  // **et** la position de la page suivante portent la même valeur exacte — ce
+  // que garantit `hauteurPage`, qui rend désormais la même chose.
+  return (l * FORMAT_BANDE * h) / w;
 }
 
 /** Hauteur rendue d'une page, mesure du navigateur prioritaire.

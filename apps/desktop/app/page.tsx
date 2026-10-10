@@ -1256,6 +1256,18 @@ export default function Home() {
    *  Clé = index de page, valeur = dimensions **en pixels d'image** (pas CSS).
    *  `null` = pas encore mesurée. */
   const [dimsPages, setDimsPages] = useState<Record<number, { w: number; h: number }>>({});
+  /** Pages dont l'image est **décodée** — sert au placeholder.
+   *
+   *  Mesuré le 2026-10-09 : à l'ouverture d'un chapitre froid, **8 pages sont
+   *  montées et 0 chargées pendant 31 secondes** — la bande est là, la
+   *  géométrie est là, et l'utilisateur ne voit **rien**. Sans marque, il ne
+   *  sait pas si l'application charge ou si elle est cassée.
+   *
+   *  Un placeholder par page rend l'attente **lisible** : la structure du
+   *  chapitre apparaît tout de suite, et chaque page se remplace quand elle
+   *  arrive. Il ne fait pas charger plus vite — il fait voir.
+   */
+  const [pagesDecodees, setPagesDecodees] = useState<Set<number>>(() => new Set());
   /** Note les dimensions d'une page et **ne bouge que si elles changent**.
    *
    *  Sans cette garde, chaque `onLoad` ferait un `setState` donc un rendu, et le
@@ -3138,6 +3150,7 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
   // de hauteur 1 200 px dupliquee sur un chapitre ou la vraie page fait 500 px
   // donnerait une bande de 2,4 fois trop haute.
   setDimsPages({});
+  setPagesDecodees(new Set());
   try {
     const locales = await invoke<LocalPage[]>('local_chapter_pages', {
       source: src,
@@ -5048,13 +5061,31 @@ if (reader) {
                   );
                 }
                 return (
-                  <img
-                    key={p.token}
-                    ref={(el) => {
-                      stripImages.current[i] = el;
-                    }}
-                    src={pageSrc(p.token)}
-                    alt={`Page ${i + 1}`}
+                  <>
+                    {/* Placeholder tant que la page n'est pas décodée.
+                        Même position, même largeur et même hauteur que
+                        l'image : sinon la page arrive en décalant la bande, ce
+                        qui se voit plus que le chargement lui-même. `aria-hidden`
+                        car il ne décrit rien — c'est un état, pas un contenu. */}
+                    {!pagesDecodees.has(i) && (
+                      <div
+                        className="feuille"
+                        aria-hidden="true"
+                        style={{
+                          ...styleImage,
+                          // Sans hauteur mesurée, on prend la place réservée :
+                          // c'est elle qui Connait la page.
+                          height: `${hauteurCss ?? hauteur}px`,
+                        }}
+                      />
+                    )}
+                    <img
+                      key={p.token}
+                      ref={(el) => {
+                        stripImages.current[i] = el;
+                      }}
+                      src={pageSrc(p.token)}
+                      alt={`Page ${i + 1}`}
                     // Une page que la source ne sert pas **le dit**. Sans ceci,
                     // le 404 de MangaDex s'affiche en image cassee muette :
                     // l'utilisateur lit « la source ne sert pas cette page »
@@ -5094,9 +5125,16 @@ if (reader) {
                     onLoad={(ev) => {
                       const im = ev.currentTarget;
                       noterDims(i, im.naturalWidth, im.naturalHeight);
+                      setPagesDecodees((prec) => {
+                        if (prec.has(i)) return prec;
+                        const suivant = new Set(prec);
+                        suivant.add(i);
+                        return suivant;
+                      });
                     }}
                     onDoubleClick={() => changeZoom(zoom >= 200 ? 100 : 200)}
                   />
+                  </>
                 );
               })}
             </div>

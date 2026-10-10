@@ -1577,6 +1577,24 @@ button:disabled {
   cursor: zoom-in;
 }
 
+/* Placeholder d'une page qui n'est pas encore decodee.
+   Meme position, meme largeur et meme hauteur que l'image qui le remplace :
+   une place differente ferait sauter la bande a l'arrivee de la page, ce qui
+   se voit plus que le chargement (lecon AGENTS.md §14, « un squelette doit
+   emprunter la structure du contenu »).
+
+   Mesure du 2026-10-09 qui le motive : a l'ouverture d'un chapitre froid,
+   8 pages montees, 0 chargee, **31 secondes**. Sans cette plaque, l'ecran etait
+   vide et rien ne disait si l'application chargeait ou si elle etait cassee. */
+.feuille {
+  background: var(--surface-2);
+  /* Un liseré plutot qu'une couleur pleine : le fond du lecteur est deja
+     sombre, un aplat passerait pour une page noire — donc pour une page vide
+     qui nerievient jamais. */
+  outline: 1px dashed var(--line);
+  outline-offset: -1px;
+}
+
 .reader-stage {
   flex: 1;
   min-height: 0;

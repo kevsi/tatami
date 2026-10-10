@@ -895,8 +895,8 @@ const READER_ZOOM_KEY = 'tatami.readerZoom';
  *  double-clic. Trois copies d'une même borne finissent toujours par diverger,
  *  et celle qui diverge en premier est celle que personne ne regarde.
  *
- *  `ZOOM_MAX` sert en plus de seuil au curseur `zoom-out` : au-delà, un clic
- *  réduit au lieu d'agrandir, donc la loupe doit changer de sens.
+ *  Elles ne servent plus de seuil à un curseur : la loupe a été retirée le
+ *  2026-10-10. Elles restent parce que la borne, elle, est utilisée trois fois.
  */
 const ZOOM_MIN = 50;
 const ZOOM_MAX = 200;
@@ -5150,11 +5150,7 @@ if (reader) {
           </div>
         </header>
 
-        <div
-          className={`webtoon${zoom >= ZOOM_MAX ? ' zoom-max' : ''}`}
-          ref={stripRef}
-          onScroll={onScrollBande}
-        >
+        <div className="webtoon" ref={stripRef} onScroll={onScrollBande}>
             {/* Tâche 1.9 — virtualisation. Mesuré : Killer Peter = 303 pages
                 dans UN `.cbz` ; rendues toutes, le navigateur chargeait les
                 303 images à l'ouverture (211 requêtes `tatami://`).

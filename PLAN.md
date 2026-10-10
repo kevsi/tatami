@@ -688,34 +688,39 @@ que le silence.
 moteur a journalisé le retrait), liste blanche revenue à 1372 noms sans le nom
 ajouté, thème remis à `sombre`.
 
-### Journal 2026-10-10 — la loupe du webtoon mentait à 200 %
+### Journal 2026-10-10 — la loupe du webtoon, puis son retrait
 
-**Ce n'était pas un bugs, c'était une annonce.** `globals.css` posait
-`cursor: zoom-in` sur `.webtoon img:hover`, et le geste existe bel et bien :
-`onDoubleClick` bascule 100 % ↔ 200 %. La loupe signalait donc un vrai
-raccourci.
+**Question de l'utilisateur** : « pourquoi une loupe apparaît quand la flèche
+est sur le webtoon ? »
 
-**Le vrai défaut, petit mais réel** : le curseur restait `zoom-in` **même à
-200 %**, où le prochain double-clic **réduit**. Il faisait promettre l'inverse
-de ce qui arrivait. Demandé à l'utilisateur, qui a choisi « le rendre honnête ».
+**Réponse, et ce n'était pas un bug** : `globals.css` posait `cursor: zoom-in`
+sur `.webtoon img:hover`, et le geste existe bellement — `onDoubleClick` bascule
+100 % ↔ 200 %. La loupe annonçait donc un vrai raccourci.
 
-**Correctif** : `.webtoon.zoom-max img:hover { cursor: zoom-out }`, et la classe
-`zoom-max` posée sur la bande selon le zoom. La classe est vérifiée présente
-**des deux côtés** (JSX et CSS) : une classe écrite d'un seul côté ne casse
-rien, elle ne fait simplement rien — leçon AGENTS.md §14.
+**Le vrai défaut, petit** : le curseur restait `zoom-in` **même à 200 %**, où le
+prochain double-clic **réduit**. Il faisait promettre l'inverse de ce qui arrive.
+Proposé, l'utilisateur a d'abord choisi « le rendre honnête ».
 
-**Au passage** : le `200` était écrit en dur à **trois** endroits (borne de
-`changeZoom`, `max` du curseur, seuil du double-clic). Extraits en
-`ZOOM_MIN` / `ZOOM_MAX`, posés au niveau du module — un premier essai les avait
-mis dans le corps du composant, `tsc` l'a refusé (`TS1184`, un `export` n'est
-pas légal là). `ZOOM_MAX` sert maintenant de seuil au curseur en plus de borne.
+**Décision finale de l'utilisateur** : « enlève-le finalement ». La loupe
+clignotait sur toute la bande pendant la lecture ; le raccourci reste mais n'est
+plus **annoncé**. Les deux règles `cursor:` sont supprimées, et la classe
+`zoom-max` avec elles — sinon elle serait du code que plus rien ne lit.
+
+Pas de `cursor: default` en remplacement : la valeur par défaut d'un `<img>`
+est déjà `default`, la règle serait du bruit. Un commentaire dans
+`globals.css` dit ce qui a été retiré et pourquoi, pour que personne ne le
+« répare ».
+
+**Conservé au passage** : `ZOOM_MIN` / `ZOOM_MAX`. Le `200` était écrit en dur à
+**trois** endroits (borne de `changeZoom`, `max` du curseur, seuil du
+double-clic) — trois copies d'une même borne finissent toujours par diverger.
+Elles ne servent plus de seuil à un curseur, mais la borne, elle, est utilisée
+trois fois.
 
 **Portes** : `typecheck` 0 · `lint` 0 erreur, 4 warnings connus · `hooks` vert ·
-`test` 92 · les cinq portes de script vertes · `build` OK. Vérifié que la
-classe existe bien dans le JSX **et** dans le CSS.
-
-**Non mesuré sur l'app réelle** (port CDP indisponible, cf. entrée précédente) :
-le changement est visuel et se juge au survol.
+`test` 92 · cinq portes de script vertes · `build` OK · vérifié qu'il ne reste
+**aucune** règle `cursor: zoom` (le seul `zoom-in` restant est dans le
+commentaire qui explique le retrait).
 
 ### Journal 2026-10-10 — saut de page 3 à 48 : la page ne s'affichait pas
 

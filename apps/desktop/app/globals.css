@@ -1583,20 +1583,16 @@ button:disabled {
   box-sizing: border-box;
 }
 
-/* Curseur de la page, au survol.
+/* Pas de curseur de zoom sur la page.
  *
- * Il est **honnête**, et ça n'est pas un détail : `zoom-in` promet « un clic
- * agrandit ». Le double-clic bascule 100 % <-> 200 % (`page.tsx`,
- * `onDoubleClick`), donc à 200 % le prochain clic RÉDUIT. Le curseur doit le
- * dire, sinon il fait promettre l'inverse de ce qui arrive. `.zoom-max` est
- * posé sur `.webtoon` par le lecteur selon le zoom courant. */
-.webtoon img:hover {
-  cursor: zoom-in;
-}
-
-.webtoon.zoom-max img:hover {
-  cursor: zoom-out;
-}
+ * Il y en avait un (`zoom-in`), et il a été retiré le 2026-10-10 à la demande
+ * de l'utilisateur — la loupe clignotait sur toute la bande pendant la lecture.
+ * Le geste qu'il annonçait existe toujours (double-clic = bascule 100 % <-> 200 %,
+ * `onDoubleClick` dans `page.tsx`) ; il n'est simplement plus **annoncé**.
+ *
+ * À ne pas « réparer » en remettant `cursor: default` : la valeur par défaut
+ * d'un `<img>` est déjà `default`, donc la règle serait du bruit de plus.
+ */
 
 /* Placeholder d'une page qui n'est pas encore decodee.
    Meme position, meme largeur et meme hauteur que l'image qui le remplace :

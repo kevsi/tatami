@@ -13,8 +13,17 @@
 //! - le user-agent du moteur (Firefox) diffère de celui de WebView2 (Chromium) :
 //!   selon le site, la clearance peut être refusée. C'est mesurable en
 //!   rejouant la requête après résolution.
+//!
+//! Détection automatique de la fin du challenge (mesuré le 2026-10-10 sur
+//! TOONFR) : `setCookies` n'était appelé que si l'utilisateur revenait dans
+//! l'app cliquer « C'est fait, réessayer ». Mesure : 2 challenges, 0 cookie
+//! transmis (PLAN.md:1356-1359). Une tâche de surveillance interroge donc
+//! les cookies toutes les 1,5 s et applique le même chemin dès que
+//! `cf_clearance` apparaît. Le bouton manuel reste le secours.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::json;
@@ -23,6 +32,126 @@ use tauri::{
 };
 
 use super::supervisor::Supervisor;
+
+/// Cookie dont la présence marque la résolution du challenge.
+const CF_CLEARANCE: &str = "cf_clearance";
+/// Cadence de la surveillance automatique.
+const SURVEILLE_PAS: Duration = Duration::from_millis(1500);
+/// Au-delà, on arrête de surveiller : l'utilisateur a soit résolu (les
+/// cookies sont partis), soit renoncé. Une surveillance sans fin garderait
+/// une tâche éveillée par source ouverte.
+const SURVEILLE_MAX: Duration = Duration::from_secs(180);
+
+/// Surveillances actives : label → drapeau « cookies déjà appliqués ».
+///
+/// Le drapeau garantit **un seul déclenchement par fenêtre** : appliqués par
+/// la surveillance OU par le bouton manuel, jamais les deux — un double
+/// `setCookies` émettrait deux `challenge://resolu`, donc le front
+/// rejouerait la requête deux fois. L'entrée est retirée à la fin de la
+/// tâche, ce qui réarme la surveillance à la prochaine ouverture.
+static SURVEILLANCES: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
+
+fn surveillances() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
+    SURVEILLANCES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Enregistre la surveillance d'un label. Rend `None` (et n'insère rien) si
+/// une surveillance vit déjà : deux tâches sur le même label pourraient
+/// appliquer chacune de leur côté. `Some(drapeau)` = nouvelle surveillance à
+/// démarrer, avec son drapeau neuf.
+fn enregistrer_surveillance(label: &str) -> Option<Arc<AtomicBool>> {
+    let mut carte = surveillances().lock().ok()?;
+    if carte.contains_key(label) {
+        return None;
+    }
+    let drapeau = Arc::new(AtomicBool::new(false));
+    carte.insert(label.to_string(), Arc::clone(&drapeau));
+    Some(drapeau)
+}
+
+/// Retire la surveillance, mais seulement si c'est encore la nôtre : une
+/// fenêtre recréée dans la seconde suivant sa fermeture a pu installer une
+/// nouvelle tâche entre-temps, et l'ancienne ne doit pas l'effacer.
+fn retirer_surveillance(label: &str, drapeau: &Arc<AtomicBool>) {
+    if let Ok(mut carte) = surveillances().lock() {
+        if carte.get(label).is_some_and(|d| Arc::ptr_eq(d, drapeau)) {
+            carte.remove(label);
+        }
+    }
+}
+
+/// Valeur du cookie `cf_clearance` visible pour `url`, s'il existe.
+///
+/// La valeur reste en mémoire : elle n'est **jamais** journalisée (règle
+/// projet sur les cookies).
+async fn cf_clearance_courant(app: &AppHandle, label: &str, url: &Url) -> Option<String> {
+    let fenetre = app.get_webview_window(label)?;
+    let cookies = fenetre.cookies_for_url(url.clone()).ok()?;
+    cookies
+        .into_iter()
+        .find(|c| c.name() == CF_CLEARANCE)
+        .map(|c| c.value().to_string())
+}
+
+/// Surveille la fenêtre jusqu'à `SURVEILLE_MAX`, par pas de `SURVEILLE_PAS`.
+///
+/// Dès que `cf_clearance` **apparaît** (ou change de valeur), les cookies
+/// sont poussés au moteur, la fenêtre se ferme et le front est prévenu par
+/// `challenge://resolu` — le même chemin que le bouton « C'est fait,
+/// réessayer », sans le clic.
+///
+/// La comparaison à une valeur de départ est indispensable : le profil
+/// WebView2 est partagé, donc un `cf_clearance` **périmé** peut déjà être
+/// présent à l'ouverture. Le prendre pour une résolution bouclerait —
+/// refuser, rouvrir, redéclencher sur le même vieux cookie.
+fn surveiller_fenetre(
+    app: AppHandle,
+    sup: Arc<Supervisor>,
+    source: String,
+    url: Url,
+    label: String,
+    drapeau: Arc<AtomicBool>,
+) {
+    tauri::async_runtime::spawn(async move {
+        let deja_vu = cf_clearance_courant(&app, &label, &url).await;
+        let limite = tokio::time::Instant::now() + SURVEILLE_MAX;
+        loop {
+            tokio::time::sleep(SURVEILLE_PAS).await;
+            if app.get_webview_window(&label).is_none() {
+                break; // fermée (croix rouge ou application) : terminé
+            }
+            let actuel = cf_clearance_courant(&app, &label, &url).await;
+            if actuel.is_none() || actuel == deja_vu {
+                if tokio::time::Instant::now() >= limite {
+                    break;
+                }
+                continue;
+            }
+            // Un cookie **nouveau** (absent au départ, ou de valeur
+            // différente) : le challenge vient d'être résolu.
+            if drapeau.swap(true, Ordering::SeqCst) {
+                // Le bouton manuel a appliqué entre deux ticks.
+                break;
+            }
+            match appliquer_cookies(&app, &sup, &source, &url).await {
+                Ok(n) => {
+                    tracing::info!(
+                        "challenge: {n} cookie(s) applique(s) automatiquement source={source}"
+                    );
+                    let _ = app.emit(
+                        "challenge://resolu",
+                        json!({ "source": source, "cookies": n }),
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("challenge: application automatique echouee : {e}");
+                }
+            }
+            break;
+        }
+        retirer_surveillance(&label, &drapeau);
+    });
+}
 
 fn challenge_label(source: &str) -> String {
     format!("challenge-{}", super::download::sanitize(source))
@@ -92,7 +221,7 @@ pub async fn open_challenge(
         let _ = existing.set_focus();
         return Ok(());
     }
-    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed))
+    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed.clone()))
         .title(format!("Vérification — {source}"))
         .inner_size(980.0, 860.0);
     // Même user-agent que le moteur : la clearance est émise pour un agent
@@ -122,6 +251,19 @@ pub async fn open_challenge(
             );
         }
     });
+    // Surveillance automatique de la fin du challenge. `None` = une
+    // surveillance vit déjà sur ce label (fenêtre recréée aussitôt après sa
+    // fermeture) : on n'en démarre pas une seconde.
+    if let Some(drapeau) = enregistrer_surveillance(&label) {
+        surveiller_fenetre(
+            app.clone(),
+            Arc::clone(&*sup),
+            source.clone(),
+            parsed.clone(),
+            label.clone(),
+            drapeau,
+        );
+    }
     Ok(())
 }
 
@@ -135,12 +277,42 @@ pub async fn solve_challenge(
     url: String,
 ) -> Result<usize, String> {
     let label = challenge_label(&source);
-    let window = app
-        .get_webview_window(&label)
-        .ok_or("la fenêtre de vérification est fermée")?;
+    if app.get_webview_window(&label).is_none() {
+        return Err("la fenêtre de vérification est fermée".to_string());
+    }
     let parsed: Url = url
         .parse()
         .map_err(|e| format!("URL de challenge invalide : {e}"))?;
+    // Un seul déclenchement par fenêtre : si la surveillance automatique a
+    // déjà appliqué les cookies, rejouer ici enverrait un second
+    // `challenge://resolu` au front, donc une seconde relecture.
+    if let Some(drapeau) = surveillances()
+        .lock()
+        .ok()
+        .and_then(|carte| carte.get(&label).cloned())
+    {
+        if drapeau.swap(true, Ordering::SeqCst) {
+            return Err("la vérification a déjà été appliquée automatiquement".to_string());
+        }
+    }
+    appliquer_cookies(&app, &sup, &source, &parsed).await
+}
+
+/// Lit les cookies de la fenêtre, les pousse au moteur, ferme la fenêtre.
+///
+/// Partagée par le bouton manuel (`solve_challenge`) et par la surveillance
+/// automatique (`surveiller_fenetre`) — un seul des deux passe, gardé par le
+/// drapeau de `SURVEILLANCES`.
+async fn appliquer_cookies(
+    app: &AppHandle,
+    sup: &Arc<Supervisor>,
+    source: &str,
+    parsed: &Url,
+) -> Result<usize, String> {
+    let label = challenge_label(source);
+    let window = app
+        .get_webview_window(&label)
+        .ok_or("la fenêtre de vérification est fermée")?;
     let host = parsed
         .host_str()
         .ok_or("hôte introuvable dans l'URL de challenge")?
@@ -148,7 +320,7 @@ pub async fn solve_challenge(
 
     tracing::info!("challenge: lecture des cookies source={source} label={label}");
     let cookies = window
-        .cookies_for_url(parsed)
+        .cookies_for_url(parsed.clone())
         .map_err(|e| format!("lecture des cookies : {e}"))?;
 
     let payload: Vec<serde_json::Value> = cookies
@@ -183,7 +355,7 @@ pub async fn solve_challenge(
             "source": source,
             "cookies": payload,
             // Même agent que celui de la fenêtre de résolution.
-            "userAgent": engine_user_agent(&sup).await,
+            "userAgent": engine_user_agent(sup).await,
         }),
         Duration::from_secs(20),
     )
@@ -205,7 +377,7 @@ pub async fn cancel_challenge(app: AppHandle, source: String) -> Result<(), Stri
 
 #[cfg(test)]
 mod tests {
-    use super::challenge_label;
+    use super::{challenge_label, enregistrer_surveillance, retirer_surveillance, surveillances};
 
     #[test]
     fn libelle_de_challenge_est_sanitise() {
@@ -215,5 +387,40 @@ mod tests {
         assert!(label.starts_with("challenge-site_"));
         assert!(!label.contains('/'));
         assert_eq!(challenge_label(".."), "challenge-sans-titre");
+    }
+
+    /// **Un seul déclenchement par fenêtre.** La surveillance automatique et
+    /// le bouton manuel partagent le même drapeau : si les deux passaient,
+    /// `setCookies` partirait deux fois et le front rejouerait la requête
+    /// deux fois. Premier venu gagne ; le second voit le drapeau déjà levé.
+    #[test]
+    fn une_seule_surveillance_par_label_et_un_seul_declenchement() {
+        // Label unique : la carte est un static partagé par tous les tests.
+        let label = "challenge-test-registre";
+        let drapeau = enregistrer_surveillance(label).expect("première surveillance");
+        let second = enregistrer_surveillance(label);
+        assert!(
+            second.is_none(),
+            "une seconde surveillance ne doit pas démarrer"
+        );
+        assert!(
+            !drapeau.swap(true, std::sync::atomic::Ordering::SeqCst),
+            "le premier passage lève le drapeau"
+        );
+        assert!(
+            drapeau.swap(true, std::sync::atomic::Ordering::SeqCst),
+            "le second trouve le drapeau déjà levé : il s'arrête"
+        );
+        retirer_surveillance(label, &drapeau);
+        let rearmee = enregistrer_surveillance(label)
+            .expect("après arrêt de la tâche, la prochaine fenêtre réarme la surveillance");
+        // Nettoyage : les tests sont parallèles et la carte est partagée.
+        // C'est bien la **nouvelle** entrée qu'il faut retirer : `ptr_eq`
+        // protège justement l'ancienne de cet effacement.
+        retirer_surveillance(label, &rearmee);
+        assert!(
+            surveillances().lock().unwrap().get(label).is_none(),
+            "le label ne doit rien laisser derrière lui"
+        );
     }
 }

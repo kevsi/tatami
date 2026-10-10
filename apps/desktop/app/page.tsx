@@ -1435,6 +1435,26 @@ export default function Home() {
    * et relancerait deux requêtes. D'où le miroir, mis à jour par un effet
    * séparé qui ne dépend que du **primitif** `langue`.
    */
+  // Miroir de l'état pour les écouteurs abonnés **une seule fois** (tableau
+  // `[]`) : leur closure ne voit que le rendu de montage. `challenge://resolu`
+  // a besoin de la source sélectionnée **au moment de l'événement** — pour
+  // rejouer la lecture du bon catalogue, pas celle d'il y a une heure. Même
+  // motif que `tCourant`, appliqué à des valeurs qui changent à chaque
+  // action. Cet effet n'a pas de tableau : il doit courir après **chaque**
+  // rendu pour rester frais, et il n'appelle aucun `setState`.
+  const miroirChallenge = useRef<{
+    selected: Source | null;
+    verif: { source: string; url: string; reason: string } | null;
+    charger: ((s: Source, offset?: number) => Promise<void>) | null;
+  }>({ selected: null, verif: null, charger: null });
+  useEffect(() => {
+    miroirChallenge.current = {
+      selected,
+      verif,
+      charger: (s, offset = 0) => loadSource(s, offset),
+    };
+  });
+
   const tCourant = useRef(t);
   useEffect(() => {
     tCourant.current = t;
@@ -1534,6 +1554,41 @@ export default function Home() {
     const unlistenFermee = listen<{ source: string }>('challenge://fermee', () => {
       setChallengeBusy(false);
     });
+    // Résolution détectée automatiquement. La surveillance Rust pousse les
+    // cookies dès que `cf_clearance` apparaît dans la fenêtre, sans attendre
+    // le clic « C'est fait, réessayer » — mesuré sur TOONFR (2026-10-10) :
+    // sans ce clic, `setCookies` n'était appelé 0 fois sur 2 challenges
+    // (PLAN.md:1356-1359). On rejoue la même action que le bouton manuel.
+    // Le bouton reste le secours ; Rust garantit un seul déclenchement par
+    // fenêtre (drapeau `SURVEILLANCES`), donc pas de double relecture ici.
+    const unlistenResolu = listen<{ source: string; cookies: number }>(
+      'challenge://resolu',
+      (event) => {
+        const { source, cookies } = event.payload;
+        setChallengeBusy(false);
+        const miroir = miroirChallenge.current;
+        if (miroir.selected && miroir.selected.name === source) {
+          setChallenge(null);
+          setError(null);
+          setNotice(
+            tCourant.current('libelle.verification.cookies', {
+              n: cookies,
+              source: nomSource(miroir.selected),
+            }),
+          );
+          void miroir.charger?.(miroir.selected, 0);
+          return;
+        }
+        // Fenêtre ouverte par un téléchargement : le même signal vaut notice,
+        // et le panneau « vérification » disparaît comme après un clic.
+        if (miroir.verif?.source === source) {
+          setVerif(null);
+          setNotice(
+            tCourant.current('telechargements.verification.cookies', { n: cookies, source }),
+          );
+        }
+      },
+    );
     // Tâche 3.2 — le flux « mises à jour ». Le planificateur émet
     // `maj://nouveaux-chapitres` avec un bilan de passe, et **rien** quand il
     // n'y a rien de neuf : on ne se réabonne donc pas pour rien.
@@ -1592,6 +1647,7 @@ export default function Home() {
       unlisten.then((off) => off()).catch(() => {});
       unlistenVerif.then((off) => off()).catch(() => {});
       unlistenFermee.then((off) => off()).catch(() => {});
+      unlistenResolu.then((off) => off()).catch(() => {});
       unlistenMaj.then((off) => off()).catch(() => {});
     };
     // Montage uniquement : rejouer cet effet à chaque changement de

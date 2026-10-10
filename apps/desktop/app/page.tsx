@@ -888,6 +888,19 @@ type SavedQueue = { items: Manga[]; startedAt: number };
 const QUEUE_KEY = 'tatami.queue';
 const READER_ZOOM_KEY = 'tatami.readerZoom';
 
+/** Bornes du zoom de lecture, en pourcentage.
+ *
+ *  Constantes nommées parce que le `200` était écrit en dur à **trois**
+ *  endroits : la borne de `changeZoom`, le `max` du curseur, et le seuil du
+ *  double-clic. Trois copies d'une même borne finissent toujours par diverger,
+ *  et celle qui diverge en premier est celle que personne ne regarde.
+ *
+ *  `ZOOM_MAX` sert en plus de seuil au curseur `zoom-out` : au-delà, un clic
+ *  réduit au lieu d'agrandir, donc la loupe doit changer de sens.
+ */
+const ZOOM_MIN = 50;
+const ZOOM_MAX = 200;
+
 function loadSavedQueue(): SavedQueue | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -3534,7 +3547,7 @@ function apresFermetureLecteur() {
 }
 
 function changeZoom(next: number) {
-  const value = Math.min(200, Math.max(50, next));
+  const value = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
   setZoom(value);
   window.localStorage.setItem(READER_ZOOM_KEY, String(value));
 }
@@ -5072,8 +5085,8 @@ if (reader) {
               <span className="muted">{zoom}%</span>
               <input
                 type="range"
-                min={50}
-                max={200}
+                min={ZOOM_MIN}
+                max={ZOOM_MAX}
                 step={10}
                 value={zoom}
                 onChange={(e) => changeZoom(Number(e.target.value))}
@@ -5137,7 +5150,11 @@ if (reader) {
           </div>
         </header>
 
-        <div className="webtoon" ref={stripRef} onScroll={onScrollBande}>
+        <div
+          className={`webtoon${zoom >= ZOOM_MAX ? ' zoom-max' : ''}`}
+          ref={stripRef}
+          onScroll={onScrollBande}
+        >
             {/* Tâche 1.9 — virtualisation. Mesuré : Killer Peter = 303 pages
                 dans UN `.cbz` ; rendues toutes, le navigateur chargeait les
                 303 images à l'ouverture (211 requêtes `tatami://`).
@@ -5276,7 +5293,7 @@ if (reader) {
                       });
                       setAdmis((prec) => admettreUne(prec, fenetre));
                     }}
-                    onDoubleClick={() => changeZoom(zoom >= 200 ? 100 : 200)}
+                    onDoubleClick={() => changeZoom(zoom >= ZOOM_MAX ? 100 : ZOOM_MAX)}
                   />
                   </>
                 );

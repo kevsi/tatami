@@ -688,6 +688,35 @@ que le silence.
 moteur a journalisé le retrait), liste blanche revenue à 1372 noms sans le nom
 ajouté, thème remis à `sombre`.
 
+### Journal 2026-10-10 — la loupe du webtoon mentait à 200 %
+
+**Ce n'était pas un bugs, c'était une annonce.** `globals.css` posait
+`cursor: zoom-in` sur `.webtoon img:hover`, et le geste existe bel et bien :
+`onDoubleClick` bascule 100 % ↔ 200 %. La loupe signalait donc un vrai
+raccourci.
+
+**Le vrai défaut, petit mais réel** : le curseur restait `zoom-in` **même à
+200 %**, où le prochain double-clic **réduit**. Il faisait promettre l'inverse
+de ce qui arrivait. Demandé à l'utilisateur, qui a choisi « le rendre honnête ».
+
+**Correctif** : `.webtoon.zoom-max img:hover { cursor: zoom-out }`, et la classe
+`zoom-max` posée sur la bande selon le zoom. La classe est vérifiée présente
+**des deux côtés** (JSX et CSS) : une classe écrite d'un seul côté ne casse
+rien, elle ne fait simplement rien — leçon AGENTS.md §14.
+
+**Au passage** : le `200` était écrit en dur à **trois** endroits (borne de
+`changeZoom`, `max` du curseur, seuil du double-clic). Extraits en
+`ZOOM_MIN` / `ZOOM_MAX`, posés au niveau du module — un premier essai les avait
+mis dans le corps du composant, `tsc` l'a refusé (`TS1184`, un `export` n'est
+pas légal là). `ZOOM_MAX` sert maintenant de seuil au curseur en plus de borne.
+
+**Portes** : `typecheck` 0 · `lint` 0 erreur, 4 warnings connus · `hooks` vert ·
+`test` 92 · les cinq portes de script vertes · `build` OK. Vérifié que la
+classe existe bien dans le JSX **et** dans le CSS.
+
+**Non mesuré sur l'app réelle** (port CDP indisponible, cf. entrée précédente) :
+le changement est visuel et se juge au survol.
+
 ### Journal 2026-10-10 — saut de page 3 à 48 : la page ne s'affichait pas
 
 Signalé par l'utilisateur : « quand je passe de la page 3 à la page 48, la page

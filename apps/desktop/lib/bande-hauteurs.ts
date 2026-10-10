@@ -290,19 +290,30 @@ export function largeurImagePx(largeurBande: number, zoom: number): number {
  *
  * Mesuré le 2026-10-09 : les flèches haut et bas étaient traitées comme
  * « page suivante / page précédente », donc chaque appui valait **une page
- * entière** (18 629 px sur le chapitre mesuré). Dans une bande qui se défile,
- * c'est un saut, pas un défilement. Pire : le premier appui ne déplaçait
- * **rien** (`scrollTop` resté à 0 alors que le compteur passait de 1 à 2),
- * parce que l'ancrage de page ne peut pas se satisfaire quand la page courante
- * est plus haute que le cadre.
+ * entière**. Dans une bande qui se défile, c'est un saut, pas un défilement.
+ * Le correctif les a rangées avec le défilement — mais il gardait **80 % du
+ * cadre**, soit 546 px sur un cadre de 683 px. Signalé le 2026-10-10 par
+ * l'utilisateur comme « des sauts quand même », avec la demande d'un
+ * comportement « progressif, sans saut ».
  *
- * On garde 80 % du cadre plutôt qu'une page entière : assez pour avancer avec
- * le défilement, assez peu pour ne pas sauter du texte. `PAS_DEFILEMENT_MIN`
- * est un plancher pour un cadre minuscule : sans lui, un pas de 8 px rendrait
- * la touche décorative.
+ * ## Le critère, exprimé plutôt que deviné
+ *
+ * Une page de webtoon mesure ~1 097 px (mesuré : One Piece ch. 900 fait 17
+ * pages pour 18 650 px de bande, dans un cadre de 683 px). **Un pas qui
+ * approche une page est un saut**, quelle que soit sa forme. Un huitième du
+ * cadre fait 85 px — moins d'un douzième de page — et reste sous une ligne de
+ * dialogue dans les deux sens.
+ *
+ * La vitesse ne vient pas de la taille du pas mais de la **répétition** : un
+ * appui maintenu répète ~30 fois par seconde, donc 10 appuis couvrent 850 px,
+ * soit presque une page. C'est ce qui donne l'impression de continu.
+ *
+ * `PAS_DEFILEMENT_MIN` est un plancher pour un cadre minuscule : sans lui, un
+ * petit pas rendrait la touche décorative. Il est passé de 80 à 48 px pour
+ * rester sous le pas normal — sinon un cadre moyen aurait deux régimes.
  */
-export const RATIO_PAS_DEFILEMENT = 0.8;
-export const PAS_DEFILEMENT_MIN = 80;
+export const RATIO_PAS_DEFILEMENT = 1 / 8;
+export const PAS_DEFILEMENT_MIN = 48;
 
 export function pasDeDefilement(clientHeight: number): number {
   return Math.max(PAS_DEFILEMENT_MIN, Math.round((clientHeight || 0) * RATIO_PAS_DEFILEMENT));

@@ -310,11 +310,28 @@ describe('largeur de page : des pixels entiers, jamais un pourcentage', () => {
 });
 
 describe('défilement progressif au clavier', () => {
-  it('un pas vaut 80 % du cadre, pas une page entière', () => {
-    // Mesuré le 2026-10-09 : cadre de 627 px, page de 18 629 px. Un pas calqué
-    // sur la page fait un saut ; 80 % du cadre défile.
-    assert.equal(pasDeDefilement(627), 502);
-    assert.ok(pasDeDefilement(627) < 1000, 'le pas doit rester dans le cadre');
+  // Cadre mesuré dans le lecteur réel (2026-10-10) : 683 px.
+  const CADRE = 683;
+  // Hauteur moyenne d'une page, mesurée le 2026-10-10 sur One Piece ch. 900 :
+  // 17 pages pour 18 650 px de bande, soit ~1 097 px. Une page fait donc plus
+  // d'une fois et demie le cadre.
+  const PAGE = 1097;
+
+  it('un appui ne franchit pas une page', () => {
+    // La mesure du jugement : un pas qui dépasse une page EST un saut, quelle
+    // que soit sa forme. L'ancien 80 % du cadre valait 546 px — la moitié d'une
+    // page — et c'est ce que l'utilisateur a signalé le 2026-10-10 comme
+    // « des sauts quand même ».
+    const pas = pasDeDefilement(CADRE);
+    assert.ok(
+      pas < PAGE / 3,
+      `un pas de ${pas} px franchit trop d'une page de ${PAGE} px`,
+    );
+  });
+
+  it('le pas est une fraction du cadre, pas le cadre', () => {
+    // 80 % du cadre était un demi-écran : l'œil perd le fil du texte.
+    assert.equal(pasDeDefilement(CADRE), Math.round(CADRE / 8));
   });
 
   it('un cadre minuscule ne donne pas un pas décoratif', () => {
@@ -328,6 +345,17 @@ describe('défilement progressif au clavier', () => {
       assert.ok(p > 0, 'pas nul');
       if (h > PAS_DEFILEMENT_MIN) assert.ok(p <= h, 'le pas ne doit pas dépasser le cadre');
     }
+  });
+
+  it('une page se parcourt en un nombre raisonnable d’appuis', () => {
+    // C'est la répétition qui donne l'impression de continu, donc le critère
+    // n'est pas « dix appuis = une page » (mesuré : 10 x 85 = 850 px, une page
+    // en fait 1 097) mais « une page ne demande pas une rafale interminable ».
+    // Au-delà de 20 appuis, la touche paraitrait morte et l'utilisateur
+    // reviendrait demander le saut qu'on vient de retirer.
+    const appuisParPage = Math.ceil(PAGE / pasDeDefilement(CADRE));
+    assert.ok(appuisParPage <= 15, `${appuisParPage} appuis pour une page, trop`);
+    assert.ok(appuisParPage >= 4, `${appuisParPage} appuis pour une page, c'est redevenu un saut`);
   });
 });
 

@@ -688,6 +688,48 @@ que le silence.
 moteur a journalisé le retrait), liste blanche revenue à 1372 noms sans le nom
 ajouté, thème remis à `sombre`.
 
+### Journal 2026-10-10 — flèches haut/bas : de 546 px à 85 px par appui
+
+Signalé par l'utilisateur : « le défilement par flèches haut et bas fait encore
+des sauts, je préfère que ça défoule progressivement, sans saut, comme CDisplayEx ».
+
+**Ce qui était déjà juste** : le correctif du 2026-10-09 tient — les flèches ne
+changent plus de page, elles appellent `scrollBy`. Vérifié dans le code
+(`page.tsx:3934`).
+
+**Ce qui restait** : le PAS. `pasDeDefilement()` valait **80 % du cadre**, soit
+**546 px** sur un cadre mesuré de 683 px.
+
+**Le critère, exprimé au lieu de deviné** : une page de webtoon mesure ~1 097 px
+(One Piece ch. 900 : 17 pages pour 18 650 px de bande, cadre 683 px). Un pas qui
+approche une page est un saut, quelle que soit sa forme. 546 px en faisait la
+**moitié** — c'est bien ce que l'utilisateur sentait.
+
+**Correctif** : un **huitième** du cadre → **85 px**, moins d'un douzième de
+page. Plancher passé de 80 à 48 px pour rester sous le pas normal : sinon un
+cadre moyen basculerait entre deux régimes.
+
+La vitesse ne vient pas de la taille du pas mais de la **répétition** : un appui
+maintenu répète ~30 fois par seconde. Le critère retenu n'est donc pas « dix
+appuis = une page » (mesuré : 10 × 85 = 850 px, une page en fait 1 097) mais
+« **une page en 13 appuis** » — assez vite pour lire, assez lent pour suivre.
+
+**Preuve rouge** : remettre le ratio à 0.8 fait échouer **trois** tests, dont
+deux avec un message qui chiffre le défaut —
+`un pas de 546 px franchit trop d'une page de 1097 px` et
+`3 appuis pour une page, c'est redevenu un saut`.
+
+**Portes** : `pnpm test` 86 · `typecheck` 0 · `lint` 0 erreur, 4 warnings connus ·
+`hooks`, `i18n`, `chemins`, `pages`, `perso`, `ipc` verts · `build` OK. Rust non
+touché.
+
+**Ce qui n'a PAS été mesuré, et pourquoi** : pas de vérification sur l'app
+réelle. L'instance lancée par `tauri dev` n'expose pas le port CDP 9224, et lancer
+une seconde instance a mesuré `failed to create webview` (HRESULT 0x8007139F) —
+conflit de profil WebView2. Je n'ai pas relancé pour ne pas déranger la session
+en cours. Le changement est donc **prouvé sur la fonction, pas sur le geste** :
+à confirmer au feel, et le réglage est une seule ligne si 85 px ne convient pas.
+
 ### Journal 2026-10-10 — « chapitre suivant » arrivait au milieu du chapitre
 
 Signalé par l'utilisateur : en lisant un webtoon, changer de chapitre le

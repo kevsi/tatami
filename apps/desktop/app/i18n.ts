@@ -426,6 +426,8 @@ const FR = {
   'erreur.purge': 'Purge impossible : {raison}',
   'erreur.delai': "{source} n'a pas répondu à temps. Site mort ou trop lent.",
   'erreur.verification': '{source} demande une vérification anti-robot, pas encore gérée.',
+  'erreur.source.bloquee':
+    'La source bloque l’application : réessaie plus tard.',
   'erreur.compte.requis':
     '{source} demande un compte pour ouvrir ce chapitre. Cette source n’est pas utilisable sans.',
   'erreur.surcharge': '{source} est surchargé. Réessaie dans quelques minutes.',
@@ -876,6 +878,7 @@ const EN: Record<Cle, string> = {
   'erreur.purge': 'Cannot clear: {raison}',
   'erreur.delai': '{source} did not answer in time. Site down or very slow.',
   'erreur.verification': '{source} asks for an anti-bot check, not handled yet.',
+  'erreur.source.bloquee': 'This source blocks the application: try again later.',
   'erreur.compte.requis':
     '{source} asks for an account to open this chapter. This source is unusable without one.',
   'erreur.surcharge': '{source} is overloaded. Try again in a few minutes.',

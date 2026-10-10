@@ -6,6 +6,11 @@ import { listen } from '@tauri-apps/api/event';
 import { bandeVirtualisableEst, decalageAncrage, fenetreBande, hauteurRendueMesuree, hauteursBande, largeurImagePx, offsetsBande, pasDeDefilement } from '../lib/bande-hauteurs';
 import { refusMoteur } from '../lib/scripts-refuses';
 import { reconcilierListeBlanche } from '../lib/liste-blanche';
+import {
+  enregistrerEchecChallenge,
+  reinitialiserChallenge,
+  type TentativesChallenge,
+} from '../lib/challenge-garde';
 import { admettreLaCible, admettreUne } from '../lib/quota-pages';
 import { lireListeSources } from '../lib/prefs-tolérantes';
 import { memeSignet } from '../lib/signet-cle';
@@ -1020,6 +1025,11 @@ function describeError(raw: string, sourceName: string, t: Traduire): string {
   if (/TIMEOUT|timeout/i.test(s)) {
     return t('erreur.delai', { source: sourceName });
   }
+  // La borne anti-boucle (`lib/challenge-garde.ts`) a rendu la main : la
+  // source bloque l'application. On le dit sans URL technique.
+  if (/CHALLENGE_EPUISE/.test(s)) {
+    return t('erreur.source.bloquee');
+  }
   if (/CHALLENGE_REQUIRED/i.test(s)) {
     return t('erreur.verification', { source: sourceName });
   }
@@ -1232,6 +1242,16 @@ export default function Home() {
   const [readerLoading, setReaderLoading] = useState(false);
   const [challenge, setChallenge] = useState<string | null>(null);
   const [challengeBusy, setChallengeBusy] = useState(false);
+  // Compteur de challenges consécutifs, par couple (source, action).
+  //
+  // Le défaut mesuré le 2026-10-10 (PLAN.md, source TOONFR) : le cycle
+  // « vérification → relecture → vérification » ne se terminait jamais —
+  // « la fenêtre de résolution se rouvre à chaque essai ». Rien ne comptait
+  // les tentatives. Au-delà de MAX_CHALLENGES, `loadSource` ne propose plus
+  // de bandeau : cf. `lib/challenge-garde.ts`.
+  const [challengeTentatives, setChallengeTentatives] = useState<TentativesChallenge>(
+    () => new Map(),
+  );
   // Vérification demandée par un TÉLÉCHARGEMENT (et non par une lecture).
   // État distinct de `challenge` : celui-ci est une simple URL rattachée à la
   // source ouverte, alors qu'ici l'évènement Rust porte source + URL + motif,
@@ -2352,6 +2372,11 @@ export default function Home() {
         timeoutSecs: listTimeout,
       });
       const items = r.list ?? [];
+      // L'action vient de réussir : le compteur de challenges consécutifs
+      // retombe à zéro pour ce couple (source, action). Sans cette remise,
+      // une source qui a défié l'utilisateur deux fois resterait marquée
+      // « épuisée » même après une lecture normale.
+      setChallengeTentatives((prec) => reinitialiserChallenge(prec, s.name, 'latest'));
       // `s`, **pas** `selected`. `setSelected(s)` plus haut ne met pas à jour la
       // closure : `selected` y est encore la source du rendu précédent, donc la
       // source précédente. Mesuré le 2026-10-08 : en passant de la source A
@@ -2367,8 +2392,21 @@ export default function Home() {
       if (offset > 0 && items.length === 0) setOnePageOnly(true);
     } catch (e) {
       const raw = String(e);
-      setError(raw);
       const url = challengeUrl(raw);
+      if (url) {
+        // Borne anti-boucle. Au-delà de MAX_CHALLENGES tentatives : plus de
+        // bandeau « Résoudre », plus de fenêtre — l'utilisateur ne peut plus
+        // relancer un cycle qui ne se terminait jamais (mesuré sur TOONFR).
+        // Le `finally` éteint quand même l'indicateur de chargement.
+        const r = enregistrerEchecChallenge(challengeTentatives, s.name, 'latest');
+        setChallengeTentatives(r.tentatives);
+        if (r.epuise) {
+          setChallenge(null);
+          setError('CHALLENGE_EPUISE');
+          return;
+        }
+      }
+      setError(raw);
       setChallenge(url);
       // Mémorise la source en échec : elle sera signalée dans le catalogue.
       // Une demande de vérification n'est PAS un échec : à résoudre par l'humain.

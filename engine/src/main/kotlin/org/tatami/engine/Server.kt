@@ -261,16 +261,87 @@ private fun mangaForDetails(
  * (Â« Multiple Content ratings are not supported by this source Â», MangaDex) :
  * on ne renvoie donc jamais un set de plusieurs valeurs, et seulement si la
  * source annonce cette classification dans ses options.
+ *
+ * ## Échoue ouvert, et pourquoi ça ne se corrige pas d'un bloc (2026-10-10)
+ *
+ * L'audit du 2026-10-10 signalait que cette fonction « échoue ouvert » : quand
+ * la classification demandée n'est pas applicable, elle rendait `emptySet()` —
+ * donc **aucun filtre**. Avec le réglage par défaut de l'interface
+ * (`contentRating: "SUGGESTIVE"`, qui exclut l'adulte), une source qui ne
+ * l'expose pas livre son catalogue adulte sans le dire. Ce n'est pas
+ * théorique : c'est le réglage par défaut.
+ *
+ * Refuser dans tous les cas aurait été pire. **Mesuré** sur 82 sources
+ * (échantillon déterministe : les 80 premières de l'enum + les 4 témoins des
+ * fixtures) :
+ *
+ * | `availableContentRating` | sources |
+ * |---|---|
+ * | aucun (ensemble vide)   | 39 |
+ * | erreur de construction  | 37 |
+ * | ADULT, SAFE, SUGGESTIVE | 4 |
+ * | SAFE, SUGGESTIVE        | 2 |
+ *
+ * **6 sources sur 82 seulement annoncent SAFE ou SUGGESTIVE.** Refuser dès que
+ * la classification n'est pas exposée aurait donc cassé le catalogue de ~93 %
+ * des sources — le réglage par défaut de l'interface n'aurait plus rien
+ * affiché nulle part. La règle distingue donc les cas, par ce que
+ * « applicable » veut dire :
+ *
+ * - **valeur d'enum invalide** (`"safee"`, `"adulte"`) : on refuse. Aucun
+ *   appelant légitime n'en envoie, et une faute de frappe ne doit pas devenir
+ *   une fuite de contenu.
+ * - **la source n'annonce AUCUNE classification** : le filtre n'est pas
+ *   applicable, elle n'a rien à filtrer. On ne filtre pas — refuser casserait
+ *   39 sources sur 82 — mais on l'écrit sur stderr, pour que ce soit
+ *   **mesurable** au lieu d'être un silence.
+ * - **la source annonce des classifications, pas celle-là** : le filtre est
+ *   applicable et la source a choisi de ne pas l'appliquer. Livrer le
+ *   catalogue non filtré remet du contenu que l'appelant a demandé d'exclure :
+ *   on refuse, avec un message qui dit ce que la source expose.
+ *
+ * Fonction `internal`, pas `private` : c'est la décision la plus risquée du
+ * moteur (elle choisit si du contenu adulte est livré malgré le réglage), et
+ * elle était inatteignable depuis un test. Même raison que les `pub` du cœur
+ * Rust (cf. `lib.rs`) : une garantie de sécurité doit être **vérifiable**.
+ * `RequestedRatingsTest` la couvre sur ses trois branches.
  */
-private fun requestedRatings(p: JSONObject, options: MangaListFilterOptions): Set<ContentRating> {
+internal fun requestedRatings(
+    p: JSONObject,
+    options: MangaListFilterOptions,
+    sourceName: String,
+): Set<ContentRating> {
+    val demandee = if (p.has("contentRating")) p.optString("contentRating", "") else ""
     val wanted = when {
-        p.has("contentRating") -> p.optString("contentRating", "")
+        p.has("contentRating") -> demandee
             .takeIf { it.isNotBlank() }
             ?.let { runCatching { ContentRating.valueOf(it.uppercase()) }.getOrNull() }
         p.optBoolean("safeOnly", true) -> ContentRating.SAFE
         else -> null
     } ?: return emptySet()
-    return if (wanted in options.availableContentRating) setOf(wanted) else emptySet()
+
+    // Une valeur que l'enum ne connaît pas est une faute de l'appelant, pas un
+    // réglage à deviner : sans ce refus, `"safee"` retombait sur `null` →
+    // `emptySet()` → aucun filtre, donc le contenu exclu livré quand même.
+    if (p.has("contentRating") && demandee.isNotBlank() && wanted == null) {
+        throw ParamException("classification inconnue : « $demandee »")
+    }
+
+    val annoncees = options.availableContentRating
+    if (annoncees.isEmpty()) {
+        System.err.println(
+            "latest/search: classification $wanted demandee mais $sourceName " +
+                "n'en annonce aucune — catalogue NON filtre",
+        )
+        return emptySet()
+    }
+    if (wanted !in annoncees) {
+        throw ParamException(
+            "classification $wanted non exposee par $sourceName " +
+                "(expose : ${annoncees.joinToString()})",
+        )
+    }
+    return setOf(wanted)
 }
 
 /**
@@ -886,7 +957,7 @@ private suspend fun dispatchNatif(
             val filter = MangaListFilter(
                 query = query.ifBlank { null },
                 tags = tags,
-                contentRating = requestedRatings(p, options),
+                contentRating = requestedRatings(p, options, sourceName),
             )
             val list = parser.getList(offset, order, filter).take(limit)
             list.forEach { cache.putManga(sourceName, it) }
@@ -905,7 +976,7 @@ private suspend fun dispatchNatif(
             val order = parser.availableSortOrders.first()
             val filter = MangaListFilter(
                 query = query,
-                contentRating = requestedRatings(p, parser.getFilterOptions()),
+                contentRating = requestedRatings(p, parser.getFilterOptions(), sourceName),
             )
             val list = parser.getList(offset, order, filter).take(limit)
             list.forEach { cache.putManga(sourceName, it) }
@@ -1020,15 +1091,37 @@ private suspend fun dispatchNatif(
         val sourceName = p.reqString("source")
         parseSource(sourceName) // valide le nom
         val cookies = p.optJSONArray("cookies") ?: JSONArray()
+        val maintenant = System.currentTimeMillis()
         val built = (0 until cookies.length()).map { i ->
             val c = cookies.getJSONObject(i)
-            Cookie.Builder()
+            val b = Cookie.Builder()
                 .name(c.reqString("name"))
                 .value(c.reqString("value"))
-                .domain(c.reqString("domain"))
+                // Le domaine arrive sans point initial : okhttp matche alors
+                // l'hôte exact **et** ses sous-domaines (verifie dans le
+                // bytecode d'okhttp 5.1.0 : `domainMatch` compare l'hôte au
+                // suffixe `".$domaine"`). Un domaine **avec** son point
+                // initial ne matche RIEN — il faudrait « ..exemple.com » en
+                // suffixe. `trimStart` est donc une garantie, pas un
+                // embellissement.
+                .domain(c.reqString("domain").trimStart('.'))
                 .path(c.optString("path", "/"))
-                .expiresAt(System.currentTimeMillis() + TimeUnit.DAYS.toMillis(365))
-                .build()
+                // Expiration réelle lue dans la webview. Absente = cookie de
+                // session : une journée par défaut, faute de pouvoir
+                // représenter une session côté moteur (il vit après la
+                // fermeture de la fenêtre). Jusqu'au 2026-10-10 on forçait
+                // maintenant + 365 j, ce qui gardait en circulation un
+                // cookie que le site avait déjà fait périmer.
+                .expiresAt(
+                    if (c.has("expiresAt")) {
+                        c.getLong("expiresAt")
+                    } else {
+                        maintenant + TimeUnit.DAYS.toMillis(1)
+                    },
+                )
+            if (c.optBoolean("secure")) b.secure()
+            if (c.optBoolean("httpOnly")) b.httpOnly()
+            b.build()
         }
         val host = if (built.isNotEmpty()) built.first().domain.trimStart('.') else ""
         (context.cookieJar as InMemoryCookieJar).putCookies(host, built)

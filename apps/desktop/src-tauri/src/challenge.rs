@@ -80,6 +80,35 @@ fn retirer_surveillance(label: &str, drapeau: &Arc<AtomicBool>) {
     }
 }
 
+/// Domaine à transmettre pour un cookie lu dans la webview.
+///
+/// Par défaut, l'hôte de l'URL de challenge. Mais si le cookie porte un
+/// domaine **plus large** (`exemple.com` alors que l'URL visait
+/// `www.exemple.com`), on garde le sien : il couvre les sous-domaines
+/// (API, CDN) que l'hôte seul ne nomme pas. Un domaine sans rapport avec
+/// l'hôte est écarté — l'hôte a au moins servi au challenge, l'autre n'a
+/// rien prouvé.
+///
+/// Fonction pure, testée : la décision se prend ici, une fois, et pas
+/// dispersée côté moteur.
+fn domaine_effectif(cookie_domain: Option<&str>, host: &str) -> String {
+    let h = host.trim_end_matches('.').to_ascii_lowercase();
+    match cookie_domain {
+        Some(d) => {
+            // WebView2 rend les cookies de domaine avec un point initial
+            // (« .exemple.com ») : on l'enlève, okhttp attend la forme
+            // canonique sans point (cf. `Server.kt`).
+            let d = d.trim_matches('.').to_ascii_lowercase();
+            if !d.is_empty() && h.ends_with(&format!(".{d}")) {
+                d
+            } else {
+                h
+            }
+        }
+        None => h,
+    }
+}
+
 /// Valeur du cookie `cf_clearance` visible pour `url`, s'il existe.
 ///
 /// La valeur reste en mémoire : elle n'est **jamais** journalisée (règle
@@ -327,12 +356,25 @@ async fn appliquer_cookies(
         .iter()
         .filter(|c| !c.name().is_empty() && !c.value().is_empty())
         .map(|c| {
-            json!({
+            let mut cookie = json!({
                 "name": c.name(),
                 "value": c.value(),
-                "domain": host,
+                "domain": domaine_effectif(c.domain(), &host),
                 "path": c.path().unwrap_or("/"),
-            })
+            });
+            if let Some(secure) = c.secure() {
+                cookie["secure"] = json!(secure);
+            }
+            if let Some(http_only) = c.http_only() {
+                cookie["httpOnly"] = json!(http_only);
+            }
+            // Expiration réelle, lue dans la webview. Absente = cookie de
+            // session : le moteur choisit alors son défaut. On ne force plus
+            // `maintenant + 365 j`, qui gardait en vie un cookie périmé.
+            if let Some(fin) = c.expires_datetime() {
+                cookie["expiresAt"] = json!(fin.unix_timestamp() * 1000);
+            }
+            cookie
         })
         .collect();
 
@@ -377,7 +419,10 @@ pub async fn cancel_challenge(app: AppHandle, source: String) -> Result<(), Stri
 
 #[cfg(test)]
 mod tests {
-    use super::{challenge_label, enregistrer_surveillance, retirer_surveillance, surveillances};
+    use super::{
+        challenge_label, domaine_effectif, enregistrer_surveillance, retirer_surveillance,
+        surveillances,
+    };
 
     #[test]
     fn libelle_de_challenge_est_sanitise() {
@@ -421,6 +466,35 @@ mod tests {
         assert!(
             surveillances().lock().unwrap().get(label).is_none(),
             "le label ne doit rien laisser derrière lui"
+        );
+    }
+
+    /// Le cookie lu porte parfois un domaine plus large que l'hôte du
+    /// challenge. Le garder, c'est couvrir les sous-domaines (API, CDN) ;
+    /// forcer l'hôte les perdrait en silence.
+    #[test]
+    fn domaine_effectif_garde_le_sur_domaine_du_cookie() {
+        // Challenge résolu sur www, cookie posé pour le domaine racine.
+        assert_eq!(
+            domaine_effectif(Some(".exemple.com"), "www.exemple.com"),
+            "exemple.com"
+        );
+        // Même hôte : rien à élargir.
+        assert_eq!(
+            domaine_effectif(Some("exemple.com"), "exemple.com"),
+            "exemple.com"
+        );
+        // Domaine sans rapport : on retombe sur l'hôte du challenge.
+        assert_eq!(
+            domaine_effectif(Some("autre.test"), "exemple.com"),
+            "exemple.com"
+        );
+        // Aucun domaine fourni : l'hôte.
+        assert_eq!(domaine_effectif(None, "exemple.com"), "exemple.com");
+        // Casse et points de bord, tels que WebView2 les rend.
+        assert_eq!(
+            domaine_effectif(Some(".Exemple.COM."), "WWW.exemple.com"),
+            "exemple.com"
         );
     }
 }

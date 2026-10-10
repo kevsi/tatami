@@ -80,6 +80,88 @@ class CookieRejoueTest {
         assertEquals("abc123", relus.first().value)
     }
 
+    /**
+     * Ce que `setCookies` transmet depuis le 2026-10-10 : l'expiration
+     * **réelle** et les drapeaux du cookie, au lieu de `maintenant + 365 j`
+     * forcé. Un cookie court et `secure` ne doit plus repartir en clair,
+     * ni après sa date.
+     *
+     * Les deux sens se vérifient sans horloge truquée : `secure` se teste
+     * avec une URL `http`, l'expiration avec une date déjà passée.
+     */
+    @Test
+    fun `un cookie court et secure n est pas renvoye en http ni apres expiration`() {
+        val jar = InMemoryCookieJar()
+        val court = okhttp3.Cookie.Builder()
+            .name("cf_clearance")
+            .value("valeur")
+            .domain("exemple.com")
+            .path("/")
+            .expiresAt(System.currentTimeMillis() + 60_000) // une minute
+            // okhttp 5 : `secure()` sans argument pose le drapeau à true
+            // (verifié dans le bytecode : `iconst_1; putfield secure`). Il
+            // n'existe pas de `secure(false)` — le défaut est false.
+            .secure()
+            .build()
+        jar.putCookies("exemple.com", listOf(court))
+
+        assertEquals(
+            0,
+            jar.loadForRequest("http://exemple.com/".toHttpUrl()).size,
+            "un cookie secure ne repart jamais en clair",
+        )
+        assertEquals(
+            1,
+            jar.loadForRequest("https://exemple.com/".toHttpUrl()).size,
+            "il est bien transmis en https avant son expiration",
+        )
+    }
+
+    @Test
+    fun `un cookie deja perime n est plus transmis`() {
+        val jar = InMemoryCookieJar()
+        val perime = okhttp3.Cookie.Builder()
+            .name("cf_clearance")
+            .value("valeur")
+            .domain("exemple.com")
+            .path("/")
+            .expiresAt(System.currentTimeMillis() - 1_000) // déjà passée
+            .build()
+        jar.putCookies("exemple.com", listOf(perime))
+
+        assertEquals(
+            0,
+            jar.loadForRequest("https://exemple.com/".toHttpUrl()).size,
+            "l'expiration réelle doit être respectée : un cookie périmé ne part plus",
+        )
+    }
+
+    /**
+     * Un cookie de domaine (`exemple.com`) doit couvrir ses sous-domaines.
+     * C'est ce que permet le domaine élargi transmis par `setCookies` quand
+     * la webview rend un cookie plus large que l'hôte du challenge — et la
+     * raison pour laquelle le moteur normalise le point initial : avec lui,
+     * okhttp ne matche plus rien (verifié dans son bytecode).
+     */
+    @Test
+    fun `un cookie sur le domaine couvre le sous-domaine`() {
+        val jar = InMemoryCookieJar()
+        val domaine = okhttp3.Cookie.Builder()
+            .name("cf_clearance")
+            .value("valeur")
+            .domain("exemple.com")
+            .path("/")
+            .expiresAt(System.currentTimeMillis() + 60_000)
+            .build()
+        jar.putCookies("exemple.com", listOf(domaine))
+
+        assertEquals(
+            1,
+            jar.loadForRequest("https://api.exemple.com/".toHttpUrl()).size,
+            "un cookie de domaine doit couvrir api.<domaine>",
+        )
+    }
+
     @Test
     fun `l UA de challenge existe bien sur le client qui sert les images`() {
         val contexte = EngineContext()

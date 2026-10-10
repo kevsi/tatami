@@ -312,20 +312,28 @@ internal fun requestedRatings(
     sourceName: String,
 ): Set<ContentRating> {
     val demandee = if (p.has("contentRating")) p.optString("contentRating", "") else ""
-    val wanted = when {
-        p.has("contentRating") -> demandee
-            .takeIf { it.isNotBlank() }
-            ?.let { runCatching { ContentRating.valueOf(it.uppercase()) }.getOrNull() }
+    // La classification **demandée**, distinguée de « aucune » : une chaîne vide
+    // est l'absence de filtre de l'interface (son réglage « Toutes »), pas une
+    // faute. La comparaison ignore la casse, donc `"safe"` vaut `"SAFE"`.
+    val exploree: ContentRating? = when {
+        p.has("contentRating") && demandee.isNotBlank() ->
+            ContentRating.entries.firstOrNull { it.name.equals(demandee, ignoreCase = true) }
+        p.has("contentRating") -> null
         p.optBoolean("safeOnly", true) -> ContentRating.SAFE
         else -> null
-    } ?: return emptySet()
+    }
 
     // Une valeur que l'enum ne connaît pas est une faute de l'appelant, pas un
-    // réglage à deviner : sans ce refus, `"safee"` retombait sur `null` →
-    // `emptySet()` → aucun filtre, donc le contenu exclu livré quand même.
-    if (p.has("contentRating") && demandee.isNotBlank() && wanted == null) {
+    // réglage à deviner. Le refus vient AVANT tout `return emptySet()` : dans la
+    // première version, le `?: return emptySet()` de l'exploration avalait la
+    // valeur inconnue et rendait « aucun filtre » — donc le contenu que
+    // l'appelant demandait d'exclure était livré quand même. Le test
+    // `une classification inconnue est refusee` a attrapé cette inversion.
+    if (p.has("contentRating") && demandee.isNotBlank() && exploree == null) {
         throw ParamException("classification inconnue : « $demandee »")
     }
+
+    val wanted = exploree ?: return emptySet()
 
     val annoncees = options.availableContentRating
     if (annoncees.isEmpty()) {

@@ -21,7 +21,7 @@
     "lecteur:check": "node scripts/check-lecteur-etat.mjs",
     "arrondi:check": "node scripts/check-arrondi-bande.mjs",
     "ipc:check": "node scripts/check-type-ipc.mjs",
-    "test": "node --test --experimental-strip-types \"lib/**/*.test.ts\"",
+    "test": "node --test --experimental-strip-types \"lib/**/*.test.ts\" \"app/**/*.test.ts\"",
     "tauri": "tauri"
   },
   "dependencies": {

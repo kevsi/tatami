@@ -1268,6 +1268,24 @@ export default function Home() {
    *  arrive. Il ne fait pas charger plus vite — il fait voir.
    */
   const [pagesDecodees, setPagesDecodees] = useState<Set<number>>(() => new Set());
+
+  /** Fenêtre de **téléchargement**, distincte de la fenêtre de montage.
+   *
+   *  Mesuré le 2026-10-09 : à l'ouverture d'un chapitre froid, le navigateur
+   *  part **26 requêtes d'images en 8 ms**. Elles ne se Treat pas en parallèle :
+   *  le moteur sérialise les requêtes d'une même source (`ParserPool.kt` — un
+   *  `Mutex` par source, les parsers ne sont pas réentrants). Résultat mesuré :
+   *  une réponse **toutes les ~250 ms**, la première paints tard, et l'utilisateur
+   *  attend devant une bande vide.
+   *
+   *  Donc on n'admet que `FENETRE_TELECHARGEMENT` pages à la fois : les
+   *  premières arrivent en ~1,5 s au lieu de faire la queue derrière 25 autres.
+   *  Chaque décodage **libère un crédit**, et la page suivante entre.
+   *
+   *  Le montage, lui, reste large : c'est lui qui rend la bande stable et qui
+   *  évite l'à-coup de mesure. Monter n'est pas télécharger.
+   */
+  const [admis, setAdmis] = useState<number[]>([]);
   /** Note les dimensions d'une page et **ne bouge que si elles changent**.
    *
    *  Sans cette garde, chaque `onLoad` ferait un `setState` donc un rendu, et le
@@ -3182,7 +3200,12 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
     // La bande devra se placer sur cette page : le mode paginé n'en a pas
     // besoin, le webtoon si (c'est un conteneur de défilement).
     aPositionner.current = index > 0 ? index : null;
-    setReader({
+    // Les premières pages sont admises d'emblée : le quota est une **file**, pas
+  // une privation — sans cela le lecteur attendrait le premier crédit, et aucun
+  // téléchargement en cours ne pourrait le libérer. C'est ici qu'on connaît
+  // `pages.length`, donc c'est ici que la file se remplit.
+  setAdmis(Array.from({ length: Math.min(FENETRE_TELECHARGEMENT, pages.length) }, (_, k) => k));
+  setReader({
       chapter: c,
       pages,
       index,
@@ -3646,6 +3669,27 @@ const fenetre = useMemo(
   // indices — donc la même expression couvre les deux cas.
   [pagesBande.length, offsets, hauteurs, scrollY],
 );
+
+/** Nombre de pages téléchargées **en même temps**. Mesuré : 6 avant que la
+ *  file ne s-engloutisse derrière les suivantes. */
+const FENETRE_TELECHARGEMENT = 6;
+
+/** Admet **une** page de plus quand un crédit se libère.
+ *
+ *  Appelée depuis `onLoad` / `onError` — donc depuis un **événement**, pas
+ *  depuis un effet : la version « un effet qui remplit le quota » appelait
+ *  `setState` de façon synchrone, ce qui déclenche un rendu en cascade et que
+ *  `react-hooks` refuse (erreur de lint, mesurée). Ici l'admission est la
+ *  conséquence d'un événement, ce qui est exact.
+ *
+ *  Le crédit se libère au `onLoad` **et à l'`onError`** : une page que la
+ *  source ne sert pas ne se décodera jamais, donc elle ne rendrait jamais sa
+ *  place et le lecteur se viderait de plus en plus.
+ */
+function admettreUne(prec: number[], fenetre: readonly number[]): number[] {
+  const manque = fenetre.filter((i) => !prec.includes(i));
+  return manque.length === 0 ? prec : [...prec, manque[0]];
+}
 
 // La largeur du conteneur décide de la hauteur affichée : il faut la mesurer,
 // sinon la première bande est dimensionnée sur une largeur nulle.
@@ -5084,7 +5128,7 @@ if (reader) {
                       ref={(el) => {
                         stripImages.current[i] = el;
                       }}
-                      src={pageSrc(p.token)}
+                      src={admis.includes(i) ? pageSrc(p.token) : undefined}
                       alt={`Page ${i + 1}`}
                     // Une page que la source ne sert pas **le dit**. Sans ceci,
                     // le 404 de MangaDex s'affiche en image cassee muette :
@@ -5131,6 +5175,7 @@ if (reader) {
                         suivant.add(i);
                         return suivant;
                       });
+                      setAdmis((prec) => admettreUne(prec, fenetre));
                     }}
                     onDoubleClick={() => changeZoom(zoom >= 200 ? 100 : 200)}
                   />

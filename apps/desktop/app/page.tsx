@@ -4099,7 +4099,7 @@ useEffect(() => {
                       if (e.key === 'Enter') e.currentTarget.blur();
                     }}
                   />
-                  <div className="chips" role="group" aria-label={`Couleur de ${c.name}`}>
+                  <div className="chips" role="group" aria-label={t('reglages.categories.couleur', { nom: c.name })}>
                     {CATEGORY_COLORS.map((col, k) => (
                       <button
                         key={col}
@@ -4429,11 +4429,11 @@ useEffect(() => {
         <section className="panel">
           <h2>{t('reglages.telechargement')}</h2>
           <label className="field">
-            Nombre de webtoons par page
+            {t('reglages.par.page')}
             <select
               value={pageSize}
               onChange={(e) => savePageSize(Number(e.target.value))}
-              aria-label="Nombre de webtoons par page"
+              aria-label={t('reglages.par.page')}
             >
               {[12, 24, 48, 100].map((n) => (
                 <option key={n} value={n}>
@@ -5087,7 +5087,7 @@ if (reader) {
               className={`seg-btn${marque ? ' on' : ''}`}
               aria-pressed={marque}
               onClick={() => void basculerSignet()}
-              title="Marquer cette page pour la retrouver plus tard"
+              title={t('lecteur.signet.info')}
             >
               {marque ? t('lecteur.signet.actif') : t('lecteur.signet')}
             </button>
@@ -5137,13 +5137,13 @@ if (reader) {
                   e.preventDefault();
                   changeZoom(zoom + (e.deltaY < 0 ? 10 : -10));
                 }}
-                aria-label="Largeur de la page en pourcentage"
+                aria-label={t('lecteur.largeur')}
               />
             </label>
             {chapters.length > 0 && (
               <select
                 className="chapter-select"
-                aria-label="Changer de chapitre"
+                aria-label={t('lecteur.chapitre')}
                 value={chapter.url}
                 disabled={readerLoading}
                 onChange={(e) => {
@@ -5250,7 +5250,10 @@ if (reader) {
                       className="sheet-indisponible"
                       data-index={i}
                       role="img"
-                      aria-label={`Page ${i + 1} : ${t('lecteur.page.indisponible')}`}
+                      aria-label={t('lecteur.page.indisponible.numero', {
+                        n: i + 1,
+                        raison: t('lecteur.page.indisponible'),
+                      })}
                       style={styleImage}
                     >
                       <span>{t('lecteur.page.indisponible')}</span>
@@ -5282,7 +5285,7 @@ if (reader) {
                         stripImages.current[i] = el;
                       }}
                       src={admis.includes(i) ? pageSrc(p.token) : undefined}
-                      alt={`Page ${i + 1}`}
+                      alt={t('lecteur.page.une', { n: i + 1 })}
                     // Une page que la source ne sert pas **le dit**. Sans ceci,
                     // le 404 de MangaDex s'affiche en image cassee muette :
                     // l'utilisateur lit « la source ne sert pas cette page »
@@ -5503,7 +5506,7 @@ if (reader) {
             className="search chapter-search"
             type="search"
             aria-label={t('lia.filtrer')}
-            placeholder="Filtrer un chapitre…"
+            placeholder={t('lia.filtrer.court')}
             value={chapterQuery}
             onChange={(e) => setChapterQuery(e.target.value)}
           />
@@ -5686,7 +5689,7 @@ if (reader) {
         </div>
 
         {tags.length > 0 && (
-          <div className="chips" role="group" aria-label="Genres">
+          <div className="chips" role="group" aria-label={t('fiche.genres')}>
             {tags.map((t) => (
               <button
                 key={t.key}
@@ -5836,7 +5839,7 @@ if (reader) {
                 : t('catalogue.webtoon', { n: latest.length })}
               {loading ? ' — chargement…' : ''}
             </p>
-            <div className="chips" role="group" aria-label="Tri des titres">
+            <div className="chips" role="group" aria-label={t('tri.titre')}>
               {TRIS.map((option) => (
                 <button
                   key={option.value}
@@ -6369,7 +6372,7 @@ if (reader) {
                   <button
                     className="manga-open"
                     onClick={() => void loadChapters(m)}
-                    aria-label={`Ouvrir ${f.title}`}
+                    aria-label={t('accueil.ouvrir.favori', { titre: f.title })}
                   >
                     <span className="cover">
                       {f.cover_token ? (
@@ -6395,7 +6398,7 @@ if (reader) {
                   </button>
                   <button
                     className="fav-remove"
-                    aria-label={`Retirer ${f.title} des favoris`}
+                    aria-label={t('accueil.retirer.favori', { titre: f.title })}
                     onClick={() => void toggleFavorite(m)}
                   >
                     ♥

@@ -111,6 +111,9 @@ de la section précédente sont **corrigés et mesurés** ; ce qui suit est le r
    configurer. Ne pas le faire.
 5. **`listSources` à 10 s** au démarrage à froid (défaut 5 ci-dessus).
 6. **S2.2** — jouer `docs/smoke-test.md` §S (section écrite le 2026-10-07, jamais exécutée).
+   **FAIT le 2026-10-10** : §S est passé du statut « jamais joué » à « joué, un
+   défaut trouvé ». Voir le rapport ; le défaut (source servie mais invisible)
+   doit être localisé avant de clore S2.2.
 7. **Retirer la liste blanche S2** de `main.rs:387-393` : les trois commandes sont maintenant
    appelées par l'interface, la porte « commande morte » doit de nouveau mordre.
 8. **T5.1** — éditeur de bloc : modifier le texte, déplacer/redimensionner, retoucher le masque, relancer l'effacement local, régler la taille de police.
@@ -168,8 +171,15 @@ de la section précédente sont **corrigés et mesurés** ; ce qui suit est le r
   un badge « Perso ». Désactivation possible comme les sources natives.
   _Critère : smoke test manuel (docs/smoke-test.md §S)._
   _Code écrit et commité (`c83e56f`) : badge « Perso », nom affiché via `displayName`,
-  désactivation par `s.name` donc sans cas particulier. **Reste** : exécuter
-  `docs/smoke-test.md` §S — la section est écrite, jamais jouée._
+  désactivation par `s.name` donc sans cas particulier._
+  _**Smoke test §S joué le 2026-10-10** — voir `docs/rapport-smoke-test-2026-10-10.md`.
+  Import non automatisable (dialogue natif), mais **un défaut trouvé** :
+  avec `autre-source.js` sur le disque, le moteur sert **3** sources perso
+  (`list_sources` = 1373, deux appels d'affilée) alors que l'écran n'en montre
+  que **2** (en-tête « 1372 sources disponibles ») — `list_disabled_sources` vide,
+  aucune liste blanche, deux rechargements complets sans changement. Une source
+  servie peut donc rester invisible au catalogue. **Le critère de sortie de la
+  phase S reste ouvert** tant que ce point n'est pas expliqué._
 
 - [x] **S2.3** — Card « Sources importées » dans l'écran Catalogue : dans la grille des
   langues (l'écran d'entrée), une card pleine largeur qui **contient la liste des sources
@@ -446,6 +456,75 @@ refuse le non-https · capability minimale (`dialog:allow-open` seule).
   ne l'est plus, sans commit ni crochet git ni hook qui l'expliquerait (`.git/hooks` = samples
   seuls). Le contenu est identique à `HEAD`. À surveiller : si T3.6 attendait un
   enregistrement de commande dans `main.rs`, il manque.
+
+### Journal 2026-10-10 — smoke test joué pour la première fois (docs/smoke-test.md)
+
+**Ce qui a été fait, dans l'ordre demandé.**
+
+1. **Relecture des sections 2, 3, 4, 6, 7, 8 et §S contre le code**, avant tout
+   jeu. Conséquence : les contrôles qui citaient `page.tsx:NNNN` ont été réécrits
+   en **sélecteurs DOM**, et **plus aucun numéro de ligne ne subsiste** dans le
+   document. Trois libellés avaient changé sans que le test les suive
+   (« Arrêter après le chapitre en cours » → « Mettre en pause » ; « Reprendre »
+   → « Reprendre la file » ; `aria-label` du réglage de classification →
+   « Contenu affiché »).
+2. **Jeu section par section**, webview pilotée en CDP sur le port 9224.
+   Rapport complet : `docs/rapport-smoke-test-2026-10-10.md`.
+
+**Résultat** : 41 étapes vérifiables, **38 réussies**, 2 partielles (challenge
+Cloudflare : résolution humaine ; persistance complète : obtenue par le kill de
+T06.3), **1 échec** (§S.2, voir plus bas).
+
+**Ce que le jeu a prouvé, qui n'était pas dans le document**
+
+| Mesure | Valeur |
+|---|---|
+| Première image d'un chapitre froid | **4,7 s** (la note annonçait ≈ 8 s) |
+| `.cbz` téléchargé, relu par un lecteur strict | 54 entrées, **54 tailles distinctes**, 54 JPEG, 3 057 971 o |
+| Bande d'un chapitre de 56 pages | 66 533 px, `.webtoon-inner` exactement à la hauteur de la bande |
+| Flèches `←` `→` | **symétriques** : ±1 044 px (la première mesure, prise à 1,2 s d'un `scrollTo` en `smooth`, les accusait à tort) |
+| Filtre de chapitre « 100 » sur 1 200 chapitres | **15** cellules — c'est une **sous-chaîne**, pas une égalité |
+| Tri `A→Z` / `Z→A` | inversion exacte vérifiée sur les **24** titres, pas sur 5 |
+| Réglages | 14 panneaux (le document en annonçait 4) |
+| Dossier de téléchargement **réglé** | `…\Workspaces\Tatami` — 20 `.cbz`, 86,0 Mo. Le dossier **par défaut** contient 1 252 Mo **orphelins** |
+| Console, cycle complet des 4 onglets | **0 erreur** |
+
+**Deux corrections de fond au document, trouvées en jouant**
+
+- **T06.3 et T06.5 étaient injouables.** Le bouton « Télécharger la sélection »
+  de la fiche appelle `downloadSelected()`, qui boucle `downloadChapter()` et
+  n'écrit **rien** dans `QUEUE_KEY`. Seule la **vue source** (`Sélectionner` →
+  `Télécharger la sélection`) passe par `runQueue()` et crée une file. Le test
+  partait de la fiche : il ne pouvait ni faire apparaître « File interrompue »,
+  ni le bouton de pause. Ce n'était pas un échec, c'était un impossible.
+- **Le bouton de reprise n'est pas dans le panneau de file.** Il est dans
+  `section.panel.resume` (« File interrompue »), qui apparaît dès la pause.
+
+**Le défaut trouvé (§S.2)** — une source servie par le moteur peut rester
+invisible au catalogue. Au même instant : `list_sources` = **1373** sources dont
+**3** perso, deux appels d'affilée identiques ; `list_disabled_sources` = `[]` ;
+aucune liste blanche ; en-tête de l'écran « **1372** sources disponibles » ; vue
+« Sources personnalisées » = **2** tuiles. Deux rechargements de page complets ne
+changent rien. La règle d'ADR 0010 (le nom de fichier fait foi, le même
+`SOURCE.id` ne collisionne pas) **tient** : c'est le registre du moteur qui est
+juste. Reste à expliquer pourquoi le tableau `sources` de l'interface n'a pas
+l'entrée.
+
+**Autres défauts consignés** : `mangadexFr.js` est listé dans les Réglages alors
+que le moteur le rejette (`Missing close quote`) ; `SCANVF` rend 41 cartes pour 4
+URL, d'où l'avertissement React de clé — **cause localisée**, elle est dans le
+parseur de la source ; 14 libellés en dur hors dictionnaire ; un message du
+moteur en anglais dans l'interface française.
+
+**Nettoyage** : prouvé par delta — 20 `.cbz` / 86,0 Mo / 7 webtoons avant et
+après, 0 `.part`, mêmes dossiers, même bandeau, mêmes 3 sources perso, favoris
+et signets de test retirés. **Non restauré et dit** : les 9 sources désactivées
+du départ ont été réactivées par le « Tout réactiver » que le document demande
+au nettoyage ; elles n'avaient pas été relevées avant. Le document doit désormais
+demander de relever la liste avant de la détruire.
+
+**Portes** : aucune porte du dépôt n'a été touchée — cette session n'a modifié
+aucun code. `docs/smoke-test.md` et ce journal sont les seules écritures.
 
 ### Journal 2026-10-09 — commit `9df864e` : correctifs lecteur webtoon (P0, P2, ADR 0012)
 

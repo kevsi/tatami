@@ -13,7 +13,8 @@ Durée : 15 à 25 min sur une machine avec le moteur déjà construit. RAM limit
 
 > ### ⚠ État du document — 2026-10-10
 >
-> **Ce test n'a jamais été joué.** Écrit le 2026-07, jamais exécuté depuis.
+> **Ce test a été JOUÉ le 2026-10-10**, pour la première fois depuis son écriture
+> (2026-07). Le récapitulatif est dans `docs/rapport-smoke-test-2026-10-10.md`.
 >
 > **Ce qu'il faut savoir avant de s'en servir :**
 >
@@ -28,9 +29,14 @@ Durée : 15 à 25 min sur une machine avec le moteur déjà construit. RAM limit
 >    chapitre en cours » est devenu « Mettre en pause », « Reprendre » est devenu
 >    « Reprendre la file », et `aria-label` du réglage de classification n'est plus
 >    « Classification de contenu maximale affichée » mais « Contenu affiché ».
+>    Et surtout : **T06.3 et T06.5 ne se jouent pas depuis la fiche** mais depuis
+>    la vue source — sans quoi aucune file n'existe et le bandeau « File
+>    interrompue » ne peut pas apparaître.
 > 3. **L'état de la machine n'est pas vierge** : 3 sources personnalisées
->    installées, 1,25 Go de téléchargements, MangaDex bloqué en API. Tout ce qui
->    compte est détaillé dans **§13** — s'y reporter avant de conclure qu'un
+>    installées (dont une cassée), 86 Mo de téléchargements dans un dossier
+>    **réglé**, MangaDex bloqué en API, et 1 252 Mo de fichiers orphelins dans le
+>    dossier **par défaut**, qu'il ne faut pas confondre avec le dossier réglé.
+>    Tout est détaillé dans **§13** — s'y reporter avant de conclure qu'un
 >    écart est un bug.
 > 4. Une étape qui échoue ne prouve **pas** que l'application est cassée : lire
 >    d'abord §13, et se demander si le test est à jour avant de corriger le code
@@ -231,11 +237,13 @@ c'est une chaîne non traduite (cf. §13).
 
 ### T03.4 — Chapitres récents sur les cartes
 
-**Clic** : la case « Chapitres récents » (`.recent-toggle` dans la barre `.select-bar`),
-à côté du bouton « Sélectionner ».
+**État initial** : la case est **cochée par défaut** (`useState(true)`). Il n'y a
+donc rien à cocher ; il faut attendre que le compteur atteigne son but.
+**Clic** : la case « Chapitres récents » (`.recent-toggle` dans la barre
+`.select-bar`), à côté du bouton « Sélectionner ».
 **Attendu** : chaque carte affiche ses **derniers** chapitres, décroissants, avec
 ancienneté ; le compteur `x/y` monte vers `y`.
-**Preuve** : capture d'une carte avec ≥ 3 lignes décroissantes + le compteur atteint.
+**Preuve** : capture d'une carte avec ses lignes + le compteur atteint.
 **Négatif attendu** : une requête `chapters` par carte est limitée à **4 en vol**
 (`RECENT_CONCURRENCY`) avec **300 ms d'écart minimal** entre deux départs
 (`RECENT_INTERVALLE_MS`) et un cache de 30 min — le compteur peut rester en dessous de
@@ -243,6 +251,13 @@ ancienneté ; le compteur `x/y` monte vers `y`.
 **Piège mesuré** : cocher cette case sur une grille **vide** ne déclenche rien
 (`latest` est vide, l'effet ne s'exécute pas). Choisir d'abord une source précise et
 attendre l'arrivée des cartes avant de cocher.
+**Attentes mesurées le 2026-10-10 (TOOMICSFR, 24 cartes)** : première image de
+carte en ~22 s, compteur à `24/24` en ~62 s. Ce n'est pas instantané : c'est une
+requête réseau par carte.
+
+**Une carte n'affiche pas forcément 3 lignes.** « ≥ 3 lignes décroissantes » n'est
+atteignable que sur une série qui en a assez : mesuré, « Arrête, Alice ! » (3
+chapitres) affiche **une seule** ligne « Ch. 3 ». Choisir une série longue.
 
 ---
 
@@ -281,12 +296,21 @@ alors 100 lignes vides (mesuré le 2026-10-09).
 
 ### T04.3 — Filtre par numéro
 
-**Clic** : `input.chapter-search` (« Filtrer un chapitre… »), saisir un **numéro rare**
-(calculé depuis la grille affichée, pas `2` : sur une série à 286 chapitres, filtrer
-« 2 » matche `Ch. 2`, `Ch. 20`, `Ch. 21`… — `AGENTS.md` §14).
-**Attendu** : une seule cellule reste. Si aucune : « Aucun chapitre ne correspond à
-« … » », ce qui est le comportement correct.
-**Preuve** : capture avant (compte de cellules) / après (la cellule restante).
+**Clic** : `input.chapter-search` (« Filtrer un chapitre… »), saisir un **numéro rare**.
+**Attendu** : seules les cellules dont le libellé **contient** ce nombre restent.
+
+**« Une seule cellule reste » est faux tel quel.** Le filtre est une
+**sous-chaîne** sur le libellé du chapitre : filtrer « 100 » sur One Piece
+laisse **15** cellules (`Ch. 100`, `Ch. 232`, `Ch. 634`, `Ch. 1000` à
+`Ch. 1010`, `Ch. 1105`). Pour n'en garder qu'une, il faut un nombre qui n'est
+pas le morceau d'un autre — **calculé depuis la grille affichée**, jamais `2`
+(sur une série à 286 chapitres, « 2 » matche `Ch. 2`, `Ch. 20`, `Ch. 21`…).
+
+**Négatif attendu** : `99999` affiche « Aucun chapitre ne correspond à « 99999 ». »
+— c'est le comportement correct, pas une absence.
+
+**Preuve** : capture avant (compte de cellules) / après (les cellules restantes,
+avec leurs numéros).
 
 ### T04.4 — Sélection rapide
 
@@ -318,6 +342,12 @@ Ces contrôles ont été retirés : ils échouaient sur des boutons absents, ce 
 n'apprenait rien. Les numéros de ligne `page.tsx:NNNN` ont tous été retirés
 pareil — ils dataient de l'ancien fichier et ne désignaient plus rien. **Chercher
 un sélecteur dans le DOM plutôt que dans le code** (`AGENTS.md` §14).
+
+**Sélecteurs utiles** : la bande est `.webtoon` (le conteneur qui défile) et
+`.webtoon-inner` (la colonne positionnée) ; chaque page est un `<img data-index="N">`
+ou, si la source ne la sert pas, un `div.sheet-indisponible[data-index]` **avec le même
+`data-index`**. Le compteur est `.reader-compteur` ; le champ de saut est
+`#reader-page` dans `form.page-jump`, et son frère affiche « / N ».
 
 **Clic** : bouton `Lire <chapitre>` sur une cellule (`button.chapter-open`).
 Barre du lecteur : titre `webtoon · chapitre`, bouton `Signet`, navigation
@@ -403,18 +433,41 @@ indistinguishable d'une absence de reprise, donc mesurer l'interface ne suffit p
 
 ## 6. Téléchargement (T06)
 
-Onglet **Téléchargements** et retour à la fiche (T04).
+> **Relu ET joué le 2026-10-10. Deux chemins, à ne pas confondre.**
+>
+> Il y a **deux façons de télécharger**, et une seule crée une file :
+>
+> | Geste | Chemin | Crée une file ? |
+> |---|---|---|
+> | `button.chapter-dl` (le `↓`) sur la fiche | `downloadChapter()` | non |
+> | `Télécharger la sélection (N)` dans `.dl-bar` (fiche) | `downloadSelected()` — boucle **directe** | **non** |
+> | `Sélectionner` puis `Télécharger la sélection (N)` dans la **vue source** | `runQueue()` — écrit `QUEUE_KEY` | **oui** |
+>
+> Conséquence : **T06.3 et T06.5 ne sont jouables que depuis la vue source.** La
+> version précédente de ce document partait de la fiche : elle ne pouvait donc
+> pas faire apparaître « File interrompue », ni le bouton de pause. Ce n'était
+> pas une subtilité du test, c'était un impossible.
+>
+> Autre conséquence mesurée : pendant un téléchargement, **tous** les `↓` sont
+> `disabled` (`downloading`). Un clic sur le suivant échoue — ce n'est pas un
+> bouton cassé, c'est la sérialisation.
+
+Onglet **Téléchargements** (`data-tab="downloads"`) et retour à la fiche (T04).
 
 ### T06.1 — Un chapitre
 
 **Clic** : `button.chapter-dl` (le `↓`) sur une cellule de chapitre, ou
 `Télécharger la sélection (N)` dans `.dl-bar`.
 **Attendu** : une barre `.progress` avec `chapitre — page i/N (x %)` puis `Terminé`.
-**Preuve** : capture de la progression + du fichier `.cbz` dans le dossier de
-téléchargement **réglé dans les paramètres** — lire d'abord
-« Dossier de téléchargement : » (section Téléchargement) : le défaut est
-`%APPDATA%\Tatami\downloads`, mais l'utilisateur peut l'avoir déplacé, et chercher
-dans le défaut accuse le code à tort (`AGENTS.md` §14).
+**Preuve** : capture de la progression + le fichier `.cbz` relu par un **lecteur
+strict** (`.mesures/verifier-cbz.py`) : un téléchargement réussi n'est pas un
+téléchargement valide. Mesuré le 2026-10-10 : `Chapitre 1.cbz`, **54 entrées,
+54 tailles distinctes, 54 JPEG, 3 057 971 o** = conforme.
+**Le dossier est le réglage, pas le défaut** : lire « Dossier de téléchargement : »
+avant de chercher quoi que ce soit. Sur cette machine il vaut
+`C:\Users\alexanders\Documents\Workspaces\Tatami`, **pas** `%APPDATA%\Tatami\downloads`
+qui ne contient que des fichiers orphelins. Chercher dans le défaut accuse le
+code à tort (`AGENTS.md` §14).
 
 ### T06.2 — Vue Téléchargements
 
@@ -423,8 +476,11 @@ dans le défaut accuse le code à tort (`AGENTS.md` §14).
 `SOURCE · x/y chapitres · poids` et badge `Terminé` ou `Partiel`.
 **Preuve** : capture de la vue entière.
 **Cas limite attendu** : une carte sans couverture enregistrée affiche une **pastille
-d'initiale** (`.thumb-empty`), pas un rectangle vide (journal 2026-10-04
-« lint/couvertures »).
+d'initiale** (`.thumb-empty`), pas un rectangle vide. **Attention** : ce cas
+n'est pas toujours observable — il faut une carte *sans* `coverToken`, ce qui
+n'est pas le cas de tous les téléchargements. **Ne pas le compter comme un
+échec** si toutes les cartes ont une couverture : c'est l'absence de cas, pas
+un défaut.
 **Ce qui a été ajouté depuis** : un bouton **Lire** par carte (lecture hors ligne d'un
 `.cbz`, tâche 2.3) et, si la carte a plusieurs chapitres, un bouton
 `Chapitres (n)` qui ouvre une liste. Les deux sont à cliquer au moins une fois.
@@ -433,15 +489,23 @@ d'initiale** (`.thumb-empty`), pas un rectangle vide (journal 2026-10-04
 
 `PLAN.md` §3 : tout téléchargement doit être reprenable.
 
-1. **Clic** : sur la fiche, mettre `N derniers` avec N = 3, puis **Télécharger la sélection (3)**.
+1. **Clic** : dans la **vue source**, `Sélectionner`, puis cocher **3** cartes,
+   puis `Télécharger la sélection (3)`. *(Depuis la fiche, ce bouton
+   télécharge directement et ne crée aucune file — voir l'avertissement en tête
+   de section.)*
 2. **Action** : fermer l'application (croix) **pendant** le 2ᵉ chapitre.
 3. **Clic** : relancer, onglet Téléchargements (`data-tab="downloads"`).
-4. **Attendu** : le bandeau `section.panel.resume` **« File interrompue »** apparaît
-   avec les boutons **Reprendre la file** et **Abandonner la file** ; ou, sans file,
-   la carte affiche `Partiel` + le bouton **Reprendre la file**.
+4. **Attendu** : le bandeau `section.panel.resume` **« File interrompue »**
+   apparaît avec les boutons **Reprendre la file** et **Abandonner la file** ;
+   ou, sans file, la carte affiche `Partiel` + le bouton **Reprendre la file**.
 5. **Preuve** : capture du bandeau « File interrompue » + `Get-ChildItem` du dossier de
    téléchargement : les chapitres terminés sont en `.cbz`, un éventuel chapitre
    interrompu est en `.cbz.part`.
+
+**Mesuré le 2026-10-10** : kill à 08:35 pendant « Chapitre 3 », relancement, et
+le bandeau est là avec les deux boutons ; la carte « La Femme de papa » est
+« 2/3 chapitres · Partiel » avec son bouton « Reprendre la file ». Le `.cbz.part`
+(1,89 Mo) est bien sur le disque.
 
 **Règle** : un `.cbz.part` compte comme **absent** → il doit être retéléchargé, pas
 compté comme acquis. Un `.cbz` déjà présent ne doit **jamais** être retéléchargé. Si un
@@ -465,12 +529,23 @@ encore** (`library.rs` : la suppression reste confinée au dossier de téléchar
 **Clic** : pendant une file, le bouton **Mettre en pause** de `section.panel.queue`
 (auparavant « Arrêter après le chapitre en cours » : **le libellé a changé**, la
 sémantique non).
-**Attendu** : le chapitre en cours est **terminé**, puis la file s'arrête et passe à
-l'état « en pause » ; « Reprendre la file » la relance où elle s'est arrêtée.
+**Attendu** : le chapitre en cours est **terminé**, puis la file s'arrête et
+chaque ligne passe à l'état « en pause » ; le bouton du panneau devient
+« Effacer la file ».
+**Reprise** : elle n'est **pas** dans `section.panel.queue`. Elle est dans le
+bandeau `section.panel.resume` (« File interrompue », bouton **Reprendre la
+file**) — qui apparaît **dès la pause**, pas seulement après un redémarrage,
+puisque `QUEUE_KEY` reste écrit. Chercher le bouton de reprise dans le panneau
+de file est une impasse : il n'y est pas.
 **Preuve** : capture de l'état « en pause » + `Get-Process java` ne liste plus de
-processus `tatami-engine` après fermeture de l'app (`main.rs` : `ExitRequested` tue le
-sidecar).
-**Nettoyage obligatoire** : « Effacer la file » une fois la vérification faite.
+processus `tatami-engine` après fermeture de l'app.
+**Nettoyage obligatoire** : « Abandonner la file », puis « Effacer la file ».
+
+**Mesuré le 2026-10-10** : pause prise à 0/3 s, le chapitre en cours va au bout
+(« 1/3 chapitres · Chapitre 1 ») et les 3 lignes passent à « en pause » ;
+reprise → « 1/3 chapitres (1 déjà là) » puis « Chapitre 2, page 5/168 » en direct.
+Le « (1 déjà là) » est la preuve de l'exigence permanente : un chapitre déjà
+présent n'est pas retéléchargé.
 
 ---
 
@@ -500,16 +575,20 @@ surimpression) et ouvre la **fiche**, pas le lecteur.
 
 ### T07.2 — Incognito
 
+**État initial** : la case est **cochée** (elle l'est depuis une session antérieure
+sur cette machine ; `localStorage`). Le-toggle ne sert qu'à vérifier l'aller-retour.
 **Clic** : case `Incognito` dans le bandeau « Continuer la lecture ».
 **Attendu** : les titres classés adultes disparaissent de « Continuer la lecture » ; **les
 favoris restent visibles** ; un titre jamais lu et jamais mis en favori reste visible (il est
 `UNKNOWN`, choix documenté, journal 2026-10-04, tâches 1.1/1.4/1.6).
+**Négatif attendu, et c'est le piège principal** : si **aucun** titre de
+l'historique n'est classé adulte, cocher et décocher ne change **rien** — 24 cartes
+avant, 24 après. Ce n'est pas un défaut ; c'est l'absence de donnée à masquer.
+Il faut d'abord avoir lu un titre d'une source adulte pour avoir quelque chose à
+voir disparaître.
 **Preuve** : capture avant/après + le nombre de favoris lu dans le **sous-titre de
 l'en-tête** (`header.page-head .sub` : « n lus récemment · n favoris » — deux clés
 distinctes par langue, jamais un `{s}`).
-**Piège** : l'état d'incognito est relu au **montage**, pas à chaque rendu : écrire
-`localStorage` puis attendre ne change rien. Il faut cocher la case, ou changer la
-langue et recharger dans la **même** action.
 
 ### T07.3 — Signets
 
@@ -528,8 +607,9 @@ pour retirer un favori ; `Oublier` sur une carte de lecture ; `Vider l'historiqu
 dans le bandeau « Vos favoris » (**le bouton n'apparaît que s'il y a ≥ 1 favori**).
 **Bonus livré depuis** : un filtre par catégorie dans ce bandeau
 (`Toutes` / `Sans catégorie (n)` / une pastille par catégorie) — un favori sans
-catégorie affiche `Sans catégorie (n)`. Le filtrer aussi, c'est la preuve que la
-catégorie survit au retrait du filtre.
+catégorie affiche `Sans catégorie (n)`. **Conditionné** : le bandeau n'apparaît
+que s'il existe au moins une catégorie **et** un favori. Sur une machine sans
+catégorie, il n'y a rien à tester — ce n'est pas un échec.
 **Preuve** : capture après chaque action. **Rappel** : retirer un signet ou un favori ne doit
 pas toucher l'historique (tests `un_signet_ne_touche_pas_l_historique`,
 `desactiver_une_source_ne_touche_pas_les_favoris`).
@@ -539,11 +619,15 @@ pas toucher l'historique (tests `un_signet_ne_touche_pas_l_historique`,
 ## 8. Paramètres (T08)
 
 > **Relu contre le code le 2026-10-10.** L'écran ne compte **pas quatre panneaux**
-> mais **seize** : Contenu, Catégories, Apparence, Langue, Dossier de téléchargement,
-> Réseau, **Planificateur** (tâche 3.1), **Notifications** (3.3), **Démarrage
-> automatique**, **Journal**, Téléchargement, **État des sources** (5.4),
-> Catalogues affichés, **Sources personnalisées** (S2.1), **Import** (`.cbz`).
-> Seuls ceux couverts ci-dessous sont testés.
+> mais **14**, tous titrés par un `<h2>` : Contenu · Catégories de favoris ·
+> Apparence · Langue · Dossier de téléchargement · Réseau · Veille des
+> nouveautés · Notifications système · Démarrage automatique · Journaux de
+> diagnostic · Téléchargement · État des sources · Catalogues affichés ·
+> Sources personnalisées. (Mesuré 2026-10-10 après stabilisation du nombre de
+> panneaux ; la première mesure a rendu 8 puis 14 sur le même écran, parce que
+> certains panneaux arrivent après une commande — attendre la stabilisation.)
+> L'**import de dossier `.cbz`** n'est pas ici : il est dans l'onglet
+> Téléchargements. Seuls les panneaux couverts ci-dessous sont testés.
 
 Onglet **Paramètres** (`data-tab="settings"`).
 
@@ -729,6 +813,20 @@ grille. C'est vérifié à l'étape 14.
 **Si l'étape 6 est omise**, le nombre de lignes ne prouve rien : le dossier en contient
 déjà 3. Un delta de +1/-1 est la seule preuve lisible.
 
+> **Joué le 2026-10-10, à la main pour les étapes 2 à 6.** Le dialogue natif
+> n'est pas automatisable (§S.3). Ce qui a été mesuré par le DOM et le moteur :
+> le panneau liste **3** lignes (`scan-manga`, `mangadexFr`, `mangadex-api`),
+> chacune avec son seul bouton ✕ ; la tuile du catalogue fait **203 px** de large,
+> comme une tuile de langue.
+>
+> **Un script installé est cassé, et l'application ne le dit nulle part** :
+> `mangadexFr.js` est rejeté par le moteur —
+> `Script ignoré (mangadexFr.js) : Erreur d'évaluation du script : <eval>:20:36
+> Missing close quote` — il reste donc **listé dans les Réglages** et **absent
+> du catalogue**. C'est exactement le cas décrit plus bas (« une source dont le
+> script est invalide n'y est pas »), et il faut le dire au joueur ou leehltrer
+> dans le panneau. **À corriger hors de ce test.**
+
 ### §S.2 Le moteur la voit-il
 
 `docs/mangadex-api.js` est le script de démonstration : il appelle l'API JSON de MangaDex
@@ -777,6 +875,37 @@ exécute le script après l'avoir vu au WatchService ; l'interface rafraîchit �
 et 4 s). Le compte vient de la grille : une source dont le script est invalide n'y est
 pas, alors qu'elle reste listée dans Réglages.
 
+### §S.2 bis — La grille et le moteur doivent dire la même chose
+
+**C'est l'étape que la version précédente n'avait pas, et elle a trouvé un défaut.**
+La tuile « Sources personnalisées » affiche un compteur, et ce compteur vient de la
+**base**, alors que la liste de la vue vient du **moteur**. Les deux peuvent
+diverger.
+
+**Contrôle** : au même instant, lire `list_sources` **et** la grille, dans un seul
+`evaluate`. Ne jamais comparer un relevé de moteur à une capture d'écran prise
+autant de secondes plus tôt — on mesure alors deux choses différentes et on
+conclut à une contradiction qui peut ne pas exister.
+
+**Preuve du 2026-10-10** (`autre-source.js`, copie de `docs/mangadex-api.js`, donc
+le **même** `SOURCE.id`) :
+
+| Grandeur | Valeur |
+|---|---|
+| `list_sources` — total | **1373** |
+| `list_sources` — sources `custom` | **3** : `custom:autre-source`, `custom:scan-manga`, `custom:mangadex-api` |
+| Deuxième appel, 2 s plus tard | **1373 / 3** — identique |
+| `list_disabled_sources` | **`[]`** |
+| Liste blanche (`localStorage`) | **absente** |
+| En-tête de l'écran | « **1372** sources disponibles » |
+| Tuiles de la vue perso | **2** — `custom:autre-source` **absente** |
+
+Deux rechargements de page complets ne changent rien : toujours 1373 côté moteur,
+1372 côté écran. Le même `SOURCE.id` ne crée **pas** de collision côté moteur (le
+registre est indexé sur le nom de fichier, `identiteDe`) — c'est bien la règle
+annoncée par ADR 0010, et elle tient. Mais **une source que le moteur sert peut
+rester invisible dans le catalogue**. À localiser ; voir le rapport de session.
+
 ### §S.3 Désactivation et suppression
 
 | # | Geste | Attendu |
@@ -804,12 +933,32 @@ présence du fichier sur le disque.
 Smoke test — Tatami — <date> — <agent / personne>
 Environnement : Windows <version>, <RAM>, JDK <version>, Rust <version>, Node <version>, pnpm <version>
 Source de référence utilisée : <NOM_SOURCE>
-Étapes jouées : T01 … T11 (+ T09 : non déclenchable) + §S
-Résultat : <n> réussites / <n> échecs
-Chaque échec : n° d'étape, clic exact, attendu, obtenu, capture
-Nettoyage effectué : favoris / historique / signets / file / sources désactivées / réglages
-Écarts known limits rencontrés : …
+État de départ à relever AVANT de jouer : langue, thème, dossier de
+  téléchargement, nb de sources désactivées, nb de favoris, nb de signets,
+  contenu de %APPDATA%\Tatami\sources, taille de la bibliothèque
+Étapes jouées : T01 … T11 (+ T09 : partially) + §S
+Résultat : <n> réussites / <n> échecs / <n> non jouables (et pourquoi)
+
+Pour CHAQUE étape, une ligne :
+  n° | ce qui a été MESURÉ | attendu | oui / non | preuve
+
+Chaque échec : n° d'étape, clic exact, attendu, obtenu, capture,
+  ET la seconde voie qui devait réussir et ce qu'elle a rendu
+Chaque non-jouable : la raison (dialogue natif, cas limite absent, pas jouable en
+  automatisation) — un « non-jouable » est un résultat acceptable, un « non
+  testé » ne l'est pas
+Nettoyage effectué : favoris / historique / signets / file / sources désactivées /
+  dossiers de test / settings — avec la preuve que l'état est revenu (delta sur
+  le disque ET sur l'écran)
+Écarts et limites rencontrés : …
+Défauts trouvés (séparés des échecs de test) : …
 ```
+
+> **Un nettoyage se prouve par un delta, pas par une intention.** Mesuré le
+> 2026-10-10 : après T06, bibliothèque revenue à **20 `.cbz` / 86,0 Mo**, les
+> trois dossiers d'origine, **0 `.part`** — et l'écran affichait exactement le
+> même bandeau qu'au départ. C'est ce qui permet d'écrire « état restauré » sans
+> le croire.
 
 ---
 
@@ -832,9 +981,12 @@ elles ne sont plus vraies et sont signalées comme telles.
 | ~~**Pas de lecture hors ligne**~~ | **ne vaut plus** : un `.cbz` téléchargé se lit hors ligne (tâche 2.3 livrée, `cbz.rs` / `zipread.rs`). | — |
 | ~~**Pas de catégories de favoris**~~ | **ne vaut plus** : catégories livrées (tâche 1.5, table `categories`). | — |
 | **MangaDex : API coupée en TLS depuis cette machine** | `api.mangadex.org` et `mangadex.org` répondent `000` (handshake `SEC_E_ILLEGAL_MESSAGE`) alors que le nœud d'images répond 200 et que tous les autres sites répondent. Ce n'est ni un blocage d'IP ni un certificat. **Conséquence** : `search`/`details`/`chapters` sur MangaDex et sur `custom:mangadex-api` échouent, **et c'est attendu**. Vérifié avant de conclure. | `PLAN.md` « Blocage MangaDex », 2026-10-09 |
-| **Bibliothèque déjà peuplée (1,25 Go, 29 `.cbz`)** | `%APPDATA%\Tatami\downloads` contient HENTAIORIGINES, MANGADEX, MANGASORIGINES et IMPORT. T06.2 doit donc vérifier l'affichage de cartes **existantes**, pas d'une bibliothèque vide ; T06.4 (suppression) doit viser un artefact jetable, jamais ce dossier. | relevé 2026-10-10 |
-| **3 sources personnalisées déjà installées** | `%APPDATA%\Tatami\sources` contient `mangadex-api.js`, `mangadexFr.js`, `scan-manga.js`. Les comptages de §S.1 doivent être des **deltas**. | relevé 2026-10-10 |
+| **Bibliothèque déjà peuplée** | Le dossier **réglé** vaut `C:\Users\alexanders\Documents\Workspaces\Tatami` : **20 `.cbz`, 86,0 Mo**, 7 webtoons, 3 dossiers (EXHENTAI, MANGADEX, TOOMICSEN). `%APPDATA%\Tatami\downloads` — le **défaut** — contient encore **1 252 Mo** de fichiers orphelins d'avant le changement de dossier : ne jamais y chercher, ni y compter. | relevé 2026-10-10 |
+| **3 sources personnalisées déjà installées** | `%APPDATA%\Tatami\sources` contient `mangadex-api.js`, `mangadexFr.js` (**cassé**, voir §S.1) et `scan-manga.js`. Les comptages de §S.1 doivent être des **deltas**. | relevé 2026-10-10 |
 | **Libellés écrits en dur en français** | `Genres`, `Effacer (n)`, `n genres au total`, `Choisir`, `Sur les chapitres filtrés`, `N derniers`, `N premiers`, `Filtrer un chapitre…`, `Nombre de webtoons par page`, `Terminé`, `Partiel`, `← Catalogues`, `← Chapitres`, `Réessayer`, `Changer de catalogue` ne sont **pas** dans le dictionnaire : ils restent français quand l'interface est en anglais. Ce n'est pas un échec de ce test (en français l'écran est correct), mais c'est une dette i18n réelle — `AGENTS.md` §7 l'interdit. | relecture code 2026-10-10 |
+| **Un message du moteur en anglais dans une interface française** | le tableau « État des sources » affiche le message **du moteur** tel quel : « The domain of JPMANGAS no longer exists ». C'est une information de diagnostic, pas un libellé d'interface ; à tricher ou à situer. | mesuré 2026-10-10 |
+| **La recherche dans la source varie d'une source à l'autre** | mesuré le même jour : `SCANVF` répond (« Piece » → 20 cartes), `TOOMICSFR` et `TOOMICSEN` rendent **0 résultat** pour tout terme. Ce n'est pas l'interface — c'est le parseur de ces deux sources. **Ne pas conclure « la recherche est cassée »** sans une seconde source qui, elle, réussit. | mesuré 2026-10-10 |
+| **`SCANVF` renvoie des doublons** | 41 cartes pour **4** URL distinctes (`/one_piece` ×15, `/kingdom` ×12, `/one-punch-man` ×9, `/boruto` ×5). C'est le parseur qui répète, pas l'interface — et c'est la cause de l'avertissement React « clé ». Voir §14. | mesuré 2026-10-10 |
 
 **Rappel de méthode.** Un 404 sans corps n'est pas une page d'erreur mais un
 refus de connexion : quand une URL échoue, demander d'abord **qui me l'a donnée,
@@ -860,8 +1012,21 @@ et ce producteur répond-il ?** Une URL est une valeur *reçue* (`AGENTS.md` §1
 - **Tests de contrat** : **livrés** (fixtures enregistrées rejouées contre le code
   Rust). Les tests unitaires Rust, le lint et le typecheck ne sont pas remplacés
   par ce document : ils sont listés dans `AGENTS.md` §8.
-- **Défauts connus, non corrigés, à ne pas compter comme des réussites** :
-  première image d'une source ≈ 8 s ; une correction d'ancrage de 507 px au
-  défilement ; un placeholder qui déborde de 1 101 px en fond de bande ; un
-  avertissement React « clé manquante » **intermittent**, non localisé
-  (`react/jsx-key` ne le voit pas : il vient d'une liste construite hors JSX).
+- **Défauts connus, non corrigés, à ne pas compter comme des réussites** —
+  état après le smoke test du **2026-10-10** :
+
+  | Défaut | Mesure du 2026-10-10 |
+  |---|---|
+  | Première image d'une source ≈ 8 s | **4,7 s** à froid sur un chapitre non mis en cache (One Piece ch. 1, 1200 × 1878) ; **0,4 s** à chaud |
+  | Correction d'ancrage de 507 px au défilement | non revérifié sur ce run |
+  | Placeholder qui déborde en fond de bande | **1 205 px** (contre 1 101 px annoncés) — même famille, valeur qui dérive |
+  | Avertissement React « clé » | **localisé pour SCANVF** : 41 cartes, 4 clés distinctes, le parseur répète ses entrées. `react/jsx-key` ne le voit pas parce que la clé est correcte — c'est sa **valeur** qui est dupliquée. Reste **une** occurrence non localisée, sur TOOMICSFR, rejouée une fois sur deux parcours propres et jamais reproduite ensuite |
+  | Source personnalisée servie par le moteur mais invisible au catalogue | voir §S.2 bis — moteur 1373 / écran 1372, deux rechargements, aucun désactivé, aucune liste blanche |
+
+- **Un cas observé une fois et non reproduit, à ne pas compter comme un défaut** :
+  le 2026-10-10, un signet rouvrant la **dernière** page d'un chapitre a affiché
+  la page cassée et le badge « 1 page non servie » pendant 90 s. Deux
+  reproductions par le même code (saut direct à la page 56, et aller-retour
+  Début→Fin), sur deux essais chacune : **aucune page cassée**, et le journal
+  Rust ne contenait **aucun refus d'image**. Le journal est la seconde voie qui
+  devait trancher, et il dit « rien à signaler ». À rejouer, pas à corriger.

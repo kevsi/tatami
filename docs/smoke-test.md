@@ -896,10 +896,17 @@ le quatrième est une clé de `localStorage` que **aucune API ne renvoie** :
 | 2 | Sources `custom` | idem, `s.custom === true` |
 | 3 | Désactivées côté Rust | `invoke('list_disabled_sources')` |
 | 4 | **Liste blanche** | `localStorage['tatami.enabledSources']` |
+| 5 | **Univers connu** | `localStorage['tatami.seenSources']` |
 
 Le 4ᵉ est celui qui manquait le 2026-10-10 : sans lui, deux API vides
 laissent croire qu'aucun filtre n'existe, alors que l'en-tête affiche
 `visibleSources.length` — donc **`sources` déjà filtré** par cette liste.
+
+Le 5ᵉ a suivi : c'est lui qui distingue une source **désactivée** d'une source
+**arrivée depuis**. Un nom dans `seenSources` a déjà été vu, donc son absence
+est un choix ; un nom hors de `seenSources` est arrivé après, donc il est
+activé. Sans cette clé, la réparation réactive tout ce que l'utilisateur a
+éteint — c'est vérifié par un test nommé, et par une mesure sur l'application.
 
 **Cause du défaut, mesurée le 2026-10-10** : `enabledSources` est une **liste
 fermée** écrite par « Tout activer ». Un nom absent = source non affichée. Donc
@@ -917,12 +924,14 @@ La troisième ligne est la preuve du lien : on ne change que le nom, et l'écart
 disparaît. L'écart est **stable sur 8 relits espacés de 10 s** — ce n'est donc
 pas React en retard.
 
+**Corrigé, et vérifié en trois temps** : migration qui ne réactive pas une
+source désactivée · import visible sans intervention · persistance au
+rechargement. Détail et mesures dans le journal `PLAN.md` du 2026-10-10.
+
 **Ce que le test ne doit PAS conclure** : « une source est perdue ». Elle est
-servie par le moteur et elle est dans l'état React ; elle est **filtrée à
+servie par le moteur et elle est dans l'état React ; elle était **filtrée à
 l'affichage**. La règle d'ADR 0010 tient, et le même `SOURCE.id` ne crée
-toujours pas de collision. Le correctif est une décision d'architecture en
-attente (§2.9) : les deux options chiffrées sont dans
-`docs/rapport-smoke-test-2026-10-10.md`.
+toujours pas de collision.
 
 ### §S.3 Désactivation et suppression
 
@@ -1039,7 +1048,7 @@ et ce producteur répond-il ?** Une URL est une valeur *reçue* (`AGENTS.md` §1
   | Correction d'ancrage de 507 px au défilement | non revérifié sur ce run |
   | Placeholder qui déborde en fond de bande | **1 205 px** (contre 1 101 px annoncés) — même famille, valeur qui dérive |
   | Avertissement React « clé » | **localisé pour SCANVF** : 41 cartes, 4 clés distinctes, le parseur répète ses entrées. `react/jsx-key` ne le voit pas parce que la clé est correcte — c'est sa **valeur** qui est dupliquée. Reste **une** occurrence non localisée, sur TOOMICSFR, rejouée une fois sur deux parcours propres et jamais reproduite ensuite |
-  | Source servie par le moteur mais invisible au catalogue | **cause trouvée le 2026-10-10** : la liste blanche `tatami.enabledSources` est fermée, donc un nom absent de la liste n'est pas affiché. §S.2 bis. Correctif en attente de décision humaine (§2.9) |
+  | Source servie par le moteur mais invisible au catalogue | **corrigé le 2026-10-10** — cause : la liste blanche `tatami.enabledSources` est fermée, donc un nom absent n'est pas affiché. Deuxième clé `tatami.seenSources` : un nom déjà vu reste sous le choix de l'utilisateur, un nom arrivé depuis est activé. Preuve : migration sans réactivation d'une source désactivée, puis import visible sans intervention. §S.2 bis |
 
 - **Un cas observé une fois et non reproduit, à ne pas compter comme un défaut** :
   le 2026-10-10, un signet rouvrant la **dernière** page d'un chapitre a affiché

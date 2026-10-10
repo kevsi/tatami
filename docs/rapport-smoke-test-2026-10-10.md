@@ -168,7 +168,7 @@ apparue ensuite est donc filtrée en silence.
 **Portée plus large que les sources perso** : une source neuve apportée par une
 mise à jour du catalogue disparaît exactement de la même façon.
 
-#### Les deux options, chiffrées — décision humaine requise (§2.9)
+#### Les deux options, chiffrées — et celle qui a été appliquée
 
 Réconcilier en ajoutant les noms manquants au chargement **ne marche pas** : une
 source désactivée par l'utilisateur est précisément un nom *absent* de la liste,
@@ -181,11 +181,14 @@ désactivé » de « absent parce que jamais vu ».
 | Sens par défaut d'un nom absent | « activée » s'il n'a jamais été vu, sinon inchangé | « activée » |
 | « Tout activer » | écrit `enabledSources` = toutes | vide la liste des désactivées |
 | Migration | au 1ᵉʳ lancement, `seenSources` = `enabledSources` ∪ courante | reconstruire la liste des désactivées = `seenSources` − `enabledSources` — **impossible sans la clé A** |
-| Risque | une clé de plus à maintaining | migration destructive : sans A, les sources désactivées sont **réactivées** |
+| Risque | une clé de plus à maintenir | migration destructive : sans A, les sources désactivées sont **réactivées** |
 
-**Recommandation : option A.** Elle préserve exactement l'intention de
-l'utilisateur, se migre sans perte, et réconcilie les deux sources du problème
-(script importé **et** mise à jour du catalogue). Son coût est une clé de plus.
+**Option A appliquée le 2026-10-10** (décision humaine). `seenSources` =
+l'univers des noms déjà présentés ; `reconcilierListeBlanche()` est une fonction
+pure, testée sur 7 cas, dont le cas qui compte : **une source désactivée ne
+revient pas** à la migration. Vérifié sur l'application réelle en trois temps —
+migration sans réactivation, import visible sans intervention, persistance au
+rechargement. Détail dans le journal `PLAN.md` du 2026-10-10.
 
 **Piège à ne pas rejouer** : deux relevés **non simultanés** ne se contredisent
 pas forcément. Trois passes ont comparé un `list_sources` à une capture prise

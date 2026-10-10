@@ -688,6 +688,60 @@ que le silence.
 moteur a journalisé le retrait), liste blanche revenue à 1372 noms sans le nom
 ajouté, thème remis à `sombre`.
 
+### Journal 2026-10-10 — option A appliquée : une source nouvelle est activée d'elle-même
+
+**Mini-plan.** 1. Test rouge de la réconciliation. 2. Prouver que la porte mord,
+en cassant la branche migration. 3. Brancher sur `chargerSources()`. 4. Rejouer
+la reproduction sur l'application réelle, en trois temps. 5. Nettoyer, journal,
+commit.
+
+`lib/liste-blanche.ts` : `reconcilierListeBlanche({ nomsConnus, enabled, seen })`
+→ `{ enabled, seen, nouveaux, migration, modifie }`. Fonction **pure**, 7 tests.
+
+La règle tient en une phrase : **un nom qui est dans `seen` a déjà été vu, donc
+son absence est un choix ; un nom hors de `seen` est arrivé depuis, donc il est
+activé.** La première exécution ne rajoute rien — c'est la seule hypothèse qui ne
+réactive pas une source désactivée.
+
+**Portes** : `pnpm test` 84 · `typecheck` 0 · `lint` 0 erreur, 4 warnings connus ·
+`hooks`, `i18n` (345 = 345), `chemins`, `pages`, `perso`, `ipc` verts ·
+`pnpm build` OK. Rust inchangé sur ce tour, donc ses portes ne sont pas
+rejouées — elles l'étaient au commit précédent, sur le même arbre.
+
+**Preuve rouge de la porte** : remplacer la branche « migration » par la
+réconciliation naïve (ajouter tous les noms manquants) fait échouer **un seul**
+test, `migration : une liste existante ne réactive rien`. C'est exactement le
+bug que le modèle évite, et c'est le seul qui tombe.
+
+**Preuve sur l'application réelle** — trois temps, parce qu'un seul ne
+distinguerait pas « activé parce que nouveau » de « activé à tort » :
+
+| Temps | Situation | Résultat mesuré |
+|---|---|---|
+| **T1** | `SCANVF` retirée de la liste (désactivée) + clé `seen` **effacée** | liste passée de 1372 → **1371**, `SCANVF` **absente** → **elle n'est pas revenue** |
+| **T2** | `autre-source.js` déposé, chargé par le moteur | moteur **1373**, en-tête **1373** — **sans aucune action de l'utilisateur** |
+| **T3** | rechargement complet | toujours **1373 / 1373** — la réconciliation tient |
+
+T1 est la preuve qui compte : c'est le seul test qui prouve qu'on n'a pas
+simplement tout réactivé. T2 est le défaut d'origine, corrigé.
+
+**Ce que le correctif ne fait pas, et pourquoi** : il **ne purge pas** les noms
+morts de `enabledSources`. Une source importée puis supprimée y laisse son nom
+(1373 après le retrait de `autre-source.js`, alors que le moteur est revenu à
+1372). Sans effet fonctionnel — le catalogue filtre `sources`, pas l'inverse —
+et « Tout activer » réécrit la liste, donc purge à la demande. La purge
+automatique serait dangereuse : si `list_sources` répondait vide ou partiel
+pendant un incident, un `nomsConnus` tronqué **viderait la sélection de
+l'utilisateur**. Je préfère une liste qui grossit à une liste qu'un incident
+peut effacer.
+
+`seenSources` n'est volontairement **pas** purgé, et c'est là que c'est utile :
+une source disparue puis revenue par une mise à jour a déjà été vue, donc elle
+**n'est pas réactivée** contre le choix de l'utilisateur.
+
+**Machine restaurée et vérifiée** : `autre-source.js` retiré, `enabledSources`
+et `seenSources` revenues à 1372, moteur 1372, 2 sources perso, en-tête 1372.
+
 **§S.2 du smoke test reste donc en échec**, et sa cause est la liste blanche.
 Le contrôle lui-même était juste : il comparait bien ce qui est enregistré à ce
 qui est servi. Ce qui manquait, c'était le **troisième** terme — la liste

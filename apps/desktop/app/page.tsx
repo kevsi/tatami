@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { bandeVirtualisableEst, decalageAncrage, fenetreBande, hauteurRendueMesuree, hauteursBande, largeurImagePx, offsetsBande, pasDeDefilement } from '../lib/bande-hauteurs';
 import { refusMoteur } from '../lib/scripts-refuses';
+import { reconcilierListeBlanche } from '../lib/liste-blanche';
 import { lireListeSources } from '../lib/prefs-tolérantes';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
@@ -425,6 +426,14 @@ const CHAPTER_PAGE = 100;
 const CHAPTER_STEP = 200;
 const PAGE_KEY = 'tatami.pageSize';
 const SOURCES_KEY = 'tatami.enabledSources';
+/** Deuxième clé de la liste blanche : l'UNIVERS des noms déjà présentés.
+ *
+ *  Sans elle, un nom absent d'`enabledSources` est ambigu — désactivé par
+ *  l'utilisateur, ou arrivé depuis ? Mesuré le 2026-10-10 : un script importé
+ *  et toute source neuve d'une mise à jour du catalogue disparaissaient du
+ *  catalogue, sans un mot. Voir `lib/liste-blanche.ts`.
+ */
+const SEEN_KEY = 'tatami.seenSources';
 const SAFE_KEY = 'tatami.contentRating';
 const TIMEOUT_KEY = 'tatami.listTimeout';
 const TAGS_SHOWN = 24;
@@ -1347,7 +1356,33 @@ export default function Home() {
    */
   const chargerSources = useCallback(() => {
     invoke<{ sources: Source[] }>('list_sources')
-      .then((r) => setSources(r.sources ?? []))
+      .then((r) => {
+        const recues = r.sources ?? [];
+        // Réconciliation de la liste blanche — voir `lib/liste-blanche.ts` pour
+        // le défaut mesuré. On lit le STOCKAGE, pas l'état : `chargerSources()`
+        // peut être appelée avant que l'effet de montage ait posé `enabled`,
+        // et l'état serait alors la valeur par défaut `null`, qui fait croire
+        // qu'aucune liste n'existe.
+        const prefs = loadPrefs();
+        const r2 = reconcilierListeBlanche({
+          nomsConnus: recues.map((s) => s.name),
+          enabled: prefs.enabled,
+          seen: lireListeSources(window.localStorage.getItem(SEEN_KEY)),
+        });
+        if (r2.modifie) {
+          if (r2.enabled) {
+            window.localStorage.setItem(SOURCES_KEY, JSON.stringify(r2.enabled));
+            setEnabled(r2.enabled);
+          }
+          window.localStorage.setItem(SEEN_KEY, JSON.stringify(r2.seen));
+          if (r2.nouveaux.length) {
+            console.info(
+              `liste blanche : ${r2.nouveaux.length} source(s) activée(s) sans y avoir été vue(s)`,
+            );
+          }
+        }
+        setSources(recues);
+      })
       .catch((e) => setError(String(e)));
   }, []);
 

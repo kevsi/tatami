@@ -1407,11 +1407,21 @@ button:disabled {
 .reader {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--s5) * 2);
+  height: 100dvh;
   margin: 0 calc(-1 * var(--s5));
   padding: 0 var(--s5);
   /* Fond du lecteur : --reader-bg, identique dans les deux themes. */
   background: var(--reader-bg);
+}
+
+/* Le lecteur est une surface plein ecran, et `.reader` rend sa hauteur au
+   viewport. Mesure le 2026-10-10 : `calc(100vh - s5*2`) valait 685 px dans une
+   fenetre de 745 px, et `.app` respirait encore de 64 px par en dessous — les
+   deux se cumulaient et laissaient **64 px de fenetre vide sous le lecteur**,
+   soit la bande noire signalee. La respiration de `.app` est faite pour les
+   listes ; sous une surface plein ecran, elle ne fait qu'un vide. */
+.app:has(> .reader) {
+  padding-bottom: 0;
 }
 
 .reader-bar {

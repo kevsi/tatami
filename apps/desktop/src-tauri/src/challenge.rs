@@ -51,6 +51,33 @@ const SURVEILLE_MAX: Duration = Duration::from_secs(180);
 /// tâche, ce qui réarme la surveillance à la prochaine ouverture.
 static SURVEILLANCES: OnceLock<Mutex<HashMap<String, Arc<AtomicBool>>>> = OnceLock::new();
 
+/// Nombre de fenêtres ouvertes par source.
+///
+/// Instrumentation `TATAMI_CHALLENGE_DEBUG` : la mesure de boucle demande
+/// « combien de fois `open_challenge` est déclenché pour une même action ».
+static OUVERTURES: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+
+fn compter_ouverture(source: &str) -> u64 {
+    let carte = OUVERTURES.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut garde = match carte.lock() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
+    let n = garde.entry(source.to_string()).or_insert(0);
+    *n += 1;
+    *n
+}
+
+/// Vrai quand l'instrumentation du flux challenge est demandée.
+///
+/// `TATAMI_CHALLENGE_DEBUG=1` — variable d'environnement lue à chaque appel
+/// (une session de mesure la pose avant de lancer l'app). **Aucune valeur de
+/// cookie n'est jamais journalisée** : seulement nom, domaine, chemin,
+/// expiration, drapeaux et longueur de valeur.
+fn debug_challenge() -> bool {
+    std::env::var("TATAMI_CHALLENGE_DEBUG").is_ok()
+}
+
 fn surveillances() -> &'static Mutex<HashMap<String, Arc<AtomicBool>>> {
     SURVEILLANCES.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -143,6 +170,33 @@ fn surveiller_fenetre(
 ) {
     tauri::async_runtime::spawn(async move {
         let deja_vu = cf_clearance_courant(&app, &label, &url).await;
+        // Instrumentation : l'UA **réel** de la webview, lu par JS, à
+        // comparer à celui d'OkHttp. C'est la question de fond du flux — la
+        // fenêtre est un Chromium (WebView2) à qui l'on a posé l'UA Firefox
+        // du moteur. Si `navigator.userAgent` ne rend PAS la chaîne posée,
+        // le réglage n'a pas pris et la clearance sera liée à une autre UA.
+        //
+        // `Sec-CH-UA` / `Sec-CH-UA-Platform` qu'un navigateur envoie ne sont
+        // pas lisibles depuis l'app (il faudrait un proxy ou CDP) ; leur
+        // source déclarée, `navigator.userAgentData`, l'est.
+        if debug_challenge() {
+            let ua_moteur = engine_user_agent(&sup).await;
+            if let Some(fenetre) = app.get_webview_window(&label) {
+                let source_js = source.clone();
+                let _ = fenetre.eval_with_callback(
+                    "JSON.stringify({ua: navigator.userAgent, \
+                     platform: navigator.platform, \
+                     uaDataMobile: (navigator.userAgentData || {}).mobile, \
+                     uaDataBrands: ((navigator.userAgentData || {}).brands || [])})",
+                    move |rendu: String| {
+                        tracing::info!(
+                            "challenge-debug: UA webview={rendu} | UA OkHttp={ua_moteur} \
+                             source={source_js}"
+                        );
+                    },
+                );
+            }
+        }
         let limite = tokio::time::Instant::now() + SURVEILLE_MAX;
         loop {
             tokio::time::sleep(SURVEILLE_PAS).await;
@@ -221,6 +275,12 @@ pub async fn open_challenge(
         return Err(format!("schéma non autorisé : {}", parsed.scheme()));
     }
     let label = challenge_label(&source);
+    if debug_challenge() {
+        tracing::info!(
+            "challenge-debug: open_challenge source={source} label={label} appel n°{}",
+            compter_ouverture(&source)
+        );
+    }
     // La fenêtre de vérification n'était journalisée **nulle part**. Mesuré le
     // 2026-10-09 : `setCookies` a été appelé 0 fois sur 6 tentatives, et rien ne
     // distinguait « la fenêtre ne s'est pas ouverte » de « elle s'est ouverte et
@@ -384,6 +444,27 @@ async fn appliquer_cookies(
         host = host,
         k = payload.len()
     );
+    if debug_challenge() {
+        // Inventaire cookie par cookie — **nom, domaine, chemin, expiration,
+        // drapeaux, longueur** : jamais la valeur (règle projet).
+        for c in &cookies {
+            tracing::info!(
+                "challenge-debug: cookie nom={} domaine={:?} chemin={:?} \
+                 expiration={:?} secure={:?} httpOnly={:?} longueurValeur={}",
+                c.name(),
+                c.domain(),
+                c.path(),
+                c.expires_datetime().map(|d| d.unix_timestamp()),
+                c.secure(),
+                c.http_only(),
+                c.value().len(),
+            );
+        }
+        tracing::info!(
+            "challenge-debug: cf_clearance présent={} host={host}",
+            cookies.iter().any(|c| c.name() == CF_CLEARANCE)
+        );
+    }
     if payload.is_empty() {
         return Err(
             "aucun cookie pour ce site : la vérification n'est probablement pas terminée"

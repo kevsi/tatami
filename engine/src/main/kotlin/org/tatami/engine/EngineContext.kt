@@ -34,6 +34,29 @@ internal val intercepteurParser = Interceptor { chain ->
     if (parser != null) parser.intercept(chain) else chain.proceed(chain.request())
 }
 
+/**
+ * Instrumentation du flux challenge, activée par `TATAMI_CHALLENGE_DEBUG`
+ * dans l'environnement du moteur.
+ *
+ * Journalisation sur **stderr** : stdout est le protocole (une ligne JSON
+ * par réponse, cf. `Server.kt`).
+ *
+ * Ce qui est noté, et pourquoi — chaque ligne répond à une question posée
+ * par la mesure du 2026-10-10 sur TOONFR :
+ * - l'**UA d'OkHttp** réellement envoyé, à comparer à celui de la webview
+ *   (une `cf_clearance` est liée à l'agent qui l'a obtenue) ;
+ * - les **noms** des cookies que le magasin va joindre à la requête
+ *   (`BridgeInterceptor` les pose après tous les intercepteurs
+ *   d'application : lire l'en-tête `Cookie` ici ne verrait rien) — c'est la
+ *   présence de `cf_clearance` dans la requête **suivante** ;
+ * - le **statut** de la réponse et les en-têtes `cf-mitigated`, `server`,
+ *   `cf-ray` — ce qui distingue « cookie refusé » d'« empreinte TLS
+ *   soupçonnée ».
+ *
+ * Aucune **valeur** de cookie n'est écrite : les noms seulement.
+ */
+internal val challengeDebug: Boolean = System.getenv("TATAMI_CHALLENGE_DEBUG") != null
+
 // Adapté de kotatsu-dl MangaLoaderContextImpl (amont d'origine) aux signatures
 // du fork redo : evaluateJs à 3 args, mêmes timeouts, même Nashorn.
 class EngineContext : MangaLoaderContext() {
@@ -58,12 +81,32 @@ class EngineContext : MangaLoaderContext() {
                     .build(),
             )
         }
+        // Instrumentation `TATAMI_CHALLENGE_DEBUG`. Placé **après** l'UA (il
+        // la lit) et **avant** l'intercepteur de parser : il voit donc
+        // l'en-tête envoyé et toutes les réponses, y compris le 403/503 que
+        // `CloudFlareInterceptor` transforme en exception — la réponse
+        // remonte à travers lui avant que l'exception ne soit levée.
+        .addInterceptor { chain ->
+            val requete = chain.request()
+            val reponse = chain.proceed(requete)
+            if (challengeDebug) {
+                val cookies = cookieJar.loadForRequest(requete.url).map { it.name }.sorted()
+                System.err.println(
+                    "[challenge-debug] requete hote=${requete.url.host} " +
+                        "ua=${requete.header("User-Agent")} cookiesJar=$cookies " +
+                        "statut=${reponse.code} " +
+                        "cf-mitigated=${reponse.header("cf-mitigated")} " +
+                        "server=${reponse.header("server")} " +
+                        "cf-ray=${reponse.header("cf-ray")}",
+                )
+            }
+            reponse
+        }
         // **Dernier intercepteur ajouté = le plus proche du réseau.** Il doit l'être
         // parce que c'est lui qui débrouille la réponse : ZENMANGA chiffre ses
         // images et son `ImageCodec` (SEC / XOR) n'est décodé que là. Ajouté plus
         // haut, CloudFlare et le lazy-load verraient les octets déjà transformés.
-        .addInterceptor(intercepteurParser)
-        .connectTimeout(20, TimeUnit.SECONDS)
+        .addInterceptor(intercepteurParser)        .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
         .build()

@@ -1126,6 +1126,24 @@ private suspend fun dispatchNatif(
         val host = if (built.isNotEmpty()) built.first().domain.trimStart('.') else ""
         (context.cookieJar as InMemoryCookieJar).putCookies(host, built)
         if (p.has("userAgent")) context.userAgentOverride = p.getString("userAgent")
+        if (challengeDebug) {
+            // Ce qui entre vraiment dans le magasin, une ligne par cookie :
+            // nom, domaine, chemin, expiration, drapeaux, **longueur** de la
+            // valeur — jamais la valeur (règle projet).
+            built.forEach { c ->
+                System.err.println(
+                    "[challenge-debug] cookie injecte source=$sourceName nom=${c.name} " +
+                        "domaine=${c.domain} chemin=${c.path} expiresAt=${c.expiresAt} " +
+                        "secure=${c.secure} httpOnly=${c.httpOnly} " +
+                        "longueurValeur=${c.value.length}",
+                )
+            }
+            System.err.println(
+                "[challenge-debug] cf_clearance present=${
+                    built.any { it.name == "cf_clearance" }
+                } ua=${context.userAgentOverride}",
+            )
+        }
         JSONObject().put("ok", true)
     }
 

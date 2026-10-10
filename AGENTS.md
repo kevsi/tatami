@@ -1600,3 +1600,39 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   de compilation du code de test** — c'est `clippy --all-targets` (cf. la leçon
   où `check` n'est pas une porte). Et l'attribut parasite venait d'une écriture
   par index : relire la ligne **suivante** du bloc inséré.
+
+- **Une flèche de navigation et une flèche de défilement ne sont pas le même
+  geste, et les mettre dans le même tableau rend les deux mauvais.** Mesuré le
+  2026-10-09 : `ArrowDown`/`ArrowUp` étaient rangés avec `ArrowLeft`/`ArrowRight`
+  et appelaient `scrollToPage(index ± 1)`. Sur une bande continue, un appui
+  valait **une page entière** (18 629 px) — et le premier ne déplaçait **rien** :
+  `scrollTop` restait à 0 pendant que le compteur passait de 1 à 2, parce que
+  l'ancrage de page ne peut pas se satisfaire quand la page courante est plus
+  haute que le cadre. Un appui qui consomme un chapitre sans le faire bouger est
+  pire qu'une touche morte : on croit avoir lu. Corollaire : **un `preventDefault`
+  suivi d'un `scrollTo` qui ne bouge pas est un défaut, pas un cas limite** — le
+  mesurer au `scrollTop`, jamais au compteur de pages (cf. « un compteur qui
+  bouge n'est pas la preuve que l'écran a bougé »).
+
+- **Une hauteur de repli affichée en bas d'une liste est un footer, et elle n'est
+  visible que parce qu'elle est réservée *avant* d'être mesurée.** Mesuré le
+  2026-10-09 : la bande réservait `HAUTEUR_REPLI` (1 115 px) aux pages de queue
+  qu'elle n'avait pas encore montées ; au fond, **1 062 px de vide** sous la
+  dernière image. Ce n'était pas un calcul faux mais un **artefact de
+  chargement** — 6 s plus tard la bande retombait de 57 314 à 55 440 px et le
+  vide disparaissait seul. Remède : la fenêtre de virtualisation **monte toujours
+  la dernière page**, donc elle décode tôt et `onLoad` la mesure ; une image de
+  plus, pas la queue. Corollaire de mesure : une sonde qui **saute** au fond
+  reproduit l'artefact, pas l'usage — il faut descendre **par paliers**. C'est
+  pour ça que la règle vaut aussi pour le `loading="lazy"` : « monté tôt » est une
+  garantie vérifiable (un test sur `fenetreBande`), « invisible » ne l'est pas.
+
+- **Un garde qu'aucun test ne fait échouer n'est pas un garde — parfois il
+  est du code superflu.** Mesuré le 2026-10-09 : j'ai ajouté
+  `if (premier >= nbPages)` pour couvrir l'ancre hors bande, puis je l'ai
+  désactivé pour prouver qu'il mordait. **Les tests sont restés verts** : la
+  garantie voisine couvrait déjà le cas. J'ai donc **supprimé** le garde, plutôt
+  que de garder une protection que rien ne vérifie. Corollaire : « ça ne mord pas »
+  ne dit pas seulement *que* la porte est inutile — ici, la bonne conclusion était
+  *supprimer*, pas *ajouter un test qui morde*. Une porte verte après une casse
+  est un signal, et il faut lui demander ce qu'il désigne.

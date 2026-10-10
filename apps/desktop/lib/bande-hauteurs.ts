@@ -238,3 +238,93 @@ export function hauteurRendueMesuree(
   }
   return hauteurRendue(page, largeurBande);
 }
+
+/**
+ * Pas d'un appui sur flèche haut/bas dans la bande.
+ *
+ * ## Pourquoi une fonction, et pas un nombre dans le gestionnaire de clés
+ *
+ * Mesuré le 2026-10-09 : les flèches haut et bas étaient traitées comme
+ * « page suivante / page précédente », donc chaque appui valait **une page
+ * entière** (18 629 px sur le chapitre mesuré). Dans une bande qui se défile,
+ * c'est un saut, pas un défilement. Pire : le premier appui ne déplaçait
+ * **rien** (`scrollTop` resté à 0 alors que le compteur passait de 1 à 2),
+ * parce que l'ancrage de page ne peut pas se satisfaire quand la page courante
+ * est plus haute que le cadre.
+ *
+ * On garde 80 % du cadre plutôt qu'une page entière : assez pour avancer avec
+ * le défilement, assez peu pour ne pas sauter du texte. `PAS_DEFILEMENT_MIN`
+ * est un plancher pour un cadre minuscule : sans lui, un pas de 8 px rendrait
+ * la touche décorative.
+ */
+export const RATIO_PAS_DEFILEMENT = 0.8;
+export const PAS_DEFILEMENT_MIN = 80;
+
+export function pasDeDefilement(clientHeight: number): number {
+  return Math.max(PAS_DEFILEMENT_MIN, Math.round((clientHeight || 0) * RATIO_PAS_DEFILEMENT));
+}
+
+/**
+ * Indices de pages montés dans la bande.
+ *
+ * Une fenêtre glissante, plus une garantie : **la dernière page est toujours
+ * montée**.
+ *
+ * ## Le défaut mesuré (2026-10-09)
+ *
+ * En fin de bande, les pages de queue n'étaient montées qu'**à l'arrivée** — et
+ * la bande leur avait déjà réservé une hauteur de repli (`HAUTEUR_REPLI`,
+ * 1 115 px à cette largeur). Tant que l'image n'était pas chargée, sa hauteur
+ * réelle n'était pas connue, donc la bande réservait 1 115 px pour une image
+ * qui en fait 260 : **1 062 px de vide en bas du lecteur**, soit un « footer »
+ * inutile que l'utilisateur a signalé.
+ *
+ * Mesuré sur le chapitre de 53 pages : bande de 57 314 px au fond, contenu
+ * rendu finissant 1 062 px plus haut ; 6 s plus tard, la bande était retombée à
+ * 55 440 px et le vide avait disparu — la preuve que c'est bien un **artefact de
+ * chargement de la queue**, pas un calcul faux.
+ *
+ * Monter la dernière page dès l'ouverture la fait décoder et `onLoad` la
+ * mesure : la bande est donc déjà juste quand on y arrive. Coût : **une image**
+ * de plus, pas la queue entière — la virtualisation reste la sienne.
+ */
+export function fenetreBande(
+  nbPages: number,
+  offsets: readonly number[],
+  hauteurs: readonly number[],
+  scrollY: number,
+  marge = 2,
+  portee = 2000,
+): number[] {
+  const tous = Array.from({ length: nbPages }, (_, i) => i);
+  if (nbPages === 0) return tous;
+  // Page contenant le haut du cadre : la première dont le bas dépasse `scrollY`.
+  // `premier` peut valoir `nbPages` si l'ancre est au-delà de la bande : on ne
+  // le borne pas ici, parce que la garantie du bas (`la dernière page est
+  // toujours montée`) rend ce cas correct de toute façon. Un clamp ici serait
+  // du code redondant — et, sans test qui le morde, du code que rien ne protège.
+  let premier = 0;
+  while (
+    premier < nbPages &&
+    (offsets[premier] ?? 0) + (hauteurs[premier] ?? 0) < scrollY
+  ) {
+    premier += 1;
+  }
+
+  const debut = Math.max(0, premier - marge);
+  let y = offsets[premier] ?? 0;
+  let fin = premier;
+  while (fin < nbPages && y < scrollY + portee) {
+    y += hauteurs[fin] ?? 0;
+    fin += 1;
+  }
+  const limite = Math.min(nbPages, fin + marge);
+  const out: number[] = [];
+  for (let i = debut; i < limite; i += 1) out.push(i);
+
+  // La dernière page, toujours montée : sans elle, sa hauteur de repli reste
+  // réservée jusqu'à ce qu'on arrive dessus.
+  const derniere = nbPages - 1;
+  if (derniere >= 0 && out[out.length - 1] !== derniere) out.push(derniere);
+  return out;
+}

@@ -8,6 +8,9 @@ import {
   hauteurRendueMesuree,
   hauteursBande,
   offsetsBande,
+  fenetreBande,
+  pasDeDefilement,
+  PAS_DEFILEMENT_MIN,
   HAUTEUR_REPLI,
 } from './bande-hauteurs.ts';
 
@@ -212,5 +215,77 @@ describe('hauteurs de la bande webtoon', () => {
       assert.ok(h[1] > 0);
       assert.notEqual(h[0], h[1], 'la mesure n a pas ete prise en compte');
     });
+  });
+});
+describe('défilement progressif au clavier', () => {
+  it('un pas vaut 80 % du cadre, pas une page entière', () => {
+    // Mesuré le 2026-10-09 : cadre de 627 px, page de 18 629 px. Un pas calqué
+    // sur la page fait un saut ; 80 % du cadre défile.
+    assert.equal(pasDeDefilement(627), 502);
+    assert.ok(pasDeDefilement(627) < 1000, 'le pas doit rester dans le cadre');
+  });
+
+  it('un cadre minuscule ne donne pas un pas décoratif', () => {
+    assert.equal(pasDeDefilement(10), PAS_DEFILEMENT_MIN);
+    assert.equal(pasDeDefilement(0), PAS_DEFILEMENT_MIN);
+  });
+
+  it('le pas est strictement positif et inférieur au cadre', () => {
+    for (const h of [0, 40, 200, 627, 1440]) {
+      const p = pasDeDefilement(h);
+      assert.ok(p > 0, 'pas nul');
+      if (h > PAS_DEFILEMENT_MIN) assert.ok(p <= h, 'le pas ne doit pas dépasser le cadre');
+    }
+  });
+});
+
+describe('fenêtre de montage de la bande', () => {
+  // 5 pages de 1 000 px : offsets 0, 1000, 2000, 3000, 4000.
+  const offsets = [0, 1000, 2000, 3000, 4000];
+  const hauteurs = [1000, 1000, 1000, 1000, 1000];
+
+  it('au sommet, la fenêtre couvre le cadre et un peu plus', () => {
+    const f = fenetreBande(5, offsets, hauteurs, 0);
+    assert.deepEqual(f, [0, 1, 2, 3, 4]);
+  });
+
+  it('la dernière page est TOUJOURS montée', () => {
+    // C'est la garantie qui supprime le « footer » : sans elle, la queue n'est
+    // chargée qu'à l'arrivée, et sa hauteur de repli reste réservée.
+    for (const y of [0, 1500, 3000, 4200, 5000, 99999]) {
+      const f = fenetreBande(5, offsets, hauteurs, y);
+      assert.ok(
+        f.includes(4),
+        `la dernière page doit être montée pour scrollY=${y}, reçu ${JSON.stringify(f)}`,
+      );
+    }
+  });
+
+  it('la dernière page n est pas montée deux fois', () => {
+    const f = fenetreBande(5, offsets, hauteurs, 4200);
+    assert.equal(f.filter((i) => i === 4).length, 1);
+  });
+
+  it('une ancre au-delà de la bande ne vide pas la fenêtre', () => {
+    // `premier` peut valoir `nbPages` quand l'ancre est après la fin de bande :
+    // la fenêtre doit alors montrer la queue, pas du vide.
+    const f = fenetreBande(5, offsets, hauteurs, 99999);
+    assert.ok(f.length > 0, 'la fenêtre ne doit jamais être vide');
+    assert.ok(f.includes(4), 'elle doit contenir la dernière page');
+  });
+
+  it('au milieu, la fenêtre suit le cadre', () => {
+    const f = fenetreBande(20, Array.from({ length: 20 }, (_, i) => i * 1000), Array(20).fill(1000), 5000);
+    assert.ok(f.includes(5), 'page sous le cadre');
+    assert.ok(f.includes(20 - 1), 'et la dernière page');
+    assert.ok(f.length < 20, 'la virtualisation reste active');
+  });
+
+  it('une bande vide ne rend pas d indices', () => {
+    assert.deepEqual(fenetreBande(0, [], [], 0), []);
+  });
+
+  it('une page unique est toujours montée', () => {
+    assert.deepEqual(fenetreBande(1, [0], [1000], 0), [0]);
   });
 });

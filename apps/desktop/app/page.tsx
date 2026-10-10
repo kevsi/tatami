@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { bandeVirtualisableEst, decalageAncrage, hauteurRendueMesuree, hauteursBande, offsetsBande } from '../lib/bande-hauteurs';
+import { bandeVirtualisableEst, decalageAncrage, fenetreBande, hauteurRendueMesuree, hauteursBande, offsetsBande, pasDeDefilement } from '../lib/bande-hauteurs';
 import { lireListeSources } from '../lib/prefs-tolérantes';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
@@ -3626,31 +3626,13 @@ const bandeHauteur = useMemo(() => {
   return hauteurs.reduce((n, h) => n + h, 0);
 }, [hauteurs, bandeVirtualisable]);
 
-const fenetre = useMemo(() => {
-  const tous = pagesBande.map((_, i) => i);
-  if (!bandeVirtualisable) return tous;
-  let premier = 0;
-  while (
-    premier < pagesBande.length &&
-    (offsets[premier] ?? 0) + (hauteurs[premier] ?? 0) < scrollY
-  ) {
-    premier += 1;
-  }
-  const marge = 2;
-  const debut = Math.max(0, premier - marge);
-  // On monte jusqu'à couvrir la fenêtre visible plus une page, puis deux de
-  // marge : de quoi éviter le « trou blanc » pendant un défilement rapide.
-  let y = offsets[premier] ?? 0;
-  let fin = premier;
-  while (fin < pagesBande.length && y < scrollY + 2000) {
-    y += hauteurs[fin] ?? 0;
-    fin += 1;
-  }
-  const limite = Math.min(pagesBande.length, fin + marge);
-  const out: number[] = [];
-  for (let i = debut; i < limite; i += 1) out.push(i);
-  return out;
-}, [pagesBande, scrollY, offsets, hauteurs, bandeVirtualisable]);
+const fenetre = useMemo(
+  () => fenetreBande(pagesBande.length, offsets, hauteurs, scrollY),
+  // `bandeVirtualisable` ne suffit pas : quand elle est fausse, la bande rend
+  // toutes les pages en flux normal, et `fenetreBande` rend déjà tous les
+  // indices — donc la même expression couvre les deux cas.
+  [pagesBande.length, offsets, hauteurs, scrollY],
+);
 
 // La largeur du conteneur décide de la hauteur affichée : il faut la mesurer,
 // sinon la première bande est dimensionnée sur une largeur nulle.
@@ -3808,8 +3790,27 @@ useEffect(() => {
       closeReader();
       return;
     }
-    const forward = ['ArrowRight', 'ArrowDown', 'PageDown', ' '];
-    const back = ['ArrowLeft', 'ArrowUp', 'PageUp'];
+    // **Flèches haut/bas = défilement, pas changement de page.** Mesuré le
+    // 2026-10-09 : elles étaient rangées avec les flèches gauche/droite, donc un
+    // appui valait une page entière — 18 629 px sur le chapitre mesuré. Dans une
+    // bande continue c'est un saut de texte, et le premier appui ne déplaçait
+    // même rien (`scrollTop` resté à 0 alors que le compteur passait de 1 à 2),
+    // l'ancrage de page ne pouvant se satisfaire quand la page courante est plus
+    // haute que le cadre. Signalé par l'utilisateur comme « des sauts au lieu de
+    // défiler progressivement ».
+    //
+    // Gauche/droite restent la navigation par page : c'est un autre geste, et
+    // c'est ce que les boutons `←`/`→` de la barre font aussi.
+    const strip = stripRef.current;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!strip) return;
+      const pas = pasDeDefilement(strip.clientHeight);
+      strip.scrollBy({ top: e.key === 'ArrowDown' ? pas : -pas });
+      return;
+    }
+    const forward = ['ArrowRight', 'PageDown', ' '];
+    const back = ['ArrowLeft', 'PageUp'];
     if (forward.includes(e.key)) {
       e.preventDefault();
       scrollToPage(Math.min(last, reader!.index + 1));

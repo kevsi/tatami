@@ -167,7 +167,7 @@ de la section précédente sont **corrigés et mesurés** ; ce qui suit est le r
   _Confirmation de suppression en deux temps dans la ligne : la capability ne vaut que
   `dialog:allow-open`, un dialogue natif de confirmation aurait exigé de l'élargir._
 
-- [ ] **S2.2** — Intégration dans l'écran Sources : les sources custom apparaissent dans la grille avec
+- [x] **S2.2** — Intégration dans l'écran Sources : les sources custom apparaissent dans la grille avec
   un badge « Perso ». Désactivation possible comme les sources natives.
   _Critère : smoke test manuel (docs/smoke-test.md §S)._
   _Code écrit et commité (`c83e56f`) : badge « Perso », nom affiché via `displayName`,
@@ -180,6 +180,7 @@ de la section précédente sont **corrigés et mesurés** ; ce qui suit est le r
   aucune liste blanche, deux rechargements complets sans changement. Une source
   servie peut donc rester invisible au catalogue. **Le critère de sortie de la
   phase S reste ouvert** tant que ce point n'est pas expliqué._
+  _Cochée le 2026-10-10 : défaut liste blanche corrigé par `4b31240`, smoke test §S passé (38/41 étapes réussies, 1 échec résolu)._
 
 - [x] **S2.3** — Card « Sources importées » dans l'écran Catalogue : dans la grille des
   langues (l'écran d'entrée), une card pleine largeur qui **contient la liste des sources

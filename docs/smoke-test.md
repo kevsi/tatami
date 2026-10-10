@@ -11,6 +11,29 @@ corriger ce document dans le même jalon (AGENTS.md §8, « la documentation con
 Durée : 15 à 25 min sur une machine avec le moteur déjà construit. RAM limitée : ne pas lancer
 `pnpm dev`, Gradle et `cargo build` en même temps (`AGENTS.md` §3).
 
+> ### ⚠ État du document — 2026-10-10
+>
+> **Ce test n'a jamais été joué.** Écrit le 2026-07, jamais exécuté depuis.
+>
+> **Ce qu'il faut savoir avant de s'en servir :**
+>
+> 1. **Les références `page.tsx:NNNN` sont périmées.** Elles pointent sur le fichier
+>    d'avant la suppression du mode page et d'avant de nombreux correctifs. Elles
+>    ne désignent plus rien. **Chercher le sélecteur dans le DOM**, pas dans le
+>    code — un numéro de ligne ne survit pas à une modification du fichier.
+> 2. **Les sections 5 (Lecteur), 13 (limites) et 14 (périmètre) ont été mises à
+>    jour** aujourd'hui : elles testaient des écrans supprimés et annonçaient des
+>    phases livrées comme « non commencées ».
+> 3. **Les sections 2, 3, 4, 6, 7, 8 et 11 (S2) n'ont pas été relues.** Leurs
+>    contrôles sont formulés sur des intention, pas sur des mesures : à vérifier
+>    avant d'en tirer une conclusion, et à corriger au passage.
+> 4. Une étape qui échoue ne prouve **pas** que l'application est cassée : lire
+>    d'abord §13, et se demander si le test est à jour avant de corriger le code
+>    (`AGENTS.md` §14).
+>
+> Si une étape correspond encore au code, **corriger ce document dans le même
+> jalon** (`AGENTS.md` §8, « la documentation concernée est à jour »).
+
 ---
 
 ## 0. Préparation
@@ -212,68 +235,93 @@ et ne regarde que le compteur est un faux positif.
 
 ## 5. Lecteur (T05)
 
-**Clic** : bouton `Lire <chapitre>` sur une cellule (`page.tsx:2394-2399`).
-Barre du lecteur : titre `webtoon · chapitre`, bouton `Signet`, groupes `Pagé`/`Webtoon`,
-`Simple`/`Double`, `Largeur`/`Hauteur`, `RTL`/`LTR`, zoom, sélecteur de chapitre, saut de page
-(`page.tsx:2036-2186`).
+**Réécrit le 2026-10-10.** La version précédente testait le mode « page »
+(boutons `Pagé`/`Webtoon`, `Simple`/`Double`, `Largeur`/`Hauteur`, `RTL`/`LTR`),
+**supprimé le 2026-10-06** : le lecteur est désormais **uniquement webtoon**.
+Ces contrôles ont été retirés : ils échouaient sur des boutons absents, ce qui
+n'apprenait rien. Les numéros de ligne `page.tsx:NNNN` ont tous été retirés
+pareil — ils dataient de l'ancien fichier et ne désignaient plus rien. **Chercher
+un sélecteur dans le DOM plutôt que dans le code** (`AGENTS.md` §14).
+
+**Clic** : bouton `Lire <chapitre>` sur une cellule (`button.chapter-open`).
+Barre du lecteur : titre `webtoon · chapitre`, bouton `Signet`, navigation
+`←`/`→`, plein écran, zoom, sélecteur de chapitre, saut de page.
 
 ### T05.1 — L'image s'affiche vraiment
 
-**Attendu** : **une** image dans `.reader-stage`, de taille naturelle non nulle.
-**Preuve** : `src` = `http://tatami.localhost/page/<token>` (`page.tsx:1411`) et
-`naturalWidth > 0`. **Règle** (`AGENTS.md` §14) : une `<img>` cassée est déjà « visible » pour
-l'automatisation — attendre `img.complete && img.naturalWidth > 0` avant de conclure.
+**Attendu** : des images dans `.webtoon-inner`, de taille naturelle non nulle.
+**Preuve** : `src` = `http://tatami.localhost/page/<token>` et
+`naturalWidth > 0`. **Règle** (`AGENTS.md` §14) : une `<img>` cassée est déjà
+« visible » pour l'automatisation — attendre `img.complete && img.naturalWidth > 0`.
+**Sélecteur** : `button.chapter-open` et **pas** `.chapter-open` : le squelette
+rend un `<span>` bearing the same class, donc `.chapter-open` compte 100 lignes
+vides avant le chargement (mesuré le 2026-10-09).
 
-### T05.2 — Pagination
+### T05.2 — Navigation par page
 
-**Clic** : `Page suivante`, `Page précédente` (`page.tsx:2225-2234`).
+**Clic** : boutons `←`/`→` de la barre.
 **Attendu** : le compteur `Page / N` avance ; l'image affichée change.
-**Preuve** : capture du compteur + relevés de `src` avant/après (2 jetons différents).
-**À utiliser en priorité** : les flèches clavier ont un sens qui dépend du mode de lecture
-(mesuré en RTL, `AGENTS.md` §14).
+**Preuve** : capture du compteur + `data-index` de la première image visible.
+**Règle** : mesurer l'**élément visible** (`data-index`), jamais le compteur seul —
+un compteur qui bouge ne prouve pas que l'écran a bougé (`AGENTS.md` §14).
 
-### T05.3 — Modes et ajustements
+### T05.3 — ~~Modes et ajustements~~ (retiré)
 
-| Action | Attendu | Preuve |
-|---|---|---|
-| `Simple` | 1 image, `getComputedStyle(img).width/height` = valeur « largeur » | `page.tsx:2076` |
-| `Double` | **2** images dans `.reader-stage`, un cran = 2 pages | `page.tsx:2084,2021` |
-| `Hauteur` | hauteur d'image **différente** de « Largeur », tenant dans le cadre | `page.tsx:2104` |
-| `RTL` (bouton visible seulement en double page) | la page courante passe à droite | `page.tsx:2111-2123,2029` |
+`Simple`, `Double`, `Hauteur`, `RTL` : supprimés avec le mode page.
+`object-fit: contain` reste en CSS (garde-fou anti-étirement), mais ce n'est plus
+un réglage utilisateur.
 
-**Preuve** : 4 mesures chiffrées (`width`/`height` en px) + 4 captures.
-**Régression à surveiller** : en `Double` + `Hauteur`, une image qui déborde du cadre
-(mesuré : 6 300 px dans un cadre de 685) signifie que `grid-template-rows: minmax(0, 1fr)` a
-été perdu (`AGENTS.md` §14).
+### T05.4 — La bande webtoon
 
-### T05.4 — Webtoon
-
-**Clic** : `Webtoon` (`page.tsx:2064`).
-**Attendu** : une bande continue d'images ; `↑ Page précédente` / `Page suivante ↓` font défiler
-(`page.tsx:2239-2251`) ; le double-clic bascule le zoom 100 % ↔ 200 % (`page.tsx:2202`).
-**Preuve** : capture d'une bande de ≥ 3 images + mesure de la hauteur du conteneur.
+**Attendu** : une bande continue d'images ; le double-clic bascule le zoom.
+**Preuve** : capture d'une bande de ≥ 3 images + mesure de la hauteur du
+conteneur, et **l'espace vide sous la dernière image** (`.webtoon-inner` doit
+descendre jusqu'au bas de la bande, pas le dépasser).
+**Ce qui a été corrigé, à surveiller** :
+- images étirées (le repli ne doit jamais être posé en `height`) ;
+- trait horizontal à chaque frontière de page (`hauteurRendue` ne doit **pas**
+  arrondir : `contain` laisserait 0,25 px de fond) ;
+- vide de 1 120 px en bas (pages de queue non encore mesurées) ;
+- **64 px de fenêtre vide sous le lecteur** : `.reader` doit faire la hauteur
+  du viewport, et `.app` ne doit pas respirer sous une surface plein écran.
 
 ### T05.5 — Saut de page et changement de chapitre
 
-**Clic** : champ `Aller à la page` (`aria-label`, `page.tsx:2182`) → saisir `3` → Entrée ;
-puis le sélecteur `Changer de chapitre` (`page.tsx:2148`).
+**Clic** : champ de saut de page → saisir `3` → Entrée ; puis le sélecteur de chapitre.
 **Attendu** : la page 3 s'affiche ; le changement de chapitre recharge les images du nouveau
 chapitre et le compteur `N` change.
 **Preuve** : captures avant/après avec les compteurs.
 
 ### T05.6 — Clavier
 
-**Clic** : `Echap` pour fermer, `Début`, `Fin`, `Espace` (`page.tsx:1643-1670`).
-**Attendu** : `Echap` ramène à la fiche ; `Début` → 1re page ; `Fin` → dernière page ;
-`Espace` avance d'un cran.
-**Preuve** : relevé du compteur à chaque touche.
+| Touche | Attendu | Mesuré le 2026-10-09 |
+|---|---|---|
+| `↑` / `↓` | **défilement progressif** de 80 % du cadre, **pas** un saut de page | 502 px sur un cadre de 627 |
+| `←` / `→` | page précédente / suivante | — |
+| `Espace`, `Page bas` | page suivante | — |
+| `Début` / `Fin` | 1re / dernière page | — |
+| `Échap` | sort du plein écran d'abord, ferme le lecteur sinon | — |
+
+**Preuve** : relever `scrollTop` de `.webtoon` et le `data-index` visible — le
+compteur seul ne prouve rien.
 
 ### T05.7 — Signet
 
-**Clic** : `Signet` (`page.tsx:2045-2052`), changer de page, recliquer.
+**Clic** : `Signet`, changer de page, recliquer.
 **Attendu** : le libellé devient `Signet ✓` et `aria-pressed` passe à vrai ; la page marquée
 est celle affichée au moment du clic.
 **Preuve** : capture du libellé + section « Vos signets » de l'accueil (T07.3).
+
+### T05.8 — Chapitre courant et reprise (ajouté le 2026-10-10)
+
+**Clic** : lire un chapitre, revenir à la fiche avec `← Chapitres`.
+**Attendu** : la cellule du chapitre lu porte `data-courant` et `aria-current="true"`,
+affiche « Vous êtes ici · page X/Y », et un bouton « Reprendre *chapitre* » apparaît.
+**Preuve** : compte de `[data-courant]` = 1, `aria-current` = 1, texte du bouton.
+**Rappel** : la reprise est relue **au retour du lecteur** et pas seulement à
+l'ouverture du webtoon — un `catch` qui la met à `null` sur erreur est
+indistinguishable d'une absence de reprise, donc mesurer l'interface ne suffit pas
+(`AGENTS.md` §14, leçon `invoke<Type>`).
 
 ---
 
@@ -598,31 +646,49 @@ Nettoyage effectué : favoris / historique / signets / file / sources désactiv�
 
 ## 13. Limites attendues (ne pas les reporter comme des bugs)
 
-Toutes mesurées, donc à vérifier avant de conclure qu'une étape échoue.
+**Toutes les lignes ci-dessous sont des mesures du 2026-07 à 2026-10-08 et
+doivent être recontrôlées avant d'en conclure qu'une étape échoue.** Deux d'entre
+elles ne sont plus vraies et sont signalées comme telles.
 
 | Limite | Détail | Origine |
 |---|---|---|
-| **Images refusées sur REMANGA / SEIMANGA** | `pages` répond mais `fetchImage` renvoie 403 : le CDN refuse l'user-agent du moteur. Le lecteur reste vide. | journal 2026-10-03, tâche 0.13-0.17 |
-| **MANGABUFF demande une authentification** dès `pages` | message d'erreur translated, bouton « Changer de catalogue » | journal 2026-10-02 |
-| **Sources mortes** | COMX, MINTMANGA en 404, NUDEMOON en domaine inexistant, MANGALIB/BAOZIMH en 403 | journal 2026-10-02, sondage de 24 sources |
+| **Images refusées sur REMANGA / SEIMANGA** | `pages` répond mais `fetchImage` renvoie 403 : le CDN refuse l'user-agent du moteur. Le lecteur reste vide. **Recontrôler** : SEIMANGA a été mesuré servant normalement le 2026-10-04. | journal 2026-10-03, tâche 0.13-0.17 |
+| **MANGABUFF demande une authentification** dès `pages` | message d'erreur traduit, bouton « Changer de catalogue » | journal 2026-10-02 |
+| **Sources mortes** | COMX, MINTMANGA en 404, NUDEMOON en domaine inexistant, MANGALIB/BAOZIMH en 403. **Recontrôler** : `frscans.com` ne résout plus non plus (2026-10-09). | journal 2026-10-02, sondage de 24 sources |
 | **SELFMANGA renvoie 0 résultat en `SAFE`** | d'où le défaut `SUGGESTIVE` | journal 2026-10-02 |
 | **EXHENTAI ne pagine pas** | offset ignoré, 35,7 s pour une page ; « Voir plus » disparaît avec une explication | journal 2026-10-02 |
-| **Covered-to-date = 30 min, 4 requêtes simultanées** | les chapitres récents d'une carte peuvent mettre ~14 s à venir sur une source lente | journal 2026-10-03 |
-| **Pas de lecture hors ligne** | la vue Téléchargements n'a que `Reprendre` et `Supprimer` ; lire un `.cbz` n'est pas implémenté (`PLAN.md` 2.3 non coché) | `page.tsx:1960-1972` |
-| **Pas de catégories de favoris** | `PLAN.md` 1.5 non coché : les favoris sont une liste plate | `page.tsx:2901-2942` |
-| **Message `CHALLENGE_REQUIRED` encore affiché « pas encore gérée »** | `describeError` (`page.tsx:403`) n'a pas été mis à jour après 0.11 ; le bloc de résolution existe pourtant (`page.tsx:2566-2592`). À signaler, pas à contourner. | `page.tsx:403` |
-| **Titres sans date de publication** | certaines sources ne renvoient pas `uploadDate` : la cellule affiche alors le libellé du chapitre (`page.tsx:2401`) | `page.tsx:2401` |
-| **Chapitres sous licence, sans images** | MangaDex répond `200 OK` avec `data: []` pour un chapitre non servi (mesuré : Naruto ch.1) — `pages` renvoie 0 URL et le lecteur s'ouvre vide. Ce n'est pas un défaut du script : le chapitre n'existe pas en ligne. Hinamatsuri ch.1, lui, rend 36 pages. | sonde NDJSON du 2026-07, `/at-home/server` |
+| **Première image d'une source ≈ 8 s** | le moteur sérialise à ~260 ms par image et la **première** coûte ~8 s (chargement du parser, session HTTP). Mesuré dans `tatami.log` (`serve_page` horodaté). Les suivantes : ~260 ms. | journal 2026-10-10 |
+| **Titres sans date de publication** | certaines sources ne renvoient pas `uploadDate` : la cellule affiche alors le libellé du chapitre | mesuré 2026-10-04 |
+| **Chapitres sous licence, sans images** | une source peut répondre `200 OK` avec `data: []` : `pages` renvoie 0 URL et le lecteur s'ouvre vide. MangaDex a été mesuréLost 7/8 pages sur ch.1 et 0/8 sur ch.3 — le même code, donc c'est la source. | sonde NDJSON 2026-07, mesures 2026-10-09 |
+| ~~**Pas de lecture hors ligne**~~ | **ne vaut plus** : un `.cbz` téléchargé se lit hors ligne (tâche 2.3 livrée, `cbz.rs` / `zipread.rs`). | — |
+| ~~**Pas de catégories de favoris**~~ | **ne vaut plus** : catégories livrées (tâche 1.5, table `categories`). | — |
+
+**Rappel de méthode.** Un 404 sans corps n'est pas une page d'erreur mais un
+refus de connexion : quand une URL échoue, demander d'abord **qui me l'a donnée,
+et ce producteur répond-il ?** Une URL est une valeur *reçue* (`AGENTS.md` §14).
 
 ---
 
 ## 14. Ce que ce test ne couvre pas
 
+**Révisé le 2026-10-10.** Les phases marquées « non commencées » ci-dessous ont
+été livrées depuis : ne pas s'en servir pour conclure qu'elles manquent.
+
 - **Linux / macOS** : hors v1 (`PLAN.md` §3).
-- **Suivi AniList / MAL / Shikimori / Kitsu, synchronisation** : phases 4.1–4.6 non commencées.
-- **Notifications système, planificateur** : phase 3 non commencée.
-- **Mise à jour du moteur signée** : phase 5.1 non commencée ; le sidecar est toujours résolu
-  depuis `engine/dist` en dev (`supervisor.rs:356-366`), le packaging en `resources` n'est pas
-  fait.
-- **Tests de contrat** : phase 5.3 non commencée. Les tests unitaires Rust, le lint et le
-  typecheck ne sont pas remplacés par ce document : ils sont listés dans `AGENTS.md` §8.
+- **Traduction de manga** : **retirée du produit** (ADR `0013`). Les phases T1→T4
+  qui figuraient ici comme « à venir » ne le sont plus et ne le seront pas.
+- **Suivi AniList / MAL / Shikimori / Kitsu, synchronisation** : **livré**
+  (état de synchronisation en base, erreurs de jetons gérées).
+- **Notifications système, planificateur** : **livré**. Le passe périodique est en
+  place ; `latest` respecte un intervalle minimal entre requêtes (mesuré 248 ms).
+- **Mise à jour du moteur signée** : **non commencée** (phase 5.1). En
+  développement, le sidecar est résolu depuis `engine/dist` ; l'installation dans
+  `resources` n'est pas faite. **C'est un manque réel de la v1.**
+- **Tests de contrat** : **livrés** (fixtures enregistrées rejouées contre le code
+  Rust). Les tests unitaires Rust, le lint et le typecheck ne sont pas remplacés
+  par ce document : ils sont listés dans `AGENTS.md` §8.
+- **Défauts connus, non corrigés, à ne pas compter comme des réussites** :
+  première image d'une source ≈ 8 s ; une correction d'ancrage de 507 px au
+  défilement ; un placeholder qui déborde de 1 101 px en fond de bande ; un
+  avertissement React « clé manquante » **intermittent**, non localisé
+  (`react/jsx-key` ne le voit pas : il vient d'une liste construite hors JSX).

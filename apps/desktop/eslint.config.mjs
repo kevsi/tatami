@@ -19,6 +19,20 @@ const eslintConfig = defineConfig([
        * domaine autorisé, et il casse le protocole au passage.
        */
       '@next/next/no-img-element': 'off',
+
+      /*
+       * Une liste rendue sans `key` ne casse pas l'affichage : React la
+       * signale en console, et l'overlay Next la remonte comme « 1 Issue ».
+       * Mesuré le 2026-10-10 : c'est ce que signalait cet overlay, et
+       * l'avertissement est **intermittent** — il n'est pas apparu sur une
+       * seconde passe identique, donc le chercher à la main revenait à
+       *guesser. Cette règle le nomme, ligne par ligne, à chaque `pnpm lint`.
+       *
+       * Elle est activée explicitement alors que `core-web-vitals` ne la pose
+       * pas : une règle absente ne mord jamais, et une porte muette est
+       * indiscernable d'une porte verte (leçon AGENTS.md §14).
+       */
+      'react/jsx-key': 'error',
     },
   },
   globalIgnores([

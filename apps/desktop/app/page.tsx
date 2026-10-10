@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { bandeVirtualisableEst, decalageAncrage, fenetreBande, hauteurRendueMesuree, hauteursBande, offsetsBande, pasDeDefilement } from '../lib/bande-hauteurs';
+import { bandeVirtualisableEst, decalageAncrage, fenetreBande, hauteurRendueMesuree, hauteursBande, largeurImagePx, offsetsBande, pasDeDefilement } from '../lib/bande-hauteurs';
 import { lireListeSources } from '../lib/prefs-tolérantes';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
@@ -5007,19 +5007,29 @@ if (reader) {
                 // la même chose : poser le repli sur l'image la déformait de
                 // 60,9 % (mesuré le 2026-10-09 sur TOOMICSFR, 6 images sur 6).
                 const hauteur = hauteurs[i] || 0;
+                // Largeur **entière** partagée par la boîte et le ratio : voir
+                // `largeurImagePx` pour la mesure qui la motive.
+                const largeurImage = largeurImagePx(largeurBande, zoom);
                 const hauteurCss = hauteurRendueMesuree(
                   p,
-                  largeurBande * formatBande,
+                  largeurImage,
                   dimsPages[i],
                 );
                 const styleImage: CSSProperties = bandeVirtualisable
                   ? {
-                      width: `${zoom}%`,
+                      // **Pixels entiers, pas un pourcentage.** Mesuré le
+                      // 2026-10-09 : `50 %` d'une largeur impaire vaut 540,5 px,
+                      // et une image dessinée sur un demi-pixel laisse une
+                      // colonne translucide à son bord — la ligne verticale
+                      // signalée, visible seulement en réduisant la fenêtre.
+                      // La même valeur entière sert à calculer la hauteur, sinon
+                      // la boîte et le ratio seraient arrondis dans deux sens.
+                      width: `${largeurImage}px`,
                       position: 'absolute',
                       top: offsets[i] ?? 0,
                       ...(hauteurCss ? { height: `${hauteurCss}px` } : {}),
                     }
-                  : { width: `${zoom}%` };
+                  : { width: `${largeurImage}px` };
                 // Page que la source ne sert pas : on **le dit** plutot que
                 // d'afficher une image cassee sans message (voir l'etat
                 // `pagesEnErreur` pour la mesure).

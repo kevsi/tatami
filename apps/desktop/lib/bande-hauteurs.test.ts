@@ -9,6 +9,7 @@ import {
   hauteursBande,
   offsetsBande,
   fenetreBande,
+  largeurImagePx,
   pasDeDefilement,
   PAS_DEFILEMENT_MIN,
   HAUTEUR_REPLI,
@@ -217,6 +218,47 @@ describe('hauteurs de la bande webtoon', () => {
     });
   });
 });
+describe('largeur de page : des pixels entiers, jamais un pourcentage', () => {
+  // Mesuré le 2026-10-09 : `50 %` d'une largeur impaire vaut 540,5 px, et une
+  // image dessinée sur un demi-pixel laisse une colonne translucide à son bord
+  // — la ligne verticale signalée, visible seulement en réduisant la fenêtre.
+  const cas = [
+    [1420, 50, 710],
+    [1081, 50, 541],
+    [977, 50, 489],
+    [843, 50, 422],
+    [1081, 100, 1081],
+    [1081, 75, 811],
+    [1081, 200, 2162],
+  ];
+  for (const [l, z, attendu] of cas) {
+    it(`${l} px a ${z} % -> ${attendu} px (entier)`, () => {
+      const r = largeurImagePx(l, z);
+      assert.equal(r, attendu);
+      assert.ok(Number.isInteger(r), `la largeur doit etre un entier, recu ${r}`);
+    });
+  }
+
+  it('aucune largeur de la plage 400..1400 ne tombe sur un demi-pixel', () => {
+    // Le cas reel n'est pas un point precis : c'est toute la plage. Une largeur
+    // fractionnaire est le defaut lui-meme.
+    for (const z of [25, 50, 75, 100, 125, 150, 200]) {
+      for (let l = 400; l <= 1400; l += 1) {
+        const r = largeurImagePx(l, z);
+        assert.ok(Number.isInteger(r), `${l} px a ${z} % a donne ${r}`);
+      }
+    }
+  });
+
+  it('une largeur nulle ou negative ne donne pas zero', () => {
+    // Une largeur nulle ferait un `width: 0px` : image invisible, et la bande
+    // calculee sur une base fausse.
+    assert.equal(largeurImagePx(0, 100), 1);
+    assert.equal(largeurImagePx(-50, 100), 1);
+    assert.equal(largeurImagePx(100, 0), 1);
+  });
+});
+
 describe('défilement progressif au clavier', () => {
   it('un pas vaut 80 % du cadre, pas une page entière', () => {
     // Mesuré le 2026-10-09 : cadre de 627 px, page de 18 629 px. Un pas calqué
@@ -287,5 +329,32 @@ describe('fenêtre de montage de la bande', () => {
 
   it('une page unique est toujours montée', () => {
     assert.deepEqual(fenetreBande(1, [0], [1000], 0), [0]);
+  });
+
+  it('la fenetre monte assez loin DEVANT pour mesurer avant le haut du cadre', () => {
+    // Mesuré le 2026-10-09 : avec une portée de 2 000 px (~3 pages), les pages
+    // étaient encore non mesurées quand elles arrivaient en haut du cadre, et
+    // la correction d'ancrage reculait alors scrollTop de 507 px d'un coup.
+    const pages = 200;
+    const hauteurs = Array(pages).fill(613);
+    const offsets = hauteurs.map((_, i) => i * 613);
+    const f = fenetreBande(pages, offsets, hauteurs, 40 * 613);
+    const premiereSousCadre = 41;
+    const montees = f.filter((i) => i >= premiereSousCadre);
+    // Compté sur la mesure : avec la portée de 2 000 px, la fenêtre montait
+    // 5 pages devant le cadre ; avec 4 200 px, 8. Le seuil est à 7 pour que le
+    // test **échoue** sur l'ancienne valeur — vérifié.
+    assert.ok(
+      montees.length >= 7,
+      `seulement ${montees.length} pages montees devant le cadre (recu ${JSON.stringify(montees)})`,
+    );
+  });
+
+  it('une portee plus large ne monte pas toute la bande', () => {
+    const pages = 300;
+    const hauteurs = Array(pages).fill(613);
+    const offsets = hauteurs.map((_, i) => i * 613);
+    const f = fenetreBande(pages, offsets, hauteurs, 0);
+    assert.ok(f.length < 15, `la virtualisation tient : ${f.length} pages montees`);
   });
 });

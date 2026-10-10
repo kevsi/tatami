@@ -240,6 +240,35 @@ export function hauteurRendueMesuree(
 }
 
 /**
+ * Largeur **en pixels entiers** d'une page de la bande.
+ *
+ * ## Le défaut mesuré (2026-10-09)
+ *
+ * La largeur était posée en **pourcentage** : `width: ${zoom}%`. Or un
+ * pourcentage d'une largeur impaire donne un nombre fractionnaire — mesuré en
+ * réduisant la fenêtre :
+ *
+ * | largeur du conteneur | `width: 50%` rendu |
+ * |---|---|
+ * | 1420 px | 710 px — entier, rien ne se voit |
+ * | 1081 px | **540,5 px** |
+ * | 977 px | **488,5 px** |
+ * | 843 px | **421,5 px** |
+ *
+ * Une image dessinée sur un demi-pixel est interpolée sur une demi-colonne :
+ * le navigateur y laisse une bande **translucide** au bord — c'est la ligne
+ * verticale que l'utilisateur a signalée. Et elle n'apparaît qu'en réduisant la
+ * fenêtre, parce qu'à la largeur par défaut le pourcentage tombe juste.
+ *
+ * Un pixel entier se dessine net : on arrondit donc **une fois**, ici, et la
+ * même valeur sert à calculer la hauteur — sinon la boîte serait arrondie dans
+ * un sens et le ratio dans l'autre.
+ */
+export function largeurImagePx(largeurBande: number, zoom: number): number {
+  return Math.max(1, Math.round((largeurBande || 0) * (zoom / 100)));
+}
+
+/**
  * Pas d'un appui sur flèche haut/bas dans la bande.
  *
  * ## Pourquoi une fonction, et pas un nombre dans le gestionnaire de clés
@@ -287,14 +316,34 @@ export function pasDeDefilement(clientHeight: number): number {
  * Monter la dernière page dès l'ouverture la fait décoder et `onLoad` la
  * mesure : la bande est donc déjà juste quand on y arrive. Coût : **une image**
  * de plus, pas la queue entière — la virtualisation reste la sienne.
+ *
+ * ## Portée et marge : pourquoi elles ne valent pas 2 / 2 000
+ *
+ * Mesuré le 2026-10-09, sur un défilement par paliers de 500 px : **29 images
+ * montées et 28 retirées en 40 pas**, et surtout **2 corrections d'ancrage qui
+ * reculaient `scrollTop` de 507 px** (13 000 → 12 493). Un recul de 507 px au
+ * milieu d'une lecture est un à-coup visible — le « flash » signalé.
+ *
+ * Pourquoi 507 : une page encore non mesurée reçoit `HAUTEUR_REPLI` (1 120 px
+ * à cette largeur) ; dès que son `onLoad` la mesure (613 px), tout ce qui est
+ * au-dessus remonte de 507 px, et la correction d'ancrage suit pour garder la
+ * page lue en place. **Le calcul est juste, le moment est mauvais** : la mesure
+ * arrivait quand la page était déjà sous le haut du cadre.
+ *
+ * D'où une portée plus large : on monte ~6 pages devant au lieu de 3, donc une
+ * page est mesurée bien avant d'arriver en haut, et la correction qui reste ne
+ * porte plus que sur une page hors du cadre.
  */
+export const MARGE_FENETRE = 3;
+export const PORTEE_FENETRE = 4200;
+
 export function fenetreBande(
   nbPages: number,
   offsets: readonly number[],
   hauteurs: readonly number[],
   scrollY: number,
-  marge = 2,
-  portee = 2000,
+  marge = MARGE_FENETRE,
+  portee = PORTEE_FENETRE,
 ): number[] {
   const tous = Array.from({ length: nbPages }, (_, i) => i);
   if (nbPages === 0) return tous;

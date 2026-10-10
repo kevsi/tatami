@@ -1377,6 +1377,59 @@ sur l'application. Même famille que le `browser.close()` qui tue la webview :
 
 Rust : 174 tests verts, `clippy -D warnings` propre.
 
+### Flux challenge — cinq correctifs, une cause encore à classer (2026-10-10)
+
+**Symptôme** : « la vérification Cloudflare se répète en boucle » (même
+symptôme que l'entrée du 2026-10-09 ci-dessus, sur TOONFR). Travail mené
+en lecture seule d'abord (cartographie complète du flux, sources wry 0.57.0
+/ Tauri 2.12.1 / okhttp 5.1.0 / kotatsu-parsers-redo **décompilées** pour
+ne rien supposer), puis cinq commits, un par correctif.
+
+**Défauts certains trouvés et corrigés :**
+1. **Aucune borne aux tentatives** (`d5a3255`). Compteur pur
+   `lib/challenge-garde.ts`, plafond à 2 échecs consécutifs par
+   (source, action) ; au-delà plus de bandeau ni de fenêtre, message
+   traduit `erreur.source.bloquee`. Remise à zéro au succès. 4 tests.
+2. **Réutilisation de fenêtre sans navigation** (`7ee942c`). Au 2ᵉ clic,
+   `open_challenge` refocalisait une page pouvant être coincée dans la
+   vérification : `navigate()` la relance (choix vs fermer/recréer,
+   justifié dans le code). La croix rouge émet `challenge://fermee`,
+   le front débloque son indicateur.
+3. **Fin de challenge non détectée** (`4838834`). Surveillance toutes les
+   1,5 s (max 3 min) : dès que `cf_clearance` **apparaît ou change**, les
+   cookies partent sans le clic manuel (qui reste en secours). Témoin de
+   départ obligatoire : le profil WebView2 partagé conserve un
+   `cf_clearance` périmé, le déclencher bouclerait. Drapeau partagé =
+   un seul déclenchement par fenêtre. Test du registre.
+4. **Cookies moins transférés que lus** (`a03a838`). `secure`, `httpOnly`
+   et l'expiration réelle vont maintenant au moteur (qui forçait
+   `maintenant + 365 j`) ; domaine élargi conservé si le cookie en porte
+   un plus large que l'hôte. 3 tests Kotlin.
+5. **Instrumentation** (`cf6c943`) derrière `TATAMI_CHALLENGE_DEBUG` :
+   appels `open_challenge` par source, UA webview réel via JS vs UA
+   OkHttp, inventaire des cookies (jamais la valeur), statut + `cf-mitigated`
+   / `server` / `cf-ray` + noms de cookies de la requête suivante.
+
+**Mesuré, à garder** : okhttp 5.1.0 accepte `secure()` / `httpOnly()`
+**sans argument** (ils posent le drapeau à vrai, bytecode `iconst_1;
+putfield`), et `Cookie.Builder.domain(".exemple.com")` **avec son point
+ne matche rien** — `domainMatch` compare l'hôte au suffixe `".$domaine"`.
+Deux faits établis par `javap`, pas devinés.
+
+**La cause de fond du refus (B/C/D) reste à classer** : les logs
+`challenge-debug` la trancheront (UA webview réel vs posé ; `cf_clearance`
+présent dans le jar ; statut et en-têtes de la requête rejouée). Analyse
+des deux options d'alignement d'UA remise à l'humain — **aucune ne corrige
+l'empreinte TLS d'OkHttp**, c'est dit noir sur blanc.
+
+**Incident de travail à deux sessions** : deux fichiers de test non
+commités par une autre session (`RequestedRatingsTest.kt`,
+`MesureContentRatingTest.kt`) ne compilaient pas et cassaient
+`:compileTestKotlin` pour tout le monde. Protocole employé : mise de côté
+le temps de la mesure, **restauration vérifiée par empreinte SHA-256**
+(identique). À ne jamais faire sans la vérification d'empreinte.
+
+
 ### Images webtoon étirées — cause trouvée, corrigée (ac2979)
 
 **Signalé par l'utilisateur** : « la lecture des webtoons est uniforme ; en

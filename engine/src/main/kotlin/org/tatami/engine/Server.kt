@@ -22,7 +22,7 @@ import org.koitharu.kotatsu.parsers.model.MangaListFilterOptions
 import org.koitharu.kotatsu.parsers.model.MangaPage
 import org.koitharu.kotatsu.parsers.model.MangaParserSource
 
-const val PROTOCOL_VERSION = "0.1"
+const val PROTOCOL_VERSION = "0.2"
 const val ENGINE_VERSION = "0.1.0-SNAPSHOT"
 
 // Version des parsers épinglée : même valeur que build.gradle.kts (pas de tags/releases amont).
@@ -552,20 +552,32 @@ private suspend fun dispatch(
     "listSources" -> {
         val arr = JSONArray()
         MangaParserSource.entries.forEach { src ->
+            val parser = context.newParserInstance(src)
             val lang = inferLang(src.name, "")
-            arr.put(JSONObject().put("name", src.name).put("lang", lang).put("custom", false))
+            val sourceInfo = JSONObject()
+                .put("name", src.name)
+                .put("lang", lang)
+                .put("custom", false)
+            val domaines = domainesNatifs(
+                parser.domain,
+                parser.configKeyDomain.presetValues.asList(),
+            )
+            if (domaines.isNotEmpty()) sourceInfo.put("domains", JSONArray(domaines))
+            arr.put(sourceInfo)
         }
         scriptLoader.sources().forEach { (cle, parser) ->
-            arr.put(
-                JSONObject()
-                    // La clé du registre EST le nom de fichier sans `.js`
-                    // (identiteDe) : c'est elle que la base connaît, donc celle
-                    // que l'interface renvoie et supprime.
-                    .put("name", "$CUSTOM_PREFIX$cle")
-                    .put("lang", parser.meta.lang)
-                    .put("custom", true)
-                    .put("displayName", parser.meta.name),
-            )
+            // La clé du registre EST le nom de fichier sans `.js`
+            // (identiteDe) : c'est elle que la base connaît, donc celle
+            // que l'interface renvoie et supprime.
+            val sourceInfo = JSONObject()
+                .put("name", "$CUSTOM_PREFIX$cle")
+                .put("lang", parser.meta.lang)
+                .put("custom", true)
+                .put("displayName", parser.meta.name)
+            domaineScript(parser.meta.baseUrl)?.let {
+                sourceInfo.put("domains", JSONArray(listOf(it)))
+            }
+            arr.put(sourceInfo)
         }
         JSONObject().put("sources", arr)
     }

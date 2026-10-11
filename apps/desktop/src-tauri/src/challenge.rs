@@ -35,6 +35,7 @@ use super::supervisor::Supervisor;
 
 /// Cookie dont la présence marque la résolution du challenge.
 const CF_CLEARANCE: &str = "cf_clearance";
+const ERREUR_DOMAINE_CHALLENGE: &str = "CHALLENGE_DOMAIN_UNAVAILABLE";
 /// Cadence de la surveillance automatique.
 const SURVEILLE_PAS: Duration = Duration::from_millis(1500);
 /// Au-delà, on arrête de surveiller : l'utilisateur a soit résolu (les
@@ -484,6 +485,53 @@ async fn engine_user_agent(sup: &Arc<Supervisor>) -> String {
         .unwrap_or_default()
 }
 
+fn normaliser_domaine_challenge(domaine: &str) -> Option<String> {
+    if domaine.is_empty()
+        || domaine.trim() != domaine
+        || domaine
+            .chars()
+            .any(|c| matches!(c, '/' | '\\' | '@' | ':' | '?' | '#'))
+    {
+        return None;
+    }
+    let url = Url::parse(&format!("https://{domaine}/")).ok()?;
+    let hote = url.host_str()?.trim_end_matches('.').to_ascii_lowercase();
+    (!hote.is_empty()).then_some(hote)
+}
+
+fn valider_url_challenge(url: &str, domaines: &[String]) -> Result<Url, String> {
+    if domaines.is_empty() {
+        return Err(ERREUR_DOMAINE_CHALLENGE.to_string());
+    }
+    let parsed: Url = url
+        .parse()
+        .map_err(|_| "URL de challenge invalide".to_string())?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return Err(format!("schéma non autorisé : {}", parsed.scheme()));
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("identifiants interdits dans l'URL de challenge".to_string());
+    }
+    let hote = parsed
+        .host_str()
+        .ok_or_else(|| "URL de challenge sans hôte".to_string())?
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    let autorise = domaines
+        .iter()
+        .filter_map(|d| normaliser_domaine_challenge(d))
+        .any(|d| {
+            hote == d
+                || hote
+                    .strip_suffix(&d)
+                    .is_some_and(|prefixe| prefixe.ends_with('.'))
+        });
+    if !autorise {
+        return Err(ERREUR_DOMAINE_CHALLENGE.to_string());
+    }
+    Ok(parsed)
+}
+
 /// Ouvre la fenêtre de résolution sur l'URL qui a renvoyé le challenge.
 #[tauri::command]
 pub async fn open_challenge(
@@ -492,12 +540,8 @@ pub async fn open_challenge(
     source: String,
     url: String,
 ) -> Result<(), String> {
-    let parsed: Url = url
-        .parse()
-        .map_err(|e| format!("URL de challenge invalide ({url}) : {e}"))?;
-    if parsed.scheme() != "http" && parsed.scheme() != "https" {
-        return Err(format!("schéma non autorisé : {}", parsed.scheme()));
-    }
+    let domaines = sup.domaines_source(&source).await;
+    let parsed = valider_url_challenge(&url, &domaines)?;
     let label = challenge_label(&source);
     if debug_challenge() {
         tracing::info!(
@@ -791,8 +835,8 @@ pub async fn cancel_challenge(app: AppHandle, source: String) -> Result<(), Stri
 mod tests {
     use super::{
         action_surveillance, challenge_en_cours, challenge_label, domaine_effectif,
-        enregistrer_surveillance, reste_interstitiel, retirer_surveillance, surveillances, Action,
-        LectureCookies,
+        enregistrer_surveillance, reste_interstitiel, retirer_surveillance, surveillances,
+        valider_url_challenge, Action, LectureCookies, ERREUR_DOMAINE_CHALLENGE,
     };
 
     /// **Le defaut du 2026-10-11, en une assertion.** La surveillance a
@@ -1005,5 +1049,51 @@ mod tests {
             domaine_effectif(Some(".Exemple.COM."), "WWW.exemple.com"),
             "exemple.com"
         );
+    }
+
+    fn domaines_exemple() -> Vec<String> {
+        vec!["exemple.com".to_string()]
+    }
+
+    #[test]
+    fn challenge_accepte_l_hote_declare_et_ses_sous_domaines() {
+        let domaines = domaines_exemple();
+        assert!(valider_url_challenge("https://exemple.com/check", &domaines).is_ok());
+        assert!(valider_url_challenge("http://cdn.exemple.com/check", &domaines).is_ok());
+    }
+
+    #[test]
+    fn challenge_refuse_un_hote_externe_et_un_faux_suffixe() {
+        let domaines = domaines_exemple();
+        assert_eq!(
+            valider_url_challenge("https://autre.test/check", &domaines).unwrap_err(),
+            ERREUR_DOMAINE_CHALLENGE
+        );
+        assert_eq!(
+            valider_url_challenge("https://attaquant-exemple.com/check", &domaines).unwrap_err(),
+            ERREUR_DOMAINE_CHALLENGE
+        );
+    }
+
+    #[test]
+    fn challenge_refuse_un_schema_non_http_et_des_identifiants() {
+        let domaines = domaines_exemple();
+        assert!(valider_url_challenge("file://exemple.com/check", &domaines).is_err());
+        assert!(valider_url_challenge("https://utilisateur@exemple.com/check", &domaines).is_err());
+    }
+
+    #[test]
+    fn challenge_refuse_une_source_sans_domaine_declare() {
+        assert_eq!(
+            valider_url_challenge("https://exemple.com/check", &[]).unwrap_err(),
+            ERREUR_DOMAINE_CHALLENGE
+        );
+    }
+
+    #[test]
+    fn challenge_accepte_un_domaine_alternatif_declare() {
+        let domaines = vec!["mangalib.org".to_string(), "mangalib.me".to_string()];
+        assert!(valider_url_challenge("https://mangalib.me/check", &domaines).is_ok());
+        assert!(valider_url_challenge("https://www.mangalib.me/check", &domaines).is_ok());
     }
 }

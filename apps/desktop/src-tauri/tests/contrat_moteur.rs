@@ -326,6 +326,18 @@ fn valider_dans(
         }
     }
 
+    if let (Some(items), Some(minimum)) = (
+        valeur.as_array(),
+        schema.get("minItems").and_then(Value::as_u64),
+    ) {
+        if items.len() < minimum as usize {
+            out.push(Violation {
+                chemin: chemin.into(),
+                message: format!("{} entrée(s) < minItems {minimum}", items.len()),
+            });
+        }
+    }
+
     if let (Some(obj), Some(props)) = (
         valeur.as_object(),
         schema.get("properties").and_then(Value::as_object),
@@ -401,6 +413,7 @@ fn le_validateur_couvre_tout_le_schema_du_contrat() {
         "enum",
         "items",
         "maximum",
+        "minItems",
         "minimum",
         "oneOf",
         "properties",
@@ -417,6 +430,28 @@ fn le_validateur_couvre_tout_le_schema_du_contrat() {
          schéma. Ne surtout pas les ignorer : le test de contrat validerait alors des \
          réponses qu'il ne sait pas juger, et il passerait toujours."
     );
+}
+
+#[test]
+fn les_domaines_source_sont_optionnels_mais_non_vides() {
+    let s = schema();
+    let defs = s.get("$defs").and_then(Value::as_object).expect("$defs");
+    let source_info = defs.get("sourceInfo").expect("$defs/sourceInfo");
+
+    assert!(valider(&serde_json::json!({"name": "MANGALIB"}), source_info).is_empty());
+    assert!(
+        valider(
+            &serde_json::json!({"name": "MANGALIB", "domains": ["mangalib.org"]}),
+            source_info,
+        )
+        .is_empty()
+    );
+    let vide = valider(
+        &serde_json::json!({"name": "MANGALIB", "domains": []}),
+        source_info,
+    );
+    assert_eq!(vide.len(), 1, "une liste vide doit être refusée : {vide:?}");
+    assert!(vide[0].message.contains("minItems 1"), "{vide:?}");
 }
 
 /// Collecte les mots-clés **du schéma**, en descendant dans les sous-schémas.

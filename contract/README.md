@@ -1,8 +1,8 @@
-# Contrat Rust ↔ moteur v0 (draft)
+# Contrat Rust ↔ moteur v0.2 (draft)
 
 Protocole : NDJSON sur stdio du sidecar (décision [ADR 0001](../docs/decisions/0001-transport-sidecar.md)).
 `contract/protocol.json` valide l'enveloppe (requête/réponse), les codes d'erreur et les types communs.
-Ce fichier fige la forme de chaque méthode. Version : **0.1** (même MAJEUR = compatible).
+Ce fichier fige la forme de chaque méthode. Version : **0.2** (même MAJEUR = compatible).
 
 Règles : chaque requête a `id` + `timeoutMs` ; pas de breaking change sans MAJEUR + ADR ;
 réponses validées contre ce schéma des deux côtés en mode debug.
@@ -19,7 +19,7 @@ réponses validées contre ce schéma des deux côtés en mode debug.
 | Méthode | `params` | `result` (si `ok`) | Notes |
 |---|---|---|---|
 | `hello` | `{}` | `{protocolVersion, engineVersion, parsersVersion, defaultUserAgent}` | 1er échange. Rust refuse si MAJEUR différent. `defaultUserAgent` est réinjecté dans la fenêtre de résolution : une clearance est émise pour un agent donné. |
-| `listSources` | `{}` | `{sources: sourceInfo[]}` | `sourceInfo` = `{name, lang}`. 1370 entrées constatées en 0.4. |
+| `listSources` | `{}` | `{sources: sourceInfo[]}` | `sourceInfo` = `{name, lang, domains?}`. `domains` contient l'hôte courant et les alternatives préconfigurées, sans schéma, port ni chemin ; pour les sources scriptées, il vient de l'hôte de `baseUrl`. Absent si aucun hôte HTTP(S) valide n'est déclaré. |
 | `filterOptions` | `{source}` | `{tags: [{title, key}], sortOrders: [string]}` | Genres + tris proposés par la source. |
 | `latest` | `{source, offset?, limit?, query?, tags?[], sortOrder?, contentRating?, safeOnly?}` | `{list: manga[]}` | **C'est le parcours principal** : parcourir le catalogue ET chercher, avec filtres, tri et pagination. `sortOrder` est un rang dans `sortOrders`. `contentRating` = une seule valeur, ou absent = pas de filtre ; `safeOnly` désactive le repli `SAFE` du moteur. |
 | `search` | `{source, query, offset?, limit?, contentRating?}` | `{list: manga[]}` | Tri : défaut de la source (`availableSortOrders.first()`). Non appelée par l'interface 0.9+ (elle passe par `latest` avec `query`). |

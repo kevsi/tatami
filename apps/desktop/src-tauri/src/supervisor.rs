@@ -156,6 +156,7 @@ pub struct Supervisor {
     /// Volontairement borné : le moteur réémet à chaque rechargement, donc une
     /// liste non bornée grossirait sans fin.
     avertissements: Arc<Mutex<Vec<String>>>,
+    domaines_sources: Arc<Mutex<HashMap<String, Vec<String>>>>,
 }
 
 /// Nombre d'avertissements de script conservés. Assez pour voir tous les
@@ -198,6 +199,7 @@ impl Supervisor {
             engine_proc: Arc::new(Mutex::new(None)),
             user_agent: Arc::new(Mutex::new(String::new())),
             avertissements: Arc::new(Mutex::new(Vec::new())),
+            domaines_sources: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -205,6 +207,39 @@ impl Supervisor {
     /// ancien au plus récent.
     pub async fn avertissements(&self) -> Vec<String> {
         self.avertissements.lock().await.clone()
+    }
+
+    pub async fn enregistrer_domaines_sources(&self, resultat: &Value) {
+        let mut domaines = HashMap::new();
+        if let Some(sources) = resultat.get("sources").and_then(Value::as_array) {
+            for source in sources {
+                let Some(nom) = source.get("name").and_then(Value::as_str) else {
+                    continue;
+                };
+                let domaines_source = source
+                    .get("domains")
+                    .and_then(Value::as_array)
+                    .map(|valeurs| {
+                        valeurs
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                domaines.insert(nom.to_string(), domaines_source);
+            }
+        }
+        *self.domaines_sources.lock().await = domaines;
+    }
+
+    pub async fn domaines_source(&self, source: &str) -> Vec<String> {
+        self.domaines_sources
+            .lock()
+            .await
+            .get(source)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Démarre le moteur, exige un `hello`, puis **l'arrête**. Renvoie son verdict.
@@ -849,5 +884,28 @@ mod tests {
             Duration::from_secs(1),
             "session longue → backoff remis à 1s"
         );
+    }
+
+    #[tokio::test]
+    async fn le_registre_de_domaines_suit_list_sources() {
+        let sup = Supervisor::new(PathBuf::from("java"), String::new());
+        sup.enregistrer_domaines_sources(&serde_json::json!({
+            "sources": [
+                {"name": "MANGALIB", "domains": ["mangalib.org", "mangalib.me"]},
+                {"name": "CUSTOM:no-domain", "lang": "fr"}
+            ]
+        }))
+        .await;
+
+        assert_eq!(
+            sup.domaines_source("MANGALIB").await,
+            vec!["mangalib.org", "mangalib.me"]
+        );
+        assert!(sup.domaines_source("CUSTOM:no-domain").await.is_empty());
+        assert!(sup.domaines_source("unknown").await.is_empty());
+
+        sup.enregistrer_domaines_sources(&serde_json::json!({"sources": []}))
+            .await;
+        assert!(sup.domaines_source("MANGALIB").await.is_empty());
     }
 }

@@ -428,6 +428,8 @@ const FR = {
   'erreur.verification': '{source} demande une vérification anti-robot, pas encore gérée.',
   'erreur.verification.non.rejouable':
     "{source} exige une vérification que l'application ne sait pas rejouer. Ouvrir la source dans un navigateur reste possible.",
+  'challenge.domaine.indisponible':
+    "L'URL de vérification ne correspond à aucun domaine déclaré pour cette source.",
   'challenge.non.rejouable':
     "La vérification de {source} a abouti, mais le site refuse quand même la requête. Ce n'est pas un problème de connexion : la source reste inaccessible depuis l'application.",
   'erreur.source.bloquee':
@@ -884,6 +886,8 @@ const EN: Record<Cle, string> = {
   'erreur.verification': '{source} asks for an anti-bot check, not handled yet.',
   'erreur.verification.non.rejouable':
     "{source} requires a verification the app cannot replay. Opening the source in a browser still works.",
+  'challenge.domaine.indisponible':
+    'The verification URL does not match any domain declared for this source.',
   'challenge.non.rejouable':
     "The check for {source} succeeded, but the site still refuses the request. This is not a connection problem: the source stays unreachable from the app.",
   'erreur.source.bloquee': 'The verification for {source} could not be reproduced: this source remains inaccessible.',

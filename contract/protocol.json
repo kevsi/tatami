@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tatami.app/contract/protocol.json",
-  "title": "Tatami engine protocol v0 (draft)",
-  "description": "NDJSON sur stdio (une valeur JSON par ligne). stdout = protocole uniquement, logs sur stderr. Version du protocole : \"0.1\" (compatible = même MAJEUR). Voir contract/README.md.",
+  "title": "Tatami engine protocol v0.2 (draft)",
+  "description": "NDJSON sur stdio (une valeur JSON par ligne). stdout = protocole uniquement, logs sur stderr. Version du protocole : \"0.2\" (compatible = même MAJEUR). Voir contract/README.md.",
   "type": "object",
   "oneOf": [
     { "$ref": "#/$defs/request" },
@@ -123,7 +123,13 @@
         "name": { "type": "string", "description": "Nom d'entrée MangaParserSource, ex. MANGADEX." },
         "title": { "type": "string" },
         "locale": { "type": "string", "description": "ex. \"en\", si exposée par la source." },
-        "lang": { "type": "string", "description": "Langue déduite du nom (Server.kt: inferLang), ex. \"fr\", \"int\"." }
+        "lang": { "type": "string", "description": "Langue déduite du nom (Server.kt: inferLang), ex. \"fr\", \"int\"." },
+        "domains": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Hôtes déclarés par le parser, sans schéma, port ni chemin. Absent si aucun hôte HTTP(S) valide n'est déclaré."
+        }
       },
       "additionalProperties": true
     },

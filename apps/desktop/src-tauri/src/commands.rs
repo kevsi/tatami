@@ -103,6 +103,7 @@ pub async fn list_sources(sup: State<'_, Arc<Supervisor>>) -> Result<serde_json:
         sup.request("listSources", serde_json::json!({}), LOCAL_TIMEOUT)
             .await?,
     )?;
+    sup.enregistrer_domaines_sources(&r).await;
     let n = r
         .get("sources")
         .and_then(|v| v.as_array())

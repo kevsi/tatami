@@ -35,6 +35,7 @@ import { exporterRapport, purgerJournal } from './diagnostic';
 type Source = {
   name: string;
   lang: string;
+  domains?: string[];
   /** Vrai pour les sources importées par l'utilisateur (`.js` local). */
   custom?: boolean;
   /** Nom d'affichage libre, distinct de l'identifiant `name`. */
@@ -1493,11 +1494,14 @@ export default function Home() {
         setVerif({ source, url, reason });
         invoke('open_challenge', { source, url })
           .then(() => setNotice(tCourant.current('telechargements.verification.ouverte', { source })))
-          .catch((e) =>
+          .catch((e) => {
+            const detail = String(e);
             setError(
-              tCourant.current('telechargements.verification.erreur', { detail: String(e) }),
-            ),
-          );
+              detail.includes('CHALLENGE_DOMAIN_UNAVAILABLE')
+                ? tCourant.current('challenge.domaine.indisponible')
+                : tCourant.current('telechargements.verification.erreur', { detail }),
+            );
+          });
       },
     );
     // Fenêtre de vérification fermée par la croix rouge. Rien, côté app, ne
@@ -3112,7 +3116,12 @@ function nomSource(s: Source): string {
     try {
       await invoke('open_challenge', { source: selected.name, url: challenge });
     } catch (e) {
-      setError(`Fenêtre de vérification impossible : ${e}`);
+      const detail = String(e);
+      setError(
+        detail.includes('CHALLENGE_DOMAIN_UNAVAILABLE')
+          ? t('challenge.domaine.indisponible')
+          : `Fenêtre de vérification impossible : ${detail}`,
+      );
     } finally {
       setChallengeBusy(false);
     }

@@ -1493,3 +1493,80 @@ autre `.rs` (grep confirmé).
 - `cargo fmt --check` : EXIT 0
 - `cargo clippy --all-targets -- -D warnings` : EXIT 0, `Finished dev profile`
 - `cargo test -j 2` : EXIT 0, tous les tests passent (doc-tests inclus)
+
+### Challenge Cloudflare — abandon daté du 2026-10-11, avec ce qui reste acquis
+
+**Décision humaine : on laisse tomber HENTAIZONE.** Ce qui suit dit ce qui
+est réglé, ce qui ne l'est pas, et pourquoi — pour ne pas rouvrir le
+dossier dans six mois en repartant de zéro.
+
+#### Ce qui fonctionne, et se garde
+
+1. **Le flux de vérification** : la fenêtre s'ouvre, le challenge Turnstile
+   aboutit, l'utilisateur est redirigé, la fenêtre se ferme, les cookies
+   sont transférés avec `secure`/`httpOnly` et l'expiration réelle.
+2. **L'usurpation d'UA est supprimée** (`f796faa`). Elle imposait
+   `Firefox/116 / Linux` à une fenêtre WebView2 dont `platform` valait Win32
+   et dont les client hints désignaient Edge WebView2. A/B mesuré : avec,
+   le widget boucle sans réponse ; sans, le challenge aboutit. C'était un
+   vrai défaut, qui cassait **toute** source à challenge.
+3. **Le rejeu emprunte l'identité de la fenêtre** qui a résolu, au lieu de
+   l'UA `FIREFOX_DESKTOP` d'OkHttp.
+4. **Les marqueurs d'un challenge en cours ne sont plus renvoyés**
+   (`cf_chl_*`) : l'effet est mesuré (8 → 7 cookies), la cause qu'on leur
+   imputait est réfutée.
+5. **Les erreurs sont devenues honnêtes** : toast en bas, bandeau réservé
+   au challenge, plus de « la source bloque l'application » sur un cookie
+   transitoire (`4b8886e`, `d8c8ae1`, `039796d`).
+
+#### Ce qui ne fonctionne pas, et pourquoi c'est Structurel
+
+Le **rejeu** est refusé. Mesuré dans l'application réelle, instrumenté
+côté moteur :
+
+```
+ua         = "…Chrome/154…Edg/154…"                 ✅ celle qui a résolu
+cookiesJar = [__suvt, _ga, …, cf_clearance, …]      ✅ 533 o, secure, httpOnly, exp. 2027
+statut     = 403   cf-mitigated: challenge          ❌
+```
+
+Une sonde sur `/cdn-cgi/trace` avec le **même OkHttp que la production**
+(4 configurations : sans UA, UA Firefox, UA Chromium, UA Chromium + client
+hints) répond **200** partout, en `tls=TLSv1.3`, `http=http/2`, `kex=X25519`.
+OkHttp n'est donc **pas** refusé en tant que client.
+
+Ce qui sépare la requête refusée d'un vrai navigateur n'est plus un
+réglage : c'est l'empreinte de la pile réseau (JA3/JA4 TLS, fingerprint
+HTTP/2), que l'on ne peut pas rendrepareille depuis Rust. Les client hints
+ajoutés n'ont rien changé.
+
+#### Dette / suite possible, non engagée
+
+- **Option A** — dire en une phrase, dans l'interface, qu'une source exige
+  une vérification que l'application ne peut pas reproduire, au lieu
+  d'ouvrir une fenêtre qui mène nulle part. ~1/2 journée.
+- **Option B** — faire passer les requêtes par la fenêtre (vraie pile
+  réseau). Plusieurs jours, une webview par requête, sur une machine de
+  12 Go avec un JVM ; le cœur Rust perd la maîtrise des requêtes. **Pas
+  recommandée** tant que l'ampleur n'est pas mesurée : elle serait motivée
+  par **une** source sur 1 370.
+- **Option C** — mesurer si d'autres sources sont concernées. C'est le
+  geste qui change la taille du problème, et il n'a **pas** été fait.
+
+#### Les deux erreurs de méthode de cette journée
+
+1. **Le binaire avait deux jours de retard.** Le JAR du moteur datait du
+   09/10, les sources Kotlin du 10/10. Tout ce qui avait été écrit côté
+   Kotlin — `secure`/`httpOnly`, expiration, instrumentation — **n'a jamais
+   été exécuté**. Corollaire de la leçon « restaurer un fichier ne prouve
+   pas que le binaire a été reconstruit » : *corriger la source ne prouve
+   pas que le binaire l'exécute*.
+2. **Une instrumentation non branchée a été lue comme un résultat.** Zéro
+   ligne `challenge-debug` a été interprétée comme « le moteur ne fait
+   rien », alors que le code qui écrit ces lignes n'était pas dans le JAR.
+   *Vérifier qu'un diagnostic est branché avant de l'interpréter* — en
+   ouvrant le JAR et en cherchant le marqueur dans les classes
+   (`EngineContext$…addInterceptor$2`, `ServerKt`).
+3. Et un confound auto-infligé : `--remote-debugging-port` est un signal
+   d'automatisation. Toute la matinée de mesures était contaminée par mon
+   propre dispositif de mesure.

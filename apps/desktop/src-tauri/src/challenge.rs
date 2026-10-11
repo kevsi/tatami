@@ -41,6 +41,54 @@ const SURVEILLE_PAS: Duration = Duration::from_millis(1500);
 /// cookies sont partis), soit renoncé. Une surveillance sans fin garderait
 /// une tâche éveillée par source ouverte.
 const SURVEILLE_MAX: Duration = Duration::from_secs(180);
+/// Delai avant d'ajouter une **seconde** lecture : un `cf_clearance`
+/// qu'on retrouve identique est stable, donc reellement pose.
+///
+/// Sans cette confirmation, un cookie transitoire — celui que Cloudflare
+/// pose **pendant** le challenge, avant que l'utilisateur agisse —
+/// declenchait l'application. Mesure le 2026-10-11 sur HENTAIZONE : la
+/// surveillance appliquait a t~1,5 s, renvoyait l'utilisateur sur la page
+/// de la source, la requete rejouee echouait, et le compteur de challenges
+/// atteignait la borne (« la source bloque l'application ») alors que
+/// personne n'avait jamais eu la chance de resoudre quoi que ce soit.
+const SURVEILLE_CONFIRMATION: Duration = Duration::from_millis(1500);
+
+/// Ce que la surveillance doit faire d'une lecture.
+#[derive(Debug, PartialEq, Eq)]
+enum Action {
+    /// Le cookie est nouveau mais pas encore confirme : on relit plus tard.
+    Relire,
+    /// Confirme : on pousse les cookies au moteur et on ferme la fenetre.
+    Appliquer,
+    /// La fenetre a disparu, ou le drapeau est deja leve : on s'arrete.
+    Terminer,
+}
+
+/// Decide d'une lecture de surveillance, **sans effet de bord**.
+///
+/// Testable seule, et c'est le but : la version d'hier declenchait sur la
+/// seule presence d'un cookie different, donc sur un cookie transitoire.
+///
+/// Les trois conditions sont cumulatives, et chacune correspond a une
+/// question :
+/// - le cookie a-t-il change ? sinon on continue d'attendre ;
+/// - est-il **stable** (relu identique apres `SURVEILLE_CONFIRMATION`) ?
+///   C'est ce qui distingue un cookie pose definitivement d'un cookie de
+///   passage ;
+/// - le drapeau n'est-il pas deja leve ? le premier arrive applique.
+fn action_surveillance(nouveau: bool, confirme: bool, drapeau_deja_leve: bool) -> Action {
+    if !nouveau {
+        return Action::Relire;
+    }
+    if !confirme {
+        return Action::Relire;
+    }
+    if drapeau_deja_leve {
+        // Le bouton manuel a applique entre deux ticks.
+        return Action::Terminer;
+    }
+    Action::Appliquer
+}
 
 /// Surveillances actives : label → drapeau « cookies déjà appliqués ».
 ///
@@ -169,7 +217,10 @@ fn surveiller_fenetre(
     drapeau: Arc<AtomicBool>,
 ) {
     tauri::async_runtime::spawn(async move {
-        let deja_vu = cf_clearance_courant(&app, &label, &url).await;
+        // **Reference de depart.** Volontairement relue a chaque
+        // confirmation : c'est ce qui distingue « cookie pose definitivement »
+        // de « cookie de passage » (cf. `SURVEILLE_CONFIRMATION`).
+        let mut deja_vu = cf_clearance_courant(&app, &label, &url).await;
         // Instrumentation : l'UA **réel** de la webview, lu par JS, à
         // comparer à celui d'OkHttp. C'est la question de fond du flux — la
         // fenêtre est un Chromium (WebView2) à qui l'on a posé l'UA Firefox
@@ -204,33 +255,67 @@ fn surveiller_fenetre(
                 break; // fermée (croix rouge ou application) : terminé
             }
             let actuel = cf_clearance_courant(&app, &label, &url).await;
-            if actuel.is_none() || actuel == deja_vu {
-                if tokio::time::Instant::now() >= limite {
+            // Rien de nouveau : on attend. C'est aussi le cas le plus
+            // frequent (l'utilisateur reflechit devant la page).
+            let nouveau = actuel.is_some() && actuel != deja_vu;
+
+            // **Confirmation de stabilite.** Un cookie nouveau n'applique
+            // rien tout seul : on le relit apres `SURVEILLE_CONFIRMATION`.
+            // C'est le correctif du defaut du 2026-10-11 — Cloudflare pose
+            // un `cf_clearance` **pendant** le challenge, et ce cookie-la
+            // ne survit pas a la relecture ; le declencher renvoyait
+            // l'utilisateur sur la page de la source sans qu'il ait rien
+            // resolu, et la borne anti-boucle finissait par dire « la
+            // source bloque l'application ».
+            let confirme = if nouveau {
+                let attendu = actuel.clone();
+                tokio::time::sleep(SURVEILLE_CONFIRMATION).await;
+                if app.get_webview_window(&label).is_none() {
                     break;
                 }
-                continue;
+                cf_clearance_courant(&app, &label, &url).await == attendu
+            } else {
+                false
+            };
+            if nouveau && confirme {
+                // Reference mise a jour avant d'appliquer : un eventuel
+                // relancement de la surveillance ne doit pas rejouer le meme
+                // cookie comme une nouvelle apparition.
+                deja_vu = actuel;
             }
-            // Un cookie **nouveau** (absent au départ, ou de valeur
-            // différente) : le challenge vient d'être résolu.
-            if drapeau.swap(true, Ordering::SeqCst) {
-                // Le bouton manuel a appliqué entre deux ticks.
-                break;
-            }
-            match appliquer_cookies(&app, &sup, &source, &url).await {
-                Ok(n) => {
-                    tracing::info!(
-                        "challenge: {n} cookie(s) applique(s) automatiquement source={source}"
-                    );
-                    let _ = app.emit(
-                        "challenge://resolu",
-                        json!({ "source": source, "cookies": n }),
-                    );
+
+            match action_surveillance(nouveau, confirme, drapeau.load(Ordering::SeqCst)) {
+                Action::Relire => {
+                    if tokio::time::Instant::now() >= limite {
+                        break;
+                    }
+                    continue;
                 }
-                Err(e) => {
-                    tracing::warn!("challenge: application automatique echouee : {e}");
+                Action::Terminer => break,
+                Action::Appliquer => {
+                    // Le drapeau est leve **avant** l'application : deux ticks
+                    // ne peuvent pas appliquer deux fois, et le bouton manuel
+                    // qui gagnerait la course verrait le drapeau leve.
+                    if drapeau.swap(true, Ordering::SeqCst) {
+                        break;
+                    }
+                    match appliquer_cookies(&app, &sup, &source, &url).await {
+                        Ok(n) => {
+                            tracing::info!(
+                                "challenge: {n} cookie(s) applique(s) automatiquement source={source}"
+                            );
+                            let _ = app.emit(
+                                "challenge://resolu",
+                                json!({ "source": source, "cookies": n }),
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!("challenge: application automatique echouee : {e}");
+                        }
+                    }
+                    break;
                 }
             }
-            break;
         }
         retirer_surveillance(&label, &drapeau);
     });
@@ -501,9 +586,70 @@ pub async fn cancel_challenge(app: AppHandle, source: String) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::{
-        challenge_label, domaine_effectif, enregistrer_surveillance, retirer_surveillance,
-        surveillances,
+        action_surveillance, challenge_label, domaine_effectif, enregistrer_surveillance,
+        retirer_surveillance, surveillances, Action,
     };
+
+    /// **Le defaut du 2026-10-11, en une assertion.** Cloudflare pose un
+    /// `cf_clearance` **pendant** le challenge : un cookie nouveau mais
+    /// **non confirme** ne prouve rien. La version d'hier appliquait les
+    /// cookies sur cette seule lecture, renvoyait l'utilisateur sur la page
+    /// de la source, et la requete rejouee echouait — jusqu'a la borne
+    /// « la source bloque l'application », alors que personne n'avait eu la
+    /// chance de resoudre quoi que ce soit.
+    #[test]
+    fn un_cookie_non_confirme_ne_declenche_pas() {
+        assert_eq!(
+            action_surveillance(true, false, false),
+            Action::Relire,
+            "un cookie nouveau mais pas encore stable doit etre relu, pas applique"
+        );
+    }
+
+    /// La contre-epreuve : avec le **vrai** declencheur d'hier — cookie
+    /// nouveau, aucun controle de stabilite — la fonction appliquait. C'est ce
+    /// qui prouve que le test ci-dessus mord et qu'il ne passe pas pour une
+    /// tautologie.
+    #[test]
+    fn contre_epreuve_le_declencheur_dhier_appliquait_sans_confirmation() {
+        let nouveau = true;
+        let ancien_decide = if nouveau {
+            Action::Appliquer
+        } else {
+            Action::Relire
+        };
+        assert_eq!(
+            ancien_decide,
+            Action::Appliquer,
+            "l'ancien code appliquait sur le seul fait qu'un cookie soit nouveau"
+        );
+        assert_ne!(
+            action_surveillance(nouveau, false, false),
+            ancien_decide,
+            "la fonction d'aujourd'hui doit refuser ce cas"
+        );
+    }
+
+    #[test]
+    fn un_cookie_confirme_declenche_une_fois() {
+        assert_eq!(
+            action_surveillance(true, true, false),
+            Action::Appliquer,
+            "nouveau + stable + drapeau libre = on applique"
+        );
+        assert_eq!(
+            action_surveillance(true, true, true),
+            Action::Terminer,
+            "drapeau deja leve (bouton manuel passe avant) : on s'arrete"
+        );
+    }
+
+    #[test]
+    fn un_cookie_inchange_ne_declenche_jamais() {
+        // Le cas le plus frequent : l'utilisateur reflechit devant la page.
+        assert_eq!(action_surveillance(false, false, false), Action::Relire);
+        assert_eq!(action_surveillance(false, false, true), Action::Relire);
+    }
 
     #[test]
     fn libelle_de_challenge_est_sanitise() {

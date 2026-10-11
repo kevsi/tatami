@@ -3131,7 +3131,12 @@ function nomSource(s: Source): string {
   async function startChallenge() {
     if (!challenge || !selected) return;
     setChallengeBusy(true);
-    setError(null);
+    // **Pas de `setError(null)` ici.** Mesuré le 2026-10-11 sur HENTAIZONE :
+    // le bandeau ne s'affiche que si `error` est non nul, donc l'effacer au
+    // moment d'ouvrir la fenêtre faisait disparaître le bandeau — donc aussi
+    // le bouton « C'est fait, réessayer », qui est le seul secours quand la
+    // détection automatique ne se déclenche pas. La fenêtre s'ouvrait, et
+    // l'utilisateur n'avait plus rien à cliquer.
     try {
       await invoke('open_challenge', { source: selected.name, url: challenge });
     } catch (e) {
@@ -5915,9 +5920,19 @@ if (reader) {
             « Annuler »), ce n'est pas une notification. Toute erreur simple
             part en toast en bas — demande du 2026-10-11, après un bandeau
             d'erreur resté en haut jusqu'au changement de source suivant. */}
-        {error && selected && challenge && (
+        {/* Le bandeau est indexé sur `challenge` seul, pas sur `error` : sa
+            durée de vie EST la durée du challenge. Mesuré le 2026-10-11 :
+            indexé sur `error`, le bandeau disparaissait dès que le bouton
+            « Résoudre » remettait l'erreur à zéro — et emportait avec lui le
+            bouton de secours. Le message retombe sur le libellé du challenge
+            si `error` a été effacé entre-temps. */}
+        {selected && challenge && (
           <div className="alert">
-            <p>{describeError(error, selected.name, t)}</p>
+            <p>
+              {error
+                ? describeError(error, selected.name, t)
+                : t('erreur.verification', { source: nomSource(selected) })}
+            </p>
             <p className="muted">{t('libelle.verification.note')}</p>
             <div className="alert-actions">
               <button

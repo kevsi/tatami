@@ -42,7 +42,76 @@ const SURVEILLE_PAS: Duration = Duration::from_millis(1500);
 /// une tâche éveillée par source ouverte.
 const SURVEILLE_MAX: Duration = Duration::from_secs(180);
 /// Delai d'attente de la reponse JS `navigator.userAgent` dans la fenetre.
+/// Delai d'attente de la reponse JS `navigator.userAgent` dans la fenetre.
 const UA_DELAI: Duration = Duration::from_secs(5);
+/// Delai d'attente de la reponse JS d'etat de page.
+const PAGE_DELAI: Duration = Duration::from_secs(5);
+
+/// Ce que la fenetre montre, tel que lu par JavaScript.
+///
+/// **Pourquoi c'est la decision qui manquait.** Le 2026-10-11, la surveillance
+/// a declenche **3,4 s** apres l'ouverture de la fenetre, sans qu'aucun humain
+/// n'ait clique : Cloudflare avait pose un `cf_clearance` sur sa page
+/// d'interstitielle, et l'application a annonce « 7 cookies passes ». Le rejeu
+/// a ete ensuite refuse, et l'utilisateur croyait avoir ete resolu.
+///
+/// Aucun marqueur `cf_chl_*` n'etait present sur cette reponse : la garde
+/// `challenge_en_cours` ne pouvait pas voir le piege. Ce qui le voit, c'est la
+/// page : tant que c'est l'interstitielle, rien n'a ete resolu.
+#[derive(Debug, PartialEq, Eq, Default)]
+struct PageFenetre {
+    /// `true` tant que Cloudflare affiche sa page de verification.
+    interstitiel: bool,
+}
+
+/// Fonction **pure** : la fenetre montre-t-elle encore la page de verification ?
+///
+/// Trois signaux, parce qu'un seul se trompe :
+/// - le titre, traduit ou non (« Just a moment... » / « Un instant... ») ;
+/// - le formulaire `#challenge-form` de l'interstitielle ;
+/// - le script `/cdn-cgi/challenge-platform/`, charge par cette page.
+///
+/// Testee sans navigateur, sur des formes reelles.
+fn reste_interstitiel(titre: &str, formulaire: bool, script: bool) -> bool {
+    if formulaire || script {
+        return true;
+    }
+    let t = titre.to_ascii_lowercase();
+    t.contains("just a moment")
+        || t.contains("un instant")
+        || t.contains("attention requise")
+        || t.contains("checking your browser")
+}
+
+/// Lit l'etat de la page affichee par la fenetre de resolution.
+async fn lire_page(app: &AppHandle, label: &str) -> Option<PageFenetre> {
+    let fenetre = app.get_webview_window(label)?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let envoi = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+    let js = "JSON.stringify({t: document.title, \
+f: !!document.querySelector('#challenge-form'), \
+s: !!document.querySelector('script[src*=\"/cdn-cgi/challenge-platform/\"]')})";
+    fenetre
+        .eval_with_callback(js, move |rendu: String| {
+            if let Ok(mut slot) = envoi.lock() {
+                if let Some(prise) = slot.take() {
+                    let _ = prise.send(rendu);
+                }
+            }
+        })
+        .ok()?;
+    let brut = tokio::time::timeout(PAGE_DELAI, rx).await.ok()?.ok()?;
+    let lu: serde_json::Value = serde_json::from_str(&brut).ok()?;
+    Some(PageFenetre {
+        interstitiel: reste_interstitiel(
+            lu.get("t").and_then(|v| v.as_str()).unwrap_or(""),
+            lu.get("f").and_then(|v| v.as_bool()).unwrap_or(false),
+            lu.get("s").and_then(|v| v.as_bool()).unwrap_or(false),
+        ),
+    })
+}
+
+/// Lit l'etat des cookies de la fenetre pour la surveillance.
 /// Delai avant d'ajouter une **seconde** lecture : un `cf_clearance`
 /// qu'on retrouve identique est stable, donc reellement pose.
 const SURVEILLE_CONFIRMATION: Duration = Duration::from_millis(1500);
@@ -303,6 +372,31 @@ fn surveiller_fenetre(
                     continue;
                 }
             };
+            // **La page prime sur le cookie.** Tant que la fenetre affiche
+            // encore l'interstitielle de Cloudflare, aucun cookie n'est gagne :
+            // le `cf_clearance` pose a ce moment-la est celui du piege, et
+            // l'appliquer annonçait « 7 cookies passes » alors que personne
+            // n'avait rien resolu (mesure du 2026-10-11 : declenchement a
+            // t+3,4 s, sans aucun clic de l'utilisateur).
+            //
+            // Une page illisible n'est pas une page resolue : on continue
+            // d'attendre plutot que d'appliquer sur une presomption.
+            match lire_page(&app, &label).await {
+                Some(page) if page.interstitiel => {
+                    if tokio::time::Instant::now() >= limite {
+                        break;
+                    }
+                    continue;
+                }
+                None => {
+                    if tokio::time::Instant::now() >= limite {
+                        break;
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+
             // Rien de nouveau : on attend. C'est aussi le cas le plus
             // frequent (l'utilisateur reflechit devant la page).
             let nouveau = lecture.clearance.is_some() && lecture.clearance != deja_vu;
@@ -697,8 +791,40 @@ pub async fn cancel_challenge(app: AppHandle, source: String) -> Result<(), Stri
 mod tests {
     use super::{
         action_surveillance, challenge_en_cours, challenge_label, domaine_effectif,
-        enregistrer_surveillance, retirer_surveillance, surveillances, Action, LectureCookies,
+        enregistrer_surveillance, reste_interstitiel, retirer_surveillance, surveillances, Action,
+        LectureCookies,
     };
+
+    /// **Le defaut du 2026-10-11, en une assertion.** La surveillance a
+    /// applique a t+3,4 s sans qu'aucun humain n'ait clique : Cloudflare avait
+    /// pose un `cf_clearance` sur sa page d'interstitielle. Aucun marqueur
+    /// `cf_chl_*` n'etait present — la garde `challenge_en_cours` ne pouvait pas
+    /// voir le piege. Seul l'etat de la page le voit.
+    #[test]
+    fn une_page_de_verification_bloque_la_resolution() {
+        // Ce que la fenetre affichait reellement, mesure dans l'app.
+        assert!(
+            reste_interstitiel("Un instant\u{2026}", true, true),
+            "l'interstitielle de Cloudflare doit bloquer l'application des cookies"
+        );
+        // La meme page, translatee.
+        assert!(reste_interstitiel("Just a moment...", false, false));
+        // Un titre qui ne dit rien, mais avec le formulaire de verification.
+        assert!(reste_interstitiel("hentaizone.xyz", true, false));
+    }
+
+    /// La contre-epreuve : sans ce test, le garde-derouillerait des que la
+    /// fenetre affiche la vraie page — et l'application n'appliquerait plus
+    /// jamais rien.
+    #[test]
+    fn la_vraie_page_ne_bloque_plus() {
+        assert!(
+            !reste_interstitiel("Hentai Zone - Lecture de manga", false, false),
+            "une page reelle doit laisser appliquer la clearance"
+        );
+        // Un site sans Cloudflare : rien ne doit bloquer.
+        assert!(!reste_interstitiel("Mangadex", false, false));
+    }
 
     /// Le cookie de clearance, tel que mesure le 2026-10-11 sur HENTAIZONE.
     fn lecture_resolue() -> LectureCookies {

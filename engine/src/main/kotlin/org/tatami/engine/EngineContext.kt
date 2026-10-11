@@ -69,17 +69,47 @@ class EngineContext : MangaLoaderContext() {
 
     private val scriptEngineManager = ScriptEngineManager()
 
+    
+
     override val httpClient: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(cookieJar)
         .addInterceptor(RateLimitInterceptor())
         .addInterceptor(CloudFlareInterceptor())
         .addInterceptor(LazyLoadInterceptor())
         .addInterceptor { chain ->
-            chain.proceed(
-                chain.request().newBuilder()
-                    .header("User-Agent", getDefaultUserAgent())
-                    .build(),
-            )
+            val requete = chain.request()
+            // **En-tetes de navigateur, SANS les client hints.**
+            //
+            // Source : `Kotatsu-Redo/Kotatsu-Redo`,
+            // `browser/cloudflare/CloudFlareInterceptClient.kt`. Kotatsu rejoue
+            // les requetes de la WebView avec OkHttp en recopiant ses en-tetes
+            // reelles, moins une liste de blocage explicite :
+            // `sec-ch-ua`, `sec-ch-ua-full-version-list`, `x-requested-with`.
+            // Autrement dit : le jeu d'en-tetes qui passe **retire** les
+            // client hints. Notre hypothese d'hier (les ajouter) etait donc
+            // a l'envers.
+            //
+            // Mesure : seul le User-Agent ne suffisait pas, et ajouter un
+            // Referer isole non plus (4 variantes, toutes refusees).
+            val entetes = requete.newBuilder()
+                .header("User-Agent", getDefaultUserAgent())
+            if (requete.header("Accept") == null) {
+                entetes.header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            }
+            if (requete.header("Accept-Language") == null) {
+                entetes.header("Accept-Language", "en-US,en;q=0.9")
+            }
+            if (requete.header("Referer") == null) {
+                entetes.header("Referer", "${requete.url.scheme}://${requete.url.host}/")
+            }
+            if (requete.header("Sec-Fetch-Dest") == null) {
+                entetes.header("Sec-Fetch-Dest", "document")
+                entetes.header("Sec-Fetch-Mode", "navigate")
+                entetes.header("Sec-Fetch-Site", "same-origin")
+                entetes.header("Sec-Fetch-User", "?1")
+                entetes.header("Upgrade-Insecure-Requests", "1")
+            }
+            chain.proceed(entetes.build())
         }
         // Instrumentation `TATAMI_CHALLENGE_DEBUG`. Placé **après** l'UA (il
         // la lit) et **avant** l'intercepteur de parser : il voit donc

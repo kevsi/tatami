@@ -1830,6 +1830,44 @@ Dans l'ordre du coût, croissant. La première est gratuite :
 Aucune de ces trois mesures n'est engagée non plus. **Je ne touche pas au
 transport des requêtes sans ton accord** (§2 règle 9).
 
+#### Objectif 3 — les en-têtes du parseur étaient déjà dans la trace
+
+Tu demandais d'ajouter les noms des en-têtes déclarés par le parseur dans la
+ligne « intercepteur parseur ». **C'est déjà le cas**, livré par `269c2a1`, et
+c'est dans le binaire distribué.
+
+```
+[challenge-debug] intercepteur parseur=MangaParserWrapper tag=HENTAIZONE
+  enTetesDeclares=1 [User-Agent] uaDeclare=Mozilla/5.0 (X11; Linux x86_64; …)
+  uaEnvoye=null
+```
+
+`enTetesDeclares=1 [User-Agent]` — le **nom** seul, jamais la valeur, comme
+l'exige la règle « aucun secret dans le journal ». Cette ligne a été lue dans
+une vraie trace HENTAIZONE, donc elle s'exécute : elle ne se contente pas de
+compiler.
+
+**Les deux erreurs de mesure faites en voulant le vérifier**, à relire avant
+d'ouvrir un JAR :
+
+1. **JAR périmé.** J'ai ouvert `dist/tatami-engine/lib/tatami-engine.jar`
+   horodaté 14h12 alors que les classes fraîches dataient de 15h05 — d'où la
+   conclusion « absent du JAR livré », fausse.
+2. **Mauvaise classe.** Le marqueur est dans
+   `EngineContext$special$$inlined$-addInterceptor$1.class` : le code vit dans
+   une **lambda** d'intercepteur, pas dans la classe englobante. Chercher dans
+   `EngineContext.class` ne trouve rien.
+
+Après `scripts/build-engine.ps1` — seul à écrire `dist/`, leçon du 2026-10-11 —
+le marqueur était bien présent dans le JAR livré. Rien n'a été ajouté pour cet
+objectif : il fallait vérifier, pas écrire.
+
+Ce que la ligne apporte au diagnostic, au-delà de la demande : `parseur=` dit si
+le parseur est **vu** par la chaîne HTTP (le défaut corrigé par `269c2a1`),
+`tag=` confirme la source, et `enTetesDeclares=[…]` confirme que le parseur
+déclare bien des en-têtes — donc que `getRequestHeaders()` est appelé et non
+supposé.
+
 #### Ce qui n'est PAS mesuré — à ne pas citer comme acquis
 
 Les neuf causes éliminées le sont **sur une fenêtre de mesure**. Chaque phrase

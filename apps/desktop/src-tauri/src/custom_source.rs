@@ -159,6 +159,14 @@ pub async fn supprimer_source_custom(
     store: State<'_, Arc<Store>>,
     id: String,
 ) -> Result<(), String> {
+    supprimer_source_custom_impl(&store, &id, &sources_dir())
+}
+
+fn supprimer_source_custom_impl(
+    store: &Store,
+    id: &str,
+    sources_root: &Path,
+) -> Result<(), String> {
     if id.trim().is_empty() {
         return Err("PARSE_ERROR: id vide".to_string());
     }
@@ -166,11 +174,21 @@ pub async fn supprimer_source_custom(
     let liste = store.list_custom_sources()?;
     if let Some(src) = liste.iter().find(|s| s.id == id) {
         let p = Path::new(&src.path);
-        if p.exists() {
-            fs::remove_file(p).map_err(|e| format!("suppression du fichier impossible : {e}"))?;
+        if p.try_exists()
+            .map_err(|e| format!("verification du fichier impossible : {e}"))?
+        {
+            let canonical_root = dunce::canonicalize(sources_root)
+                .map_err(|e| format!("canonicalisation du dossier des sources impossible : {e}"))?;
+            let canonical_path = dunce::canonicalize(p)
+                .map_err(|e| format!("canonicalisation du script impossible : {e}"))?;
+            if !canonical_path.starts_with(&canonical_root) {
+                return Err("refus : hors du dossier des sources".to_string());
+            }
+            fs::remove_file(&canonical_path)
+                .map_err(|e| format!("suppression du fichier impossible : {e}"))?;
         }
     }
-    store.remove_custom_source(&id)
+    store.remove_custom_source(id)
 }
 
 // ---------- Tests ----------
@@ -323,5 +341,53 @@ mod tests {
         assert_eq!(liste[0].id, "ma-source");
 
         let _ = fs::remove_dir_all(&dest_dir);
+    }
+
+    #[test]
+    fn suppression_refuse_un_fichier_hors_du_dossier_des_sources() {
+        let store = store_memoire();
+        let (outside, _garde_fichier) = tmp_js("hors-sources.js", 16);
+        let root = std::env::temp_dir().join(format!(
+            "tatami-cs-sources-{}-{}",
+            std::process::id(),
+            COMPTEUR.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let _garde_root = DossierGarde(root.clone());
+        store
+            .add_custom_source(
+                "hors-sources",
+                "hors-sources",
+                "fr",
+                outside.to_str().unwrap(),
+            )
+            .unwrap();
+
+        let resultat = supprimer_source_custom_impl(&store, "hors-sources", &root);
+        assert!(
+            resultat.is_err() && outside.is_file(),
+            "la suppression doit refuser le chemin externe sans effacer le fichier: \
+             resultat={resultat:?}, fichier_present={}",
+            outside.is_file()
+        );
+        assert_eq!(
+            store.list_custom_sources().unwrap().len(),
+            1,
+            "un refus de confinement doit conserver la ligne en base"
+        );
+    }
+
+    #[test]
+    fn suppression_d_un_fichier_deja_absent_efface_la_source_de_la_base() {
+        let store = store_memoire();
+        let (fichier, _garde) = tmp_js("deja-absent.js", 16);
+        fs::remove_file(&fichier).unwrap();
+        let root = fichier.parent().unwrap();
+        store
+            .add_custom_source("absente", "absente", "fr", fichier.to_str().unwrap())
+            .unwrap();
+
+        supprimer_source_custom_impl(&store, "absente", root).unwrap();
+        assert!(store.list_custom_sources().unwrap().is_empty());
     }
 }

@@ -1768,7 +1768,92 @@ origines.fr` et `lelscanfr.com` répondent 200 sous Conscrypt) ou revenir à JSS
 ADR `docs/decisions/0016-pile-tls-conscrypt.md` (coût : 4,5 Mo et une
 dépendance à vérifier à chaque graduation, acceptés explicitement).
 
-#### Ce qui ne fonctionne pas, et pourquoi c'est Structurel
+#### Le défaut d'interface est corrigé (`b913403`) — le fond reste ouvert
+
+Le cycle « bandeau → puzzle → fenêtre qui se ferme → rien » est **arrêté**. Le
+moteur distingue désormais deux états que tout confondait depuis le début :
+
+- `CHALLENGE_REQUIRED` — la requête ne portait **pas** de clearance : demande de
+  vérification ordinaire, la fenêtre doit s'ouvrir ;
+- `CHALLENGE_UNREPLAYABLE` — la requête portait `cf_clearance`, avec l'UA de la
+  fenêtre qui a résolu, et le site a refusé quand même (`403 cf-mitigated`).
+  Plus de bandeau, plus de fenêtre, message sans promesse de réessai.
+
+Clé du classement : `CloudFlareInterceptor.intercept` lit la présence du cookie
+dans le **magasin**, pas dans l'en-tête `Cookie` — `BridgeInterceptor` d'OkHttp
+l'ajoute après tous les intercepteurs d'application, donc il est encore vide.
+
+Ce que ça règle : l'expérience d'une source non rejouable cesse d'être un piège
+sans fin. Ce que ça ne règle **pas** : les 99 sources en `CHALLENGE_REQUIRED`
+(option C) restent inaccessibles, et une source bloquée l'est toujours.
+
+#### Options pour les 99 sources derrière un challenge non rejouable
+
+Écrit le 2026-10-11 sur demande explicite. **Rien de ceci n'est engagé** : aucune
+ligne de code, aucune ADR acceptée, aucune permission ajoutée. Le chiffre est la
+mesure de l'option C — 99 sources sur 1 374, soit une sur quatorze.
+
+| Option | Ce qu'elle règle | Ce qu'elle casse | Effort |
+|---|---|---|---|
+| **A. Message définitif seul** (`b913403`, **déjà en place**) | L'utilisateur n'est plus enfermé dans un cycle, et il entend la vérité | Rien — mais 99 sources restent inaccessibles | Livré |
+| **B. Transport par la webview cachée** | Les 99 sources redeviennent accessibles, avec une vraie pile réseau | Le cœur Rust perd la maîtrise des requêtes : plus de rate-limit local fiable, plus de contrôle d'hôte, plus de cache d'images tel qu'il existe. C'est un **changement d'architecture** (§4 : la webview ne parle qu'à Rust) | Plusieurs jours |
+| **C. Client TLS « chrome-like » côté JVM** | La signature TLS/JA3 deviendrait indiscernable | Guerre du gendarme et du voleur ; chaque mise à jour d'OkHttp ou de la cible casse la parité ; GREASE et ordre des extensions d'HTTP/2 ne sont pas qu'un réglage | Semaines, fragile par construction |
+
+**Option B, dans le détail, parce que c'est la plus tentante.**
+L'intercepteur OkHttp déléguerait à Rust, qui ferait un `fetch` dans une webview
+cachée. Trois obstacles mesurés ou lus, pas devinés : `fetch` **interdit**
+`cf_clearance` et d'autres en-têtes (liste de forbidden headers), le CORS
+multi-origines impose un aller-retour par hôte, et il faut une **commande unique
+dédiée** avec liste blanche d'hôtes validée côté Rust — jamais une capability
+`remote` large. Même avec tout ça, ce qui reste est une égalité de pile réseau,
+pas une reproduction : la fenêtre aboutit et le rejeu échoue, ce qui est
+exactement le refus mesuré aujourd'hui.
+
+#### Les mesures qui départageraient — aucune n'est faite
+
+Dans l'ordre du coût, croissant. La première est gratuite :
+
+1. **Le test Kotatsu sur téléphone**, même Wi-Fi, cookies de la source effacés.
+   *Ce qu'il décide :* si Kotatsu **échoue aussi**, le site refuse tous les
+   clients non-navigateur et l'option B coûte des jours pour un client que le
+   site refuserait quand même. Si Kotatsu **réussit**, mon diagnostic
+   d'empreinte réseau est à réviser — et l'option B devient crédible. Tant qu'il
+   manque, la phrase honnête reste *le refus n'est pas expliqué*.
+2. **`fetch` depuis la console de la webview**, sur le vrai site, **après**
+   résolution du challenge. Mesure ce que l'option B obtiendrait réellement, et
+   si les en-têtes interdits la rendent inutile. Aucune ligne de code moteur.
+3. **`curl_cffi`** (impersonation Chrome) avec la même clearance, sur cette
+   machine. Estime le plafond de l'option C, et surtout si elle est même
+   *possible* — `curl_cffi` reproduit l'ordre des extensions TLS que ni
+   Conscrypt ni JSSE n'ont.
+
+Aucune de ces trois mesures n'est engagée non plus. **Je ne touche pas au
+transport des requêtes sans ton accord** (§2 règle 9).
+
+#### Ce qui n'est PAS mesuré — à ne pas citer comme acquis
+
+Les neuf causes éliminées le sont **sur une fenêtre de mesure**. Chaque phrase
+ci-dessous est une limite que la mesure n'a pas franchie :
+
+- **TLS.** Conscrypt rapproche le JA3 de Chrome, **il ne l'égale pas** : l'ordre
+  des extensions diffère encore. La partie « JA3/JA4 » est donc corrigée en
+  partie, pas totalement. Aucune mesure n'a porté sur **GREASE avec le bon ordre
+  d'extensions**, parce qu'OkHttp ne l'expose pas.
+- **HTTP/2.** Aucune mesure directe ici. L'affirmation « l'empreinte HTTP/2
+  d'OkHttp est identique des deux côtés » vient du code de référence (OkHttp des
+  deux côtés), pas d'une sonde sur la machine de l'utilisateur.
+- **L'API du site.** Mesuré le 2026-10-09 sur MangaDex (`api.mangadex.org` refuse
+  le TLS depuis cette machine, `SEC_E_ILLEGAL_MESSAGE`), pas sur HENTAIZONE.
+  Aucune mesure ne dit si `hentaizone.xyz` a **aussi** une API morte.
+- **La réelle portée du blocage.** Le recensement de l'option C a mesuré
+  l'**accueil** de chaque source (`filterOptions`). Une source dont l'accueil
+  passe mais dont les chapitres ou les images sont derrière un CDN à challenge
+  (cas REALA: `img.reimg.org`) n'y apparaît **pas**. 99 est donc un plancher.
+- **Le test comparatif navigateur.** Aucune mesure `fetch` depuis la webview sur
+  `hentaizone.xyz` après résolution. On ne peut donc pas affirmer que *même un
+  vrai navigateur* obtiendrait ce que la fenêtre affiche déjà.
+
+#### Ce qui ne fonctionne pas, et pourquoi c'est structurel
 
 Le **rejeu** est refusé. Mesuré dans l'application réelle, instrumenté
 côté moteur :

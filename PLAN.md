@@ -1764,6 +1764,10 @@ cela n'a racheté une source.** Décision à prendre par l'humain (§2 règle 9)
 garder la pile (elle est plus proche d'un navigateur et ne casse rien — `mangas-
 origines.fr` et `lelscanfr.com` répondent 200 sous Conscrypt) ou revenir à JSSE.
 
+**Décision humaine du 2026-10-11 : on garde Conscrypt**, et c'est consigné en
+ADR `docs/decisions/0016-pile-tls-conscrypt.md` (coût : 4,5 Mo et une
+dépendance à vérifier à chaque graduation, acceptés explicitement).
+
 #### Ce qui ne fonctionne pas, et pourquoi c'est Structurel
 
 Le **rejeu** est refusé. Mesuré dans l'application réelle, instrumenté

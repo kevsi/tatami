@@ -30,7 +30,10 @@ import org.koitharu.kotatsu.parsers.network.UserAgents
  * moteur, seulement priver la source de son traitement.
  */
 internal val intercepteurParser = Interceptor { chain ->
-    val parser = ParserActif.lire()
+    // `pourRequete`, pas `lire()` : sur un appel asynchrone d'OkHttp,
+    // l'intercepteur tourne sur un autre fil que celui qui a activé le
+    // parseur, et le `ThreadLocal` y est vide.
+    val parser = ParserActif.pourRequete(chain.request())
     if (parser != null) parser.intercept(chain) else chain.proceed(chain.request())
 }
 
@@ -92,17 +95,82 @@ class EngineContext : MangaLoaderContext() {
             // Mesure : seul le User-Agent ne suffisait pas, et ajouter un
             // Referer isole non plus (4 variantes, toutes refusees).
             val entetes = requete.newBuilder()
-                .header("User-Agent", getDefaultUserAgent())
-            if (requete.header("Accept") == null) {
+
+            // **Les en-tetes que le parseur declare.** On ne les invente pas :
+            // chaque source peut dire ce que son site attend, et
+            // `MangaParser.getRequestHeaders()` est l'API prevue pour cela.
+            //
+            // Source : `Kotatsu-Redo/Kotatsu-Redo`,
+            // `core/network/CommonHeadersInterceptor.kt`, qui fait exactement
+            // `repository?.getRequestHeaders()?.let { mergeWith(it,
+            // replaceExisting = false) }`. **Notre moteur ne le faisait
+            // nulle part** (`grep getRequestHeaders` : 0 resultat), alors que
+            // le depot expose l'API sur `MangaParser` et sur
+            // `AbstractMangaParser`.
+            //
+            // `replaceExisting = false` : ce que le parseur a mis l'emporte
+            // sur nos valeurs par defaut, mais jamais sur un en-tete pose
+            // explicitement par le parseur lui-meme plus haut dans la chaine.
+            val parser = ParserActif.pourRequete(requete) as? org.koitharu.kotatsu.parsers.MangaParser
+            val declares = parser?.let { runCatching { it.getRequestHeaders() }.getOrNull() }
+            if (challengeDebug) {
+                // Noms seulement, jamais les valeurs : un en-tete peut porter un
+                // secret. Le User-Agent est le seul qu'on nomme en clair, et il
+                // n'en est pas un.
+                val noms = declares?.let { h ->
+                    (0 until h.size).joinToString(",") { h.name(it) }
+                } ?: "-"
+                System.err.println(
+                    "[challenge-debug] intercepteur parseur=${parser?.javaClass?.simpleName} " +
+                        "tag=${requete.tag(org.koitharu.kotatsu.parsers.model.MangaSource::class.java)} " +
+                        "enTetesDeclares=${declares?.size ?: -1} [$noms] " +
+                        "uaDeclare=${declares?.get("User-Agent") ?: "-"} " +
+                        "uaEnvoye=${requete.header("User-Agent")}"
+                )
+            }
+            if (declares != null) {
+                for (i in 0 until declares.size) {
+                    val nom = declares.name(i)
+                    // `replaceExisting = false`, comme Kotatsu : ce que la
+                    // requête porte **déjà** gagne. Sans cette garde,
+                    // `header()` remplaçait aussi les en-têtes que le parseur
+                    // avait posés lui-même sur cette requête précise.
+                    if (requete.header(nom) == null) entetes.header(nom, declares.value(i))
+                }
+            }
+
+            // **On interroge le constructeur, pas la requete d'origine.**
+            // Interroger `requete` testait l'etat *avant* la fusion des
+            // en-tetes du parseur : le parseur posait son User-Agent, et la
+            // ligne suivante l'ecrasait avec le nôtre. Mesure du 2026-10-11 :
+            // l'UA envoyee restait `FIREFOX_DESKTOP` alors que
+            // `AbstractMangaParser.getRequestHeaders()` en declare un.
+            val demande = entetes.build()
+
+            // **L'UA impose par le challenge l'emporte sur celui du parseur.**
+            // C'est l'ordre de `Kotatsu-Redo`, et le commentaire y dit pourquoi :
+            // « Overrides the parser's agent, deliberately : a cf_clearance
+            // cookie is only honoured for the exact User-Agent it was issued
+            // to ». Sans cette ligne, un parseur qui declare un UA (HENTAIZONE
+            // declare `Firefox/116`) annulait silencieusement
+            // `userAgentOverride` — mesure du 2026-10-11 : on demandait
+            // `Edg/154`, c'est `Firefox/116` qui partait.
+            val impose = userAgentOverride
+            if (impose != null) {
+                entetes.header("User-Agent", impose)
+            } else if (demande.header("User-Agent") == null) {
+                entetes.header("User-Agent", getDefaultUserAgent())
+            }
+            if (demande.header("Accept") == null) {
                 entetes.header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             }
-            if (requete.header("Accept-Language") == null) {
+            if (demande.header("Accept-Language") == null) {
                 entetes.header("Accept-Language", "en-US,en;q=0.9")
             }
-            if (requete.header("Referer") == null) {
+            if (demande.header("Referer") == null) {
                 entetes.header("Referer", "${requete.url.scheme}://${requete.url.host}/")
             }
-            if (requete.header("Sec-Fetch-Dest") == null) {
+            if (demande.header("Sec-Fetch-Dest") == null) {
                 entetes.header("Sec-Fetch-Dest", "document")
                 entetes.header("Sec-Fetch-Mode", "navigate")
                 entetes.header("Sec-Fetch-Site", "same-origin")

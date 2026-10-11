@@ -3,9 +3,11 @@ package org.tatami.engine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.Interceptor
+import okhttp3.Request
 import org.koitharu.kotatsu.parsers.MangaLoaderContext
 import org.koitharu.kotatsu.parsers.MangaParser
 import org.koitharu.kotatsu.parsers.model.MangaParserSource
+import org.koitharu.kotatsu.parsers.model.MangaSource
 import java.util.LinkedHashMap
 
 /**
@@ -36,11 +38,45 @@ internal object ParserActif {
     // intercepteur-espion sans fabriquer un faux parser complet.
     private val local = ThreadLocal<Interceptor?>()
 
+    /**
+     * Posé par [ParserPool] : retrouve l'instance conservée d'une source, sans
+     * prendre le verrou de la requête.
+     *
+     * @Volatile et non un verrou : le résolveur ne fait qu'une lecture dans une
+     * table, et le worst case est de ne pas trouver une entrée évincée entre-temps.
+     */
+    @Volatile
+    var resolveur: ((MangaSource) -> Interceptor?)? = null
+
     fun activer(intercepteur: Interceptor?) {
         local.set(intercepteur)
     }
 
     fun lire(): Interceptor? = local.get()
+
+    /**
+     * Le parseur qui concerne **cette** requête.
+     *
+     * D'abord la source portée par la requête — `OkHttpWebClient` (dans la
+     * librairie de parseurs) pose `tag(MangaSource::class.java, source)` sur
+     * chaque requête, et c'est ce que lit l'intercepteur de Kotatsu. Puis le
+     * `ThreadLocal` en repli, pour les chemins synchrones.
+     *
+     * **Pourquoi le tag d'abord.** Mesuré le 2026-10-11 : les parseurs
+     * appellent OkHttp en asynchrone (`enqueue`), donc l'intercepteur
+     * s'exécute sur un fil du dispatcher d'OkHttp, où le `ThreadLocal` posé par
+     * `ParserPool.avec` sur le fil appelant **n'existe pas**. La trace le disait
+     * sans ambiguïté : `intercepteur parseur=null intercepteurLu=false
+     * enTetesDeclares=-1`. Les en-têtes déclarés par les sources n'étaient donc
+     * jamais appliqués — alors que Kotatsu les applique.
+     */
+    fun pourRequete(requete: Request): Interceptor? {
+        val source = requete.tag(MangaSource::class.java)
+        if (source != null) {
+            resolveur?.invoke(source)?.let { return it }
+        }
+        return local.get()
+    }
 }
 
 /**
@@ -93,6 +129,23 @@ internal class ParserPool(
     // utilisée, et l'itération suit donc l'ordre LRU. C'est ce qui permet
     // d'éjecter la première entrée libre sans aucun tri explicite.
     private val entries = object : LinkedHashMap<String, Entry>(16, 0.75f, true) {}
+
+    /**
+     * Rend le parseur conservé d'une source, pour que l'intercepteur HTTP
+     * retrouve le sien **sans dépendre du fil** (cf. `ParserActif.pourRequete`).
+     *
+     * L'entrée existe déjà quand la requête part : `avec` l'a créée avant
+     * d'appeler le parseur, et elle ne peut pas être évincée pendant ce temps
+     * (`enCours` est vrai). Le seul cas où elle manque est une source que le
+     * pool n'a jamais instanciée — on rend alors `null` et l'intercepteur
+     * laisse passer la requête, comme il le fait pour tout le monde.
+     */
+    private fun parserDeSource(source: MangaSource): MangaParser? =
+        synchronized(garde) { entries[source.name]?.parser }
+
+    init {
+        ParserActif.resolveur = { source -> parserDeSource(source) }
+    }
     private val garde = Any()
 
     /**

@@ -1664,6 +1664,42 @@ lancement, un aller-retour utilisateur — et n'apporte rien quand l'observation
 existe déjà. *Chercher d'abord dans le code de référence, puis dans l'écran,
 puis seulement mesurer.*
 
+#### État de fin de séance (2026-10-11, commit `269c2a1`)
+
+Deux bugs **de notre code**, trouvés en comparant la trace à la référence :
+
+1. **Le parseur était invisible depuis la chaîne HTTP.** Les parseurs
+   appellent OkHttp en asynchrone (`enqueue`) ; l'intercepteur s'exécute sur
+   un fil du dispatcher où le `ThreadLocal` de `ParserPool.avec` n'existe pas.
+   Trace : `parseur=null intercepteurLu=false enTetesDeclares=-1`.
+   Conséquence : `MangaParser.getRequestHeaders()` n'était **jamais** appliqué.
+   Corrigé en lisant le `tag(MangaSource)` que `OkHttpWebClient` pose déjà
+   (vérifié dans le JAR, pas supposé), comme le fait Kotatsu.
+
+2. **L'UA imposé par le challenge était annulé par le parseur** — corollaire du
+   1, et visible en une ligne : on demandait `Edg/154`, c'est `Firefox/116`
+   qui partait. Ordre reproduit de Kotatsu-Redo (« overrides the parser's agent,
+   deliberately »).
+
+Après correctif, la requête de Tatami est **équivalente en tout point
+observable** à celle de Kotatsu-Redo pour HENTAIZONE : même UA déclarée, mêmes
+en-têtes, clearance complète, même IP. Et le refus tient :
+`403 cf-mitigated: challenge`.
+
+**Huit causes éliminées par la mesure** : IP, TLS/Conscrypt, UA, cookies
+(domaine/chemin/expiration/drapeaux), `Referer`, client hints, marqueurs
+`cf_chl_*`, en-têtes du parseur.
+
+**La dernière expérience connue, à faire dans un état valide** : Conscrypt. Le
+premier essai (`8fc9be2`) précédait les correctifs d'en-têtes — il testait donc
+une requête fausse de toute façon. Le refaire demande : dépendance Gradle,
+`sslSocketFactory` sur le client du moteur, porte de vérification, puis le
+parcours HENTAIZONE. Une heure.
+
+**Contre-mesure utile** : `mangas-origines.fr` et `lelscanfr.com`, sur le même
+Cloudflare, répondent **200** dans la même trace. Le blocage est propre à
+`hentaizone.xyz`, pas à Cloudflare ni à notre client en général.
+
 #### Ce qui ne fonctionne pas, et pourquoi c'est Structurel
 
 Le **rejeu** est refusé. Mesuré dans l'application réelle, instrumenté

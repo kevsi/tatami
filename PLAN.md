@@ -1596,6 +1596,48 @@ Conséquence à noter : la fenêtre se ferme seule environ 3 s après la
 résolution. Toute mesure qui demande de l'interroger **doit être posée
 avant**, ou attendre une variante sans auto-application.
 
+#### Piste trouvée dans le code de Kotatsu (2026-10-11) — la pile TLS
+
+Le test Kotatsu a renvoyé une observation décisive : **chez Kotatsu la vérification
+n'arrive qu'à la lecture/téléchargement, le catalogue s'affiche**. Et Kotatsu
+utilise OkHttp comme nous. La différence est donc ailleurs.
+
+Lecture du code amont (`KotatsuApp/Kotatsu`, GPL-3.0, même famille de
+parseurs) :
+
+- `core/network/NetworkModule.kt` ne configure **aucun** `SSLSocketFactory` ;
+  OkHttp utilise donc le **provider TLS par défaut d'Android**, qui est
+  **Conscrypt** — la bibliothèque de Google, celle de Chrome.
+- Notre moteur, lui, tourne sur un **JVM de bureau** : le provider par défaut
+  est **JSSE**, la pile du JDK.
+- `core/network/cookies/AndroidCookieJar.kt` lit `CookieManager.getInstance()`,
+  le magasin **système**, partagé nativement entre la WebView et OkHttp : pas de
+  transfert manuel comme le nôtre.
+- `core/network/CommonHeadersInterceptor.kt` ajoute un **`Referer`**. Mesuré :
+  sans effet ici (les 4 variantes, dont Referer, sont refusées).
+
+Conséquence importante : le HTTP/2 vient du **code d'OkHttp dans les deux
+cas**, donc il est identique des deux côtés. Kotatsu réussissant, l'empreinte
+HTTP/2 **n'est pas** le facteur bloquant — ce qui **infirme** ce que j'avais
+affirmé plus haut (« Conscrypt ne pourrait corriger que la moitié »).
+
+Mesure de l'effet de Conscrypt (`conscrypt-openjdk-uber` 2.5.2, même OkHttp) :
+
+| | JA3 | GREASE |
+|---|---|---|
+| JSSE (notre moteur) | `0a80f686…` | absent |
+| Conscrypt | `4944639f…` | `156-157-47-53` |
+| Edge (référence) | `1b509e4d…` | `156-157-47-53` |
+
+Conscrypt rapproche fortement l'empreinte de celle de Chrome (mêmes groupes de
+chiffrements, mêmes courbes, GREASE présent) sans l'égaler : l'ordre des
+extensions diffère encore.
+
+**Ce qui n'est PAS mesuré** : une requête **avec** la clearance, sous
+Conscrypt. La sonde `/manga/` sans cookie renvoie 403 dans les deux cas, ce
+qui est attendu et ne prouve rien. Le seul test valide est le flux complet
+avec un vrai puzzle résolu — donc un spike.
+
 #### Ce qui ne fonctionne pas, et pourquoi c'est Structurel
 
 Le **rejeu** est refusé. Mesuré dans l'application réelle, instrumenté

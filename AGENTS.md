@@ -1662,3 +1662,41 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   ne dit pas seulement *que* la porte est inutile — ici, la bonne conclusion était
   *supprimer*, pas *ajouter un test qui morde*. Une porte verte après une casse
   est un signal, et il faut lui demander ce qu'il désigne.
+
+- **Un journal est cumulé : relire « les 20 dernières lignes utiles » peut
+  afficher un résultat d'il y a deux heures.** Mesuré le 2026-10-11, **trois fois
+  de suite** : mon script de verdict a lu un `403 cf-mitigated` écrit à 12h48 —
+  une heure avant le lancement de l'app à 13h22 — et a conclu « le rejeu est
+  refusé ». Le rejeu n'avait jamais eu lieu. Les deux tells étaient là : le
+  `cf-ray` datait de la veille, et la requête n'avait **aucun** `cf_clearance`.
+  Corollaire : **noter la position de départ** (ligne, octet ou horodatage) et
+  n'afficher que ce qui est écrit après. Une mesure sans fenêtre temporelle
+  n'est pas une mesure, c'est une recherche dans le passé.
+
+- **« Refusé » et « la porte d'entrée » donnent le même statut HTTP.** Mesuré le
+  2026-10-11 : la requête qui **déclenche** le challenge répond
+  `403 cf-mitigated=challenge`, et celle qui **rejoue** la clearance répond
+  exactement la même chose. En se fiant au statut seul, on annonce un refus
+  après avoir seulement vu s'ouvrir la fenêtre — ce que j'ai fait. Ce qui
+  distingue les deux n'est pas le code de retour : c'est **ce que la requête
+  porte** (`cf_clearance` dans le Jar, UA de la fenêtre qui a résolu). Règle
+  générale : devant un verdict, écrire d'abord **ce qui doit être vrai pour
+  qu'il soit vrai**, et le vérifier dans la trace. Sinon on mesure la porte
+  d'entrée et on conclut sur la sortie.
+
+- **Un test de câblage doit lire l'objet qui travaille, pas la fonction qui
+  l'a construit.** En posant Conscrypt (`PileTls`) : les 2 tests qui appellent
+  `PileTls.construire()` restent verts même si le builder **oublie** la
+  fabrique — c'est le repli silencieux, il ne lève rien. Les 3 qui lisent
+  `client.sslSocketFactory` tombent rouges. C'est cette différence qui prouve
+  que la porte voit le **câblage**, et pas seulement la présence du JAR dans le
+  classpath. Même famille que « une porte qui ne lit qu'un seul fichier » : lire
+  le symptôme, pas le constructeur.
+
+- **`gradle build` ne produit pas `engine/dist/`.** Le plugin `application` écrit
+  dans `build/install/<nom>` ; c'est `scripts/build-engine.ps1` qui copie vers
+  `dist/` après un `jlink`. Un `gradle test` vert laisse donc `dist/` avec les
+  JAR **de la compilation précédente** : après avoir ajouté une dépendance, le
+  seul moyen de savoir ce que l'application embarque est de regarder
+  `dist/tatami-engine/lib`. C'est encore « corriger la source ne prouve pas que
+  le binaire l'exécute », mais par un chemin plus discret.

@@ -1694,11 +1694,75 @@ en-têtes, clearance complète, même IP. Et le refus tient :
 premier essai (`8fc9be2`) précédait les correctifs d'en-têtes — il testait donc
 une requête fausse de toute façon. Le refaire demande : dépendance Gradle,
 `sslSocketFactory` sur le client du moteur, porte de vérification, puis le
-parcours HENTAIZONE. Une heure.
+parcours HENTAIZONE. Une heure. **FAIT le 2026-10-11 (`381f4d5`) : le refus
+tient** — voir la section suivante, qui clôt le dossier des causes.
 
 **Contre-mesure utile** : `mangas-origines.fr` et `lelscanfr.com`, sur le même
 Cloudflare, répondent **200** dans la même trace. Le blocage est propre à
 `hentaizone.xyz`, pas à Cloudflare ni à notre client en général.
+
+#### Conscrypt refait dans un état valide, et le refus tient (2026-10-11, `381f4d5`)
+
+**Mini-plan (écrit avant de coder).**
+1. Lire le code de référence avant de mesurer : `Kotatsu-Redo/.../BaseApp.kt:88`.
+2. Reprendre la sonde de la veille (`ConscryptProbe.java`) plutôt qu'inventer une
+   API : elle contient le contournement `authType "GENERIC"`.
+3. Vérifier que le marqueur est **dans le JAR livré**, pas seulement dans la source.
+4. Prouver la porte en cassant le câblage, et lire le nom des tests rouges.
+5. Rejouer le parcours complet, et ne conclure que sur une requête qui **porte**
+   `cf_clearance`.
+
+**Ce que la référence dit vraiment.** `Security.insertProviderAt(Conscrypt
+.newProvider(), 1)` est sous `if (SDK_INT < Q)` : ce n'est pas un choix, c'est un
+**rattrapage** pour les Android trop vieux. Sur un Android récent, Conscrypt est
+déjà le provider TLS de la plateforme. Notre JVM de bureau, elle, part sur JSSE.
+
+`Security.insertProviderAt` ne suffirait pas ici et ne serait pas vérifiable :
+JSSE choisit son propre provider, insérer le nôtre en position 1 ne change pas
+l'`SSLContext` déjà construit. On construit donc l'`SSLContext` **avec** Conscrypt
+et on le pose sur le client (`PileTls.kt`), avec repli JSSE.
+
+**La mesure du 2026-10-11 était juste, et l.Pointer est confirmé sur le client de
+production** (`EngineContext.httpClient`, pas une sonde à côté) :
+
+| | Avant (JSSE) | Après (Conscrypt) |
+|---|---|---|
+| JA3 | `0a80f686…` | **`4944639f9df167507df68fbe89589dbe`** |
+| GREASE | absent | **`156-157-47-53`** — comme Edge |
+
+`self-signed.badssl.com` échoue toujours en `CertPathValidatorException: Trust
+anchor … not found` : **la vérification de chaîne n'a pas été désactivée** pour
+acheter Conscrypt (AGENTS.md §10).
+
+**Le parcours complet, et son verdict.** Challenge résolu par l'humain, 7 cookies
+lus, `cf_clearance` 533 o `secure` `httpOnly`, application automatique, puis le
+rejeu :
+
+```
+[challenge-debug] cookie injecte … nom=cf_clearance … secure=true httpOnly=true longueurValeur=533
+challenge: 7 cookie(s) applique(s) automatiquement source=HENTAIZONE
+[challenge-debug] requete hote=hentaizone.xyz
+    ua="…Chrome/154…Edg/154…"            <- celle qui a résolu
+    cookiesJar=[…, cf_clearance, …]       <- la clearance
+    statut=403  cf-mitigated=challenge    <- refusée
+```
+
+Sidecar vérifié **sans redémarrage** entre `[tls] pile en service` (13:22:20) et
+le rejeu (13:30:21) : la pile était bien en service pendant toute la mesure.
+
+**Conclusion, et c'est la neuvième cause éliminée par la mesure** : changer la
+pile TLS pour celle de Chrome ne suffit pas. Le refus n'est pas un problème de
+signature TLS. Il reste l'écart déjà mesuré : **l'ordre des extensions TLS** et
+l'empreinte HTTP/2 d'OkHttp, qu'on ne peut pas rendre pareille depuis un
+`OkHttpClient`. Ce n'est plus une hypothèse — c'est le résultat de la dernière
+expérience connue.
+
+**Ce que Conscrypt a coûté, et ce qu'il faut en penser.** Un JAR de plus dans la
+distribution (4,5 Mo), une dépendance `org.conscrypt` à vérifier à chaque
+graduation, et une ligne de configuration `verification-metadata.xml`. **Rien de
+cela n'a racheté une source.** Décision à prendre par l'humain (§2 règle 9) :
+garder la pile (elle est plus proche d'un navigateur et ne casse rien — `mangas-
+origines.fr` et `lelscanfr.com` répondent 200 sous Conscrypt) ou revenir à JSSE.
 
 #### Ce qui ne fonctionne pas, et pourquoi c'est Structurel
 

@@ -1638,6 +1638,32 @@ Conscrypt. La sonde `/manga/` sans cookie renvoie 403 dans les deux cas, ce
 qui est attendu et ne prouve rien. Le seul test valide est le flux complet
 avec un vrai puzzle résolu — donc un spike.
 
+#### Le portage est faisable — et la mesure était inutile (2026-10-11, fin de séance)
+
+Le spike du dernier tour (sonde `fetch` dans la fenêtre) n'a jamais abouti :
+la fenêtre se ferme **3,5 s** après s'ouvrir, et elle n'est de toute façon pas
+exposée sur le port de debug (seule la fenêtre principale y apparaît). Deux
+tentatives, deux échecs, pour une question **déjà tranchée par l'écran**.
+
+Ce qu'on sait, sans mesure supplémentaire :
+- la fenêtre **affiche** la page du catalogue avec sa clearance (constaté à
+  l'écran, le 2026-10-10 : « j'ai pu voir les boutons sur le site ») ;
+- Rust sait lire dans la fenêtre (`navigator.userAgent` est revenu
+  plusieurs fois) — le transport existe donc.
+
+Ce qui manque n'est plus une incertitude, c'est du travail : le protocole est
+**à sens unique**, le moteur ne peut pas demander une requête à Rust. Le portage
+ajoute donc : une direction inverse du protocole, un intercepteur sous
+`httpClient` qui délègue à la fenêtre, et un drapeau par source.
+
+**Leçon de la séance, la quatrième du même nom.** Avant de construire un
+appareil de mesure, demander ce que l'écran sait déjà. Trois fois ce soir la
+réponse était visible : le catalogue s'affiche dans la fenêtre, l'utilisateur
+ne clique rien, `cf_chl_rc_ni` est encore là. Une sonde costs un build, un
+lancement, un aller-retour utilisateur — et n'apporte rien quand l'observation
+existe déjà. *Chercher d'abord dans le code de référence, puis dans l'écran,
+puis seulement mesurer.*
+
 #### Ce qui ne fonctionne pas, et pourquoi c'est Structurel
 
 Le **rejeu** est refusé. Mesuré dans l'application réelle, instrumenté

@@ -2416,6 +2416,15 @@ export default function Home() {
     const useTags = opts?.tags ?? activeTags;
     const useQuery = opts?.query ?? mangaQuery;
     setSelected(s);
+    // **L'erreur et le bandeau de challenge ne survivent pas au changement
+    // de source.** Mesuré le 2026-10-11 : en revenant sur une source qui
+    // marche, l'écran affichait encore l'erreur de la précédente — « la
+    // source dit erreur pourtant pas d'erreur ». `error` étant un état
+    // global du composant, il ne redevenait faux que parce que rien ne le
+    // remettait à zéro ici ; le `catch` le repose si la tentative échoue
+    // encore.
+    setError(null);
+    setChallenge(null);
     setLoadingState(true);
     if (offset === 0) {
       setLatest([]);
@@ -2463,18 +2472,27 @@ export default function Home() {
         setChallengeTentatives(r.tentatives);
         if (r.epuise) {
           setChallenge(null);
-          // Le message **traduit**, pas un marqueur interne : `error` est un
-          // état global que cinq vues rendent brut (`{error}`, sans
-          // `describeError`) — Paramètres, Téléchargements, Favoris,
-          // catalogue. Un symbole comme `CHALLENGE_EPUISE` y apparaissait
-          // donc en clair. Mesuré le 2026-10-11 : l'utilisateur voyait
-          // `CHALLENGE_EPUISE` au lieu de la phrase.
-          setError(t('erreur.source.bloquee'));
+          // Notification en bas, pas un bandeau : la borne rend la main, il
+          // n'y a plus rien à cliquer dans le catalogue. Le message est
+          // **déjà traduit** — jamais un marqueur interne.
+          setNotice(t('erreur.source.bloquee'));
           return;
         }
       }
-      setError(raw);
-      setChallenge(url);
+      if (url) {
+        // Challenge : le bandeau reste. Il porte les boutons « Résoudre »,
+        // « C'est fait, réessayer » et « Annuler » — c'est une action en
+        // cours, pas une notification, donc pas un toast de 3 s.
+        setError(raw);
+        setChallenge(url);
+      } else {
+        // Erreur simple : **notification en bas, auto-fermante**. Mesuré le
+        // 2026-10-11 : le bandeau, lui, restait affiché en haut jusqu'au
+        // changement de source suivant — l'utilisateur le lisait comme un
+        // blocage permanent, et il collait d'une source à l'autre.
+        // Demande explicite : un seul toast, celui du bas.
+        setNotice(describeError(raw, s.name, t));
+      }
       // Mémorise la source en échec : elle sera signalée dans le catalogue.
       // Une demande de vérification n'est PAS un échec : à résoudre par l'humain.
       // Même règle qu'au-dessus : c'est bien `s` qui a échoué.
@@ -5892,47 +5910,33 @@ if (reader) {
               );
             })}
 
-        {error && selected && (
+        {/* Le bandeau ne s'affiche que pour un **challenge** : il porte les
+            boutons d'action (« Résoudre », « C'est fait, réessayer »,
+            « Annuler »), ce n'est pas une notification. Toute erreur simple
+            part en toast en bas — demande du 2026-10-11, après un bandeau
+            d'erreur resté en haut jusqu'au changement de source suivant. */}
+        {error && selected && challenge && (
           <div className="alert">
             <p>{describeError(error, selected.name, t)}</p>
-            {challenge && (
-              <p className="muted">{t('libelle.verification.note')}</p>
-            )}
+            <p className="muted">{t('libelle.verification.note')}</p>
             <div className="alert-actions">
-              {challenge ? (
-                <>
-                  <button
-                    className="btn btn-primary"
-                    disabled={challengeBusy}
-                    onClick={() => void startChallenge()}
-                  >
-                    {t('libelle.verification.resoudre')}
-                  </button>
-                  <button
-                    className="btn"
-                    disabled={challengeBusy}
-                    onClick={() => void applyChallenge()}
-                  >
-                    {t('libelle.verification.applique')}
-                  </button>
-                  <button className="btn btn-ghost" onClick={() => void cancelChallenge()}>
-                    {t('libelle.annuler')}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    className="btn"
-                    disabled={loading}
-                    onClick={() => loadSource(selected, 0)}
-                  >
-                    Réessayer
-                  </button>
-                  <button className="btn btn-ghost" onClick={backToCatalog}>
-                    Changer de catalogue
-                  </button>
-                </>
-              )}
+              <button
+                className="btn btn-primary"
+                disabled={challengeBusy}
+                onClick={() => void startChallenge()}
+              >
+                {t('libelle.verification.resoudre')}
+              </button>
+              <button
+                className="btn"
+                disabled={challengeBusy}
+                onClick={() => void applyChallenge()}
+              >
+                {t('libelle.verification.applique')}
+              </button>
+              <button className="btn btn-ghost" onClick={() => void cancelChallenge()}>
+                {t('libelle.annuler')}
+              </button>
             </div>
           </div>
         )}

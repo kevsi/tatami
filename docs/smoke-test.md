@@ -706,9 +706,11 @@ signale ; trancher par le journal avant d'écrire quoi que ce soit.
 1. **Clic** : **Résoudre la vérification** (bouton de la barre d'alerte `.alert`).
 2. **Attendu** : une fenêtre « Vérification — <source> » s'ouvre sur l'URL du challenge.
 3. **Action humaine** : résoudre le challenge dans cette fenêtre.
-4. **Clic** : **C’est fait, réessayer**.
-5. **Attendu** : les cookies (y compris `HttpOnly`) sont transmis au moteur via
-   `setCookies`, la fenêtre se ferme, la requête est rejouée et la liste s'affiche.
+4. **Attendu automatique** : les cookies partent **sans cliquer** — `surveiller_fenetre`
+   (`challenge.rs`) relit les cookies toutes les 1,5 s et applique dès que `cf_clearance`
+   apparaît ; un toast « n cookie(s) transmis à <source>. » apparaît **en bas** et la liste
+   se recharge. Le bouton « C'est fait, réessayer » reste le secours si rien ne part.
+5. **Clic** (secours seulement) : **C'est fait, réessayer**.
 6. **Preuve** : capture de la fenêtre ; dans le rapport, le **nombre de cookies
    transmis** renvoyé par `solve_challenge` ; puis le **journal** — chercher `challenge`
    et `setCookies`, et relever les **deux** nombres.
@@ -722,6 +724,33 @@ signale ; trancher par le journal avant d'écrire quoi que ce soit.
 **Limites à consigner** : la clearance est liée à l'IP et expire ; l'empreinte TLS de
 WebView2 diffère de celle d'OkHttp, donc certains sites peuvent refuser la clearance
 même après résolution.
+
+---
+
+## 9 bis. Erreur de source — notification, pas bandeau (2026-10-11)
+
+**Ce qui a changé, et pourquoi.** Mesuré le 2026-10-11 : entrer dans une source qui
+échoue affichait un bandeau **en haut**, resté jusqu'au changement de source suivant —
+et il **collait** : revenir sur une source qui marche affichait encore l'erreur de la
+précédente (« la source dit erreur pourtant pas d'erreur »). Demande explicite : un seul
+toast, **celui du bas**, sous forme de notification.
+
+1. **Action** : catalogue → une source qui ne répond pas.
+2. **Attendu** : un toast **en bas à droite** (`.toaster`), 13,5 px, bouton de fermeture,
+   disparaissant seul après 3 s (`TOAST_DUREE_MS`, `page.tsx:523`).
+3. **Attendu** : **aucun** bandeau `.alert` dans la vue catalogue (il est réservé au
+   challenge, seul cas qui porte des boutons d'action).
+4. **Action** : cliquer une source qui **fonctionne**.
+5. **Attendu** : **aucun** message d'erreur résiduel. La preuve que l'erreur ne survit
+   plus : `setError(null)` + `setChallenge(null)` en tête de `loadSource` (le `catch` les
+   repose si la tentative échoue encore).
+6. **Contrôle** : l'information n'est pas perdue avec le bandeau — la source reste marquée
+   en échec dans le catalogue (`noteHealth`, `page.tsx:2490`), consultable via
+   « état des sources ».
+7. **Variante challenge** : sur une source sous Cloudflare, le **bandeau** revient (avec
+   « Résoudre » / « C'est fait, réessayer » / « Annuler ») — c'est voulu, il porte une
+   action, pas une notification. Au 3ᵉ échec, la borne anti-boucle affiche à son tour un
+   toast « La source bloque l'application : réessaie plus tard. » **et** ferme le bandeau.
 
 ---
 

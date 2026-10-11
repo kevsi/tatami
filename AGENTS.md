@@ -1700,3 +1700,24 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   seul moyen de savoir ce que l'application embarque est de regarder
   `dist/tatami-engine/lib`. C'est encore « corriger la source ne prouve pas que
   le binaire l'exécute », mais par un chemin plus discret.
+
+- **Un marqueur peut vivre dans une lambda, pas dans la classe englobante.**
+  Mesuré le 2026-10-11, deuxième fois dans la même séance : le marqueur
+  `enTetesDeclares` était cherché dans `EngineContext.class`, et « absent ». Il
+  était dans `EngineContext$special$$inlined$-addInterceptor$1.class` — le code
+  est dans une **lambda d'intercepteur**. Conclusion « pas dans le JAR », fausse,
+  et elle a failli faire réécrire du code déjà livré. Corollaire : chercher un
+  marqueur dans **toutes** les classes du dossier, pas dans la classe dont le nom
+  est celui du fichier source. Et rester attentif au **deuxième** problème de la
+  même mesure : le JAR que j'avais ouvert datait de 45 minutes avant la dernière
+  compilation.
+
+- **Une porte élargie à un nouveau dossier se prouve en retirant l'usage du
+  module concerné.** `check-i18n.mjs` ne lisait que `app/` ; `describeError` a
+  été extrait vers `lib/` et ses huit clés `erreur.*` ont été déclarées mortes.
+  Première tentative de preuve rouge ratée : la clé restait citée dans la
+  **union de type** `CleErreur`, que la passe `viaTable` compte comme usage. Il a
+  fallu retirer les **deux** occurrences — union et appel — pour que la porte
+  crie `erreur.verification.non.rejouable`. Même famille que « vérifier que la
+  casse a eu lieu avant de conclure sur la porte », mais ici la casse partielle
+  est **silencieusement insuffisante**.

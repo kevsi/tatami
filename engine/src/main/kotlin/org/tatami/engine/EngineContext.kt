@@ -74,8 +74,35 @@ class EngineContext : MangaLoaderContext() {
 
     
 
+    /**
+     * Pile TLS Conscrypt, ou `null` (et donc JSSE) si elle n'est pas disponible.
+     *
+     * Voir `PileTls` pour pourquoi c'est Conscrypt qu'il faut et pas JSSE. La
+     * ligne de journal est **inconditionnelle** : c'est la seule preuve qu'on
+     * aura que le binaire qui tourne porte bien cette pile — le défaut de
+     * méthode du 2026-10-11 était précisément d'avoir lu « zéro ligne » comme
+     * un résultat alors que le code n'était pas dans le JAR.
+     */
+    private val fabriqueTls: PileTls.Fabrique? = PileTls.construire().also {
+        System.err.println(
+            "[tls] pile en service : " +
+                (it?.usine?.javaClass?.name ?: "JSSE (repli, Conscrypt indisponible)"),
+        )
+    }
+
     override val httpClient: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(cookieJar)
+        .apply {
+            // `sslSocketFactory` prend la fabrique **et** son gestionnaire : les
+            // deux ensemble, sinon la chaine est verifiee par le mauvais chemin.
+            //
+            // Neutraliser cette ligne fait echouer 3 tests de `PileTlsTest` --
+            // ceux qui lisent le client **de production** (preuve rouge du
+            // 2026-10-11). Les deux autres, qui lisent `PileTls.construire()`
+            // directement, restent verts : c'est cette difference qui prouve que
+            // la porte voit le **cablage**, et pas seulement la presence du JAR.
+            fabriqueTls?.let { sslSocketFactory(it.usine, it.gestionnaire) }
+        }
         .addInterceptor(RateLimitInterceptor())
         .addInterceptor(CloudFlareInterceptor())
         .addInterceptor(LazyLoadInterceptor())

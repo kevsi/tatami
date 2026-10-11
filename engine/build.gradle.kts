@@ -23,6 +23,24 @@ dependencies {
     // Moteur JS : le JDK 21 n'en fournit plus (voir EngineContext.evaluateJs).
     implementation("org.openjdk.nashorn:nashorn-core:15.6")
 
+    // **Pile TLS de Chrome.** Kotatsu tourne sur Android, dont le provider TLS
+    // par defaut EST Conscrypt ; notre moteur tourne sur un JVM de bureau, ou
+    // le defaut est JSSE. Mesure du 2026-10-11 (sonde `ConscryptProbe.java`) :
+    // JSSE = JA3 `0a80f686…` sans GREASE, Conscrypt = `4944639f…` avec
+    // `156-157-47-53`, comme Edge.
+    //
+    // Version 2.5.2 : celle de `Kotatsu-Redo/gradle/libs.versions.toml:13`.
+    // `openjdk-uber` et non `android` — c'est la variante qui embarque le code
+    // natif BoringSSL pour une **JVM de bureau** ; `conscrypt-android` suppose
+    // l'environnement Android.
+    //
+    // Attention : la porte `gradle/verification-metadata.xml` refuse une
+    // dependance non declaree. Apres cette ligne, regenerer le fichier avec
+    // `--write-verification-metadata sha256 --refresh-dependencies`, sinon la
+    // CI echoue sur un cache froid alors que le poste passe (lecon AGENTS.md
+    // §14, 2026-10-05).
+    implementation("org.conscrypt:conscrypt-openjdk-uber:2.5.2")
+
     // Test uniquement : `kotlin.test` sansJUnit. Le moteur n'avait aucun test
     // (0 fichier dans build/test-results), donc la porte `gradle test` passait
     // sans rien vérifier du tout.

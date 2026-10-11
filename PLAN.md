@@ -1577,6 +1577,25 @@ Corollaire : les client hints (`Sec-CH-UA*`) n'ont aucune chance d'aider,
 puisqu'ils ne touchent à aucun des trois tableaux ci-dessus. Ils n'ont jamais
 été mesurés contre `/manga/` — mais ils ne pouvaient pas changer ce verdict.
 
+#### La détection automatique a enfin fonctionné (2026-10-11)
+
+Mesure dans l'app réelle, avec le port de debug actif. Après résolution du
+challenge par l'utilisateur :
+
+```
+challenge: 7 cookie(s) applique(s) automatiquement source=HENTAIZONE
+```
+
+Aucune intervention : la surveillance a vu la clearance, l'a confirmée,
+l'a transmise et a fermé la fenêtre, **sans clic**. C'est le comportement
+voulu depuis la création du flux, et il n'avait encore jamais été observé —
+jusqu'ici la surveillance se déclenchait sur un cookie transitoire (corrigé
+par `4b8886e`) ou ne se déclenchait pas.
+
+Conséquence à noter : la fenêtre se ferme seule environ 3 s après la
+résolution. Toute mesure qui demande de l'interroger **doit être posée
+avant**, ou attendre une variante sans auto-application.
+
 #### Ce qui ne fonctionne pas, et pourquoi c'est Structurel
 
 Le **rejeu** est refusé. Mesuré dans l'application réelle, instrumenté

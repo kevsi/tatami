@@ -1025,11 +1025,6 @@ function describeError(raw: string, sourceName: string, t: Traduire): string {
   if (/TIMEOUT|timeout/i.test(s)) {
     return t('erreur.delai', { source: sourceName });
   }
-  // La borne anti-boucle (`lib/challenge-garde.ts`) a rendu la main : la
-  // source bloque l'application. On le dit sans URL technique.
-  if (/CHALLENGE_EPUISE/.test(s)) {
-    return t('erreur.source.bloquee');
-  }
   if (/CHALLENGE_REQUIRED/i.test(s)) {
     return t('erreur.verification', { source: sourceName });
   }
@@ -2468,7 +2463,13 @@ export default function Home() {
         setChallengeTentatives(r.tentatives);
         if (r.epuise) {
           setChallenge(null);
-          setError('CHALLENGE_EPUISE');
+          // Le message **traduit**, pas un marqueur interne : `error` est un
+          // état global que cinq vues rendent brut (`{error}`, sans
+          // `describeError`) — Paramètres, Téléchargements, Favoris,
+          // catalogue. Un symbole comme `CHALLENGE_EPUISE` y apparaissait
+          // donc en clair. Mesuré le 2026-10-11 : l'utilisateur voyait
+          // `CHALLENGE_EPUISE` au lieu de la phrase.
+          setError(t('erreur.source.bloquee'));
           return;
         }
       }

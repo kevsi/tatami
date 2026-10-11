@@ -41,6 +41,8 @@ const SURVEILLE_PAS: Duration = Duration::from_millis(1500);
 /// cookies sont partis), soit renoncé. Une surveillance sans fin garderait
 /// une tâche éveillée par source ouverte.
 const SURVEILLE_MAX: Duration = Duration::from_secs(180);
+/// Delai d'attente de la reponse JS `navigator.userAgent` dans la fenetre.
+const UA_DELAI: Duration = Duration::from_secs(5);
 /// Delai avant d'ajouter une **seconde** lecture : un `cf_clearance`
 /// qu'on retrouve identique est stable, donc reellement pose.
 const SURVEILLE_CONFIRMATION: Duration = Duration::from_millis(1500);
@@ -438,16 +440,23 @@ pub async fn open_challenge(
         let _ = existing.set_focus();
         return Ok(());
     }
-    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed.clone()))
+    // **Aucune usurpation d'UA.** La fenetre garde celui du vrai moteur de
+    // rendu (Chromium/WebView2). C'etait une erreur : on lui imposait
+    // l'UA `Firefox/116 / Linux` du moteur, alors que `platform` valait Win32
+    // et que les client hints designaient Edge WebView2 — trois signaux
+    // contradictoires dans une meme page.
+    //
+    // A/B mesure le 2026-10-11 sur HENTAIZONE, deux configurations :
+    // - UA usurpe : le widget Turnstile **boucle**, ne produit jamais de
+    //   reponse, la fenetre elle-meme obtient 403 « Just a moment... » ;
+    // - UA reel : le challenge **aboutit**, la fenetre affiche le site.
+    //
+    // Le controle qui rend la comparaison valide : le meme site, dans le
+    // navigateur de l'utilisateur, fonctionne — la protection n'a pas
+    // change, c'est nous qui nous presenteions mal.
+    WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed.clone()))
         .title(format!("Vérification — {source}"))
-        .inner_size(980.0, 860.0);
-    // Même user-agent que le moteur : la clearance est émise pour un agent
-    // donné, si les deux diffèrent le site peut la refuser ensuite.
-    let ua = engine_user_agent(&sup).await;
-    if !ua.is_empty() {
-        builder = builder.user_agent(&ua);
-    }
-    builder
+        .inner_size(980.0, 860.0)
         .build()
         .map_err(|e| format!("ouverture de la fenêtre : {e}"))?;
     let fenetre = app
@@ -520,6 +529,42 @@ pub async fn solve_challenge(
 /// Partagée par le bouton manuel (`solve_challenge`) et par la surveillance
 /// automatique (`surveiller_fenetre`) — un seul des deux passe, gardé par le
 /// drapeau de `SURVEILLANCES`.
+/// User-Agent **réel** de la fenêtre de résolution, lu par JavaScript.
+///
+/// **Pourquoi il faut le lire plutôt que le supposer.** La clearance
+/// Cloudflare est délivrée pour un agent donné, et c'est **la fenêtre** qui
+/// l'obtient. Mesure du 2026-10-11 sur HENTAIZONE : le challenge passait
+/// dans la fenêtre (UA Chromium/WebView2) mais le rejeu était refusé — parce
+/// que `appliquer_cookies` envoyait l'UA du moteur (`FIREFOX_DESKTOP`), donc
+/// une autre identité que celle qui avait résolu.
+///
+/// `None` si la fenêtre a disparu ou ne répond pas : l'appelant retombe
+/// alors sur l'UA du moteur, ce qui est le comportement d'avant, pas une
+/// panne.
+async fn ua_de_la_fenetre(app: &AppHandle, label: &str) -> Option<String> {
+    let fenetre = app.get_webview_window(label)?;
+    // Le callback est une closure `Fn` — il peut donc etre appele plusieurs
+    // fois, alors que `Sender::send` consomme. D'ou la prise unique sous
+    // verrou : le premier rendu gagne, les suivants ne trouvent plus rien.
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let envoi = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+    fenetre
+        .eval_with_callback("navigator.userAgent", move |rendu: String| {
+            if let Ok(mut slot) = envoi.lock() {
+                if let Some(emmetteur) = slot.take() {
+                    let _ = emmetteur.send(rendu);
+                }
+            }
+        })
+        .ok()?;
+    // `timeout` -> Result<Result<String, RecvError>, Elapsed> ; on ecarte les deux
+    // couches d'echec avec deux `.ok()` — un seul `?` ne peut pas les
+    // porter tous les deux.
+    let ua = tokio::time::timeout(UA_DELAI, rx).await.ok()?.ok()?;
+    let ua = ua.trim().to_string();
+    (!ua.is_empty()).then_some(ua)
+}
+
 async fn appliquer_cookies(
     app: &AppHandle,
     sup: &Arc<Supervisor>,
@@ -543,6 +588,14 @@ async fn appliquer_cookies(
     let payload: Vec<serde_json::Value> = cookies
         .iter()
         .filter(|c| !c.name().is_empty() && !c.value().is_empty())
+        // **On ne renvoie pas les marqueurs d'un challenge en cours.**
+        // Mesure du 2026-10-11 sur HENTAIZONE, apres resolution reussie :
+        // le rejeu partait avec `cf_clearance` ET `cf_chl_rc_ni`, et
+        // Cloudflare repondait 403 `cf-mitigated: challenge`. Ce second
+        // cookie dit « je teste encore ce client » — le renvoyer apres
+        // reussite invite a un nouveau challenge. C'est un cookie a nous :
+        // la fenetre l'a pose pendant le test, il ne sert plus a rien.
+        .filter(|c| !challenge_en_cours(std::iter::once(c.name())))
         .map(|c| {
             let mut cookie = json!({
                 "name": c.name(),
@@ -600,13 +653,27 @@ async fn appliquer_cookies(
         );
     }
 
+    // **L'agent qui a résolu, pas celui du moteur.** La clearance est liée à
+    // l'identité de la fenêtre ; envoyer celle d'OkHttp fait refuser le
+    // rejeu. Repli sur l'UA du moteur si la fenêtre ne répond plus.
+    let ua = match ua_de_la_fenetre(app, &label).await {
+        Some(u) => u,
+        None => engine_user_agent(sup).await,
+    };
+    tracing::info!(
+        "challenge-debug: rejeu avec userAgent={}",
+        if debug_challenge() {
+            ua.as_str()
+        } else {
+            "<instrumente>"
+        }
+    );
     sup.request(
         "setCookies",
         json!({
             "source": source,
             "cookies": payload,
-            // Même agent que celui de la fenêtre de résolution.
-            "userAgent": engine_user_agent(sup).await,
+            "userAgent": ua,
         }),
         Duration::from_secs(20),
     )

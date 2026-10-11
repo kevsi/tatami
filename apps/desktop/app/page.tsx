@@ -2475,7 +2475,7 @@ export default function Home() {
           // Notification en bas, pas un bandeau : la borne rend la main, il
           // n'y a plus rien à cliquer dans le catalogue. Le message est
           // **déjà traduit** — jamais un marqueur interne.
-          setNotice(t('erreur.source.bloquee'));
+          setNotice(t('erreur.source.bloquee', { source: nomSource(s) }));
           return;
         }
       }

@@ -1,10 +1,17 @@
 package org.tatami.engine
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.koitharu.kotatsu.parsers.model.MangaListFilter
 import org.koitharu.kotatsu.parsers.model.MangaParserSource
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -96,5 +103,56 @@ class ParserPoolPaginationTest {
         assertTrue(resultats.size == 2, "les deux appels doivent aboutir, mes: $resultats")
         assertTrue(resultats.all { it > 0 }, "les deux doivent lire les tris, mes: $resultats")
         assertTrue(pool.taille == 1, "une seule instance pour une seule source")
+    }
+
+    @Test
+    fun `une entree reservee par deux appels ne peut pas etre evincee`() = runBlocking {
+        val source = MangaParserSource.MANGADEX
+        val extras = listOf(
+            MangaParserSource.SEIMANGA,
+            MangaParserSource.MANGASORIGINES,
+            MangaParserSource.REMANGA,
+            MangaParserSource.MANGALIB,
+        )
+        val pool = ParserPool(EngineContext(), maxSources = 2)
+        val aPret = CountDownLatch(1)
+        val libererA = CountDownLatch(1)
+        val bPret = CountDownLatch(1)
+        val libererB = CountDownLatch(1)
+
+        val a = async(Dispatchers.IO) {
+            pool.avec(source) { parser ->
+                aPret.countDown()
+                assertTrue(libererA.await(5, TimeUnit.SECONDS), "A doit etre libere")
+                parser
+            }
+        }
+        assertTrue(aPret.await(5, TimeUnit.SECONDS), "A doit tenir le mutex")
+
+        val b = async(Dispatchers.IO) {
+            pool.avec(source) { parser ->
+                bPret.countDown()
+                assertTrue(libererB.await(5, TimeUnit.SECONDS), "B doit etre libere")
+                parser
+            }
+        }
+        withTimeout(5_000) {
+            while (pool.utilisateurs(source) != 2) yield()
+        }
+
+        extras.take(3).forEach { other ->
+            pool.avec(other) { it.availableSortOrders.size }
+        }
+
+        libererA.countDown()
+        val parserA = a.await()
+        assertTrue(bPret.await(5, TimeUnit.SECONDS), "B doit prendre le mutex après A")
+
+        pool.avec(extras[3]) { it.availableSortOrders.size }
+        libererB.countDown()
+        b.await()
+
+        val parserApres = pool.avec(source) { it }
+        assertSame(parserA, parserApres, "le parser de S doit garder son etat")
     }
 }

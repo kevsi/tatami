@@ -119,10 +119,7 @@ internal class ParserPool(
 
     private class Entry(val parser: MangaParser) {
         val mutex = Mutex()
-
-        /** Vrai tant qu'une requête tient l'instance : l'éviction l'ignore. */
-        @Volatile
-        var enCours: Boolean = false
+        var utilisateurs: Int = 0
     }
 
     // `accessOrder = true` : un `get` marque l'entrée comme la plus récemment
@@ -136,7 +133,7 @@ internal class ParserPool(
      *
      * L'entrée existe déjà quand la requête part : `avec` l'a créée avant
      * d'appeler le parseur, et elle ne peut pas être évincée pendant ce temps
-     * (`enCours` est vrai). Le seul cas où elle manque est une source que le
+     * (`utilisateurs` est positif). Le seul cas où elle manque est une source que le
      * pool n'a jamais instanciée — on rend alors `null` et l'intercepteur
      * laisse passer la requête, comme il le fait pour tout le monde.
      */
@@ -159,7 +156,6 @@ internal class ParserPool(
      */
     suspend fun <T> avec(source: MangaParserSource, bloc: suspend (MangaParser) -> T): T {
         val entry = entryPour(source)
-        entry.enCours = true
         try {
             return entry.mutex.withLock {
                 // Le parser doit etre visible depuis la chaine HTTP : sans cela
@@ -175,20 +171,27 @@ internal class ParserPool(
                 }
             }
         } finally {
-            entry.enCours = false
+            synchronized(garde) {
+                check(entry.utilisateurs > 0) { "reservation du parser deja liberee" }
+                entry.utilisateurs--
+            }
         }
     }
 
     private fun entryPour(source: MangaParserSource): Entry = synchronized(garde) {
         val cle = source.name
-        entries[cle]?.let { return@synchronized it }
+        entries[cle]?.let {
+            it.utilisateurs++
+            return@synchronized it
+        }
 
         val neuf = Entry(context.newParserInstance(source))
+        neuf.utilisateurs = 1
         entries[cle] = neuf
         if (entries.size > maxSources) {
             val aVancer = entries.entries.iterator()
             while (aVancer.hasNext()) {
-                if (!aVancer.next().value.enCours) {
+                if (aVancer.next().value.utilisateurs == 0) {
                     aVancer.remove()
                     break
                 }
@@ -200,4 +203,10 @@ internal class ParserPool(
     /** Nombre d'instances conservées. Pour les tests et le diagnostic. */
     val taille: Int
         get() = synchronized(garde) { entries.size }
+
+    /** Réservations simultanées d'une source, sans modifier l'ordre LRU. */
+    internal fun utilisateurs(source: MangaParserSource): Int =
+        synchronized(garde) {
+            entries.entries.firstOrNull { it.key == source.name }?.value?.utilisateurs ?: 0
+        }
 }

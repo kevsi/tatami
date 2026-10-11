@@ -43,20 +43,12 @@ const SURVEILLE_PAS: Duration = Duration::from_millis(1500);
 const SURVEILLE_MAX: Duration = Duration::from_secs(180);
 /// Delai avant d'ajouter une **seconde** lecture : un `cf_clearance`
 /// qu'on retrouve identique est stable, donc reellement pose.
-///
-/// Sans cette confirmation, un cookie transitoire — celui que Cloudflare
-/// pose **pendant** le challenge, avant que l'utilisateur agisse —
-/// declenchait l'application. Mesure le 2026-10-11 sur HENTAIZONE : la
-/// surveillance appliquait a t~1,5 s, renvoyait l'utilisateur sur la page
-/// de la source, la requete rejouee echouait, et le compteur de challenges
-/// atteignait la borne (« la source bloque l'application ») alors que
-/// personne n'avait jamais eu la chance de resoudre quoi que ce soit.
 const SURVEILLE_CONFIRMATION: Duration = Duration::from_millis(1500);
 
 /// Ce que la surveillance doit faire d'une lecture.
 #[derive(Debug, PartialEq, Eq)]
 enum Action {
-    /// Le cookie est nouveau mais pas encore confirme : on relit plus tard.
+    /// On continue d'attendre.
     Relire,
     /// Confirme : on pousse les cookies au moteur et on ferme la fenetre.
     Appliquer,
@@ -64,19 +56,60 @@ enum Action {
     Terminer,
 }
 
+/// Un cookie Cloudflare de ce genre signifie « le challenge TOURNE encore ».
+///
+/// **Mesure du 2026-10-11 sur HENTAIZONE, deux cycles identiques.** 3,3 s
+/// apres l'ouverture de la fenetre, `cf_clearance` etait deja la (597
+/// octets, expiration 2027, secure, httpOnly) **et** `cf_chl_rc_ni` (1
+/// octet) l'accompagnait. La requete rejouee fut refusee dans les deux cas.
+///
+/// Donc `cf_clearance` seul ne prouve **rien** : il est pose des le
+/// chargement de la page d'interstitial, avant que l'utilisateur ait
+/// agi. Ce qui distingue « resolu » de « en cours » est la presence d'un
+/// cookie `cf_chl_*` / `__cf_chl*`.
+///
+/// Fonction pure sur les **noms** seulement, testee sans navigateur.
+fn challenge_en_cours<'a>(mut noms: impl Iterator<Item = &'a str>) -> bool {
+    noms.any(|n| {
+        let n = n.to_ascii_lowercase();
+        n.starts_with("cf_chl_") || n.starts_with("__cf_chl")
+    })
+}
+
+/// Ce que la surveillance voit dans la fenetre a un instant donne.
+#[derive(Debug, PartialEq, Eq, Default)]
+struct LectureCookies {
+    /// Valeur du `cf_clearance`, si present. Comparee a la lecture
+    /// precedente pour distinguer un nouveau cookie d'un cookie de passage.
+    clearance: Option<String>,
+    /// Cloudflare poursuit-il sa verification ?
+    en_cours: bool,
+}
+
 /// Decide d'une lecture de surveillance, **sans effet de bord**.
 ///
-/// Testable seule, et c'est le but : la version d'hier declenchait sur la
-/// seule presence d'un cookie different, donc sur un cookie transitoire.
-///
-/// Les trois conditions sont cumulatives, et chacune correspond a une
-/// question :
-/// - le cookie a-t-il change ? sinon on continue d'attendre ;
-/// - est-il **stable** (relu identique apres `SURVEILLE_CONFIRMATION`) ?
-///   C'est ce qui distingue un cookie pose definitivement d'un cookie de
-///   passage ;
-/// - le drapeau n'est-il pas deja leve ? le premier arrive applique.
-fn action_surveillance(nouveau: bool, confirme: bool, drapeau_deja_leve: bool) -> Action {
+/// Les conditions sont cumulatives :
+/// - `clearance` : sans `cf_clearance`, rien a appliquer ;
+/// - `!en_cours` : **le correctif du 2026-10-11**. Cloudflare pose
+///   `cf_clearance` des le chargement de la page d'interstitial ; la seule
+///   presence du cookie declenchait l'application, la requete rejouee etait
+///   refusee, et la borne anti-boucle finissait par dire « la source
+///   bloque l'application » alors que personne n'avait pu rien faire ;
+/// - `nouveau` puis `confirme` : le cookie a change, et il a survecu a une
+///   relecture ;
+/// - `!drapeau_deja_leve` : le premier arrive applique.
+fn action_surveillance(
+    lecture: &LectureCookies,
+    nouveau: bool,
+    confirme: bool,
+    drapeau_deja_leve: bool,
+) -> Action {
+    if lecture.clearance.is_none() {
+        return Action::Relire;
+    }
+    if lecture.en_cours {
+        return Action::Relire;
+    }
     if !nouveau {
         return Action::Relire;
     }
@@ -84,7 +117,6 @@ fn action_surveillance(nouveau: bool, confirme: bool, drapeau_deja_leve: bool) -
         return Action::Relire;
     }
     if drapeau_deja_leve {
-        // Le bouton manuel a applique entre deux ticks.
         return Action::Terminer;
     }
     Action::Appliquer
@@ -184,17 +216,21 @@ fn domaine_effectif(cookie_domain: Option<&str>, host: &str) -> String {
     }
 }
 
-/// Valeur du cookie `cf_clearance` visible pour `url`, s'il existe.
+/// Lit l'etat des cookies de la fenetre pour la surveillance.
 ///
-/// La valeur reste en mémoire : elle n'est **jamais** journalisée (règle
-/// projet sur les cookies).
-async fn cf_clearance_courant(app: &AppHandle, label: &str, url: &Url) -> Option<String> {
+/// Ne rend **que** ce que la decision a besoin : la valeur du
+/// `cf_clearance` (jamais journalisee) et le fait que Cloudflare
+/// pursue sa verification. Les valeurs restent en memoire.
+async fn lire_cookies(app: &AppHandle, label: &str, url: &Url) -> Option<LectureCookies> {
     let fenetre = app.get_webview_window(label)?;
     let cookies = fenetre.cookies_for_url(url.clone()).ok()?;
-    cookies
-        .into_iter()
-        .find(|c| c.name() == CF_CLEARANCE)
-        .map(|c| c.value().to_string())
+    Some(LectureCookies {
+        clearance: cookies
+            .iter()
+            .find(|c| c.name() == CF_CLEARANCE)
+            .map(|c| c.value().to_string()),
+        en_cours: challenge_en_cours(cookies.iter().map(|c| c.name())),
+    })
 }
 
 /// Surveille la fenêtre jusqu'à `SURVEILLE_MAX`, par pas de `SURVEILLE_PAS`.
@@ -220,7 +256,9 @@ fn surveiller_fenetre(
         // **Reference de depart.** Volontairement relue a chaque
         // confirmation : c'est ce qui distingue « cookie pose definitivement »
         // de « cookie de passage » (cf. `SURVEILLE_CONFIRMATION`).
-        let mut deja_vu = cf_clearance_courant(&app, &label, &url).await;
+        let mut deja_vu = lire_cookies(&app, &label, &url)
+            .await
+            .and_then(|l| l.clearance);
         // Instrumentation : l'UA **réel** de la webview, lu par JS, à
         // comparer à celui d'OkHttp. C'est la question de fond du flux — la
         // fenêtre est un Chromium (WebView2) à qui l'on a posé l'UA Firefox
@@ -254,26 +292,31 @@ fn surveiller_fenetre(
             if app.get_webview_window(&label).is_none() {
                 break; // fermée (croix rouge ou application) : terminé
             }
-            let actuel = cf_clearance_courant(&app, &label, &url).await;
+            let lecture = match lire_cookies(&app, &label, &url).await {
+                Some(l) => l,
+                None => {
+                    if tokio::time::Instant::now() >= limite {
+                        break;
+                    }
+                    continue;
+                }
+            };
             // Rien de nouveau : on attend. C'est aussi le cas le plus
             // frequent (l'utilisateur reflechit devant la page).
-            let nouveau = actuel.is_some() && actuel != deja_vu;
+            let nouveau = lecture.clearance.is_some() && lecture.clearance != deja_vu;
 
             // **Confirmation de stabilite.** Un cookie nouveau n'applique
             // rien tout seul : on le relit apres `SURVEILLE_CONFIRMATION`.
-            // C'est le correctif du defaut du 2026-10-11 — Cloudflare pose
-            // un `cf_clearance` **pendant** le challenge, et ce cookie-la
-            // ne survit pas a la relecture ; le declencher renvoyait
-            // l'utilisateur sur la page de la source sans qu'il ait rien
-            // resolu, et la borne anti-boucle finissait par dire « la
-            // source bloque l'application ».
             let confirme = if nouveau {
-                let attendu = actuel.clone();
+                let attendu = lecture.clearance.clone();
                 tokio::time::sleep(SURVEILLE_CONFIRMATION).await;
                 if app.get_webview_window(&label).is_none() {
                     break;
                 }
-                cf_clearance_courant(&app, &label, &url).await == attendu
+                lire_cookies(&app, &label, &url)
+                    .await
+                    .and_then(|l| l.clearance)
+                    == attendu
             } else {
                 false
             };
@@ -281,10 +324,10 @@ fn surveiller_fenetre(
                 // Reference mise a jour avant d'appliquer : un eventuel
                 // relancement de la surveillance ne doit pas rejouer le meme
                 // cookie comme une nouvelle apparition.
-                deja_vu = actuel;
+                deja_vu = lecture.clearance.clone();
             }
 
-            match action_surveillance(nouveau, confirme, drapeau.load(Ordering::SeqCst)) {
+            match action_surveillance(&lecture, nouveau, confirme, drapeau.load(Ordering::SeqCst)) {
                 Action::Relire => {
                     if tokio::time::Instant::now() >= limite {
                         break;
@@ -586,34 +629,48 @@ pub async fn cancel_challenge(app: AppHandle, source: String) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::{
-        action_surveillance, challenge_label, domaine_effectif, enregistrer_surveillance,
-        retirer_surveillance, surveillances, Action,
+        action_surveillance, challenge_en_cours, challenge_label, domaine_effectif,
+        enregistrer_surveillance, retirer_surveillance, surveillances, Action, LectureCookies,
     };
 
-    /// **Le defaut du 2026-10-11, en une assertion.** Cloudflare pose un
-    /// `cf_clearance` **pendant** le challenge : un cookie nouveau mais
-    /// **non confirme** ne prouve rien. La version d'hier appliquait les
-    /// cookies sur cette seule lecture, renvoyait l'utilisateur sur la page
-    /// de la source, et la requete rejouee echouait — jusqu'a la borne
-    /// « la source bloque l'application », alors que personne n'avait eu la
-    /// chance de resoudre quoi que ce soit.
+    /// Le cookie de clearance, tel que mesure le 2026-10-11 sur HENTAIZONE.
+    fn lecture_resolue() -> LectureCookies {
+        LectureCookies {
+            clearance: Some("clearance-597-o".to_string()),
+            en_cours: false,
+        }
+    }
+
+    /// **Le defaut reel du 2026-10-11, mesure dans l'app.** A 3,3 s apres
+    /// l'ouverture de la fenetre, `cf_clearance` etait deja la (597 octets,
+    /// expiration 2027) et `cf_chl_rc_ni` l'accompagnait : le challenge
+    /// **tourne encore**. La requete rejouee fut refusee dans les deux
+    /// cycles mesures. Appliquer sur la seule presence du cookie renvoyait
+    /// l'utilisateur sur la page de la source et faisait monter le compteur
+    /// jusqu'a « la source bloque l'application ».
     #[test]
-    fn un_cookie_non_confirme_ne_declenche_pas() {
+    fn un_cookie_pose_pendant_le_challenge_ne_declenche_pas() {
+        let lecture = LectureCookies {
+            clearance: Some("clearance-597-o".to_string()),
+            en_cours: true,
+        };
         assert_eq!(
-            action_surveillance(true, false, false),
+            action_surveillance(&lecture, true, true, false),
             Action::Relire,
-            "un cookie nouveau mais pas encore stable doit etre relu, pas applique"
+            "le challenge tourne encore : appliquer renverrait l'utilisateur sur la page source"
         );
     }
 
-    /// La contre-epreuve : avec le **vrai** declencheur d'hier — cookie
-    /// nouveau, aucun controle de stabilite — la fonction appliquait. C'est ce
-    /// qui prouve que le test ci-dessus mord et qu'il ne passe pas pour une
-    /// tautologie.
+    /// La contre-epreuve : le declencheur d'hier (cookie present, aucune
+    /// question posee) appliait. C'est ce qui prouve que le test
+    /// ci-dessus mord.
     #[test]
-    fn contre_epreuve_le_declencheur_dhier_appliquait_sans_confirmation() {
-        let nouveau = true;
-        let ancien_decide = if nouveau {
+    fn contre_epreuve_le_declencheur_dhier_appliquait_malgre_le_challenge() {
+        let lecture = LectureCookies {
+            clearance: Some("clearance-597-o".to_string()),
+            en_cours: true,
+        };
+        let ancien_decide = if lecture.clearance.is_some() {
             Action::Appliquer
         } else {
             Action::Relire
@@ -621,34 +678,66 @@ mod tests {
         assert_eq!(
             ancien_decide,
             Action::Appliquer,
-            "l'ancien code appliquait sur le seul fait qu'un cookie soit nouveau"
+            "l'ancien code appliait sur le seul fait qu'un cookie soit present"
         );
         assert_ne!(
-            action_surveillance(nouveau, false, false),
+            action_surveillance(&lecture, true, true, false),
             ancien_decide,
             "la fonction d'aujourd'hui doit refuser ce cas"
         );
     }
 
+    /// `cf_chl_rc_ni` est le marqueur mesure ; les autres noms appartiennent
+    /// a la meme famille (nonce, jeton de re-verification).
     #[test]
-    fn un_cookie_confirme_declenche_une_fois() {
+    fn les_marqueurs_de_challenge_en_cours_sont_reconnus() {
+        assert!(challenge_en_cours(
+            ["cf_clearance", "cf_chl_rc_ni"].into_iter()
+        ));
+        assert!(challenge_en_cours(["__cf_chl_tk"].into_iter()));
+        assert!(
+            challenge_en_cours(["CF_CHL_RC_I"].into_iter()),
+            "la casse ne doit pas masquer le marqueur"
+        );
+        // Un site normal, ou Cloudflare a fini : rien ne doit bloquer.
+        assert!(!challenge_en_cours(
+            ["cf_clearance", "sessionid"].into_iter()
+        ));
+        assert!(!challenge_en_cours([].into_iter()));
+    }
+
+    #[test]
+    fn un_challenge_resolu_declenche_une_fois() {
         assert_eq!(
-            action_surveillance(true, true, false),
+            action_surveillance(&lecture_resolue(), true, true, false),
             Action::Appliquer,
-            "nouveau + stable + drapeau libre = on applique"
+            "clearance + pas de challenge en cours + nouveau + stable + drapeau libre"
         );
         assert_eq!(
-            action_surveillance(true, true, true),
+            action_surveillance(&lecture_resolue(), true, true, true),
             Action::Terminer,
             "drapeau deja leve (bouton manuel passe avant) : on s'arrete"
         );
     }
 
     #[test]
-    fn un_cookie_inchange_ne_declenche_jamais() {
-        // Le cas le plus frequent : l'utilisateur reflechit devant la page.
-        assert_eq!(action_surveillance(false, false, false), Action::Relire);
-        assert_eq!(action_surveillance(false, false, true), Action::Relire);
+    fn rien_ne_declenche_sans_clearance_ou_si_inchange() {
+        let vide = LectureCookies::default();
+        assert_eq!(
+            action_surveillance(&vide, true, true, false),
+            Action::Relire,
+            "pas de cf_clearance : rien a appliquer"
+        );
+        assert_eq!(
+            action_surveillance(&lecture_resolue(), false, false, false),
+            Action::Relire,
+            "cookie inchange : on attend"
+        );
+        assert_eq!(
+            action_surveillance(&lecture_resolue(), true, false, false),
+            Action::Relire,
+            "cookie nouveau mais non confirme : on relit"
+        );
     }
 
     #[test]

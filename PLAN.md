@@ -1519,6 +1519,35 @@ dossier dans six mois en repartant de zéro.
    au challenge, plus de « la source bloque l'application » sur un cookie
    transitoire (`4b8886e`, `d8c8ae1`, `039796d`).
 
+#### Option C — ampleur mesurée le 2026-10-11 (recensement de tout le catalogue)
+
+Une requête réelle par source, **à travers le moteur** (`filterOptions`),
+donc la mesure porte sur le client de production et non sur un script de
+sonde. 1 374 sources, 93 s, 12 en parallèle.
+
+| Code | Nombre | Part |
+|---|---:|---:|
+| `OK` | 551 | 40,1 % |
+| `CHALLENGE_REQUIRED` | **99** | **7,2 %** |
+| `TIMEOUT` | 120 | 8,7 % |
+| `INTERNAL` | 599 | 43,6 % |
+| `PARSE_ERROR` | 4 | 0,3 % |
+| `AUTH_REQUIRED` | 1 | 0,1 % |
+
+**Ce n'est donc pas « une source sur 1 370 » : c'est 99, soit une sur
+quatorze.** L'argument qui écartait l'option B — « motivée par une seule
+source » — est **faux**, et il faut le retirer.
+
+Deux lectures, à ne pas confondre :
+
+- Les **99 `CHALLENGE_REQUIRED`** sont notre problème : le rejeu échoue, on
+  sait pourquoi (empreinte de pile réseau), et on peut le dire à
+  l'utilisateur.
+- Les **719 `TIMEOUT` + `INTERNAL`** sont un autre problème, probablement
+  des sources mortes, bloquées ou géo-restreintes. Rien à voir avec
+  Cloudflare, hors périmètre ici — mais le nombre est plus grand que celui
+  des challenges, et il meritera son propre recensement.
+
 #### Ce qui ne fonctionne pas, et pourquoi c'est Structurel
 
 Le **rejeu** est refusé. Mesuré dans l'application réelle, instrumenté

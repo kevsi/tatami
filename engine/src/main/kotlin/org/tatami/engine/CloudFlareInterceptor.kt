@@ -48,7 +48,7 @@ internal class CloudFlareInterceptor(
             val hote = request.url.host
             // Mémoire d'un échec **antérieur** sur cet hôte : inutile de
             // renvoyer le réseau si l'on sait déjà que le rejeu échoue.
-            if (RejeuRefuse.estRefuse(hote) || porteUneClearance(request.url)) {
+            if (RejeuRefuse.estRefuse(hote)) {
                 RejeuRefuse.marquer(hote)
                 throw CloudFlareUnreplayableException(url = url)
             }

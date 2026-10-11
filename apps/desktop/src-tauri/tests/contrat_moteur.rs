@@ -903,6 +903,33 @@ fn is_transient_reconnait_un_panneau_reel() {
     assert!(!is_transient(&Ok(Value::Null)));
 }
 
+/// Un rejeu refusé ne doit **pas** être rejoué : la vérification a déjà eu
+/// lieu et le site refuse quand même, donc une nouvelle tentative coûterait le
+/// réseau pour reproduire le même 403.
+///
+/// **Pourquoi le second message contient un marqueur transitoire.** Le message
+/// réel (`CHALLENGE_UNREPLAYABLE: challenge at … (non rejouable)`) ne contient
+/// *aucun* marqueur transitoire : `is_transient` le classerait non-transitoire
+/// **par défaut**, garde retirée ou non — le test passerait donc sans prouver
+/// rien. Mesuré le 2026-10-11 : c'est exactement ce qu'a fait la première
+/// version de ce test, verte garde enlevée.
+///
+/// Le second message porte **les deux**. Sans la garde, le `503 Service
+/// Unavailable` le ferait rejouer ; avec elle, le code gagne. C'est la seule
+/// forme qui éprouve réellement la garde.
+#[test]
+fn un_rejeu_refuse_nest_pas_transitoire() {
+    // Le message que le moteur émet en pratique.
+    assert!(!is_transient(&Err(
+        "CHALLENGE_UNREPLAYABLE: challenge at https://exemple.test (non rejouable)".into()
+    )));
+    // Le témoin : même code + un marqueur transitoire. **La garde doit gagner**,
+    // sinon la source serait rejouée jusqu'à l'épuisement des tentatives.
+    assert!(!is_transient(&Err(
+        "CHALLENGE_UNREPLAYABLE: 503 Service Unavailable".into()
+    )));
+}
+
 /// Le `hello` enregistré doit passer la porte de version que le superviseur
 /// applique au démarrage. C'est la seule vérification qui relie une constante
 /// de notre code à une réponse du moteur.

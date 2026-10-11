@@ -479,8 +479,22 @@ fun serve() {
                 //
                 // On déballe ici plutôt que dans chaque `catch` : un seul endroit à
                 // maintenir, et le cas direct passe par la même voie (`t is X`).
-                val challenge = challengeDe(e)
-                if (challenge != null) {
+                //
+                // **L'ordre des deux tests est une garantie, pas un détail.** Un
+                // rejeu refusé doit être reconnu **avant** un challenge ordinaire,
+                // sinon il est rendu comme une demande de vérification et la
+                // fenêtre se rouvre — le cycle « bandeau → puzzle → rien »
+                // mesuré le 2026-10-11 sur HENTAIZONE.
+                val nonRejouable = challengeNonRejouableDe(e)
+                val challenge = if (nonRejouable != null) null else challengeDe(e)
+                if (nonRejouable != null) {
+                    err(
+                        id,
+                        "CHALLENGE_UNREPLAYABLE",
+                        "challenge at $nonRejouable (non rejouable)",
+                        nonRejouable,
+                    )
+                } else if (challenge != null) {
                     err(id, "CHALLENGE_REQUIRED", "challenge at $challenge", challenge)
                 } else if (authRequise(e) != null) {
                     err(id, "AUTH_REQUIRED", "this source asks for an account")
@@ -1133,6 +1147,12 @@ private suspend fun dispatchNatif(
         }
         val host = if (built.isNotEmpty()) built.first().domain.trimStart('.') else ""
         (context.cookieJar as InMemoryCookieJar).putCookies(host, built)
+        // **Une résolution réussie oublie l'échec de rejeu précédent** pour cet
+        // hôte. C'est la seule chose qui efface `RejeuRefuse`, et c'est
+        // volontaire : ici, l'utilisateur vient d'agir, donc on ne doit pas
+        // lui opposer un échec de 30 minutes. Sans ça, un site qui ré-autorise
+        // resterait bloqué sans aucun recours.
+        if (host.isNotEmpty()) RejeuRefuse.oublier(host)
         if (p.has("userAgent")) context.userAgentOverride = p.getString("userAgent")
         if (challengeDebug) {
             // Ce qui entre vraiment dans le magasin, une ligne par cookie :

@@ -426,6 +426,10 @@ const FR = {
   'erreur.purge': 'Purge impossible : {raison}',
   'erreur.delai': "{source} n'a pas répondu à temps. Site mort ou trop lent.",
   'erreur.verification': '{source} demande une vérification anti-robot, pas encore gérée.',
+  'erreur.verification.non.rejouable':
+    "{source} exige une vérification que l'application ne sait pas rejouer. Ouvrir la source dans un navigateur reste possible.",
+  'challenge.non.rejouable':
+    "La vérification de {source} a abouti, mais le site refuse quand même la requête. Ce n'est pas un problème de connexion : la source reste inaccessible depuis l'application.",
   'erreur.source.bloquee':
     'La vérification de {source} n’a pas pu être reproduite : cette source reste inaccessible.',
   'erreur.compte.requis':
@@ -878,6 +882,10 @@ const EN: Record<Cle, string> = {
   'erreur.purge': 'Cannot clear: {raison}',
   'erreur.delai': '{source} did not answer in time. Site down or very slow.',
   'erreur.verification': '{source} asks for an anti-bot check, not handled yet.',
+  'erreur.verification.non.rejouable':
+    "{source} requires a verification the app cannot replay. Opening the source in a browser still works.",
+  'challenge.non.rejouable':
+    "The check for {source} succeeded, but the site still refuses the request. This is not a connection problem: the source stays unreachable from the app.",
   'erreur.source.bloquee': 'The verification for {source} could not be reproduced: this source remains inaccessible.',
   'erreur.compte.requis':
     '{source} asks for an account to open this chapter. This source is unusable without one.',

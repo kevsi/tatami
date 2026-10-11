@@ -104,7 +104,7 @@ class EngineContext : MangaLoaderContext() {
             fabriqueTls?.let { sslSocketFactory(it.usine, it.gestionnaire) }
         }
         .addInterceptor(RateLimitInterceptor())
-        .addInterceptor(CloudFlareInterceptor())
+        .addInterceptor(CloudFlareInterceptor(cookieJar))
         .addInterceptor(LazyLoadInterceptor())
         .addInterceptor { chain ->
             val requete = chain.request()

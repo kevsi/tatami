@@ -40,6 +40,23 @@ internal fun challengeDe(t: Throwable): String? =
         ?: MOTIF_CHALLENGE.find(t.message ?: "")?.groupValues?.get(1)
 
 /**
+ * Un challenge résolu dont le **rejeu** est refusé.
+ *
+ * Distinct de [challengeDe] par le message : `not replayable`. OkHttp 5 perd
+ * parfois la cause et ne garde que le texte (mesuré le 2026-10-05 sur
+ * MANGANATO et KAGANE), donc le motif doit suffire seul.
+ *
+ * **L'ordre des deux tests compte** : les deux motifs partagent leur début
+ * (`Cloudflare protection at …`). `challengeDe` est donc appelé sur les deux,
+ * mais on teste `non rejouable` d'abord — sinon un rejeu refusé serait rendu
+ * comme une demande de vérification, et la fenêtre se rouvrirait en boucle.
+ * C'est exactement le défaut que ce code corrige.
+ */
+internal fun challengeNonRejouableDe(t: Throwable): String? =
+    retrouverDansLesCauses<CloudFlareUnreplayableException>(t)?.url
+        ?: MOTIF_CHALLENGE_NON_REJOUABLE.find(t.message ?: "")?.groupValues?.get(1)
+
+/**
  * Un chapitre protégé par compte.
  *
  * `AuthRequiredException` n'est levée que sur HTTP **401** par 16 parseurs, et
@@ -52,3 +69,6 @@ internal fun authRequise(t: Throwable): AuthRequiredException? =
 
 /** Le message que nos exceptions écrivent, retenu par OkHttp quand il perd la cause. */
 private val MOTIF_CHALLENGE = Regex("Cloudflare protection at (\\S+)")
+
+/** Idem pour le rejeu refusé — voir [challengeNonRejouableDe] sur l'ordre des tests. */
+private val MOTIF_CHALLENGE_NON_REJOUABLE = Regex("Cloudflare protection not replayable at (\\S+)")

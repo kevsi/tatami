@@ -33,7 +33,7 @@ const racine = join(ici, '..');
 
 const i18n = readFileSync(join(racine, 'app', 'i18n.ts'), 'utf8');
 
-/** Tous les modules de l'app, **sauf le dictionnaire**, et **récursivement**.
+/** Tous les modules de l'app **et de `lib/`**, sauf le dictionnaire, récursivement.
  *
  *  Mesuré le 2026-10-05 : la porte ne lisait que `page.tsx`, donc les six clés
  *  de la tâche 3.3 — utilisées dans `app/notification.ts` — étaient déclarées
@@ -44,6 +44,12 @@ const i18n = readFileSync(join(racine, 'app', 'i18n.ts'), 'utf8');
  *  profondeur ignorait `app/types/`, donc deux fichiers n'étaient jamais
  *  analysés — exactement l'angle mort déjà corrigé deux fois pour `page.tsx`
  *  et pour `aucune_commande_tauri_nest_morte`.
+ *
+ *  `lib/` est lu depuis le **2026-10-11**, troisième fois le même angle mort :
+ *  `describeError` a été extrait vers `lib/erreurs-source.ts` (pour le rendre
+ *  testable), et les huit clés `erreur.*` qu'il demande ont été déclarées
+ *  mortes alors qu'elles sont affichées. Une fonction qui traduit peut vivre
+ *  dans `lib/` ; la porte doit suivre **le module**, pas le dossier `app/`.
  *
  *  `i18n.ts` est exclu : y figurer ferait compter **toute** clé comme utilisée,
  *  puisque c'est là qu'elles sont définies — la porte ne crierait plus jamais.
@@ -58,13 +64,13 @@ function modulesDeApp(dossier) {
   return trouves.sort();
 }
 
-const modules = modulesDeApp(join(racine, 'app')).map((chemin) =>
-  chemin.slice(join(racine, 'app').length + 1),
-);
-const page = modules
-  .map((f) => readFileSync(join(racine, 'app', f), 'utf8'))
-  .join('\n');
-if (!modules.includes('page.tsx')) throw new Error('page.tsx absent de app/');
+const appDir = join(racine, 'app');
+const libDir = join(racine, 'lib');
+// `modulesDeApp` rend des chemins **absolus** : on ne les retranche pas, sinon
+// on recolle `app/` devant (mesuré le 2026-10-11 : ENOENT `app/app/…`).
+const modules = [...modulesDeApp(appDir), ...modulesDeApp(libDir)];
+const page = modules.map((f) => readFileSync(f, 'utf8')).join('\n');
+if (!modules.includes(join(appDir, 'page.tsx'))) throw new Error('page.tsx absent de app/');
 
 
 /** Bornes FR et EN d'un dictionnaire. */
@@ -224,8 +230,11 @@ if (nonTraduites.length) {
 // interpolation normale ne ressemble pas à ça.
 const PLURIEL_EN_DUR = /\{[^{}]*\}[ \t]*[A-Za-zÀ-ÿ]{2,}[ \t]*\{[^{}]*\?[^{}]*'[a-zA-ZÀ-ÿ]{1,4}'[^{}]*\}/g;
 const plurielsEnDur = [];
-for (const nom of modules) {
-  const texte = readFileSync(join(racine, 'app', nom), 'utf8');
+for (const chemin of modules) {
+  // `modules` porte des chemins **absolus** (app/ ET lib/) : les reinscrire
+  // avec `join(racine,'app', …)` donnerait `app/C:\…` (mesuré le 2026-10-11).
+  const texte = readFileSync(chemin, 'utf8');
+  const nom = chemin.slice(racine.length + 1);
   for (const m of texte.matchAll(PLURIEL_EN_DUR)) {
     plurielsEnDur.push(`    - ${nom} : ${m[0].replace(/\s+/g, ' ').slice(0, 70)}`);
   }
@@ -243,7 +252,7 @@ if (plurielsEnDur.length) {
 
 console.log(
   `clés FR : ${fr.length} | clés EN : ${en.length} | ` +
-    `littéraux trouvés dans app/ : ${utilisees.size}`,
+    `littéraux trouvés dans app/ et lib/ : ${utilisees.size}`,
 );
 
 if (echecs.length) {

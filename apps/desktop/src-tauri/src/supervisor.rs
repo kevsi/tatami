@@ -61,8 +61,17 @@ pub fn is_transient(result: &Result<Value, String>) -> bool {
     };
     // `AUTH_REQUIRED` (tâche 0.13) n'est pas transitoire : c'est une décision
     // du site, pas une panne. Le rejouer retenterait indéfiniment un 401.
+    //
+    // `CHALLENGE_UNREPLAYABLE` (2026-10-11) non plus, et pour une raison plus
+    // forte : la vérification a déjà été faite et le site refuse quand même.
+    // Le rejouer coûterait le réseau et reproduirait le 403 à l'identique.
+    //
+    // L'ordre ne compte pas ici (les deux sont refusés), contrairement au
+    // classement des messages côté front et côté moteur, où les deux codes
+    // partagent leur début.
     if message.contains("PARSE_ERROR")
         || message.contains("CHALLENGE_REQUIRED")
+        || message.contains("CHALLENGE_UNREPLAYABLE")
         || message.contains("AUTH_REQUIRED")
     {
         return false;

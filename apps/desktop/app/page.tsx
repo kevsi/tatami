@@ -11,6 +11,7 @@ import {
   reinitialiserChallenge,
   type TentativesChallenge,
 } from '../lib/challenge-garde';
+import { describeError, estRejeuRefuse } from '../lib/erreurs-source';
 import { admettreLaCible, admettreUne } from '../lib/quota-pages';
 import { lireListeSources } from '../lib/prefs-tolérantes';
 import { memeSignet } from '../lib/signet-cle';
@@ -1003,54 +1004,13 @@ function challengeUrl(raw: string): string | null {
   return m ? m[1] : null;
 }
 
-/** Signature du traducteur, pour les fonctions de module qui doivent parler.
- *
- *  La clé est typée comme dans `i18n.ts` : c'est ce qui fait échouer la
- *  compilation si on passe une clé inexistante. Une `string` large accepterait
- *  n'importe quelle faute de frappe en silence. */
-type Traduire = (key: MessageKey, vars?: Record<string, string | number>) => string;
-
 /**
- * Traduit une erreur brute du moteur en un message court, sans l'URL technique.
+ * `describeError` et `estRejeuRefuse` vivent dans `lib/erreurs-source.ts`.
  *
- * Les codes viennent de `contract/protocol.json` ; le reste est heuristique sur
- * les messages d'exception observés (sources mortes : 404, hôte inconnu, 403).
- *
- * `t` est passé en paramètre parce que cette fonction vit hors du composant :
- * elle n'a pas accès au contexte i18n. C'est aussi ce qui lui permet de
- * supprimer 20 chaines en dur au profit de l'i18n.
+ * Elles étaient ici, non exportées : aucune porte ne pouvait les vérifier, donc
+ * un classement d'erreur faux (un rejeu refusé rendu comme une demande de
+ * vérification) était invisible. Extraites pour être testées.
  */
-function describeError(raw: string, sourceName: string, t: Traduire): string {
-  const s = raw.replace(/\s+/g, ' ').trim();
-  if (/TIMEOUT|timeout/i.test(s)) {
-    return t('erreur.delai', { source: sourceName });
-  }
-  if (/CHALLENGE_REQUIRED/i.test(s)) {
-    return t('erreur.verification', { source: sourceName });
-  }
-  // 401 : le site exige un compte. Ni un challenge ni une panne réseau — demander
-  // une vérification anti-robot ici serait futile, c'est un compte qu'il faut.
-  if (/AUTH_REQUIRED/i.test(s)) {
-    return t('erreur.compte.requis', { source: sourceName });
-  }
-  if (/RATE_LIMITED/i.test(s)) {
-    return t('erreur.surcharge', { source: sourceName });
-  }
-  if (/UnknownHostException/i.test(s)) {
-    return t('erreur.domaine', { source: sourceName });
-  }
-  if (/404|NotFoundException/i.test(s)) {
-    return t('erreur.404', { source: sourceName });
-  }
-  if (/403/.test(s)) {
-    return t('erreur.403', { source: sourceName });
-  }
-  if (/500|502|503/.test(s)) {
-    return t('erreur.serveur', { source: sourceName });
-  }
-  const short = s.length > 140 ? `${s.slice(0, 140)}…` : s;
-  return `${sourceName} : ${short}`;
-}
 
 export default function Home() {
   // `lang` et `setLang` sont déjà pris par le FILTRE de langue des
@@ -2464,6 +2424,18 @@ export default function Home() {
       const raw = String(e);
       const url = challengeUrl(raw);
       if (url) {
+        // **Un rejeu refusé n'ouvre aucun bandeau.** La vérification a déjà eu
+        // lieu et le site a refusé quand même : rouvrir la fenêtre ne peut
+        // qu'échouer, et c'est le cycle « bandeau → puzzle → fenêtre qui se
+        // ferme → rien » mesuré le 2026-10-11 sur HENTAIZONE. On ne compte donc
+        // même pas une tentative de plus, et on ne mémorise pas l'échec comme
+        // un challenge : c'est un blocage, pas une action en cours.
+        if (estRejeuRefuse(raw)) {
+          setChallenge(null);
+          setError(null);
+          setNotice(t('challenge.non.rejouable', { source: nomSource(s) }));
+          return;
+        }
         // Borne anti-boucle. Au-delà de MAX_CHALLENGES tentatives : plus de
         // bandeau « Résoudre », plus de fenêtre — l'utilisateur ne peut plus
         // relancer un cycle qui ne se terminait jamais (mesuré sur TOONFR).

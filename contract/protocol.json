@@ -32,6 +32,7 @@
       "type": "string",
       "enum": [
         "CHALLENGE_REQUIRED",
+        "CHALLENGE_UNREPLAYABLE",
         "AUTH_REQUIRED",
         "PARSE_ERROR",
         "RATE_LIMITED",

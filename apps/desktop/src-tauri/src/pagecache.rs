@@ -257,7 +257,12 @@ impl PageCache {
             // `(kind, source, cle)` par hachage (`:203-208`), donc deux
             // enregistrements de la même clé partagent le jeton et `map` ne
             // peut détenir qu'une entrée.
-            if let Some(r) = ix.map.remove(&victime) {
+            let r = ix.map.remove(&victime);
+            self.dims
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&victime);
+            if let Some(r) = r {
                 // Une entrée locale n'a pas de clé métier : elle n'est jamais
                 // passée par `by_key`, donc il n'y a rien à purger.
                 if let Some(cle) = cle_metier(&victime, &r) {
@@ -719,6 +724,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn les_dimensions_sont_evacuees_avec_les_pages() {
+        let (c, _garde_cache) = cache();
+        let mut dernier = String::new();
+
+        for i in 0..=CAP_PAGE {
+            dernier = c.register("MANGADEX", &format!("https://x/{i}.jpg"));
+            c.stocker_dims(&dernier, (800, 1200 + i as u32));
+        }
+
+        let pages = c.index.lock().unwrap().map.len();
+        let dimensions = c.dims.lock().unwrap().len();
+        assert_eq!(pages, CAP_PAGE);
+        assert!(
+            dimensions <= pages,
+            "les dimensions ({dimensions}) ne doivent pas depasser les pages ({pages})"
+        );
+        assert_eq!(
+            c.lire_dims(&dernier),
+            Some((800, 1200 + CAP_PAGE as u32)),
+            "les dimensions d'une page encore en cache restent disponibles"
+        );
+    }
+
     /// Le défaut critique mesuré le 2026-10-09 : rouvrir un chapitre déjà lu
     /// après saturation du cache donnait des images cassées, sans erreur.
     ///
@@ -803,11 +832,7 @@ mod tests {
     }
 
     #[test]
-    fn dims_non_transmises_par_eviction() {
-        // L'éviction de l'index ne supprime PAS les dimensions de la map `dims`.
-        // C'est inoffensif : un jeton évincé puis recréé pour la même URL
-        // produit le même token (seeds déterministes dans la session), donc les
-        // dimensions sont retrouvées même après éviction.
+    fn dimensions_supprimees_avec_la_page_evacuee() {
         let (c, _garde_cache) = cache();
         let premier = c.register("MANGADEX", "https://x/0.jpg");
         c.stocker_dims(&premier, (800, 2171));
@@ -820,14 +845,11 @@ mod tests {
             c.resolve(&premier).is_none(),
             "l'entrée évincée ne doit plus être dans l'index"
         );
-        // Les dimensions restent dans la map (comportement documenté).
-        // Ce n'est pas un bug : les dims d'un jeton évincé sont du bruit
-        // inoffensif, et les purger coûterait une complexité injustifiée.
-        // Ce test documente l'invariant plutôt qu'il ne l'impose.
-        // (lire_dims peut retourner Some ou None selon l'implémentation future)
-        let _ = c.lire_dims(&premier); // ne pas asserter : comportement documenté, pas imposé
-                                       // Ce qui compte : un nouveau register pour la même URL redonne le même token,
-                                       // donc les dims sont retrouvées.
+        assert_eq!(
+            c.lire_dims(&premier),
+            None,
+            "les dimensions d'une page evincee doivent etre liberees"
+        );
         let token2 = c.register("MANGADEX", "https://x/0.jpg");
         assert_eq!(
             token2, premier,
@@ -835,8 +857,8 @@ mod tests {
         );
         assert_eq!(
             c.lire_dims(&token2),
-            Some((800, 2171)),
-            "les dims stockées avant éviction sont retrouvées via le même token"
+            None,
+            "recreer le jeton ne doit pas ressusciter des dimensions perimees"
         );
     }
 

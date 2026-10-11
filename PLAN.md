@@ -1548,6 +1548,35 @@ Deux lectures, à ne pas confondre :
   Cloudflare, hors périmètre ici — mais le nombre est plus grand que celui
   des challenges, et il meritera son propre recensement.
 
+#### Empreinte réseau : OkHttp contre Chromium, mesuré le 2026-10-11
+
+Comparaison faite **sans passer par l'application** : OkHttp est sondé avec le
+JAR de production, et le côté navigateur est un Edge piloté à part — donc
+cette comparaison ne porte aucun des confounds des mesures précédentes.
+
+**L'IP n'est pas en cause** : `154.72.113.241` des deux côtés.
+
+| | OkHttp (moteur) | Edge (Chromium) |
+|---|---|---|
+| JA3 | `…4865-4866-4867-49195-…-49172`, extensions `0-5-10-11-16-17-23-35-13-43-45-50-51-65281` | mêmes groupes mais **GREASE** `156-157-47-53`, et un tout autre ordre d'extensions |
+| JA3 hash | `0a80f68631b6e8b4634dbc261e8ba60b` | `1b509e4df36ed8a2d6544836eb73881c` |
+| JA4 | `t13d1114h2_5e2a75874763_89e9e4bb3419` (**14** extensions) | `t13d1517h2_8daaf6152771_a87ad97598a9` (**17** extensions) |
+| HTTP/2 (Akamai) | `4:16777216\|16711681\|0\|m,p,a,s` | `1:65536;2:0;4:6291456;6:262144\|15663105\|0\|m,a,s,p` |
+
+Les trois signatures diffèrent, et l'écart n'est pas cosmétique : ordre des
+extensions, présence et placement des valeurs GREASE, table d'en-têtes HTTP/2
+de 16 Mo contre 64 Ko, et ordre des SETTINGS différent. Ce sont exactement
+les signaux qu'un contrôle anti-bot classe comme « pas un navigateur ».
+
+**Conscrypt ne suffirait pas.** Il ne change que la moitié TLS (JA3/JA4).
+L'autre moitié — `akamai_fingerprint` — vient de l'implémentation HTTP/2
+d'OkHttp, pas de la couche TLS. Changer de fournisseur TLS laisserait la
+moitié du signal inchangée.
+
+Corollaire : les client hints (`Sec-CH-UA*`) n'ont aucune chance d'aider,
+puisqu'ils ne touchent à aucun des trois tableaux ci-dessus. Ils n'ont jamais
+été mesurés contre `/manga/` — mais ils ne pouvaient pas changer ce verdict.
+
 #### Ce qui ne fonctionne pas, et pourquoi c'est Structurel
 
 Le **rejeu** est refusé. Mesuré dans l'application réelle, instrumenté

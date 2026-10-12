@@ -1,5 +1,6 @@
 package org.tatami.engine
 
+import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.Interceptor
@@ -46,10 +47,16 @@ internal class CloudFlareInterceptor(
             val url = response.request.url.toString()
             response.close()
             val hote = request.url.host
+            val clearance = porteUneClearance(request.url)
+            val cleHote = clearance?.domain ?: hote
             // Mémoire d'un échec **antérieur** sur cet hôte : inutile de
             // renvoyer le réseau si l'on sait déjà que le rejeu échoue.
             if (RejeuRefuse.estRefuse(hote)) {
-                RejeuRefuse.marquer(hote)
+                RejeuRefuse.marquer(cleHote)
+                throw CloudFlareUnreplayableException(url = url)
+            }
+            if (clearance != null && RejeuRefuse.resolutionRecente(clearance.domain)) {
+                RejeuRefuse.marquer(clearance.domain)
                 throw CloudFlareUnreplayableException(url = url)
             }
             throw CloudFlareProtectionException(url = url)
@@ -63,6 +70,6 @@ internal class CloudFlareInterceptor(
     }
 
     /** Le magasin va-t-il joindre une `cf_clearance` à une requête vers cette URL ? */
-    private fun porteUneClearance(url: HttpUrl): Boolean =
-        cookieJar.loadForRequest(url).any { it.name == "cf_clearance" }
+    private fun porteUneClearance(url: HttpUrl): Cookie? =
+        cookieJar.loadForRequest(url).firstOrNull { it.name == "cf_clearance" }
 }

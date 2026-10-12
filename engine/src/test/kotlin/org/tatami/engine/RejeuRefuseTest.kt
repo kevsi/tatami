@@ -1,15 +1,19 @@
 package org.tatami.engine
 
 import okhttp3.Cookie
+import okhttp3.Dns
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -84,43 +88,34 @@ class RejeuRefuseTest {
                 "</body></html>",
         )
 
-    private fun appeler(client: OkHttpClient): Throwable? = try {
-        client.newCall(Request.Builder().url(serveur.url("/manga/")).build()).execute().close()
+    private fun appeler(
+        client: OkHttpClient,
+        url: HttpUrl = serveur.url("/manga/"),
+    ): Throwable? = try {
+        client.newCall(Request.Builder().url(url).build()).execute().close()
         null
     } catch (e: Throwable) {
         e
     }
 
-    /**
-     * Pose une `cf_clearance` dans le magasin, comme le fait `setCookies`.
-     *
-     * **Pas** `.secure()` ici, et c'est délibéré : MockWebServer sert en HTTP
-     * simple, or un cookie `secure` n'est **pas** attaché à une requête `http://`
-     * — `Cookie.matches` le refuse. Avec `.secure()` le magasin ne proposerait
-     * rien, `porteUneClearance` rendrait `false`, et le test qui devrait voir un
-     * rejeu refuserait voir une demande de vérification : le défaut serait
-     * masqué par une fixture plus stricte que la production.
-     *
-     * Ce que l'intercepteur décide est **le nom du cookie** (« la requête
-     * portait-elle une `cf_clearance` ? »), pas son schéma. La production teste
-     * ce même fait sur HTTPS, où le cookie `secure` est bien envoyé. Le
-     * drapeau `secure` est donc hors du champ de ce test, et on le perd
-     * volontairement pour que la fixture atteigne réellement la branche.
-     */
+    private fun clearance(host: String) = Cookie.Builder()
+        .name("cf_clearance")
+        .value("une-valeur-de-test")
+        .domain(host)
+        .path("/")
+        .expiresAt(instant + 3_600_000)
+        .httpOnly()
+        .build()
+
+    /** Même méthode commune que le chemin de production `setCookies`. */
     private fun poserClearance(host: String) {
-        jar.putCookies(
-            host,
-            listOf(
-                Cookie.Builder()
-                    .name("cf_clearance")
-                    .value("une-valeur-de-test")
-                    .domain(host)
-                    .path("/")
-                    .expiresAt(instant + 3_600_000)
-                    .httpOnly()
-                    .build(),
-            ),
-        )
+        jar.putCookies(host, listOf(clearance(host)))
+        RejeuRefuse.resolutionReussie(host)
+    }
+
+    /** Simule un cookie encore valide dont l'injection n'est pas récente. */
+    private fun poserClearanceSansResolutionRecente(host: String) {
+        jar.putCookies(host, listOf(clearance(host)))
     }
 
     @Test
@@ -149,6 +144,80 @@ class RejeuRefuseTest {
             e is CloudFlareUnreplayableException,
             "avec cf_clearance le site refuse le rejeu : ${e.javaClass.simpleName}",
         )
+    }
+
+    @Test
+    fun `une clearance sans resolution recente reste un challenge ordinaire`() {
+        serveur.enqueue(reponseProtegee())
+        poserClearanceSansResolutionRecente(serveur.hostName)
+
+        val e = assertNotNull(appeler(client()), "le 403 protege doit lever une exception")
+
+        assertTrue(
+            e is CloudFlareProtectionException,
+            "un cookie encore present sans resolution recente ne prouve pas un rejeu",
+        )
+        assertFalse(RejeuRefuse.estRefuse(serveur.hostName))
+    }
+
+    @Test
+    fun `une clearance apres expiration de la fraicheur redevient un challenge ordinaire`() {
+        serveur.enqueue(reponseProtegee())
+        poserClearance(serveur.hostName)
+        instant += RejeuRefuse.FRAICHEUR_MS + 1
+
+        val e = assertNotNull(appeler(client()), "le 403 protege doit lever une exception")
+
+        assertTrue(
+            e is CloudFlareProtectionException,
+            "une resolution trop ancienne doit permettre une nouvelle verification",
+        )
+        assertFalse(RejeuRefuse.estRefuse(serveur.hostName))
+    }
+
+    @Test
+    fun `la clearance du domaine parent couvre le sous domaine et partage sa cle`() {
+        val domaine = "example.com"
+        serveur.enqueue(reponseProtegee())
+        jar.putCookies(domaine, listOf(clearance(domaine)))
+        RejeuRefuse.resolutionReussie("EXAMPLE.COM:443")
+        val urlSousDomaine = serveur.url("/manga/")
+            .newBuilder()
+            .host("www.example.com")
+            .build()
+        val clientSousDomaine = OkHttpClient.Builder()
+            .dns(Dns { hote ->
+                assertEquals("www.example.com", hote)
+                listOf(InetAddress.getByName(serveur.hostName))
+            })
+            .cookieJar(jar)
+            .addInterceptor(CloudFlareInterceptor(jar))
+            .build()
+
+        val e = assertNotNull(appeler(clientSousDomaine, urlSousDomaine))
+
+        assertTrue(
+            e is CloudFlareUnreplayableException,
+            "la clearance example.com doit s'appliquer à www.example.com",
+        )
+        assertTrue(RejeuRefuse.estRefuse("WWW.EXAMPLE.COM:80"))
+        assertTrue(RejeuRefuse.resolutionRecente("EXAMPLE.COM:443"))
+    }
+
+    @Test
+    fun `fraicheur et registre normalisent la casse et le port de la meme facon`() {
+        RejeuRefuse.resolutionReussie("EXAMPLE.com:443")
+        assertTrue(RejeuRefuse.resolutionRecente("example.COM"))
+
+        RejeuRefuse.marquer("Example.com")
+        assertTrue(RejeuRefuse.estRefuse("EXAMPLE.COM:443"))
+    }
+
+    @Test
+    fun `une resolution du domaine parent est recente pour son sous domaine`() {
+        RejeuRefuse.resolutionReussie("site.com")
+
+        assertTrue(RejeuRefuse.resolutionRecente("www.site.com"))
     }
 
     @Test
@@ -234,12 +303,13 @@ class RejeuRefuseTest {
         assertTrue(RejeuRefuse.estRefuse(serveur.hostName), "l'echec doit etre memorise")
 
         // `setCookies` : une resolution reussie, donc une action explicite.
-        RejeuRefuse.oublier(serveur.hostName)
+        RejeuRefuse.resolutionReussie(serveur.hostName)
 
-        assertTrue(
-            !RejeuRefuse.estRefuse(serveur.hostName),
+        assertFalse(
+            RejeuRefuse.estRefuse(serveur.hostName),
             "apres une resolution reussie l'utilisateur ne doit pas rester bloque",
         )
+        assertTrue(RejeuRefuse.resolutionRecente(serveur.hostName))
     }
 
     @Test
@@ -255,6 +325,22 @@ class RejeuRefuseTest {
         assertTrue(
             !RejeuRefuse.estRefuse(serveur.hostName),
             "le site a repondu normalement : la memoire doit refleter le dernier etat",
+        )
+    }
+
+    @Test
+    fun `une reponse normale oublie aussi la fraicheur avant un nouveau challenge`() {
+        poserClearance(serveur.hostName)
+        serveur.enqueue(MockResponse().setResponseCode(200).setBody("<html>ok</html>"))
+        assertEquals(null, appeler(client()), "la premiere reponse doit etre normale")
+        assertFalse(RejeuRefuse.resolutionRecente(serveur.hostName))
+
+        serveur.enqueue(reponseProtegee())
+        val e = assertNotNull(appeler(client()), "le 403 protege doit lever une exception")
+
+        assertTrue(
+            e is CloudFlareProtectionException,
+            "apres une reponse normale, une nouvelle verification doit etre possible",
         )
     }
 }

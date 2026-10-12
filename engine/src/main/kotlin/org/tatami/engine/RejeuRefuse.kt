@@ -1,5 +1,6 @@
 package org.tatami.engine
 
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -22,58 +23,119 @@ import java.util.concurrent.ConcurrentHashMap
  * 30 minutes est assez long pour que le cycle ne se répète pas sous les yeux de
  * l'utilisateur, et assez court pour qu'une source revienne d'elle-même.
  *
- * Le garde-fou reste nonetheless **court par construction** : une entrée
+ * Le garde-fou reste **court par construction** : une entrée
  * expirée est retirée à la lecture, donc la mémoire ne croît pas avec les
  * rejets.
  *
  * ## Qui efface
  *
- * `setCookies` — c'est-à-dire **une résolution réussie**, donc une action
- * explicite de l'utilisateur. C'est le seul endroit qui efface : sans ça, un
- * site quioudrait ré-autoriser ne pourrait jamais le faire, et l'utilisateur
- * n'aurait aucun moyen de dire « j'ai changé d'avis, réessaie ».
+ * `setCookies` enregistre une résolution et efface les refus antérieurs du
+ * domaine. Une réponse normale efface les refus et la fraîcheur mémorisée pour
+ * les domaines apparentés : l'état reflète ainsi le dernier résultat observé.
  */
 internal object RejeuRefuse {
 
     /** Durée de mémorisation d'un échec de rejeu. */
     const val TTL_MS: Long = 30L * 60L * 1000L
 
+    /**
+     * Une clearance ne prouve un rejeu que juste après son injection :
+     * au-delà, un nouveau challenge doit pouvoir être résolu normalement.
+     * Cinq minutes laissent une marge généreuse au rejeu immédiat de
+     * l'application, sans traiter un ancien cookie encore valide comme récent.
+     */
+    const val FRAICHEUR_MS: Long = 5L * 60L * 1000L
+
     private val echecs = ConcurrentHashMap<String, Long>()
+    private val resolutions = ConcurrentHashMap<String, Long>()
 
     /** L'horloge, injectable pour que les tests n'aient pas à attendre 30 min. */
     @Volatile
     var maintenant: () -> Long = System::currentTimeMillis
 
-    /** Vrai si un rejeu a déjà échoué pour cet hôte et que la fenêtre vit encore. */
-    fun estRefuse(hote: String): Boolean {
-        val expire = echecs[hote] ?: return false
-        if (maintenant() >= expire) {
-            echecs.remove(hote, expire)
-            return false
+    /** Canonicalise la clé partagée par les cookies, la fraîcheur et les refus. */
+    fun normaliserHote(hote: String): String {
+        val hoteNettoye = hote.trim().removePrefix(".")
+        val sansPort = when {
+            hoteNettoye.startsWith("[") ->
+                hoteNettoye.substringAfter('[').substringBefore(']')
+            hoteNettoye.count { it == ':' } == 1 -> hoteNettoye.substringBeforeLast(':')
+            else -> hoteNettoye
         }
-        return true
+        return sansPort.trimEnd('.').lowercase(Locale.ROOT)
+    }
+
+    /** Enregistre une résolution réussie et efface les refus de son domaine. */
+    fun resolutionReussie(hote: String) {
+        val cle = normaliserHote(hote)
+        if (cle.isEmpty()) return
+        oublier(cle)
+        resolutions[cle] = maintenant()
+    }
+
+    /** Vrai si une résolution de challenge récente existe pour ce domaine. */
+    fun resolutionRecente(hote: String): Boolean {
+        val cle = normaliserHote(hote)
+        val maintenantMs = maintenant()
+        for (domaine in domainesApplicables(cle)) {
+            val resoluLe = resolutions[domaine] ?: continue
+            if (maintenantMs < resoluLe || maintenantMs - resoluLe >= FRAICHEUR_MS) {
+                resolutions.remove(domaine, resoluLe)
+            } else {
+                return true
+            }
+        }
+        return false
+    }
+
+    /** Vrai si un rejeu a déjà échoué sur cet hôte ou son domaine parent. */
+    fun estRefuse(hote: String): Boolean {
+        val maintenantMs = maintenant()
+        for (cle in domainesApplicables(normaliserHote(hote))) {
+            val expire = echecs[cle] ?: continue
+            if (maintenantMs >= expire) {
+                echecs.remove(cle, expire)
+            } else {
+                return true
+            }
+        }
+        return false
     }
 
     /** Mémorise l'échec. Un rejeu plus récent prolonge la fenêtre. */
     fun marquer(hote: String) {
-        echecs[hote] = maintenant() + TTL_MS
+        val cle = normaliserHote(hote)
+        if (cle.isNotEmpty()) echecs[cle] = maintenant() + TTL_MS
     }
 
-    /**
-     * Oublie l'échec — appelé par `setCookies`, donc par une résolution réussie.
-     *
-     * Sans ce point, un site qui ré-autorise après une erreur de configuration
-     * resterait bloqué 30 minutes, et l'utilisateur n'aurait aucun recours.
-     */
+    /** Oublie les refus et résolutions récentes des domaines apparentés. */
     fun oublier(hote: String) {
-        echecs.remove(hote)
+        val cle = normaliserHote(hote)
+        if (cle.isEmpty()) return
+        echecs.keys.removeIf { sontDomainesApparentes(it, cle) }
+        resolutions.keys.removeIf { sontDomainesApparentes(it, cle) }
     }
 
     /** Visible pour les tests : vide le registre sans passer par l'horloge. */
     fun vider() {
         echecs.clear()
+        resolutions.clear()
     }
 
     /** Nombre d'entrées vivantes — borne la mémoire et se teste. */
     fun taille(): Int = echecs.keys.count { estRefuse(it) }
+
+    private fun domainesApplicables(hote: String): Sequence<String> = sequence {
+        yield(hote)
+        if (hote.contains(':') || hote.matches(Regex("[0-9.]+"))) return@sequence
+        var point = hote.indexOf('.')
+        while (point >= 0) {
+            val parent = hote.substring(point + 1)
+            if (parent.contains('.')) yield(parent)
+            point = hote.indexOf('.', point + 1)
+        }
+    }
+
+    private fun sontDomainesApparentes(a: String, b: String): Boolean =
+        a == b || a.endsWith(".$b") || b.endsWith(".$a")
 }

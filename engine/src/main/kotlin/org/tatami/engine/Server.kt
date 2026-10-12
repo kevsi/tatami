@@ -1157,14 +1157,12 @@ private suspend fun dispatchNatif(
             if (c.optBoolean("httpOnly")) b.httpOnly()
             b.build()
         }
-        val host = if (built.isNotEmpty()) built.first().domain.trimStart('.') else ""
+        val host = built.firstOrNull { it.name == "cf_clearance" }?.domain
+            ?: built.firstOrNull()?.domain.orEmpty()
         (context.cookieJar as InMemoryCookieJar).putCookies(host, built)
-        // **Une résolution réussie oublie l'échec de rejeu précédent** pour cet
-        // hôte. C'est la seule chose qui efface `RejeuRefuse`, et c'est
-        // volontaire : ici, l'utilisateur vient d'agir, donc on ne doit pas
-        // lui opposer un échec de 30 minutes. Sans ça, un site qui ré-autorise
-        // resterait bloqué sans aucun recours.
-        if (host.isNotEmpty()) RejeuRefuse.oublier(host)
+        // Même domaine de cookie pour l'horodatage et le registre de rejeu :
+        // un `cf_clearance` de example.com couvre aussi www.example.com.
+        if (host.isNotEmpty()) RejeuRefuse.resolutionReussie(host)
         if (p.has("userAgent")) context.userAgentOverride = p.getString("userAgent")
         if (challengeDebug) {
             // Ce qui entre vraiment dans le magasin, une ligne par cookie :

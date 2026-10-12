@@ -25,19 +25,17 @@ internal fun domaineScript(baseUrl: String): String? {
 }
 
 private fun normaliserDomaineNatif(valeur: String): String? {
-    if (
-        valeur.isBlank() ||
-        valeur != valeur.trim() ||
-        '/' in valeur ||
-        '\\' in valeur ||
-        '@' in valeur
-    ) {
+    if (valeur.isBlank() || valeur != valeur.trim() || '\\' in valeur) {
         return null
     }
-    val uri = runCatching { URI("https://$valeur") }.getOrNull() ?: return null
-    if (uri.rawUserInfo != null || uri.rawQuery != null || uri.rawFragment != null) return null
-    return uri.host?.let(::normaliserHote)
+    val avecSchema = if (SCHEMA_URL.containsMatchIn(valeur)) valeur else "https://$valeur"
+    val uri = runCatching { URI(avecSchema) }.getOrNull() ?: return null
+    if (uri.rawUserInfo != null) return null
+    val hote = uri.host ?: runCatching { uri.toURL().host }.getOrNull() ?: return null
+    return normaliserHote(hote)
 }
+
+private val SCHEMA_URL = Regex("^[A-Za-z][A-Za-z0-9+.-]*://")
 
 private fun normaliserHote(hote: String): String? {
     val ascii = runCatching { IDN.toASCII(hote, IDN.USE_STD3_ASCII_RULES) }.getOrNull() ?: return null

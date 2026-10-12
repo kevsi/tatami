@@ -1076,6 +1076,20 @@ mod tests {
     }
 
     #[test]
+    fn challenge_toomics_refuse_les_hotes_qui_contiennent_son_nom() {
+        let domaines = vec!["toomics.com".to_string()];
+        assert_eq!(
+            valider_url_challenge("https://toomics.com.attaquant.com/check", &domaines)
+                .unwrap_err(),
+            ERREUR_DOMAINE_CHALLENGE
+        );
+        assert_eq!(
+            valider_url_challenge("https://attaquant-toomics.com/check", &domaines).unwrap_err(),
+            ERREUR_DOMAINE_CHALLENGE
+        );
+    }
+
+    #[test]
     fn challenge_refuse_un_schema_non_http_et_des_identifiants() {
         let domaines = domaines_exemple();
         assert!(valider_url_challenge("file://exemple.com/check", &domaines).is_err());

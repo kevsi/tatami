@@ -37,8 +37,10 @@ const SOURCE = {
 ```
 
 Le moteur fournit au script un objet `http` (GET/POST → texte) et `html` (parseur CSS léger) via le
-contexte d'exécution Nashorn. Les appels réseau passent par l'OkHttpClient existant (rate-limiter,
-Cloudflare interceptor, cookies de session) — le script ne fait jamais de requête directe.
+contexte d'exécution Nashorn. `HttpBridge` dérive son client de l'OkHttpClient partagé (rate-limiter,
+Cloudflare interceptor, cookies de session), force une connexion directe sans proxy JVM et refuse
+toute résolution DNS vers une adresse non publique. Ces contrôles s'appliquent aussi aux connexions
+HTTPS de redirection ; les redirections qui quittent HTTPS sont refusées.
 
 **Stockage** : les sources perso sont enregistrées dans SQLite (`custom_sources`) comme les sources
 normales. Les favoris, l'historique et les téléchargements référencent le `source_id` du script.
@@ -60,8 +62,11 @@ grille du catalogue. Les favoris et l'historique, eux, référençaient `custom:
 identifiant que la base ne connaît pas. Trois tests de régression couvrent ce cas.
 
 **Sécurité** :
-- Le script s'exécute dans un contexte Nashorn restreint (pas d'accès fichier, pas de `java.lang.Runtime`).
-- `http.get` et `http.post` n'acceptent que des URLs `https://` (pas d'accès réseau local).
+- Nashorn conserve l'interop Java : le contexte restreint n'est pas une frontière de sécurité et un
+  script peut contourner `HttpBridge` par les API Java. La politique réseau ne protège que les
+  requêtes qui passent par ce bridge ; le sandbox reste contournable.
+- `http.get` et `http.post` n'acceptent que des URLs HTTPS ; le bridge ignore les proxys JVM, valide
+  les adresses obtenues à chaque résolution DNS et bloque les adresses non publiques.
 - La taille maximale d'un script est 256 Ko.
 - L'utilisateur importe explicitement le fichier — pas de téléchargement automatique non signé.
 

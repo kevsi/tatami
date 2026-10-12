@@ -1,13 +1,24 @@
 package org.tatami.engine
 
 import kotlinx.coroutines.runBlocking
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
+import java.net.ConnectException
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.ProxySelector
+import java.net.Socket
+import java.net.SocketAddress
+import java.net.URI
 import java.nio.file.Files
+import javax.net.SocketFactory
 import kotlin.test.*
 
 // ---------------------------------------------------------------------------
@@ -71,6 +82,39 @@ private fun scriptRapportantLaPage(id: String) = """
     };
 """.trimIndent()
 
+private class EchecReseauSocketFactory : SocketFactory() {
+    override fun createSocket(): Socket = throw ConnectException("connexion de test interrompue")
+
+    override fun createSocket(host: String, port: Int): Socket = createSocket()
+
+    override fun createSocket(
+        host: String,
+        port: Int,
+        localHost: InetAddress,
+        localPort: Int,
+    ): Socket = createSocket()
+
+    override fun createSocket(host: InetAddress, port: Int): Socket = createSocket()
+
+    override fun createSocket(
+        address: InetAddress,
+        port: Int,
+        localAddress: InetAddress,
+        localPort: Int,
+    ): Socket = createSocket()
+}
+
+private class ProxySelectorEnregistreur(private val proxy: Proxy) : ProxySelector() {
+    val selections = mutableListOf<URI>()
+
+    override fun select(uri: URI): MutableList<Proxy> {
+        selections.add(uri)
+        return mutableListOf(proxy)
+    }
+
+    override fun connectFailed(uri: URI, sa: SocketAddress, ioe: IOException) = Unit
+}
+
 // ---------------------------------------------------------------------------
 // Tests HttpBridge
 // ---------------------------------------------------------------------------
@@ -124,6 +168,98 @@ class HttpBridgeTest {
         } finally {
             serveur.shutdown()
         }
+    }
+
+    @Test
+    fun `bridge ignore le proxy JVM et resout directement l'hote cible`() {
+        val hoteCible = "source.example"
+        val hoteProxy = "proxy.test"
+        val resolus = mutableListOf<String>()
+        val proxySelector = ProxySelectorEnregistreur(
+            Proxy(
+                Proxy.Type.HTTP,
+                InetSocketAddress.createUnresolved(hoteProxy, 8080),
+            ),
+        )
+        val selecteurPrecedent = ProxySelector.getDefault()
+        ProxySelector.setDefault(proxySelector)
+        try {
+            val clientAvecProxyGlobal = OkHttpClient.Builder()
+                .dns(Dns { hote ->
+                    resolus.add(hote)
+                    listOf(InetAddress.getByAddress(byteArrayOf(8, 8, 8, 8)))
+                })
+                .socketFactory(EchecReseauSocketFactory())
+                .build()
+            val erreur = assertFailsWith<IOException> {
+                HttpBridge(clientAvecProxyGlobal).get("https://$hoteCible/")
+            }
+
+            assertEquals(listOf(hoteCible), resolus)
+            assertTrue(proxySelector.selections.isEmpty(), "le ProxySelector JVM ne doit pas être consulté")
+            assertTrue(erreur.message.orEmpty().contains("réseau direct requis", ignoreCase = true))
+            assertFalse(erreur.message.orEmpty().contains("https://$hoteCible"))
+        } finally {
+            ProxySelector.setDefault(selecteurPrecedent)
+        }
+    }
+
+    @Test
+    fun `bridge refuse les adresses DNS non publiques`() {
+        val adressesNonPubliques = listOf(
+            byteArrayOf(10, 0, 0, 1),
+            byteArrayOf(100, 64, 0, 1),
+            byteArrayOf(127, 0, 0, 1),
+            byteArrayOf(169.toByte(), 254.toByte(), 1, 1),
+            byteArrayOf(192.toByte(), 0, 2, 1),
+            byteArrayOf(198.toByte(), 18, 0, 1),
+            byteArrayOf(203.toByte(), 0, 113, 1),
+            InetAddress.getByName("fc00::1").address,
+            InetAddress.getByName("fe80::1").address,
+        )
+
+        for (adresse in adressesNonPubliques) {
+            val resolus = mutableListOf<String>()
+            val client = OkHttpClient.Builder()
+                .dns(Dns { hote ->
+                    resolus.add(hote)
+                    listOf(InetAddress.getByAddress(adresse))
+                })
+                .socketFactory(EchecReseauSocketFactory())
+                .build()
+
+            val erreur = assertFailsWith<IOException>("adresse refusée : ${adresse.contentToString()}") {
+                HttpBridge(client).get("https://source.example/")
+            }
+            assertEquals(listOf("source.example"), resolus)
+            assertTrue(
+                generateSequence(erreur as Throwable?) { it.cause }
+                    .any {
+                        it.message?.contains("adresse réseau non publique refusée", ignoreCase = true) == true
+                    },
+                "le refus doit identifier une résolution non publique : $erreur",
+            )
+        }
+    }
+
+    @Test
+    fun `bridge accepte une adresse publique et signale une connexion directe impossible sans URL`() {
+        val resolus = mutableListOf<String>()
+        val client = OkHttpClient.Builder()
+            .dns(Dns { hote ->
+                resolus.add(hote)
+                listOf(InetAddress.getByAddress(byteArrayOf(8, 8, 8, 8)))
+            })
+            .socketFactory(EchecReseauSocketFactory())
+            .build()
+
+        val erreur = assertFailsWith<IOException> {
+            HttpBridge(client).get("https://source.example/private-path")
+        }
+
+        assertEquals(listOf("source.example"), resolus)
+        assertTrue(erreur.message.orEmpty().contains("réseau direct requis", ignoreCase = true))
+        assertFalse(erreur.message.orEmpty().contains("https://source.example"))
     }
 }
 

@@ -439,13 +439,11 @@ fn les_domaines_source_sont_optionnels_mais_non_vides() {
     let source_info = defs.get("sourceInfo").expect("$defs/sourceInfo");
 
     assert!(valider(&serde_json::json!({"name": "MANGALIB"}), source_info).is_empty());
-    assert!(
-        valider(
-            &serde_json::json!({"name": "MANGALIB", "domains": ["mangalib.org"]}),
-            source_info,
-        )
-        .is_empty()
-    );
+    assert!(valider(
+        &serde_json::json!({"name": "MANGALIB", "domains": ["mangalib.org"]}),
+        source_info,
+    )
+    .is_empty());
     let vide = valider(
         &serde_json::json!({"name": "MANGALIB", "domains": []}),
         source_info,

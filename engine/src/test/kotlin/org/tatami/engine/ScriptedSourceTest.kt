@@ -147,26 +147,55 @@ class HttpBridgeTest {
     }
 
     @Test
-    fun `get retourne le corps pour une reponse 200`() {
-        val serveur = MockWebServer()
-        serveur.enqueue(MockResponse().setBody("bonjour"))
-        serveur.start()
-        try {
-            // MockWebServer démarre en HTTP — on teste ici qu'une URL https valide
-            // passe la validation. On utilise une URL synthétique https valide
-            // qui pointe sur le serveur mock via une factory OkHttp personnalisée.
-            // Pour rester simple, on teste juste la validation ; le test réseau
-            // réel est couvert par l'intégration.
-            val bridgeTest = HttpBridge(
-                OkHttpClient.Builder()
-                    .build()
+    fun `get refuse les IP non publiques litterales avant toute connexion`() {
+        val urls = listOf(
+            "https://10.0.0.1/",
+            "https://172.16.0.1/",
+            "https://192.168.1.1/",
+            "https://127.0.0.1/",
+            "https://169.254.169.254/",
+            "https://0.0.0.0/",
+            "https://[::1]/",
+            "https://[fc00::1]/",
+            "https://[fe80::1]/",
+            "https://[::ffff:127.0.0.1]/",
+            "https://2130706433/",
+            "https://0177.0.0.1/",
+            "https://0x7f000001/",
+            "https://127.1/",
+        )
+        val clientSansReseau = OkHttpClient.Builder()
+            .dns(Dns { listOf(InetAddress.getByAddress(byteArrayOf(8, 8, 8, 8))) })
+            .socketFactory(EchecReseauSocketFactory())
+            .build()
+        val bridgeSansReseau = HttpBridge(clientSansReseau)
+
+        for (url in urls) {
+            val erreur = assertFailsWith<IllegalArgumentException>("IP litterale non publique acceptee : $url") {
+                bridgeSansReseau.get(url)
+            }
+            assertTrue(
+                erreur.message.orEmpty().contains("IP littérale non publique"),
+                "le refus doit venir de la validation d'IP : $url (${erreur.message})",
             )
-            // URL https bien formée → la validation passe (l'erreur réseau n'est
-            // pas une IllegalArgumentException).
-            val ex = runCatching { bridgeTest.get("https://0.0.0.0:1/") }.exceptionOrNull()
-            assertFalse(ex is IllegalArgumentException, "La validation ne doit pas lever IAE pour https://")
+        }
+    }
+
+    @Test
+    fun `socket refuse la destination non publique avant connect`() {
+        val typeFabrique = Class.forName("org.tatami.engine.SocketFactoryReseauPublic")
+        val constructeur = typeFabrique.getDeclaredConstructor(SocketFactory::class.java)
+        constructeur.isAccessible = true
+        val fabrique = constructeur.newInstance(SocketFactory.getDefault()) as SocketFactory
+        val socket = fabrique.createSocket()
+
+        try {
+            assertFailsWith<java.net.UnknownHostException> {
+                socket.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), 443), 1)
+            }
+            assertFalse(socket.isConnected)
         } finally {
-            serveur.shutdown()
+            socket.close()
         }
     }
 

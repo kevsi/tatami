@@ -42,6 +42,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use ed25519_dalek::{Signature, VerifyingKey};
 use sha2::{Digest, Sha256};
@@ -65,6 +66,8 @@ pub const DOMAINE: &str = "tatami:moteur:manifeste:1";
 /// [`les_champs_signes_concordent_avec_le_script`] compare les deux, donc un champ
 /// ajouté d'un seul côté est rouge au lieu d'être silencieusement non protégé.
 pub const CHAMPS_SIGNES: [&str; 5] = ["version", "engine", "parsers", "archive", "sha256"];
+const TENTATIVES_RENOMMAGE_POINTEUR: usize = 3;
+const PAUSE_RENOMMAGE_POINTEUR: Duration = Duration::from_millis(20);
 
 /// Ce qu'un manifeste déclare.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -291,6 +294,77 @@ fn dossier_version(version: &str) -> Option<PathBuf> {
     Some(dossier_versions()?.join(version))
 }
 
+fn ecrire_pointeur<F>(chemin: &Path, nouvel: &Actif, mut renommer: F) -> Result<(), Erreur>
+where
+    F: FnMut(&Path, &Path) -> std::io::Result<()>,
+{
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COMPTEUR: AtomicU64 = AtomicU64::new(0);
+
+    let contenu = serde_json::to_vec_pretty(nouvel).map_err(|e| Erreur::Io(e.to_string()))?;
+    let parent = chemin
+        .parent()
+        .ok_or_else(|| Erreur::Io("dossier du pointeur introuvable".to_string()))?;
+    let nom = chemin
+        .file_name()
+        .ok_or_else(|| Erreur::Io("nom du pointeur introuvable".to_string()))?
+        .to_string_lossy();
+    let (temporaire, mut f) = (0..8)
+        .find_map(|_| {
+            let identifiant = COMPTEUR.fetch_add(1, Ordering::Relaxed);
+            let temporaire =
+                parent.join(format!(".{nom}.{}.{identifiant}.tmp", std::process::id()));
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporaire)
+            {
+                Ok(f) => Some(Ok((temporaire, f))),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => None,
+                Err(e) => Some(Err(Erreur::Io(e.to_string()))),
+            }
+        })
+        .transpose()?
+        .ok_or_else(|| Erreur::Io("fichier temporaire du pointeur déjà présent".to_string()))?;
+    let ecriture = f.write_all(&contenu).and_then(|()| f.sync_all());
+    drop(f);
+    if let Err(e) = ecriture {
+        let nettoyage = fs::remove_file(&temporaire);
+        return Err(Erreur::Io(match nettoyage {
+            Ok(()) => format!("écriture du pointeur temporaire : {e}"),
+            Err(nettoyage) => {
+                format!("écriture du pointeur temporaire : {e}; nettoyage : {nettoyage}")
+            }
+        }));
+    }
+
+    for tentative in 0..TENTATIVES_RENOMMAGE_POINTEUR {
+        match renommer(&temporaire, chemin) {
+            Ok(()) => return Ok(()),
+            Err(_) if tentative + 1 < TENTATIVES_RENOMMAGE_POINTEUR => {
+                std::thread::sleep(PAUSE_RENOMMAGE_POINTEUR * (tentative as u32 + 1));
+            }
+            Err(e) => {
+                let nettoyage = fs::remove_file(&temporaire);
+                return Err(Erreur::Io(match nettoyage {
+                    Ok(()) => format!(
+                        "remplacement du pointeur impossible après \
+                         {TENTATIVES_RENOMMAGE_POINTEUR} tentatives : {e}"
+                    ),
+                    Err(nettoyage) => format!(
+                        "remplacement du pointeur impossible après \
+                         {TENTATIVES_RENOMMAGE_POINTEUR} tentatives : {e}; \
+                         nettoyage du temporaire : {nettoyage}"
+                    ),
+                }));
+            }
+        }
+    }
+    Err(Erreur::Io(
+        "remplacement du pointeur sans tentative".to_string(),
+    ))
+}
+
 /// `(java, classpath)` du moteur installé, ou `None`.
 ///
 /// `None` signifie « aucun moteur installé » et l'appelant passe au repli
@@ -307,12 +381,11 @@ pub fn installe() -> Option<(PathBuf, String)> {
 
 /// Bascule le pointeur sur `version`.
 ///
-/// **Atomique** : on écrit `actif.json.tmp` puis on renome. Sur Windows un
-/// renommage échoue si la cible existe, donc l'ancien est retiré juste avant —
-/// fenêtre de l'ordre de la milliseconde, pendant laquelle le moteur précédent
-/// reste **intact sur le disque**. Une coupure de courant là ne perd rien : il
-/// suffit de régénérer le pointeur, alors que l'autre méthode (écrire par-dessus)
-/// laisserait un fichier tronqué.
+/// **Atomique** : le pointeur complet est écrit et synchronisé dans un fichier
+/// temporaire du même dossier, puis renommé sur la destination. Sous Windows,
+/// la sonde Rust de cette tâche confirme que `std::fs::rename` remplace la cible.
+/// En cas d'erreur temporaire, le remplacement est retenté trois fois sans
+/// supprimer l'ancien pointeur ; un échec final le laisse donc intact.
 pub fn activer(version: &str) -> Result<Actif, Erreur> {
     // Le nom de version devient un **nom de dossier** (`versions/<version>`), donc
     // il ne doit contenir ni séparateur, ni `..`.
@@ -354,15 +427,9 @@ pub fn activer(version: &str) -> Result<Actif, Erreur> {
     let chemin = chemin_actif().ok_or_else(|| Erreur::Io("APPDATA absent".to_string()))?;
     fs::create_dir_all(chemin.parent().unwrap_or(&chemin))
         .map_err(|e| Erreur::Io(e.to_string()))?;
-    let temporaire = chemin.with_extension("json.tmp");
-    let mut f = fs::File::create(&temporaire).map_err(|e| Erreur::Io(e.to_string()))?;
-    f.write_all(serde_json::to_string_pretty(&nouvel).unwrap().as_bytes())
-        .map_err(|e| Erreur::Io(e.to_string()))?;
-    f.sync_all().map_err(|e| Erreur::Io(e.to_string()))?;
-    drop(f);
-
-    let _ = fs::remove_file(&chemin);
-    fs::rename(&temporaire, &chemin).map_err(|e| Erreur::Io(e.to_string()))?;
+    ecrire_pointeur(&chemin, &nouvel, |source, destination| {
+        fs::rename(source, destination)
+    })?;
     Ok(nouvel)
 }
 
@@ -558,6 +625,97 @@ mod tests {
             sha256: "a".repeat(64),
             signature: String::new(),
         }
+    }
+
+    struct RepertoireTest(PathBuf);
+
+    impl RepertoireTest {
+        fn nouveau() -> Self {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static COMPTEUR: AtomicU64 = AtomicU64::new(0);
+            let repertoire = std::env::temp_dir().join(format!(
+                "tatami-moteur-pointeur-{}-{}",
+                std::process::id(),
+                COMPTEUR.fetch_add(1, Ordering::Relaxed),
+            ));
+            fs::create_dir_all(&repertoire).unwrap();
+            Self(repertoire)
+        }
+    }
+
+    impl Drop for RepertoireTest {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn echec_du_remplacement_conserve_le_pointeur_precedent() {
+        let repertoire = RepertoireTest::nouveau();
+        let chemin = repertoire.0.join("actif.json");
+        let precedent = Actif {
+            version: "1.0.0".into(),
+            precedente: None,
+        };
+        let nouvel = Actif {
+            version: "2.0.0".into(),
+            precedente: Some("1.0.0".into()),
+        };
+        let contenu_precedent = serde_json::to_string(&precedent).unwrap();
+        fs::write(&chemin, &contenu_precedent).unwrap();
+
+        let mut tentatives = 0;
+        let resultat = ecrire_pointeur(&chemin, &nouvel, |_, _| {
+            tentatives += 1;
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "remplacement simule en echec",
+            ))
+        });
+
+        assert!(matches!(resultat, Err(Erreur::Io(_))));
+        assert_eq!(
+            fs::read_to_string(&chemin).unwrap(),
+            contenu_precedent,
+            "l'ancien pointeur doit rester lisible si son remplacement échoue",
+        );
+        assert_eq!(
+            fs::read_dir(&repertoire.0).unwrap().count(),
+            1,
+            "le fichier temporaire doit être supprimé après l'échec",
+        );
+        assert_eq!(tentatives, TENTATIVES_RENOMMAGE_POINTEUR);
+    }
+
+    #[test]
+    fn remplacement_du_pointeur_reessaie_jusqua_succes() {
+        let repertoire = RepertoireTest::nouveau();
+        let chemin = repertoire.0.join("actif.json");
+        fs::write(&chemin, r#"{"version":"1.0.0","precedente":null}"#).unwrap();
+        let nouvel = Actif {
+            version: "2.0.0".into(),
+            precedente: Some("1.0.0".into()),
+        };
+        let mut tentatives = 0;
+
+        ecrire_pointeur(&chemin, &nouvel, |source, destination| {
+            tentatives += 1;
+            if tentatives < 3 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "verrou transitoire simule",
+                ));
+            }
+            fs::rename(source, destination)
+        })
+        .unwrap();
+
+        assert_eq!(tentatives, 3);
+        assert_eq!(
+            serde_json::from_str::<Actif>(&fs::read_to_string(&chemin).unwrap()).unwrap(),
+            nouvel
+        );
+        assert_eq!(fs::read_dir(&repertoire.0).unwrap().count(), 1);
     }
 
     /// Le chemin nominal : un manifeste signé par la bonne clé passe.

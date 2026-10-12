@@ -296,9 +296,17 @@ private fun mangaForDetails(
  *   39 sources sur 82 — mais on l'écrit sur stderr, pour que ce soit
  *   **mesurable** au lieu d'être un silence.
  * - **la source annonce des classifications, pas celle-là** : le filtre est
- *   applicable et la source a choisi de ne pas l'appliquer. Livrer le
- *   catalogue non filtré remet du contenu que l'appelant a demandé d'exclure :
- *   on refuse, avec un message qui dit ce que la source expose.
+ *   applicable et la source a choisi de ne pas l'appliquer. On **dégrade vers
+ *   la valeur exposée la plus stricte qui reste dans l'ensemble demandé** —
+ *   jamais vers une valeur plus permissive (2026-10-12 : MANGASORIGINES
+ *   n'expose que `SAFE, ADULT`, le réglage par défaut `SUGGESTIVE` était donc
+ *   refusé et la source devenait entièrement inaccessible alors qu'elle répond
+ *   5 résultats). Le refus ne survit que si **aucune** valeur exposée n'est dans
+ *   l'ensemble demandé : c'est le cas où relaxing serait le seul moyen de
+ *   satisfaire la demande, donc où il faut refuser.
+ *
+ *   `SUGGESTIVE` exclut `ADULT` : la dégradation vers `SAFE` sert donc le
+ *   réglage, elle ne le contourne pas.
  *
  * Fonction `internal`, pas `private` : c'est la décision la plus risquée du
  * moteur (elle choisit si du contenu adulte est livré malgré le réglage), et
@@ -344,10 +352,34 @@ internal fun requestedRatings(
         return emptySet()
     }
     if (wanted !in annoncees) {
-        throw ParamException(
-            "classification $wanted non exposee par $sourceName " +
-                "(expose : ${annoncees.joinToString()})",
+        // Dégradation vers la classification exposée la PLUS STRICTE qui reste
+        // dans l'ensemble demandé. Mesuré le 2026-10-12 : MANGASORIGINES
+        // annonce `SAFE, ADULT` et rien d'autre, donc le réglage par défaut de
+        // l'interface (`SUGGESTIVE`, qui exclut l'adulte) était refusé — alors
+        // que la source répond 5 résultats sans filtre. Le refus rendait
+        // 100 % du catalogue de cette source inaccessible.
+        //
+        // La sécurité tient dans le sens de la dégradation : on ne **relaxe**
+        // jamais le filtre. `SUGGESTIVE` doit exclure ADULT, donc tout ce que
+        // la source expose et qui est plus strict que SUGGESTIVE convient ;
+        // `ADULT` n'y est pas et ne sera jamais livré. Le refus reste le
+        // verdict quand aucune valeur exposée n'est dans l'ensemble demandé :
+        // c'est le cas verrouillé par `une classification non exposee est
+        // refusee` (demander SAFE à une source qui n'expose qu'ADULT).
+        val stricte = annoncees
+            .filter { it <= wanted }
+            .maxByOrNull { it.ordinal }
+        if (stricte == null) {
+            throw ParamException(
+                "classification $wanted non exposee par $sourceName " +
+                    "(expose : ${annoncees.joinToString()})",
+            )
+        }
+        System.err.println(
+            "latest/search: $sourceName n'expose pas $wanted, " +
+                "filtre degrade vers $stricte (expose : ${annoncees.joinToString()})",
         )
+        return setOf(stricte)
     }
     return setOf(wanted)
 }
@@ -1163,7 +1195,7 @@ private suspend fun dispatchNatif(
         // Même domaine de cookie pour l'horodatage et le registre de rejeu :
         // un `cf_clearance` de example.com couvre aussi www.example.com.
         if (host.isNotEmpty()) RejeuRefuse.resolutionReussie(host)
-        if (p.has("userAgent")) context.userAgentOverride = p.getString("userAgent")
+        if (p.has("userAgent")) context.definirUserAgentChallenge(host, p.getString("userAgent"))
         if (challengeDebug) {
             // Ce qui entre vraiment dans le magasin, une ligne par cookie :
             // nom, domaine, chemin, expiration, drapeaux, **longueur** de la
@@ -1179,7 +1211,7 @@ private suspend fun dispatchNatif(
             System.err.println(
                 "[challenge-debug] cf_clearance present=${
                     built.any { it.name == "cf_clearance" }
-                } ua=${context.userAgentOverride}",
+                } ua=${if (p.has("userAgent")) p.getString("userAgent") else "-"}",
             )
         }
         JSONObject().put("ok", true)

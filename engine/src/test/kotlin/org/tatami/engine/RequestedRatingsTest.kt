@@ -24,15 +24,22 @@ import kotlin.test.assertTrue
  * Refuser dans les deux cas aurait semblé la correction évidente. Elle aurait
  * cassé le catalogue de ~93 % des sources (mesuré sur 82 sources : seules 6
  * annoncent SAFE ou SUGGESTIVE, 39 n'annoncent rien). Ces tests figent donc
- * **les trois comportements distincts**, pour que personne ne les confonde de
+ * **les comportements distincts**, pour que personne ne les confonde de
  * nouveau :
  *
  * 1. valeur inconnue → refus (fuite de contenu par faute de frappe) ;
- * 2. source qui annonce des classifications, pas celle-là → refus (la source
- *    peut filtrer, elle choisit de ne pas le faire) ;
+ * 2. source qui annonce des classifications, pas celle-là → **dégradation vers
+ *    la plus stricte exposée**, et refus seulement si aucune ne convient
+ *    (la section « 2 bis ») ;
  * 3. source qui n'annonce rien → pas de filtre, **et c'est assumé** : le
  *    troisième test verrouille ce comportement pour qu'une « correction »
  *    ultérieure ait à le lire.
+ *
+ * Le refus du point 2 a été **affaibli** le 2026-10-12, sur mesure :
+ * MANGASORIGINES annonce `SAFE, ADULT`, le réglage par défaut `SUGGESTIVE` était
+ * donc refusé, et toute la source devenait inaccessible alors qu'elle répond 5
+ * résultats sans filtre. La dégradation ne **relaxe** jamais le filtre — c'est
+ * ce que vérifient les contre-épreuves.
  */
 // Construire `MangaListFilterOptions` à la main demande l'opt-in : l'API des
 // options est interne aux parsers. Même annotation que `ErreursTest.kt:23`.
@@ -123,6 +130,61 @@ class RequestedRatingsTest {
             setOf(ContentRating.SAFE),
             requestedRatings(JSONObject(), options(ContentRating.SAFE), "SRC"),
         )
+    }
+
+    // ---------- 2 bis. Dégradation vers la plus stricte exposée ----------
+
+    @Test
+    fun `une classification non exposee degrade vers la plus stricte exposee`() {
+        // Le cas mesuré le 2026-10-12 sur MANGASORIGINES : elle annonce
+        // `SAFE, ADULT`, donc le réglage par défaut de l'interface
+        // (`SUGGESTIVE`, qui exclut l'adulte) était REFUSÉ — et la source
+        // devenait 100 % inaccessible alors qu'elle répond 5 résultats sans
+        // filtre. On dégrade donc vers `SAFE`.
+        //
+        // `ADULT` n'est pas dans l'ensemble demandé et n'est jamais livré :
+        // la dégradation ne sert pas le réglage, elle ne le contourne pas.
+        assertEquals(
+            setOf(ContentRating.SAFE),
+            requestedRatings(
+                params("contentRating" to "SUGGESTIVE"),
+                options(ContentRating.SAFE, ContentRating.ADULT),
+                "MANGASORIGINES",
+            ),
+        )
+    }
+
+    @Test
+    fun `la degradation ne relaxe jamais le filtre`() {
+        // Contre-épreuve du précédent : dégrader ne doit JAMAIS élargir
+        // l'ensemble demandé. Ici ADULT est demandé et la source expose
+        // SUGGESTIVE + SAFE : les deux sont plus strictes, on prend la plus
+        // stricte — ADULT n'est toujours pas livré.
+        assertEquals(
+            setOf(ContentRating.SUGGESTIVE),
+            requestedRatings(
+                params("contentRating" to "ADULT"),
+                options(ContentRating.SAFE, ContentRating.SUGGESTIVE),
+                "SRC",
+            ),
+        )
+    }
+
+    @Test
+    fun `la degradation echoue quand rien dexpose ne convient`() {
+        // Le refus survit : demander SAFE à une source qui n'expose qu'ADULT
+        // n'a aucune dégradation possible sans Relaxer le filtre. C'est
+        // exactement le cas verrouillé par le test 2 — la dégradation ne
+        // l'a pas fait disparaître.
+        assertFailsWith<IllegalArgumentException>(
+            "aucune valeur exposée n'est dans l'ensemble demandé : refuser",
+        ) {
+            requestedRatings(
+                params("contentRating" to "SAFE"),
+                options(ContentRating.ADULT, ContentRating.ADULT),
+                "SRC",
+            )
+        }
     }
 
     // ---------- 3. La source n'annonce rien : pas de filtre, et on le dit ----

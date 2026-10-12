@@ -22,8 +22,16 @@ const LIST_TIMEOUT_MAX: Duration = Duration::from_secs(180);
 /// l'interface et doit donc partager le MÊME délai. Deux constantes pour le même
 /// délai divergent dès que l'une des deux est retouchée.
 pub(crate) const DEEP_TIMEOUT: Duration = Duration::from_secs(60);
-/// `listSources` est un calcul local (index du JAR), pas un appel réseau.
-const LOCAL_TIMEOUT: Duration = Duration::from_secs(10);
+/// `listSources` : le délai doit couvrir l'**instanciation des 1370 parsers**.
+///
+/// Mesuré le 2026-10-12 : 7,0–8,5 s moteur au repos, mais **55–57 s** sur le poste
+/// réel (le moteur, `cargo`, `next dev` et la WebView se partagent le CPU). Le
+/// commentaire ancien disait « calcul local (index du JAR), pas un appel réseau »
+/// — c'est faux, et c'est ce qui a justifié les 10 s : `Server.kt:554` instancie
+/// chaque parser (`newParserInstance`) pour en lire le domaine. Un budget de 10 s
+/// y était donc franchi en permanence, la commande échouait, et le catalogue
+/// s'affichait vide.
+const LOCAL_TIMEOUT: Duration = Duration::from_secs(60);
 
 fn list_timeout(seconds: Option<u32>) -> Duration {
     let asked = Duration::from_secs(seconds.unwrap_or(60).clamp(10, 180) as u64);
@@ -99,8 +107,15 @@ pub async fn filter_options(
 #[tauri::command]
 pub async fn list_sources(sup: State<'_, Arc<Supervisor>>) -> Result<serde_json::Value, String> {
     tracing::info!("list_sources: appel");
+    // `request_with_retry`, pas `request` : c'était la **seule** commande du
+    // fichier sans rejeu (lignes 90, 193, 268, 298, 339 et le planificateur
+    // utilisent toutes le retry). Un timeout de plus sous charge — et
+    // l'instanciation des 1370 parsers en fait un événement courant — vidait
+    // donc le catalogue sans qu'aucune nouvelle tentative ne le rattrape.
+    // `chargerSources` ne fait que `setError` sur échec : aucun écran vide
+    // n'était explicable à l'utilisateur.
     let r = into_result(
-        sup.request("listSources", serde_json::json!({}), LOCAL_TIMEOUT)
+        sup.request_with_retry("listSources", serde_json::json!({}), LOCAL_TIMEOUT)
             .await?,
     )?;
     sup.enregistrer_domaines_sources(&r).await;

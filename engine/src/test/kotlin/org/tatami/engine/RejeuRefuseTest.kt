@@ -221,6 +221,13 @@ class RejeuRefuseTest {
     }
 
     @Test
+    fun `une resolution du sous domaine ne rend pas le domaine parent recent`() {
+        RejeuRefuse.resolutionReussie("www.site.com")
+
+        assertFalse(RejeuRefuse.resolutionRecente("site.com"))
+    }
+
+    @Test
     fun `le rejeu refuse est reconnu meme quand la cause est perdue`() {
         // Forme que produit OkHttp 5 : plus de cause, seulement le texte.
         val e = java.io.IOException(

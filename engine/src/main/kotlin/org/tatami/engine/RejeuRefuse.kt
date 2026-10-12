@@ -32,6 +32,10 @@ import java.util.concurrent.ConcurrentHashMap
  * `setCookies` enregistre une résolution et efface les refus antérieurs du
  * domaine. Une réponse normale efface les refus et la fraîcheur mémorisée pour
  * les domaines apparentés : l'état reflète ainsi le dernier résultat observé.
+ * Si une page publique répond normalement mais qu'une page protégée reste
+ * refusée, ce 200 peut donc rendre le 403 suivant à nouveau résoluble et rouvrir
+ * une fois la vérification ; la réponse normale est prioritaire sur l'ancien
+ * état de challenge.
  */
 internal object RejeuRefuse {
 

@@ -532,6 +532,22 @@ fn valider_url_challenge(url: &str, domaines: &[String]) -> Result<Url, String> 
     Ok(parsed)
 }
 
+fn diagnostic_refus_challenge(source: &str, url: &str) -> String {
+    let host = Url::parse(url)
+        .ok()
+        .and_then(|parsed| {
+            parsed
+                .host_str()
+                .map(|host| host.trim_end_matches('.').to_ascii_lowercase())
+        })
+        .filter(|host| !host.is_empty())
+        .unwrap_or_else(|| "indisponible".to_string());
+    format!(
+        "challenge refusé source={} host={host}",
+        super::download::sanitize(source)
+    )
+}
+
 /// Ouvre la fenêtre de résolution sur l'URL qui a renvoyé le challenge.
 #[tauri::command]
 pub async fn open_challenge(
@@ -541,7 +557,13 @@ pub async fn open_challenge(
     url: String,
 ) -> Result<(), String> {
     let domaines = sup.domaines_source(&source).await;
-    let parsed = valider_url_challenge(&url, &domaines)?;
+    let parsed = match valider_url_challenge(&url, &domaines) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            tracing::warn!("{}", diagnostic_refus_challenge(&source, &url));
+            return Err(error);
+        }
+    };
     let label = challenge_label(&source);
     if debug_challenge() {
         tracing::info!(
@@ -834,9 +856,9 @@ pub async fn cancel_challenge(app: AppHandle, source: String) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::{
-        action_surveillance, challenge_en_cours, challenge_label, domaine_effectif,
-        enregistrer_surveillance, reste_interstitiel, retirer_surveillance, surveillances,
-        valider_url_challenge, Action, LectureCookies, ERREUR_DOMAINE_CHALLENGE,
+        action_surveillance, challenge_en_cours, challenge_label, diagnostic_refus_challenge,
+        domaine_effectif, enregistrer_surveillance, reste_interstitiel, retirer_surveillance,
+        surveillances, valider_url_challenge, Action, LectureCookies, ERREUR_DOMAINE_CHALLENGE,
     };
 
     /// **Le defaut du 2026-10-11, en une assertion.** La surveillance a
@@ -1109,5 +1131,18 @@ mod tests {
         let domaines = vec!["mangalib.org".to_string(), "mangalib.me".to_string()];
         assert!(valider_url_challenge("https://mangalib.me/check", &domaines).is_ok());
         assert!(valider_url_challenge("https://www.mangalib.me/check", &domaines).is_ok());
+    }
+
+    #[test]
+    fn journal_refus_challenge_ne_contient_que_source_et_hote() {
+        let diagnostic = diagnostic_refus_challenge(
+            "MANGADEX",
+            "https://utilisateur:secret@example.net/private/path?cf_clearance=cookie#fragment",
+        );
+
+        assert_eq!(
+            diagnostic,
+            "challenge refusé source=MANGADEX host=example.net"
+        );
     }
 }

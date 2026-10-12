@@ -15,6 +15,7 @@ import { describeError, estRejeuRefuse } from '../lib/erreurs-source';
 import { admettreLaCible, admettreUne } from '../lib/quota-pages';
 import { lireListeSources } from '../lib/prefs-tolérantes';
 import { memeSignet } from '../lib/signet-cle';
+import { supprimerPuisRafraichirCatalogue } from '../lib/source-perso-suppression';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   isPermissionGranted,
@@ -1345,8 +1346,8 @@ export default function Home() {
    *  identité recréée à chaque rendu la relancerait en boucle (leçon AGENTS.md
    *  §14 sur les dépendances d'effet recréées).
    */
-  const chargerSources = useCallback(() => {
-    invoke<{ sources: Source[] }>('list_sources')
+  const chargerSources = useCallback((): Promise<void> => {
+    return invoke<{ sources: Source[] }>('list_sources')
       .then((r) => {
         const recues = r.sources ?? [];
         // Réconciliation de la liste blanche — voir `lib/liste-blanche.ts` pour
@@ -1878,7 +1879,10 @@ export default function Home() {
    */
   async function supprimerSourcePerso(cs: CustomSource) {
     try {
-      await invoke('supprimer_source_custom', { id: cs.id });
+      await supprimerPuisRafraichirCatalogue(
+        () => invoke('supprimer_source_custom', { id: cs.id }),
+        chargerSources,
+      );
       setNotice(t('sources.perso.suppr.ok', { nom: cs.name }));
     } catch (e) {
       setError(t('sources.perso.suppr.erreur', { raison: String(e) }));

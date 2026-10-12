@@ -37,10 +37,13 @@ impl DimensionsCache {
     }
 
     fn inserer(&mut self, token: String, dims: (u32, u32)) {
-        if self.map.contains_key(&token) {
-            self.map.insert(token, dims);
-            return;
-        }
+        let token = match self.map.entry(token) {
+            std::collections::hash_map::Entry::Occupied(mut entree) => {
+                entree.insert(dims);
+                return;
+            }
+            std::collections::hash_map::Entry::Vacant(entree) => entree.into_key(),
+        };
 
         if self.map.len() >= CAP_DIMS {
             if let Some(ancien) = self.ordre.pop_front() {

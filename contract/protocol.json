@@ -4,10 +4,7 @@
   "title": "Tatami engine protocol v0.2 (draft)",
   "description": "NDJSON sur stdio (une valeur JSON par ligne). stdout = protocole uniquement, logs sur stderr. Version du protocole : \"0.2\" (compatible = même MAJEUR). Voir contract/README.md.",
   "type": "object",
-  "oneOf": [
-    { "$ref": "#/$defs/request" },
-    { "$ref": "#/$defs/response" }
-  ],
+  "oneOf": [{ "$ref": "#/$defs/request" }, { "$ref": "#/$defs/response" }],
   "$defs": {
     "method": {
       "type": "string",
@@ -28,7 +25,7 @@
       ]
     },
     "errorCode": {
-      "description": "Codes stables émis par le moteur ou par le coeur (Rust). `CANCELLED` est émis par le coeur quand un sidecar qui meurt emporte les requêtes en vol (supervisor.rs, `fail_pending`). `SOURCE_UNAVAILABLE` a été retiré le 2026-10-10 : aucune des trois couches ne l'émettait, et un hôte injoignable arrive en `INTERNAL` avec `UnknownHostException` dans le message — ce que l'interface sait déjà lire (`erreur.domaine`).",
+      "description": "Codes stables émis par le moteur ou par le coeur (Rust). `CANCELLED` est émis par le coeur quand un sidecar qui meurt emporte les requêtes en vol (supervisor.rs, `fail_pending`). `SOURCE_UNAVAILABLE` a été retiré le 2026-10-10 : aucune des trois couches ne l'émettait, et un hôte injoignable arrive en `INTERNAL` avec `UnknownHostException` dans le message — ce que l'interface sait déjà lire (`erreur.domaine`). Le 2026-10-12, cette situation a été mesurée à l'échelle du catalogue et corrigée à la source : sur les 98 sources FR, 83 échouaient en `INTERNAL` avec une exception Java brute. Le moteur classe désormais une panne de source par TYPE d'exception et CODE DE STATUT (`Erreurs.kt::classerEchecSource`), et `SOURCE_DEAD` réintroduit l'idée de `SOURCE_UNAVAILABLE` avec un émetteur réel. Le message conserve le détail technique (`Exception: texte`) : c'est lui que `Supervisor::is_transient` lit pour rejouer un échec réseau, donc le typage est additif et ne change aucun comportement de retry.",
       "type": "string",
       "enum": [
         "CHALLENGE_REQUIRED",
@@ -38,6 +35,9 @@
         "RATE_LIMITED",
         "TIMEOUT",
         "CANCELLED",
+        "SOURCE_DEAD",
+        "ORIGIN_DOWN",
+        "PARSER_OUTDATED",
         "INTERNAL"
       ]
     },
@@ -45,10 +45,17 @@
       "type": "object",
       "required": ["id", "method", "params"],
       "properties": {
-        "id": { "type": "string", "description": "Identifiant unique (Rust). Les réponses le recopient." },
+        "id": {
+          "type": "string",
+          "description": "Identifiant unique (Rust). Les réponses le recopient."
+        },
         "method": { "$ref": "#/$defs/method" },
         "params": { "type": "object" },
-        "timeoutMs": { "type": "integer", "minimum": 1, "description": "Délai max côté Rust ; passé ce délai Rust ignore la réponse (le moteur finit quand même, sans état)." }
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Délai max côté Rust ; passé ce délai Rust ignore la réponse (le moteur finit quand même, sans état)."
+        }
       },
       "additionalProperties": false
     },
@@ -58,7 +65,10 @@
       "properties": {
         "id": { "type": "string" },
         "ok": { "type": "boolean" },
-        "result": { "type": "object", "description": "Présent si ok = true. Forme par méthode : voir contract/README.md." },
+        "result": {
+          "type": "object",
+          "description": "Présent si ok = true. Forme par méthode : voir contract/README.md."
+        },
         "error": {
           "type": "object",
           "description": "Présent si ok = false.",
@@ -66,7 +76,10 @@
           "properties": {
             "code": { "$ref": "#/$defs/errorCode" },
             "message": { "type": "string" },
-            "url": { "type": "string", "description": "Présent pour CHALLENGE_REQUIRED : page à ouvrir dans la fenêtre de résolution." }
+            "url": {
+              "type": "string",
+              "description": "Présent pour CHALLENGE_REQUIRED : page à ouvrir dans la fenêtre de résolution."
+            }
           },
           "additionalProperties": false
         }
@@ -77,9 +90,15 @@
       "type": "object",
       "required": ["url", "title", "source"],
       "properties": {
-        "url": { "type": "string", "description": "Clé stable du manga chez la source (relative ou absolue selon la source)." },
+        "url": {
+          "type": "string",
+          "description": "Clé stable du manga chez la source (relative ou absolue selon la source)."
+        },
         "title": { "type": "string" },
-        "source": { "type": "string", "description": "Nom d'entrée MangaParserSource, ex. MANGADEX." },
+        "source": {
+          "type": "string",
+          "description": "Nom d'entrée MangaParserSource, ex. MANGADEX."
+        },
         "coverUrl": { "type": "string" },
         "authors": { "type": "array", "items": { "type": "string" } }
       },
@@ -92,7 +111,14 @@
         "url": { "type": "string", "description": "Clé stable du chapitre." },
         "title": { "type": "string" },
         "number": { "type": "number" },
-        "uploadDate": { "type": "integer", "description": "Epoch millis, si fourni par la source." }
+        "uploadDate": {
+          "type": "integer",
+          "description": "Epoch millis, si fourni par la source."
+        },
+        "premium": {
+          "type": "boolean",
+          "description": "Le chapitre est reserve a un abonnement. Mesure2026-10-13 sur ortegascans.fr : l'API des images repond 403 'Acces non autorise' pour un chapitre premium, et 200 pour un chapitre gratuit. Ce n'est donc pas une panne mais un droit d'acces, et l'interface doit le dire avant que l'utilisateur ouvre le chapitre."
+        }
       },
       "additionalProperties": true
     },
@@ -101,7 +127,10 @@
       "required": ["index", "url"],
       "properties": {
         "index": { "type": "integer", "minimum": 0 },
-        "url": { "type": "string", "description": "URL de la page (pas forcément l'image directe : passer par fetchImage)." },
+        "url": {
+          "type": "string",
+          "description": "URL de la page (pas forcément l'image directe : passer par fetchImage)."
+        },
         "previewUrl": { "type": "string" },
         "largeur": {
           "type": "integer",
@@ -120,10 +149,19 @@
       "type": "object",
       "required": ["name"],
       "properties": {
-        "name": { "type": "string", "description": "Nom d'entrée MangaParserSource, ex. MANGADEX." },
+        "name": {
+          "type": "string",
+          "description": "Nom d'entrée MangaParserSource, ex. MANGADEX."
+        },
         "title": { "type": "string" },
-        "locale": { "type": "string", "description": "ex. \"en\", si exposée par la source." },
-        "lang": { "type": "string", "description": "Langue déduite du nom (Server.kt: inferLang), ex. \"fr\", \"int\"." },
+        "locale": {
+          "type": "string",
+          "description": "ex. \"en\", si exposée par la source."
+        },
+        "lang": {
+          "type": "string",
+          "description": "Langue déduite du nom (Server.kt: inferLang), ex. \"fr\", \"int\"."
+        },
         "domains": {
           "type": "array",
           "minItems": 1,
@@ -159,7 +197,10 @@
       "description": "Forme de `result` pour `fetchImage` et `fetchCover`.",
       "required": ["data", "contentType"],
       "properties": {
-        "data": { "type": "string", "description": "Octets de l'image, base64 standard." },
+        "data": {
+          "type": "string",
+          "description": "Octets de l'image, base64 standard."
+        },
         "contentType": {
           "type": "string",
           "description": "Type ANNONCÉ par le site. Rust ne s'y fie pas : il déduit le type des octets (image::detect) et refuse d'écrire quoi que ce soit qui ne soit pas une image."

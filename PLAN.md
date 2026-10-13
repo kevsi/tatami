@@ -21,6 +21,8 @@
 
 ### Terminé ✅
 
+- Définition de la correction 2026-10-11 : `SourceLocaleIndex` garde les sources connues à suffixe trompeur (`MANGASORIGINES`, `HENTAIORIGINES`) en `fr` par mapping explicite, sans dépendre d'une heuristique de suffixe. Preuve : `cd engine; gradle test --tests org.tatami.engine.SourceLocaleIndexTest` → `BUILD SUCCESSFUL`.
+
 1. **Mode webtoon uniquement** — suppression complète du mode "page" dans le lecteur.
    - Retiré `readerMode === 'page'` et tout le code associé (boutons Pagé/Webtoon, ajustements de pages par écran, ajustement largeur/hauteur, bouton spread/dir, zoom sur les pages simples).
    - Le lecteur affiche maintenant exclusivement du webtoon (bande verticale avec images empilées).
@@ -1770,8 +1772,9 @@ dépendance à vérifier à chaque graduation, acceptés explicitement).
 
 #### Le défaut d'interface est corrigé (`b913403`) — le fond reste ouvert
 
-Le cycle « bandeau → puzzle → fenêtre qui se ferme → rien » est **arrêté**. Le
-moteur distingue désormais deux états que tout confondait depuis le début :
+Le cycle sans fin « bandeau → puzzle → fenêtre qui se ferme → rien » est
+**arrêté** : le moteur distingue désormais deux états que tout confondait
+depuis le début :
 
 - `CHALLENGE_REQUIRED` — la requête ne portait **pas** de clearance : demande de
   vérification ordinaire, la fenêtre doit s'ouvrir ;
@@ -1786,6 +1789,35 @@ l'ajoute après tous les intercepteurs d'application, donc il est encore vide.
 Ce que ça règle : l'expérience d'une source non rejouable cesse d'être un piège
 sans fin. Ce que ça ne règle **pas** : les 99 sources en `CHALLENGE_REQUIRED`
 (option C) restent inaccessibles, et une source bloquée l'est toujours.
+
+#### Mesure réelle HENTAIZONE et portée de la mémoire (2026-10-12)
+
+Mesure en lançant Tatami après reconstruction de `engine/dist` :
+`$env:TATAMI_CHALLENGE_DEBUG='1'; pnpm tauri dev` depuis `apps/desktop`. Trace du
+12/10 à 08:27 UTC :
+
+1. Première requête vers `hentaizone.xyz` : `statut=403`,
+   `cf-mitigated=challenge`, `cookiesJar=[]` ; Rust reçoit
+   `CHALLENGE_REQUIRED` et ouvre une seule fenêtre (`appel n°1`).
+2. La WebView fournit 7 cookies déjà présents dans son profil, dont
+   `cf_clearance`; le rejeu emploie son User-Agent.
+3. Rejeu vers le même hôte : `statut=403`, `cf-mitigated=challenge`,
+   `cookiesJar` contient `cf_clearance`; Rust reçoit `CHALLENGE_UNREPLAYABLE`.
+   La source reste refusée par le serveur, mais le client distingue ce refus du
+   challenge initial et ne repart pas dans le même cycle.
+
+La trace prouve le transfert des cookies et le refus du rejeu réel. Elle ne
+prouve **pas** qu'un nouveau puzzle a été résolu pendant cette mesure : les
+cookies étaient déjà dans le profil WebView2. Le verdict mesuré est donc que
+HENTAIZONE refuse le rejeu malgré la clearance fournie, non que le puzzle a
+rendu cette source accessible.
+
+La résolution est considérée récente pendant **5 minutes** après `setCookies`.
+Un refus de rejeu est mémorisé **30 minutes** pour l'hôte et reconnu sur ses
+sous-domaines ; une réponse normale efface refus et fraîcheur des domaines
+apparentés. Conséquence voulue : si une page publique répond 200 mais qu'une
+page protégée reste refusée, ce 200 invalide la fraîcheur ; le prochain 403
+peut rouvrir une seule vérification au lieu d'être classé comme un rejeu récent.
 
 #### Options pour les 99 sources derrière un challenge non rejouable
 

@@ -1,0 +1,692 @@
+{
+  "schema": 1,
+  "mesure": "2026-10-12",
+  "sources": {
+    "ANIMESAMA": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-13",
+      "etape": "chapters",
+      "motif": "natif incomplet : anime-sama.eu mort, et episodes.js renvoie 404 sur anime-sama.to. Contourne par la source scriptee docs/source-anime-sama.js (API /s2/scans, parcours valide : 1004 chapitres One Piece, 55 images, image decodee). Attention : seules les oeuvres servies par l'API ont des scans"
+    },
+    "ANTEIKUSCAN": {
+      "etat": "parseur_perime",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "le site a change de page"
+    },
+    "ASTRALMANGA": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "ASTRAMES": {
+      "etat": "parseur_perime",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "le site a change de page"
+    },
+    "BANANASCAN": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-13",
+      "etape": null,
+      "motif": "NE PAS rediriger : banana-scan.com ne sert que 477 octets avec un cookie sid (page de filtrage) ; l'alternative babanascans.com est BLOCKEE PAR L'ANTIVIRUS de la machine. Source non retenue"
+    },
+    "BENTOSCAN": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-13",
+      "etape": null,
+      "motif": "domaine PARKED : le titre servi est « bentoscan.com for sale | ED.com », 7 marqueurs de parking. Le 200 est trompeur"
+    },
+    "BERSERKSCAN": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "BLUELOCKSCAN": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "BLUESOLO": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "site actif sous le domaine .org (bluesolo.org)"
+    },
+    "CENTURYBOYS20TH": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "CHAINSAWMANSCAN": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "DANDADAN": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "DEMONSLAYERSCAN": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "DRSTONE": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "EDSCANLATION": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "domaine disparu, 404/410, ou domaine repris par une regie publicitaire"
+    },
+    "ENLIGNEMANGA": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "domaine sujet à des fermetures/saisies régulières par les autorités anti-piratage"
+    },
+    "EPSILONSOFT": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "ETHERALRADIANCE": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "groupe/site de scantrad inactif ou fermé"
+    },
+    "FIREFORCE": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "FMTEAM": {
+      "etat": "reponse_incompatible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "le site a change le format de sa reponse"
+    },
+    "FRMANGA": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "ConnectException: Failed to connect to www.frmanga.com/198.251.84.92:443"
+    },
+    "FRSCAN": {
+      "etat": "parseur_perime",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "le site a change de page"
+    },
+    "FRSCANSCOM": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "domaine .com hors service ou redirigé vers d'autres agrégateurs"
+    },
+    "FURYOSOCIETY": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": null
+    },
+    "HAIKYUU": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "HARMONYSCAN": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": null
+    },
+    "HELLSPARADISESCAN": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "HENTAIORIGINES": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": null
+    },
+    "HENTAISCANTRADVF": {
+      "etat": "parseur_perime",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "le site a change de page"
+    },
+    "HENTAIZONE": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "HHENTAIFR": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "200 OK sans resultat"
+    },
+    "HNISCANTRAD": {
+      "etat": "reponse_incompatible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "le site a change le format de sa reponse"
+    },
+    "HUNTERXHUNTERSCAN": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "INOVASCANMANGA": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "changements fréquents d'extension pour contourner le blocage DNS"
+    },
+    "JAPSCANSFR": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "latest",
+      "motif": "domaine redirige vers japscan.foo : racine 200 mais /manga/ protege (Cloudflare 403/404)"
+    },
+    "JPMANGAS": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "changements successifs d'extension (.com vers .co) puis fermeture des accès principaux"
+    },
+    "JPSCANVF": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "KAIJUNO8": {
+      "etat": "parseur_perime",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "le site a change de page"
+    },
+    "KINGDOMSCAN": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "LELMANGA": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": null
+    },
+    "LELSCANVF": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": null
+    },
+    "LINEWEBTOONS_FR": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "IllegalStateException: Required value was null."
+    },
+    "LIRESCAN": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-13",
+      "etape": null,
+      "motif": "PAS mort : lire-scan.me repond 429 (limite en debit). Nos sondes l'ont trop sollicite. A reessayer avec delai"
+    },
+    "LUGNICASCANS": {
+      "etat": "certificat_invalide",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "chaine de certificats refusee par Conscrypt ET par JSSE"
+    },
+    "LUNARHENTAI": {
+      "etat": "certificat_invalide",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "chaine de certificats refusee par Conscrypt ET par JSSE"
+    },
+    "LUNARSCANS": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "domaine disparu, 404/410, ou domaine repris par une regie publicitaire"
+    },
+    "MANGABALL_FR": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "aucune reponse"
+    },
+    "MANGAFIRE_FR": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": null
+    },
+    "MANGAFR": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "200 OK sans resultat"
+    },
+    "MANGAHUB": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": "chapitre sans aucune image"
+    },
+    "MANGAKAWAII": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": "utilise principalement l'extension .to (mangakawaii.to)"
+    },
+    "MANGAMANA": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "MANGAMOINS": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "aucun chapitre"
+    },
+    "MANGAPLUSPARSER_FR": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": null
+    },
+    "MANGASORIGINES": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": null
+    },
+    "MANGASORIGINESUNOFFICIAL": {
+      "etat": "parseur_perime",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "le site a change de page"
+    },
+    "MANGASSCANS": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "ancien domaine KO, extensions d'agrégateurs ne répondent plus"
+    },
+    "MASHLESCAN": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "MYHEROACADEMIASCAN": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "NINEMANGA_FR": {
+      "etat": "parseur_perime",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "le site a change de page"
+    },
+    "ONEPIECESCAN": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "ONEPUNCHMANSCAN": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "ONISAGA_FR": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "OSHINOKO": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "PANTHEONSCAN": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-13",
+      "etape": null,
+      "motif": "natif rompu : le site vit (200, Madara) mais le parseur exige #filter-wrapper, absent (0 occurrence). Contourne par docs/source-pantheon-scan.js (parcours valide : 21 chapitres, 61 images, image decodee). Attention : attributs non guillemets et data-src pour la couverture"
+    },
+    "PANTHEONSCAN_FR": {
+      "etat": "certificat_invalide",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "chaine de certificats refusee par Conscrypt ET par JSSE"
+    },
+    "PAPSCAN": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "200 OK sans resultat"
+    },
+    "PORNHWASCANS": {
+      "etat": "certificat_invalide",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "chaine de certificats refusee par Conscrypt ET par JSSE"
+    },
+    "POSEIDONSCANS": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "RAIJINSCANS": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "aucune reponse"
+    },
+    "READERGEN": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "REAPERSCANS_FR": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "fermeture officielle de la plateforme Reaper Scans"
+    },
+    "REVOLUTIONSCANTRAD": {
+      "etat": "certificat_invalide",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "chaine de certificats refusee par Conscrypt ET par JSSE"
+    },
+    "RIMUSCANS": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "200 OK sans resultat"
+    },
+    "SAKAMOTODAYS": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "SCANBORUTO": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "SCANHENTAI": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "domaine principal hors service ou bloqué par les FAI"
+    },
+    "SCANHENTAIMENU": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "SCANJUJUTSUKAISEN": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "SCANMANGA": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "domaine disparu, 404/410, ou domaine repris par une regie publicitaire"
+    },
+    "SCANTRAD": {
+      "etat": "parseur_perime",
+      "langue": "fr",
+      "mesure": "2026-10-13",
+      "etape": "latest",
+      "motif": "natif rompu : scan-trad.com mort, et sur hentai-scantrad.org le selecteur #filter-wrapper est absent. Contourne par la source scriptee docs/source-hentai-scantrad.js (parcours complet valide, 62 images, image decodee)"
+    },
+    "SCANTRADUNION": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": null
+    },
+    "SCANTRADVF": {
+      "etat": "parseur_perime",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "le site a change de page"
+    },
+    "SCANVF": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": null
+    },
+    "SCANVFORG": {
+      "etat": "parseur_perime",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "le site a change de page"
+    },
+    "SEINEMANGA": {
+      "etat": "certificat_invalide",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "chaine de certificats refusee par Conscrypt ET par JSSE"
+    },
+    "SNKSCAN": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "STARBOUNDSCANS": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "domaine disparu, 404/410, ou domaine repris par une regie publicitaire"
+    },
+    "SUSHISCAN": {
+      "etat": "images_bloquees",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": "catalogue lisible, CDN d'images protege"
+    },
+    "SUSHISCANFR": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "HttpStatusException: Gateway Time-out. Status=504, URL=[https://sushiscan.fr/the-ruined-world-was-mistaken-for-a-game-chapitre-0/]"
+    },
+    "TOKYOREVENGERS": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "TOOMICSFR": {
+      "etat": "incertain",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "StreamResetException: stream was reset: INTERNAL_ERROR"
+    },
+    "TOONFR": {
+      "etat": "verification",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "derriere un challenge Cloudflare"
+    },
+    "VFSCAN": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "site d'origine plus accessible sous son adresse historique"
+    },
+    "VINLANDSAGA": {
+      "etat": "indisponible",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
+    },
+    "WEBTOONS_FR": {
+      "etat": "actif",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": "image",
+      "motif": null
+    },
+    "WEEBDEX_FR": {
+      "etat": "hors_service",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "plateforme définitivement fermée"
+    },
+    "XXXREVOLUTIONSCANTRAD": {
+      "etat": "certificat_invalide",
+      "langue": "fr",
+      "mesure": "2026-10-12",
+      "etape": null,
+      "motif": "chaine de certificats refusee par Conscrypt ET par JSSE"
+    }
+  }
+}

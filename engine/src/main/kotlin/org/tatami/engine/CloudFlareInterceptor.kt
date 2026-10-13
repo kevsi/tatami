@@ -85,6 +85,28 @@ internal class CloudFlareInterceptor(
         val clearance = porteUneClearance(request.url)
         if (clearance != null && (response.code == 403 || response.code == 503)) {
             val urlRefusee = response.request.url.toString()
+            // **Que dit Cloudflare ?** `peekBody` lit sans consommer le corps,
+            // et la reponse est fermee juste apres de toute facon.
+            //
+            // Mesure du 2026-10-13 : apres resolution, le journal disait
+            // `403` et rien d'autre. Or Cloudflare **nomme** ses refus dans le
+            // corps de la page — `1010` (signature de navigateur banniee),
+            // `1020` (regle de pare-feu), `1022` (methode), `1006`... Chacune
+            // a une cause et un remede differents, et deviner parmi elles
+            // serait exactement l'erreur que ce projet s'interdit.
+            //
+            // Aucune valeur de cookie n'est journalisee : on ne lit que des
+            // codes et du texte, et la longueur est bornee.
+            val corps = runCatching { response.peekBody(4096).string() }.getOrDefault("")
+            val code = Regex("(?i)cf-error-code[^>]*>\\s*(\\d{3,4})")
+                .find(corps)?.groupValues?.get(1)
+                ?: Regex("(?i)error\\s*(?:code)?\\s*[:#]?\\s*(\\d{3,4})").find(corps)?.groupValues?.get(1)
+            val titre = Regex("(?i)<title>([^<]{0,90})").find(corps)?.groupValues?.get(1)?.trim()
+            System.err.println(
+                "[challenge-debug] rejeu refuse hote=${request.url.host} code=${response.code} " +
+                    "cf_error=$code titre=${titre ?: "-"} ray=${response.header("cf-ray") ?: "-"} " +
+                    "octets=${corps.length}",
+            )
             response.close()
             RejeuRefuse.marquer(clearance.domain)
             throw CloudFlareUnreplayableException(url = urlRefusee)

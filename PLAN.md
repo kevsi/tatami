@@ -1974,3 +1974,81 @@ ajoutés n'ont rien changé.
 3. Et un confound auto-infligé : `--remote-debugging-port` est un signal
    d'automatisation. Toute la matinée de mesures était contaminée par mon
    propre dispositif de mesure.
+### Flux Cloudflare — le lecteur pouvait demander une vérification, et le rejeu refusé se nommait (2026-10-13)
+
+**Symptôme rapporté** : « la fenêtre s'ouvre, les cookies sont envoyés (enfin
+c'est ce que dit le toast), mais les webtoons ne s'affichent pas du tout »,
+sur plusieurs sources à vérification.
+
+#### 1. Le lecteur n'avait aucun chemin de vérification
+
+La fenêtre ne s'ouvrait que sur **deux** chemins, mesurés dans le code :
+
+| chemin | fenêtre | après résolution |
+|---|---|---|
+| catalogue (`loadSource`) | oui (`setChallenge`, un seul appel dans toute l'interface) | recharge le catalogue |
+| téléchargement | oui (`download://challenge`) | chapitre retenté |
+| **lecteur** (`fetchImage`) | **aucune** | **rien** |
+
+`pagecache::serve_page` transformait le `CHALLENGE_REQUIRED` du moteur en
+simple 404, et après `challenge://resolu` l'interface ne rechargeait que le
+catalogue. Le toast disait **vrai** — le cookie partait — et le lecteur restait
+mort. Corrigé : émission `challenge://page` depuis le cœur, `hoteImage` déduit
+par Rust de l'URL qu'il a lui-même demandée (l'interface ne nomme aucun hôte),
+trois conditions sur ce second chemin (hôte **public**, URL de vérification sur
+**exactement** cet hôte, règles habituelles), et cache-buster `?r=` pour
+relancer les images dont le 404 restait en cache.
+
+#### 2. Le 403 du rejeu n'était pas classé
+
+**Mesuré dans `tatami.log`, TOONFR, application réelle** :
+
+    challenge: 1 cookie(s) applique(s) automatiquement source=TOONFR
+    stdout erreur id=latest code=INTERNAL
+      msg=HttpStatusException: . Status=403, URL=[https://toonfr.com/webtoon/]
+
+Avant le cookie, la même source renvoyait `CHALLENGE_REQUIRED`. Après, le site
+répond 403, `CloudFlareHelper.checkResponseForProtection` répond
+`PROTECTION_NOT_DETECTED`, l'interception laisse passer et le parseur remonte
+une `HttpStatusException` devenue `INTERNAL`.
+
+Coût réel : `CHALLENGE_UNREPLAYABLE` existe dans le contrat, le moteur sait le
+produire, l'interface a le message traduit `challenge.non.rejouable` — **rien
+de tout cela ne se déclenchait jamais**.
+
+Corrigé sans lire aucun marqueur Cloudflare : la requête portait déjà une
+`cf_clearance`, donc la vérification était faite, et le site refuse (403/503).
+6 tests, porte prouvée rouge en retirant la condition `clearance != null`
+(c'est le test de voisinage des 403 ordinaires qui tombe). 158 tests, 1 échec
+préexistant (`zenmanga.eu`).
+
+**Après correction**, l'écran affiche : « La vérification de TOONFR a abouti,
+mais le site refuse quand même la requête. » — le message est juste, la source
+reste inaccessible. La **cause de fond B/C/D reste ouverte**.
+
+#### 3. Le journal ne voyait pas la cause
+
+`supervisor.rs` ne journalisait que le **code**. Le rejeu laissait
+`code=INTERNAL len=152` et **rien** sur la cause : il a fallu ajouter le
+message pour apprendre que c'était un 403. C'est le **même trou** que celui du
+2026-10-09 (« le journal ne le voyait pas »), refermé par la trace puis rouvert
+par une autre décision.
+
+#### 4. Leçon — une porte de log et une porte de test ne se prouvent pas de la même façon
+
+Le journal et `supervisor.rs` se lisaient mutuellement, et les deux étaient
+muets sur la même information. Corollaire : **un diagnostic absent du journal
+est un diagnostic absent**, quelle que soit la qualité du test qui entoure le
+code.
+
+#### 5. Mesure en attente
+
+`TATAMI_CHALLENGE_DEBUG=1` instrumenté `cookiesJar`, `ua`, `statut`,
+`cf-mitigated`, `server`, `cf-ray`. **Vérifié présent dans le JAR livré**
+(dans `EngineContext$special$$inlined$-addInterceptor$2`, pas dans
+`EngineContext` — cf. la leçon du 2026-10-10). **Jamais exécuté sur une vraie
+session à ce jour** : c'est la prochaine mesure, pour trancher entre
+
+- `cf_clearance` **n'atteint pas** la requête suivante → correctible ;
+- ou elle y est et Cloudflare refuse malgré tout → empreinte TLS d'OkHttp,
+  hors de portée d'un correctif de code.

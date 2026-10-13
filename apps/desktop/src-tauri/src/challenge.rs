@@ -28,7 +28,8 @@ use std::time::Duration;
 
 use serde_json::json;
 use tauri::{
-    AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    WindowEvent,
 };
 
 use super::supervisor::Supervisor;
@@ -851,27 +852,99 @@ pub async fn solve_challenge(
 /// Partagée par le bouton manuel (`solve_challenge`) et par la surveillance
 /// automatique (`surveiller_fenetre`) — un seul des deux passe, gardé par le
 /// drapeau de `SURVEILLANCES`.
-/// User-Agent **réel** de la fenêtre de résolution, lu par JavaScript.
+/// Identité navigateur capturée dans la fenêtre qui a reçu la clearance.
 ///
-/// **Pourquoi il faut le lire plutôt que le supposer.** La clearance
-/// Cloudflare est délivrée pour un agent donné, et c'est **la fenêtre** qui
-/// l'obtient. Mesure du 2026-10-11 sur HENTAIZONE : le challenge passait
-/// dans la fenêtre (UA Chromium/WebView2) mais le rejeu était refusé — parce
-/// que `appliquer_cookies` envoyait l'UA du moteur (`FIREFOX_DESKTOP`), donc
-/// une autre identité que celle qui avait résolu.
-///
-/// `None` si la fenêtre a disparu ou ne répond pas : l'appelant retombe
-/// alors sur l'UA du moteur, ce qui est le comportement d'avant, pas une
-/// panne.
-async fn ua_de_la_fenetre(app: &AppHandle, label: &str) -> Option<String> {
+/// WebView2 `ExecuteScript` est synchrone ; `getHighEntropyValues` ne l'est
+/// pas. On démarre donc sa promesse dans la page, puis on lit son résultat par
+/// callback jusqu'à sa résolution ou jusqu'au délai borné.
+async fn identite_de_la_fenetre(
+    app: &AppHandle,
+    label: &str,
+) -> Option<(String, serde_json::Value)> {
     let fenetre = app.get_webview_window(label)?;
-    // Le callback est une closure `Fn` — il peut donc etre appele plusieurs
-    // fois, alors que `Sender::send` consomme. D'ou la prise unique sous
-    // verrou : le premier rendu gagne, les suivants ne trouvent plus rien.
+    fenetre
+        .eval(
+            r#"(function() {
+                var data = navigator.userAgentData;
+                window.__tatamiChallengeHighEntropy = { ready: false, values: {} };
+                if (!data || typeof data.getHighEntropyValues !== "function") {
+                    window.__tatamiChallengeHighEntropy.ready = true;
+                    return;
+                }
+                data.getHighEntropyValues([
+                    "fullVersionList", "platformVersion", "architecture", "bitness", "model"
+                ]).then(function(values) {
+                    window.__tatamiChallengeHighEntropy = { ready: true, values: values };
+                }, function() {
+                    window.__tatamiChallengeHighEntropy = { ready: true, values: {} };
+                });
+            })()"#,
+        )
+        .ok()?;
+
+    let echeance = tokio::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        let rendu = evaluer_javascript(
+            &fenetre,
+            r#"(function() {
+            var data = navigator.userAgentData || {};
+            var high = window.__tatamiChallengeHighEntropy || { ready: false, values: {} };
+            var values = high.values || {};
+            return {
+                userAgent: navigator.userAgent || "",
+                highEntropyReady: high.ready === true,
+                profile: {
+                    brands: data.brands || [],
+                    mobile: typeof data.mobile === "boolean" ? data.mobile : null,
+                    platform: typeof data.platform === "string" ? data.platform : null,
+                    fullVersionList: values.fullVersionList || [],
+                    platformVersion: values.platformVersion || null,
+                    architecture: values.architecture || null,
+                    bitness: values.bitness || null,
+                    model: values.model || null,
+                    language: navigator.language || null,
+                    languages: Array.isArray(navigator.languages) ? navigator.languages : []
+                }
+            };
+        })()"#,
+        )
+        .await?;
+
+        let user_agent = rendu
+            .get("userAgent")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|ua| !ua.is_empty())?
+            .to_string();
+        let high_entropy_ready = rendu
+            .get("highEntropyReady")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let profile = rendu.get("profile")?.clone();
+
+        if high_entropy_ready {
+            let _ = fenetre.eval("delete window.__tatamiChallengeHighEntropy");
+            return Some((user_agent, profile));
+        }
+        if tokio::time::Instant::now() >= echeance {
+            tracing::warn!(
+                "challenge: délai dépassé pour les Client Hints haute entropie source={label}"
+            );
+            let _ = fenetre.eval("delete window.__tatamiChallengeHighEntropy");
+            return Some((user_agent, profile));
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+async fn evaluer_javascript(
+    fenetre: &WebviewWindow,
+    javascript: &str,
+) -> Option<serde_json::Value> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let envoi = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
     fenetre
-        .eval_with_callback("navigator.userAgent", move |rendu: String| {
+        .eval_with_callback(javascript, move |rendu: String| {
             if let Ok(mut slot) = envoi.lock() {
                 if let Some(emmetteur) = slot.take() {
                     let _ = emmetteur.send(rendu);
@@ -879,12 +952,13 @@ async fn ua_de_la_fenetre(app: &AppHandle, label: &str) -> Option<String> {
             }
         })
         .ok()?;
-    // `timeout` -> Result<Result<String, RecvError>, Elapsed> ; on ecarte les deux
-    // couches d'echec avec deux `.ok()` — un seul `?` ne peut pas les
-    // porter tous les deux.
-    let ua = tokio::time::timeout(UA_DELAI, rx).await.ok()?.ok()?;
-    let ua = ua.trim().to_string();
-    (!ua.is_empty()).then_some(ua)
+    let rendu = tokio::time::timeout(UA_DELAI, rx).await.ok()?.ok()?;
+    let value = serde_json::from_str::<serde_json::Value>(&rendu).ok()?;
+    if let serde_json::Value::String(json) = value {
+        serde_json::from_str(&json).ok()
+    } else {
+        Some(value)
+    }
 }
 
 async fn appliquer_cookies(
@@ -978,9 +1052,9 @@ async fn appliquer_cookies(
     // **L'agent qui a résolu, pas celui du moteur.** La clearance est liée à
     // l'identité de la fenêtre ; envoyer celle d'OkHttp fait refuser le
     // rejeu. Repli sur l'UA du moteur si la fenêtre ne répond plus.
-    let ua = match ua_de_la_fenetre(app, &label).await {
-        Some(u) => u,
-        None => engine_user_agent(sup).await,
+    let (ua, browser_profile) = match identite_de_la_fenetre(app, &label).await {
+        Some((user_agent, profile)) => (user_agent, Some(profile)),
+        None => (engine_user_agent(sup).await, None),
     };
     tracing::info!(
         "challenge-debug: rejeu avec userAgent={}",
@@ -990,17 +1064,17 @@ async fn appliquer_cookies(
             "<instrumente>"
         }
     );
-    sup.request(
-        "setCookies",
-        json!({
-            "source": source,
-            "cookies": payload,
-            "userAgent": ua,
-        }),
-        Duration::from_secs(20),
-    )
-    .await
-    .map_err(|e| format!("setCookies : {e}"))?;
+    let mut params = json!({
+        "source": source,
+        "cookies": payload,
+        "userAgent": ua,
+    });
+    if let Some(profile) = browser_profile {
+        params["browserProfile"] = profile;
+    }
+    sup.request("setCookies", params, Duration::from_secs(20))
+        .await
+        .map_err(|e| format!("setCookies : {e}"))?;
 
     let _ = window.close();
     Ok(payload.len())

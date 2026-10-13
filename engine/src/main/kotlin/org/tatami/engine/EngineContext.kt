@@ -68,6 +68,7 @@ class EngineContext : MangaLoaderContext() {
     override val cookieJar: CookieJar = InMemoryCookieJar()
 
     private val userAgentOverrides = ConcurrentHashMap<String, String>()
+    private val browserIdentities = ConcurrentHashMap<String, BrowserIdentity>()
 
     internal fun definirUserAgentChallenge(domaine: String, userAgent: String) {
         val cle = RejeuRefuse.normaliserHote(domaine)
@@ -77,6 +78,19 @@ class EngineContext : MangaLoaderContext() {
     internal fun userAgentChallengePour(hote: String): String? {
         val normalise = RejeuRefuse.normaliserHote(hote)
         return userAgentOverrides.entries
+            .filter { (domaine, _) -> normalise == domaine || normalise.endsWith(".$domaine") }
+            .maxByOrNull { (domaine, _) -> domaine.length }
+            ?.value
+    }
+
+    internal fun definirIdentiteNavigateurChallenge(domaine: String, identite: BrowserIdentity) {
+        val cle = RejeuRefuse.normaliserHote(domaine)
+        if (cle.isNotEmpty()) browserIdentities[cle] = identite
+    }
+
+    internal fun identiteNavigateurChallengePour(hote: String): BrowserIdentity? {
+        val normalise = RejeuRefuse.normaliserHote(hote)
+        return browserIdentities.entries
             .filter { (domaine, _) -> normalise == domaine || normalise.endsWith(".$domaine") }
             .maxByOrNull { (domaine, _) -> domaine.length }
             ?.value

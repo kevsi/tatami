@@ -1257,6 +1257,15 @@ private suspend fun dispatchNatif(
         // un `cf_clearance` de example.com couvre aussi www.example.com.
         if (host.isNotEmpty()) RejeuRefuse.resolutionReussie(host)
         if (p.has("userAgent")) context.definirUserAgentChallenge(host, p.getString("userAgent"))
+        if (
+            built.any { it.name == "cf_clearance" } &&
+            p.has("browserProfile") &&
+            !p.isNull("browserProfile")
+        ) {
+            val browserProfile = p.optJSONObject("browserProfile")
+                ?: throw ParamException("browserProfile must be an object")
+            context.definirIdentiteNavigateurChallenge(host, BrowserIdentity.fromJson(browserProfile))
+        }
         if (challengeDebug) {
             // Ce qui entre vraiment dans le magasin, une ligne par cookie :
             // nom, domaine, chemin, expiration, drapeaux, **longueur** de la

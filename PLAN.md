@@ -2107,3 +2107,17 @@ WebView, donc une seule pile) est implémentée par défaut par un
 `UnsupportedOperationException` et ne l'est pas chez nous — mais **seuls 2
 parseurs** l'utilisent (`AllManga`, `Comix`, anglais). Ce n'est pas la cause de
 TOONFR. L'hypothèse était séduisante ; elle est fausse.
+
+### Plan de travail — identité WebView et rejeu TOONFR (2026-10-13)
+
+1. Étendre `setCookies` de façon additive : transférer et indexer par hôte l'identité réellement lue dans la WebView, avec tests de contrat.
+2. Sur les seules requêtes portant `cf_clearance`, construire et vérifier l'ordre demandé des en-têtes, tout en prouvant le décodage gzip et les chemins existants.
+3. Mesurer TOONFR avec une clearance fraîche et lancer une sonde curl impersonnée sans inscrire ni journaliser la valeur du cookie.
+4. Corriger et éprouver les scripts personnalisés fautifs/doublons et faire hériter les exceptions réseau d'`IOException`, avec commits séparés.
+
+### Journal 2026-10-13 — profil WebView transmis avec `setCookies`
+
+- Capturés dans la fenêtre de challenge `navigator.userAgent`, les Client Hints bas et haute entropie et les deux valeurs de langue ; transmission additive dans `setCookies`, stockée en mémoire par domaine de clearance.
+- Porte Kotlin : `cd engine; gradle test --tests org.tatami.engine.BrowserIdentityTest --rerun-tasks` — **2 tests exécutés, 2 réussis**.
+- Portes Rust : `cd apps/desktop/src-tauri; cargo fmt` puis `cargo fmt --check` — propre ; `cargo clippy --all-targets -- -D warnings` — propre ; `cargo test --lib -j 2` — **195 réussis**.
+- `cargo test -j 2` complet reste à relancer : l'exécutable `tatami-desktop.exe` est verrouillé par le processus PID 14084 ; je ne l'ai pas arrêté.

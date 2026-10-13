@@ -15,4 +15,4 @@ package org.tatami.engine
  */
 class CloudFlareUnreplayableException(
     val url: String,
-) : IllegalStateException("Cloudflare protection not replayable at $url")
+) : java.io.IOException("Cloudflare protection not replayable at $url")

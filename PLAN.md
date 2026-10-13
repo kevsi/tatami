@@ -2128,3 +2128,8 @@ TOONFR. L'hypothèse était séduisante ; elle est fausse.
 - `cd engine; gradle test --tests org.tatami.engine.BrowserIdentityTest --tests org.tatami.engine.ChallengeHeadersTest --tests org.tatami.engine.RejeuRefuseTest --tests org.tatami.engine.CookieRejoueTest --rerun-tasks` — **31 tests réussis**, dont contrôle sans clearance et réponse gzip réellement décodée.
 - `cd engine; gradle test --rerun-tasks` — **170 tests, 1 échec** sur le test réseau `ZenMangaInterceptionTest` : la liste est présente mais la source ne renvoie aucun chapitre. Rejoué isolément, même échec à la même assertion ; les deux autres tests du fichier passent. Aucun clearance/profil n'est configuré pour ZENMANGA, donc le nouveau chemin ne s'exécute pas.
 - **Mesure réelle TOONFR à faire** : elle exige une clearance WebView fraîche et une reconstruction du sidecar ; le processus Tatami PID 14084 est encore ouvert et verrouille son exécutable.
+
+### Journal 2026-10-13 — exceptions Cloudflare de type `IOException`
+
+- `CloudFlareProtectionException` et `CloudFlareUnreplayableException` héritent maintenant de `IOException`, afin que les échecs réseau soient traités comme tels par OkHttp plutôt que comme exceptions d'état non gérées.
+- `cd engine; gradle test --tests org.tatami.engine.CloudFlareExceptionTest --tests org.tatami.engine.ErreursTest --rerun-tasks` — **9 tests réussis**, dont l'héritage des deux exceptions et la reconnaissance des causes directes/emballées.

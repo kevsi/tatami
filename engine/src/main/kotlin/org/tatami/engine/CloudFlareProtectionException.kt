@@ -5,4 +5,4 @@ package org.tatami.engine
 // Le serveur la convertit en erreur CHALLENGE_REQUIRED (contrat v0).
 class CloudFlareProtectionException(
     val url: String,
-) : IllegalStateException("Cloudflare protection at $url")
+) : java.io.IOException("Cloudflare protection at $url")

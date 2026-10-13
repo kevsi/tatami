@@ -1,6 +1,7 @@
 package org.tatami.engine
 
 import java.awt.image.BufferedImage
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import javax.imageio.ImageIO
 import javax.script.ScriptEngineManager
@@ -66,9 +67,20 @@ class EngineContext : MangaLoaderContext() {
 
     override val cookieJar: CookieJar = InMemoryCookieJar()
 
-    // Remplacé par setCookies (contrat v0) après résolution d'un challenge.
-    @Volatile
-    var userAgentOverride: String? = null
+    private val userAgentOverrides = ConcurrentHashMap<String, String>()
+
+    internal fun definirUserAgentChallenge(domaine: String, userAgent: String) {
+        val cle = RejeuRefuse.normaliserHote(domaine)
+        if (cle.isNotEmpty()) userAgentOverrides[cle] = userAgent
+    }
+
+    internal fun userAgentChallengePour(hote: String): String? {
+        val normalise = RejeuRefuse.normaliserHote(hote)
+        return userAgentOverrides.entries
+            .filter { (domaine, _) -> normalise == domaine || normalise.endsWith(".$domaine") }
+            .maxByOrNull { (domaine, _) -> domaine.length }
+            ?.value
+    }
 
     private val scriptEngineManager = ScriptEngineManager()
 
@@ -180,9 +192,9 @@ class EngineContext : MangaLoaderContext() {
             // cookie is only honoured for the exact User-Agent it was issued
             // to ». Sans cette ligne, un parseur qui declare un UA (HENTAIZONE
             // declare `Firefox/116`) annulait silencieusement
-            // `userAgentOverride` — mesure du 2026-10-11 : on demandait
+            // `userAgentChallengePour` — mesure du 2026-10-11 : on demandait
             // `Edg/154`, c'est `Firefox/116` qui partait.
-            val impose = userAgentOverride
+            val impose = userAgentChallengePour(requete.url.host)
             if (impose != null) {
                 entetes.header("User-Agent", impose)
             } else if (demande.header("User-Agent") == null) {
@@ -285,9 +297,10 @@ class EngineContext : MangaLoaderContext() {
             nashorn.eval(script)?.toString()?.takeUnless { it.isEmpty() || it == "null" }
         }
 
-    override fun getConfig(source: MangaSource): MangaSourceConfig = DefaultMangaSourceConfig()
+    override fun getConfig(source: MangaSource): MangaSourceConfig =
+        DefaultMangaSourceConfig(SurchargeDomaine.pour(source))
 
-    override fun getDefaultUserAgent(): String = userAgentOverride ?: UserAgents.FIREFOX_DESKTOP
+    override fun getDefaultUserAgent(): String = UserAgents.FIREFOX_DESKTOP
 
     override fun redrawImageResponse(response: Response, redraw: (Bitmap) -> Bitmap): Response {
         val body = checkNotNull(response.body) { "Empty response body" }

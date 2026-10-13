@@ -1,6 +1,10 @@
 package org.tatami.engine
 
+import org.jsoup.HttpStatusException
 import org.koitharu.kotatsu.parsers.exception.AuthRequiredException
+import org.koitharu.kotatsu.parsers.exception.NotFoundException
+import org.koitharu.kotatsu.parsers.exception.ParseException
+import java.net.UnknownHostException
 
 /**
  * Retrouve une exception connue dans la chaîne de `cause`, même enveloppée.
@@ -66,6 +70,53 @@ internal fun challengeNonRejouableDe(t: Throwable): String? =
  */
 internal fun authRequise(t: Throwable): AuthRequiredException? =
     retrouverDansLesCauses<AuthRequiredException>(t)
+
+/**
+ * Cloudflare répond, mais son **origine** ne répond plus. Le domaine existe, le
+ * TLS passe, Cloudflare affiche une page d'erreur 52x — la source n'est donc ni
+ * morte, ni un problème de parseur : le serveur derrière est éteint.
+ *
+ * Ces quatre codes viennent tous de Cloudflare et disent la même chose.
+ */
+private val ORIGINES_INJOIGNABLES = setOf(521, 522, 523, 525)
+
+/**
+ * Classe une panne de source en code actionnable, et rend la cause qui l'a
+ * décidée.
+ *
+ * ## Pourquoi, mesuré le 2026-10-12
+ *
+ * Sur les **98 sources FR**, 83 ne fonctionnaient pas et chacune remontait
+ * `INTERNAL: <exception Java brute>`. Un utilisateur ne peut rien faire de
+ * `HttpStatusException: . Status=523` : il ne sait ni si son réseau est en
+ * cause, ni si la source est morte, ni si le programme est cassé.
+ *
+ * Le classement se fait sur le **type** de l'exception et son **code de
+ * statut**, jamais sur une recherche de texte : `HttpStatusException` expose
+ * `getStatusCode`, donc le classement tient même si un parseur réécrit son
+ * message d'erreur.
+ *
+ * La cause est rendue **avec** le code pour que l'appelant compose un message
+ * qui conserve le détail technique : c'est ce détail que
+ * `Supervisor::is_transient` reconnaît côté Rust pour rejouer un échec réseau.
+ * Un message réécrit casserait ce retry — le typage est donc additif.
+ */
+internal fun classerEchecSource(t: Throwable): Pair<String, Throwable>? {
+    val morte = retrouverDansLesCauses<UnknownHostException>(t)
+        ?: retrouverDansLesCauses<NotFoundException>(t)
+        ?: retrouverDansLesCauses<HttpStatusException>(t)
+            ?.takeIf { it.statusCode == 404 || it.statusCode == 410 }
+    if (morte != null) return "SOURCE_DEAD" to morte
+
+    val origine = retrouverDansLesCauses<HttpStatusException>(t)
+        ?.takeIf { it.statusCode in ORIGINES_INJOIGNABLES }
+    if (origine != null) return "ORIGIN_DOWN" to origine
+
+    val perime = retrouverDansLesCauses<ParseException>(t)
+    if (perime != null) return "PARSER_OUTDATED" to perime
+
+    return null
+}
 
 /** Le message que nos exceptions écrivent, retenu par OkHttp quand il perd la cause. */
 private val MOTIF_CHALLENGE = Regex("Cloudflare protection at (\\S+)")

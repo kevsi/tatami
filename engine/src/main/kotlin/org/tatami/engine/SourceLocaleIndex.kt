@@ -11,9 +11,26 @@ import java.util.zip.ZipFile
  * les 1370 parsers (instantiation complete Measured tres lentement).
  */
 object SourceLocaleIndex {
+    /**
+     * Mappage explicite des sources connues dont le nom peut être trompeur.
+     *
+     * Le suffixe "ES" ou "FR" n'est pas fiable : MANGASORIGINES finit par ES
+     * mais est en français, et HENTAIORIGINES est un vrai nom de source (H-E-N-T),
+     * pas un raccourci tel que "HANT". Les sources qui se ressemblent
+     * doivent donc garder leur langue explicite et ne pas dépendre d'un
+     * heuristique de suffixe ou d'un scan du JAR seul.
+     */
+    private val explicitByName: Map<String, String> = mapOf(
+        "MANGASORIGINES" to "fr",
+        "HENTAIORIGINES" to "fr",
+        "MANGAFR" to "fr",
+        "MANGABR" to "pt",
+        "MANGABALL_BR" to "pt",
+    )
+
     private val byName: Map<String, String> by lazy { scan() }
 
-    fun langOf(sourceName: String): String? = byName[sourceName.uppercase()]
+    fun langOf(sourceName: String): String? = explicitByName[sourceName.uppercase()] ?: byName[sourceName.uppercase()]
 
     private fun scan(): Map<String, String> {
         val out = HashMap<String, String>()

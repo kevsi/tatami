@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.koitharu.kotatsu.parsers.network.UserAgents
 import kotlin.test.assertFalse
 
 /**
@@ -12,7 +13,7 @@ import kotlin.test.assertFalse
  * Le défaut critique mesuré le 2026-10-09 : `telechargerImage`
  * construisait `val context2 = EngineContext()` — un contexte **neuf** à chaque
  * image. Or c'est le contexte de `serve()` (`Server.kt:312`) que `setCookies`
- * remplit : `cookieJar` (`:965`) et `userAgentOverride` (`:966`).
+ * remplit : `cookieJar` et l'UA associé au domaine de la clearance.
  *
  * Scénario réel : l'utilisateur résout un challenge Cloudflare sur une source
  * scriptée, le `cf_clearance` et l'UA sont posés, le téléchargement repart…
@@ -165,10 +166,8 @@ class CookieRejoueTest {
     @Test
     fun `l UA de challenge existe bien sur le client qui sert les images`() {
         val contexte = EngineContext()
-        contexte.userAgentOverride = "Agent/Test"
-        // Avant le correctif, un contexte neuf ignorait ce champ : l'UA posé
-        // après un challenge ne servait à rien côté scripté.
-        assertEquals("Agent/Test", contexte.userAgentOverride)
+        contexte.definirUserAgentChallenge("hentaizone.xyz", "Agent/Test")
+        assertEquals("Agent/Test", contexte.userAgentChallengePour("hentaizone.xyz"))
         // `assertSame` sur `httpClient` ne tient plus depuis que
         // `clientPourImage` rend `clientImage` — un client dérivé, sans
         // redirections (`RedirectionImageTest`). L'identité du client même
@@ -177,6 +176,17 @@ class CookieRejoueTest {
         // cookies et les mêmes intercepteurs.
         kotlin.test.assertNotSame(contexte.httpClient, clientPourImage(contexte))
         kotlin.test.assertSame(contexte.cookieJar, clientPourImage(contexte).cookieJar)
+    }
+
+    @Test
+    fun `UA d un challenge ne remplace pas celui des autres domaines`() {
+        val contexte = EngineContext()
+        contexte.definirUserAgentChallenge("hentaizone.xyz", "Agent/Challenge")
+
+        assertEquals("Agent/Challenge", contexte.userAgentChallengePour("hentaizone.xyz"))
+        assertEquals("Agent/Challenge", contexte.userAgentChallengePour("www.hentaizone.xyz"))
+        assertEquals(null, contexte.userAgentChallengePour("mangas-origines.fr"))
+        assertEquals(UserAgents.FIREFOX_DESKTOP, contexte.getDefaultUserAgent())
     }
 
     @Test

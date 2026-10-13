@@ -10,6 +10,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.Cookie
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -531,7 +532,18 @@ fun serve() {
                 } else if (authRequise(e) != null) {
                     err(id, "AUTH_REQUIRED", "this source asks for an account")
                 } else {
-                    err(id, "INTERNAL", "${e.javaClass.simpleName}: ${e.message}")
+                    // Le typage ajoute un **code** sans réécrire le détail : le
+                    // message garde `Exception: texte`, que `is_transient` côté
+                    // Rust reconnaît pour rejouer un échec réseau. Mesuré le
+                    // 2026-10-12 : 83 des 98 sources FR remontaient ici un
+                    // `INTERNAL` que l'utilisateur ne pouvait pas interpréter.
+                    val classe = classerEchecSource(e)
+                    if (classe != null) {
+                        val (code, cause) = classe
+                        err(id, code, "${cause.javaClass.simpleName}: ${cause.message}")
+                    } else {
+                        err(id, "INTERNAL", "${e.javaClass.simpleName}: ${e.message}")
+                    }
                 }
             }
             // stdout = protocole uniquement (jamais de logs ici).
@@ -860,11 +872,45 @@ private fun validerUrlImage(url: String, quoi: String): String {
  */
 internal fun clientPourImage(context: EngineContext): OkHttpClient = context.clientImage
 
+/**
+ * Construit la requête de téléchargement d'une image **servie par une source
+ * scriptée**, avec l'en-tête `Referer` que le chemin natif envoie déjà.
+ *
+ * Isolé dans une fonction pour être éprouvé : `telechargerImage` est `private`
+ * et son client vient d'un `EngineContext` sans couture d'injection, donc un
+ * test ne peut pas observer la requête sur le fil. Ce que ce test garantit,
+ * c'est le **construire** — donc le supprimer d'ici casse le test, et le
+ * réintroduire en dur dans `telechargerImage` le casserait aussi.
+ *
+ * Seule l'**origine** est envoyée : elle est calculée à partir de l'URL déjà
+ * validée par `validerUrlImage` (https obligatoire, pas d'adresse privée), donc
+ * aucun lien n'est divulgué hors du site qui sert l'image, et l'URL de l'image
+ * elle-même — qui peut porter un jeton de session — ne part pas dans l'en-tête.
+ *
+ * Pourquoi : mesuré le 2026-10-13 sur rimuscan.fr, la même image répond 403
+ * sans `Referer` et 200 (786 715 octets) avec. Beaucoup de sites refusent le vol
+ * d'image à chaud ; le chemin **natif** (`fetch_octets`) en envoie déjà un,
+ * le chemin scripté non — c'était une incohérence, pas une fonctionnalité.
+ */
+internal fun requeteImageScriptee(url: String): okhttp3.Request {
+    // Une seule analyse, réutilisée : `Request.Builder().url()` refuse déjà
+    // toute URL illisible, donc une branche « URL non analysable » ici serait
+    // **inatteignable**. `toHttpUrl()` lève la même exception que `.url(url)`,
+    // ce qui évite d'entretenir du code mort et son test.
+    val cible = url.toHttpUrl()
+    return okhttp3.Request.Builder()
+        .url(cible)
+        // `host` ne garde que l'hôte : le port est écarté, et surtout **jamais
+        // le chemin ni la chaîne de requête**, qui peut porter un jeton.
+        .header("Referer", "${cible.scheme}://${cible.host}/")
+        .get()
+        .build()
+}
+
 /** Télécharge une image déjà validée et la rend en base64, comme le contrat l'attend. */
 private fun telechargerImage(url: String, quoi: String, context: EngineContext): JSONObject =
     LIMITES_IMAGES.autourDe {
-        val req = okhttp3.Request.Builder().url(url).get().build()
-        clientPourImage(context).newCall(req).execute().use { resp ->
+        clientPourImage(context).newCall(requeteImageScriptee(url)).execute().use { resp ->
             val bytes = octetsImage(resp, quoi)
             JSONObject()
                 .put("data", java.util.Base64.getEncoder().encodeToString(bytes))

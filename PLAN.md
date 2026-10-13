@@ -2133,3 +2133,10 @@ TOONFR. L'hypothèse était séduisante ; elle est fausse.
 
 - `CloudFlareProtectionException` et `CloudFlareUnreplayableException` héritent maintenant de `IOException`, afin que les échecs réseau soient traités comme tels par OkHttp plutôt que comme exceptions d'état non gérées.
 - `cd engine; gradle test --tests org.tatami.engine.CloudFlareExceptionTest --tests org.tatami.engine.ErreursTest --rerun-tasks` — **9 tests réussis**, dont l'héritage des deux exceptions et la reconnaissance des causes directes/emballées.
+
+### Journal 2026-10-13 — réparation et déduplication des sources personnalisées
+
+- Dans `%APPDATA%\Tatami\sources`, le fichier `mangadexFr.js` contenait un générateur Python, pas un parseur JS. Le générateur a été préservé sous `mangadexFr.js.generator.py.disabled` et son résultat français a été installé sous le nom `.js`, avec un identifiant cohérent avec le nom de fichier.
+- `cd engine; gradle test --tests org.tatami.engine.MangaDexFrUserSourceProbeTest --rerun-tasks` — **1 test réussi** : le parseur réel Nashorn évalue le script et vérifie son identifiant, son nom et sa langue. `node --check <chemin de mangadexFr.js>` — syntaxe acceptée.
+- `source-hentai-scantrad.js` et `source-ortega-scans.js` ont été renommés en `.disabled` (sauvegardes conservées) ; le loader ne découvre que `*.js`. `hentai-scantrad.js` conservé comme version canonique, qui contient les entités typographiques manquantes ; `ortega-scans.js` conservé, son doublon vérifié identique par SHA-256.
+- Ces scripts résident dans AppData, hors du dépôt et ne sont donc pas inclus dans le commit de ce journal.

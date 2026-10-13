@@ -61,6 +61,19 @@ internal fun challengeNonRejouableDe(t: Throwable): String? =
         ?: MOTIF_CHALLENGE_NON_REJOUABLE.find(t.message ?: "")?.groupValues?.get(1)
 
 /**
+ * Cloudflare **refuse** la requête sans proposer de vérification
+ * (`CloudFlareHelper.PROTECTION_BLOCKED`).
+ *
+ * Distinct de [challengeDe] par le type, et surtout par ce qu'il faut en
+ * faire : ici il n'y a **rien à résoudre**, donc l'interface ne doit ouvrir
+ * aucune fenêtre. C'est la distinction que `Kotatsu-Redo` fait entre
+ * `CloudFlareBlockedException` et `CloudFlareProtectedException` ; jusqu'au
+ * 2026-10-13 nous rendions les deux en `CHALLENGE_REQUIRED`.
+ */
+internal fun sourceBloqueeDe(t: Throwable): String? =
+    retrouverDansLesCauses<CloudFlareBlockedException>(t)?.url
+
+/**
  * Un chapitre protégé par compte.
  *
  * `AuthRequiredException` n'est levée que sur HTTP **401** par 16 parseurs, et

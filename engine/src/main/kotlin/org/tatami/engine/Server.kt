@@ -518,9 +518,24 @@ fun serve() {
                 // sinon il est rendu comme une demande de vérification et la
                 // fenêtre se rouvre — le cycle « bandeau → puzzle → rien »
                 // mesuré le 2026-10-11 sur HENTAIZONE.
+                // **L'ordre des tests est une garantie, pas un détail** (cf. le
+                // commentaire d'en-tête de `challengeNonRejouableDe`). Un
+                // **blocage** passe devant tout le reste : ouvrir une fenêtre
+                // de vérification pour une source que Cloudflare refuse sans
+                // défi, c'est faire résoudre l'utilisateur un puzzle qui ne
+                // mène à rien — et c'est exactement ce que `PROTECTION_BLOCKED`
+                // désigne.
+                val blocage = sourceBloqueeDe(e)
                 val nonRejouable = challengeNonRejouableDe(e)
                 val challenge = if (nonRejouable != null) null else challengeDe(e)
-                if (nonRejouable != null) {
+                if (blocage != null) {
+                    err(
+                        id,
+                        "SOURCE_BLOCKED",
+                        "source blocked by Cloudflare at $blocage",
+                        blocage,
+                    )
+                } else if (nonRejouable != null) {
                     err(
                         id,
                         "CHALLENGE_UNREPLAYABLE",

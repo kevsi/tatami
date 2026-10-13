@@ -2052,3 +2052,58 @@ session à ce jour** : c'est la prochaine mesure, pour trancher entre
 - `cf_clearance` **n'atteint pas** la requête suivante → correctible ;
 - ou elle y est et Cloudflare refuse malgré tout → empreinte TLS d'OkHttp,
   hors de portée d'un correctif de code.
+
+### Écart n°1 — un blocage Cloudflare n'est pas un captcha (2026-10-13)
+
+Lecture de `Kotatsu-Redo/core/network/CloudFlareInterceptor.kt` (merci de la
+piste) : la référence **distingue** trois issues là où nous en traitions deux.
+Le commentaire d'aide de `CaptchaAutoResolveCoordinator` y répond aussi, sur
+notre propre cas : « The solver WebView passing the challenge while the parser's
+OkHttp request stays blocked means Cloudflare is not honouring the clearance for
+that request — a fingerprint mismatch between the two HTTP stacks, not something
+a repeat session can resolve. » Ils ne le résolvent pas, ils l'**empêchent de
+boucler** — ce qu'on a fait sous le nom `CHALLENGE_UNREPLAYABLE`.
+
+#### `PROTECTION_BLOCKED` contre `PROTECTION_CAPTCHA`
+
+`CloudFlareHelper` rend trois issues ; `PROTECTION_BLOCKED` finissait en
+`CloudFlareProtectionException`, comme `PROTECTION_CAPTCHA`. L'interface ouvrait
+donc une fenêtre de vérification pour une source **bloquée** : l'utilisateur
+résolvait un défi, le cookie partait, et la source restait inaccessible, avec un
+message qui annonçait une vérification là où il n'y en avait aucune.
+
+Corrigé : `CloudFlareBlockedException` → code `SOURCE_BLOCKED`, classé **avant**
+tout challenge. `challengeUrl` refuse désormais une URL sur un message
+`SOURCE_BLOCKED`, `Supervisor::is_transient` ne le rejoue plus, et l'interface
+dit « refusée par sa protection anti-robot, sans aucune vérification à passer ».
+
+#### Une fixture de test que la mesure a corrigée
+
+`RejeuRefuseTest` avait un **mauvais** corps de réponse : il portait à la fois
+`blocked_why_headline` et `challenge-error-title`. Le bytecode de
+`CloudFlareHelper` montre que le premier classifie en `PROTECTION_BLOCKED` et le
+second en `PROTECTION_CAPTCHA` — donc la fixture **était** un blocage, et les 15
+tests du fichier passaient parce que les deux issues étaient mélangées. Elles
+divergent donc aujourd'hui.
+
+C'est une correction de fixture, pas un ajustement au code : la fixture porte
+maintenant le marqueur captcha que son nom décrit, et deux tests couvrent le
+blocage. **Porte prouvée rouge** sur `if (protection == PROTECTION_BLOCKED)` —
+les deux tests du blocage tombent.
+
+Témoin sur l'artefact livré : le JAR reconstruit contient
+`CloudFlareBlockedException` et `Response.peekBody`.
+
+#### Ce que ce n°1 ne corrige pas
+
+TOONFR reste refusé. La cause de fond est le décalage d'empreinte entre la pile
+HTTP de la fenêtre et celle d'OkHttp, et le projet de référence la tient pour
+hors de portée d'un correctif.
+
+#### Piste V2, mesurée et écartée
+
+`MangaLoaderContext.interceptWebViewRequests(...)` (la requête passe par un vrai
+WebView, donc une seule pile) est implémentée par défaut par un
+`UnsupportedOperationException` et ne l'est pas chez nous — mais **seuls 2
+parseurs** l'utilisent (`AllManga`, `Comix`, anglais). Ce n'est pas la cause de
+TOONFR. L'hypothèse était séduisante ; elle est fausse.

@@ -75,18 +75,37 @@ class RejeuRefuseTest {
         .callTimeout(5, TimeUnit.SECONDS)
         .build()
 
-    /** Un 403 que `CloudFlareHelper` reconnaît comme protection. */
-    private fun reponseProtegee() = MockResponse()
-        .setResponseCode(403)
-        .setHeader("cf-mitigated", "challenge")
-        .setHeader("server", "cloudflare")
-        .setBody(
-            "<html><body>" +
-                "<h2 data-translate=\"blocked_why_headline\">Attention Required!</h2>" +
-                "<div id=\"challenge-error-title\">Verifying you are human</div>" +
-                "<div id=\"challenge-error-text\">This process is automatic.</div>" +
-                "</body></html>",
-        )
+/** Un 403 que `CloudFlareHelper` reconnaît comme **captcha**.
+ *
+ * Mesuré dans le bytecode de `kotatsu-parsers-redo` : `blocked_why_headline`
+ * classe la page en `PROTECTION_BLOCKED`, `challenge-error-title` en
+ * `PROTECTION_CAPTCHA`. La fixture originale portait **les deux**, donc elle
+ * était classée blocage — et comme les deux issues finissaient dans la même
+ * branche de l'intercepteur, personne ne l'a vu. Elles divergent depuis le
+ * 2026-10-13 : cette fixture doit donc être un captcha, car c'est ce que les
+ * tests ci-dessous décrivent.
+ */
+private fun reponseProtegee() = MockResponse()
+    .setResponseCode(403)
+    .setHeader("cf-mitigated", "challenge")
+    .setHeader("server", "cloudflare")
+    .setBody(
+        "<html><body>" +
+            "<div id=\"challenge-error-title\">Verifying you are human</div>" +
+            "<div id=\"challenge-error-text\">This process is automatic.</div>" +
+            "</body></html>",
+    )
+
+/** Un 403 que `CloudFlareHelper` reconnaît comme **blocage**. */
+private fun reponseBloquee() = MockResponse()
+    .setResponseCode(403)
+    .setHeader("cf-mitigated", "challenge")
+    .setHeader("server", "cloudflare")
+    .setBody(
+        "<html><body>" +
+            "<h2 data-translate=\"blocked_why_headline\">Sorry, you have been blocked</h2>" +
+            "</body></html>",
+    )
 
     private fun appeler(
         client: OkHttpClient,
@@ -345,9 +364,45 @@ class RejeuRefuseTest {
         serveur.enqueue(reponseProtegee())
         val e = assertNotNull(appeler(client()), "le 403 protege doit lever une exception")
 
-        assertTrue(
+                assertTrue(
             e is CloudFlareProtectionException,
             "apres une reponse normale, une nouvelle verification doit etre possible",
+        )
+    }
+
+    @Test
+    fun `un blocage ne demande aucune verification et ne memorise rien`() {
+        // `PROTECTION_BLOCKED` : la source est **refusée**, il n'y a rien à
+        // résoudre. C'est la distinction que `Kotatsu-Redo` fait entre
+        // `CloudFlareBlockedException` et `CloudFlareProtectedException`, et que
+        // notre intercepteur ne faisait pas jusqu'au 2026-10-13 — l'interface
+        // ouvrait alors une fenêtre de vérification pour une source bloquée.
+        serveur.enqueue(reponseBloquee())
+        val e = assertNotNull(appeler(client()), "le 403 bloque doit lever une exception")
+
+        assertTrue(
+            e is CloudFlareBlockedException,
+            "un blocage doit etre un CloudFlareBlockedException, pas un captcha : $e",
+        )
+        // Rien à mémoriser : un blocage n'est pas un échec de rejeu, donc il ne
+        // doit pas couper la prochaine demande de vérification.
+        assertFalse(
+            RejeuRefuse.estRefuse(serveur.hostName),
+            "un blocage ne doit rien ecrire dans la memoire de rejeu",
+        )
+    }
+
+    @Test
+    fun `un blocage reste un blocage meme avec une clearance`() {
+        // Le voisinage du test précédent : avec un cookie présent, l'ancien code
+        // aurait pu confondre blocage et rejeu refuse.
+        poserClearance(serveur.hostName)
+        serveur.enqueue(reponseBloquee())
+        val e = assertNotNull(appeler(client()))
+
+        assertTrue(
+            e is CloudFlareBlockedException,
+            "une clearance presente ne doit pas transformer un blocage en rejeu refuse : $e",
         )
     }
 }

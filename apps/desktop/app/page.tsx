@@ -1011,6 +1011,11 @@ function formatBytes(bytes: number): string {
 
 /** Extrait l'URL de vérification d'une erreur `CHALLENGE_REQUIRED`. */
 function challengeUrl(raw: string): string | null {
+  // Un blocage porte `SOURCE_BLOCKED`, pas « challenge at ». Il n'y a alors rien
+  // à résoudre, donc aucune fenêtre à ouvrir. Ce test doit rester devant la
+  // recherche d'URL : un jour Cloudflare renverra les deux dans un même message,
+  // et promettre une vérification serait un mensonge.
+  if (/SOURCE_BLOCKED/i.test(raw)) return null;
   const m = raw.match(/challenge at (\S+)/);
   return m ? m[1] : null;
 }

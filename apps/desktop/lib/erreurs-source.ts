@@ -27,6 +27,7 @@ export type CleErreur =
   | "erreur.delai"
   | "erreur.verification"
   | "erreur.verification.non.rejouable"
+  | "erreur.sourcebloquee"
   | "erreur.compte.requis"
   | "erreur.surcharge"
   | "erreur.source.morte"
@@ -86,6 +87,13 @@ export function describeError(
     // « pas encore gérée » de `erreur.verification` conviendrait ici et serait
     // un mensonge — il promet une action que rien ne peut réussir.
     return t("erreur.verification.non.rejouable", { source: sourceName });
+  }
+  if (/SOURCE_BLOCKED/i.test(s)) {
+    // Un blocage n'est pas un captcha : il n'y a **rien à résoudre**. Ce test
+    // doit précéder `CHALLENGE_REQUIRED` car Cloudflare joint parfois les deux
+    // dans un même message, et promettre une vérification ici serait un
+    // mensonge — c'est une règle qui refuse, pas un défi à passer.
+    return t("erreur.sourcebloquee", { source: sourceName });
   }
   if (/CHALLENGE_REQUIRED/i.test(s)) {
     return t("erreur.verification", { source: sourceName });

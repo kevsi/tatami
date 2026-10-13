@@ -439,6 +439,8 @@ const FR = {
     "{source} demande une vérification anti-robot, pas encore gérée.",
   "erreur.verification.non.rejouable":
     "{source} exige une vérification que l'application ne sait pas rejouer. Ouvrir la source dans un navigateur reste possible.",
+  "erreur.sourcebloquee":
+    "{source} est refusée par sa protection anti-robot, sans aucune vérification à passer. Ouvrir la source dans un navigateur reste la seule voie.",
   "challenge.domaine.indisponible":
     "L'URL de vérification ne correspond à aucun domaine déclaré pour cette source.",
   "challenge.non.rejouable":
@@ -913,6 +915,8 @@ const EN: Record<Cle, string> = {
     "{source} asks for an anti-bot check, not handled yet.",
   "erreur.verification.non.rejouable":
     "{source} requires a verification the app cannot replay. Opening the source in a browser still works.",
+  "erreur.sourcebloquee":
+    "{source} is refused by its anti-robot protection, with no check to pass. Opening the source in a browser is the only way.",
   "challenge.domaine.indisponible":
     "The verification URL does not match any domain declared for this source.",
   "challenge.non.rejouable":

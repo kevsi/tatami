@@ -449,17 +449,36 @@ impl Supervisor {
                 // site refusait. Le contenu de la réponse portait la seule information
                 // utile, et il était jeté.
                 //
-                // On ne note que le **code** : le message peut contenir l'URL du
-                // site, et le journal applique une rédaction (cf. `journal.rs`).
+                // On note le **code** et le **message**. Le code seul ne suffisent
+                // plus : mesuré le 2026-10-13 sur TOONFR, un rejeu refusé
+                // répondait `INTERNAL len=152` — et le journal ne disait rien du
+                // tout sur la cause. C'est le même trou que celui du 2026-10-09
+                // (« le journal ne le voyait pas »), refermé par la trace mais
+                // rouvert par cette décision : on venait de jeter le contenu de
+                // la réponse, **y compris le seul champ qui distinguait** « le
+                // site refuse le rejeu » de « le parseur a planté ».
+                //
+                // Le message passe par la rédaction de `journal.rs` comme le
+                // reste : une URL y devient une empreinte. Le type d'exception,
+                // lui, reste lisible — c'est précisément ce qu'il faut.
                 let code = value
                     .get("error")
                     .and_then(|e| e.get("code"))
                     .and_then(Value::as_str)
                     .unwrap_or("");
+                let message = value
+                    .get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let extrait: String = message.chars().take(220).collect();
                 if code.is_empty() {
                     tracing::info!("stdout recu id={id} len={}", line.len());
                 } else {
-                    tracing::warn!("stdout erreur id={id} code={code} len={}", line.len());
+                    tracing::warn!(
+                        "stdout erreur id={id} code={code} msg={extrait} len={}",
+                        line.len()
+                    );
                 }
                 match pending.lock().await.remove(id) {
                     Some(tx) => {

@@ -18,6 +18,7 @@ use tauri::Manager;
 // « allow the macro to be resolved with the same path as the command function »).
 // L'import de `commands` ci-dessous n'est donc pas cosmétique : sans lui, le
 // chemin de `generate_handler!` ne se résout pas.
+use tatami_desktop::pagecache::PageRef;
 use tatami_desktop::{
     challenge, commands, custom_source, download, journal, library, moteur, pagecache, scheduler,
     shelf, store, tray,
@@ -181,7 +182,14 @@ fn main() {
         .manage(sup.clone())
         .manage(Arc::new(store))
         .manage(cache.clone())
-        .register_asynchronous_uri_scheme_protocol("tatami", move |_ctx, request, responder| {
+        .register_asynchronous_uri_scheme_protocol("tatami", move |ctx, request, responder| {
+            // La poignée de l'application, lue sur le contexte du gestionnaire
+            // de protocole (`UriSchemeContext::app_handle`, vérifié dans la
+            // source de tauri 2.11.5). Elle est nécessaire pour demander une
+            // fenêtre de vérification quand une **image** est bloquée : le
+            // lecteur est la seule voie qui passe par ce gestionnaire, et
+            // sans elle aucun signal ne peut remonter à l'interface.
+            let app = ctx.app_handle().clone();
             let sup = sup.clone();
             let cache = cache.clone();
             tauri::async_runtime::spawn(async move {
@@ -210,6 +218,13 @@ fn main() {
                     ),
                     Err(e) => {
                         tracing::warn!("tatami serve error: {e}");
+                        // Une image bloquée par une vérification anti-robot doit
+                        // pouvoir demander sa fenêtre, sinon elle reste
+                        // simplement une page cassée (voir
+                        // `challenge::signaler_challenge_lecture`).
+                        if let PageRef::Moteur { source, page_url } = &pages {
+                            challenge::signaler_challenge_lecture(&app, source, page_url, &e);
+                        }
                         responder.respond(not_found());
                     }
                 }

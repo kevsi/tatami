@@ -1207,6 +1207,9 @@ export default function Home() {
   const [reader, setReader] = useState<Reader | null>(null);
   const [readerLoading, setReaderLoading] = useState(false);
   const [challenge, setChallenge] = useState<string | null>(null);
+  /** Incrémenté après chaque vérification résolue : force le rechargement des
+   *  images du lecteur, dont le 404 est resté en cache. Voir `pageSrc`. */
+  const [reprisePages, setReprisePages] = useState(0);
   const [challengeBusy, setChallengeBusy] = useState(false);
   // Compteur de challenges consécutifs, par couple (source, action).
   //
@@ -1502,7 +1505,7 @@ export default function Home() {
       (event) => {
         const { source, url, reason } = event.payload;
         setVerif({ source, url, reason });
-        invoke('open_challenge', { source, url })
+        invoke('open_challenge', { source, url, hoteImage: null })
           .then(() => setNotice(tCourant.current('telechargements.verification.ouverte', { source })))
           .catch((e) => {
             const detail = String(e);
@@ -1523,6 +1526,38 @@ export default function Home() {
     const unlistenFermee = listen<{ source: string }>('challenge://fermee', () => {
       setChallengeBusy(false);
     });
+    // **Une image du lecteur demande une vérification.** Ajouté le 2026-10-13.
+    //
+    // Le cœur rencontre `CHALLENGE_REQUIRED` sur `fetchImage` et émet ce
+    // signal ; jusque-là il se contentait de renvoyer 404, donc le lecteur
+    // montrait des images cassées **sans jamais proposer de fenêtre** — et le
+    // seul bandeau visible restait celui du catalogue, d'où l'impression que
+    // « les cookies sont envoyés » alors que rien n'avait été débloqué.
+    //
+    // `host` vient du cœur, qui l'a déduit de l'URL qu'il avait lui-même
+    // demandée. L'interface ne choisit aucun hôte : elle ne fait que le
+    // transmettre à `open_challenge`, qui refuse tout hôte non public et
+    // toute URL qui ne soit pas exactement sur cet hôte.
+    const unlistenPage = listen<{ source: string; url: string; host: string; reason: string }>(
+      'challenge://page',
+      (event) => {
+        const { source, url, host, reason } = event.payload;
+        setChallenge(url);
+        setChallengeBusy(true);
+        // Pas de notification ici : à ce stade les cookies ne sont pas encore
+        // partis. L'annonce honnête est celle de `challenge://resolu`, qui
+        // connaît le nombre réellement transmis.
+        invoke('open_challenge', { source, url, hoteImage: host }).catch((e) => {
+          const detail = String(e);
+          setError(
+            detail.includes('CHALLENGE_DOMAIN_UNAVAILABLE')
+              ? tCourant.current('challenge.domaine.indisponible')
+              : tCourant.current('erreur.verification', { source }),
+          );
+          setChallengeBusy(false);
+        });
+      },
+    );
     // Résolution détectée automatiquement. La surveillance Rust pousse les
     // cookies dès que `cf_clearance` apparaît dans la fenêtre, sans attendre
     // le clic « C'est fait, réessayer » — mesuré sur TOONFR (2026-10-10) :
@@ -1535,6 +1570,13 @@ export default function Home() {
       (event) => {
         const { source, cookies } = event.payload;
         setChallengeBusy(false);
+        // **Toujours**, avant toute branche : les images du lecteur ne sont
+        // rechargées par rien d'autre. Mesuré le 2026-10-13 — après
+        // résolution, l'interface ne rechargeait que le catalogue (et le
+        // téléchargement, le cas échéant) : le lecteur restait sur ses
+        // 404, d'où « le cookie est envoyé mais les webtoons ne
+        // s'affichent pas du tout ».
+        setReprisePages((n) => n + 1);
         const miroir = miroirChallenge.current;
         if (miroir.selected && miroir.selected.name === source) {
           setChallenge(null);
@@ -1616,6 +1658,7 @@ export default function Home() {
       unlisten.then((off) => off()).catch(() => {});
       unlistenVerif.then((off) => off()).catch(() => {});
       unlistenFermee.then((off) => off()).catch(() => {});
+      unlistenPage.then((off) => off()).catch(() => {});
       unlistenResolu.then((off) => off()).catch(() => {});
       unlistenMaj.then((off) => off()).catch(() => {});
     };
@@ -3145,7 +3188,11 @@ function nomSource(s: Source): string {
     // détection automatique ne se déclenche pas. La fenêtre s'ouvrait, et
     // l'utilisateur n'avait plus rien à cliquer.
     try {
-      await invoke('open_challenge', { source: selected.name, url: challenge });
+      await invoke('open_challenge', {
+      source: selected.name,
+      url: challenge,
+      hoteImage: null,
+    });
     } catch (e) {
       const detail = String(e);
       setError(
@@ -3277,9 +3324,21 @@ function nomSource(s: Source): string {
 
   // ---------- Lecteur (0.10) ----------
 
-function pageSrc(token: string) {
+/** URL d'une page du lecteur, via le protocole local.
+ *
+ *  `reprise` est un **cache-buster** et il n'est pas décoratif. Le 2026-10-13 :
+ *  quand une image est bloquée par une vérification Cloudflare, le cœur répond
+ *  404 à la requête de la webview, et le navigateur **retient ce 404**. Une
+ *  fois la vérification résolue, relancer la lecture sans changer l'URL
+ *  redonnait donc l'échec mis en cache — le lecteur restait noir alors que la
+ *  source était débloquée. Le paramètre ne change donc que lorsque le lecteur
+ *  a été explicitement relancé, et jamais à chaque rendu.
+ */
+function pageSrc(token: string, reprise: number) {
   // Sous Windows, le protocole enregistré s'atteint par ce nom d'hôte.
-  return `http://tatami.localhost/page/${token}`;
+  return reprise > 0
+    ? `http://tatami.localhost/page/${token}?r=${reprise}`
+    : `http://tatami.localhost/page/${token}`;
 }
 
 /** Couverture via le moteur : même protocole, préfixe `cover/`.
@@ -5424,7 +5483,7 @@ if (reader) {
                       ref={(el) => {
                         stripImages.current[i] = el;
                       }}
-                      src={admis.includes(i) ? pageSrc(p.token) : undefined}
+                      src={admis.includes(i) ? pageSrc(p.token, reprisePages) : undefined}
                       alt={t('lecteur.page.une', { n: i + 1 })}
                     // Une page que la source ne sert pas **le dit**. Sans ceci,
                     // le 404 de MangaDex s'affiche en image cassee muette :

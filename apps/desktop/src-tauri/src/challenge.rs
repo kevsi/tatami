@@ -499,8 +499,75 @@ fn normaliser_domaine_challenge(domaine: &str) -> Option<String> {
     (!hote.is_empty()).then_some(hote)
 }
 
-fn valider_url_challenge(url: &str, domaines: &[String]) -> Result<Url, String> {
-    if domaines.is_empty() {
+/// Un hôte ne vaut pas « autorisation de naviguer » s'il est privé ou local.
+///
+/// Nécessaire depuis le 2026-10-13 : la fenêtre de vérification pouvait être
+/// demandée sur un hôte **d'image**, c'est-à-dire un hôte choisi par le site
+/// et non déclaré par le parseur. Or une source hostile — ou simplement
+/// compromise — peut mettre `127.0.0.1`, `169.254.169.254` (métadonnées d'instance)
+/// ou un nom interne dans ses URL de pages. Le navigateur de la fenêtre
+/// joignait alors des cibles du réseau local avec les droits de l'utilisateur.
+///
+/// Le refus porte sur la forme littérale de l'hôte. Un nom public qui
+/// *pointerait* vers une adresse privée (DNS rebinding) passe : c'est le même
+/// angle mort que le contrôle déjà posé par le moteur sur les URL d'images,
+/// et le corriger ici sans corriger là donnerait une fausse assurance.
+fn hote_public(hote: &str) -> bool {
+    let h = hote.trim().trim_end_matches('.').to_ascii_lowercase();
+    if h.is_empty() {
+        return false;
+    }
+    if h == "localhost"
+        || h.ends_with(".localhost")
+        || h.ends_with(".local")
+        || h.ends_with(".internal")
+        || h == "metadata.google.internal"
+    {
+        return false;
+    }
+    // IPv4 littérale : on rejette les plages non publiques.
+    let octets: Vec<u8> = h
+        .split('.')
+        .filter_map(|part| part.parse::<u8>().ok())
+        .collect();
+    if octets.len() == 4 && h.split('.').count() == 4 {
+        let [a, b, c, _] = [octets[0], octets[1], octets[2], octets[3]];
+        let prive = a == 0
+            || a == 10
+            || a == 127
+            || (a == 169 && b == 254)
+            || (a == 172 && (16..=31).contains(&b))
+            || (a == 192 && b == 168)
+            || (a == 100 && (64..=127).contains(&b)) // CGNAT 100.64/10
+            || (a >= 224); // multicast et au-delà
+        let _ = c;
+        if prive {
+            return false;
+        }
+    }
+    true
+}
+
+/// Autorise le hôte d'une **URL d'image** déjà demandée par le moteur.
+///
+/// Le contrat est volontairement étroit, et c'est la décision humaine du
+/// 2026-10-13 : on n'ouvre la fenêtre que sur un hôte que **nous avons
+/// réellement demandé** pour cette source, jamais sur un hôte arbitraire
+/// annoncé par le site. Concrètement trois conditions, toutes vérifiées ici :
+///
+///   1. l'hôte est public (`hote_public`) — sinon la fenêtre viserait un
+///      service du réseau local ;
+///   2. l'URL de vérification est sur **exactement** cet hôte — sans ce
+///      point, un site pourrait demander l'autorisation pour `cdn.fr` et
+///      faire ouvrir la fenêtre sur `interbanque.example` ;
+///   3. le reste des règles habituelles s'applique toujours (https ou http,
+///      pas d'identifiants dans l'URL).
+fn valider_url_challenge(
+    url: &str,
+    domaines: &[String],
+    hote_image: Option<&str>,
+) -> Result<Url, String> {
+    if domaines.is_empty() && hote_image.is_none() {
         return Err(ERREUR_DOMAINE_CHALLENGE.to_string());
     }
     let parsed: Url = url
@@ -526,10 +593,97 @@ fn valider_url_challenge(url: &str, domaines: &[String]) -> Result<Url, String> 
                     .strip_suffix(&d)
                     .is_some_and(|prefixe| prefixe.ends_with('.'))
         });
-    if !autorise {
-        return Err(ERREUR_DOMAINE_CHALLENGE.to_string());
+    if autorise {
+        return Ok(parsed);
     }
-    Ok(parsed)
+    // Second chemin : le hôte d'image. Les trois conditions ci-dessus.
+    if let Some(autorise) = hote_image.and_then(normaliser_domaine_challenge) {
+        if hote == autorise && hote_public(&hote) {
+            return Ok(parsed);
+        }
+        tracing::warn!(
+            "challenge: hôte d'image refusé source-domaines={} url_host={hote} image_host={autorise}",
+            diagnostic_refus_challenge("", url)
+        );
+    }
+    Err(ERREUR_DOMAINE_CHALLENGE.to_string())
+}
+
+/// Fenêtre pendant laquelle on ne réémet pas pour une même source.
+const SIGNELEMENT_LECTURE_DELAI: Duration = Duration::from_secs(45);
+
+/// Dernière émission par source, pour ne pas émettre une fois par page.
+fn dernier_signalement() -> &'static Mutex<HashMap<String, std::time::Instant>> {
+    static DERNIER: OnceLock<Mutex<HashMap<String, std::time::Instant>>> = OnceLock::new();
+    DERNIER.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Demande à l'interface d'ouvrir la fenêtre de vérification pour une **image**.
+///
+/// ## Pourquoi il manquait
+///
+/// Le flux de vérification n'existait que sur deux chemins : le catalogue
+/// (`loadSource` côté interface) et les téléchargements (`download://challenge`).
+/// La **lecture** n'avait aucun des deux. Mesuré le 2026-10-13 :
+///
+/// - `setChallenge(...)` n'est appelé qu'à un seul endroit de l'interface
+///   (le `catch` de `loadSource`) ;
+/// - `pagecache::serve_page` transformait l'échec `CHALLENGE_REQUIRED` du
+///   moteur en simple page introuvable, sans rien remonter ;
+/// - et après résolution, l'interface ne rechargeait que le catalogue.
+///
+/// Résultat visible : « la fenêtre s'ouvre, les cookies sont envoyés, mais les
+/// webtoons ne s'affichent pas du tout ». Le toast disait vrai — le cookie
+/// était envoyé — et la lecture restait morte.
+///
+/// ## Ce que l'interface ne peut pas faire à notre place
+///
+/// L'hôte n'est **pas** transmis par l'interface : il est déduit ici de
+/// `page_url`, l'URL que le cœur a lui-même demandée au moteur. L'interface
+/// ne nomme donc jamais un hôte, et ne peut pas élargir la surface.
+pub fn signaler_challenge_lecture(app: &AppHandle, source: &str, page_url: &str, erreur: &str) {
+    if !erreur.contains("CHALLENGE_REQUIRED") {
+        return;
+    }
+    let Ok(cible) = Url::parse(page_url) else {
+        return;
+    };
+    let Some(hote) = cible.host_str().map(str::to_ascii_lowercase) else {
+        return;
+    };
+    if !hote_public(&hote) {
+        tracing::warn!(
+            "challenge: hôte d'image non public, aucune fenêtre source={source} host={hote}"
+        );
+        return;
+    }
+
+    // Un chapitre de 23 pages toutes bloquées émettrait 23 fois le même
+    // signal. On garde une seule émission récente par source.
+    {
+        let mut garde = match dernier_signalement().lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let maintenant = std::time::Instant::now();
+        if let Some(dernier) = garde.get(source) {
+            if maintenant.duration_since(*dernier) < SIGNELEMENT_LECTURE_DELAI {
+                return;
+            }
+        }
+        garde.insert(source.to_string(), maintenant);
+    }
+
+    tracing::warn!("challenge: lecture bloquée source={source} host={hote} -> fenêtre demandée");
+    let _ = app.emit(
+        "challenge://page",
+        json!({
+            "source": source,
+            "url": page_url,
+            "host": hote,
+            "reason": erreur.chars().take(160).collect::<String>(),
+        }),
+    );
 }
 
 fn diagnostic_refus_challenge(source: &str, url: &str) -> String {
@@ -549,15 +703,23 @@ fn diagnostic_refus_challenge(source: &str, url: &str) -> String {
 }
 
 /// Ouvre la fenêtre de résolution sur l'URL qui a renvoyé le challenge.
+///
+/// `hote_image` est le second chemin d'autorisation, ajouté le 2026-10-13 :
+/// une page de chapitre est souvent servie par un CDN qui n'appartient pas au
+/// domaine déclaré par le parseur. Sans lui, la vérification ne pouvait pas
+/// s'ouvrir sur ce CDN — et le lecteur n'affichait **aucune** image, sans
+/// jamais demander de vérification. Voir `valider_url_challenge` pour les
+/// trois conditions que ce chemin impose.
 #[tauri::command]
 pub async fn open_challenge(
     app: AppHandle,
     sup: State<'_, Arc<Supervisor>>,
     source: String,
     url: String,
+    hote_image: Option<String>,
 ) -> Result<(), String> {
     let domaines = sup.domaines_source(&source).await;
-    let parsed = match valider_url_challenge(&url, &domaines) {
+    let parsed = match valider_url_challenge(&url, &domaines, hote_image.as_deref()) {
         Ok(parsed) => parsed,
         Err(error) => {
             tracing::warn!("{}", diagnostic_refus_challenge(&source, &url));
@@ -857,8 +1019,9 @@ pub async fn cancel_challenge(app: AppHandle, source: String) -> Result<(), Stri
 mod tests {
     use super::{
         action_surveillance, challenge_en_cours, challenge_label, diagnostic_refus_challenge,
-        domaine_effectif, enregistrer_surveillance, reste_interstitiel, retirer_surveillance,
-        surveillances, valider_url_challenge, Action, LectureCookies, ERREUR_DOMAINE_CHALLENGE,
+        domaine_effectif, enregistrer_surveillance, hote_public, reste_interstitiel,
+        retirer_surveillance, surveillances, valider_url_challenge, Action, LectureCookies,
+        ERREUR_DOMAINE_CHALLENGE,
     };
 
     /// **Le defaut du 2026-10-11, en une assertion.** La surveillance a
@@ -1080,19 +1243,20 @@ mod tests {
     #[test]
     fn challenge_accepte_l_hote_declare_et_ses_sous_domaines() {
         let domaines = domaines_exemple();
-        assert!(valider_url_challenge("https://exemple.com/check", &domaines).is_ok());
-        assert!(valider_url_challenge("http://cdn.exemple.com/check", &domaines).is_ok());
+        assert!(valider_url_challenge("https://exemple.com/check", &domaines, None).is_ok());
+        assert!(valider_url_challenge("http://cdn.exemple.com/check", &domaines, None).is_ok());
     }
 
     #[test]
     fn challenge_refuse_un_hote_externe_et_un_faux_suffixe() {
         let domaines = domaines_exemple();
         assert_eq!(
-            valider_url_challenge("https://autre.test/check", &domaines).unwrap_err(),
+            valider_url_challenge("https://autre.test/check", &domaines, None).unwrap_err(),
             ERREUR_DOMAINE_CHALLENGE
         );
         assert_eq!(
-            valider_url_challenge("https://attaquant-exemple.com/check", &domaines).unwrap_err(),
+            valider_url_challenge("https://attaquant-exemple.com/check", &domaines, None)
+                .unwrap_err(),
             ERREUR_DOMAINE_CHALLENGE
         );
     }
@@ -1101,12 +1265,13 @@ mod tests {
     fn challenge_toomics_refuse_les_hotes_qui_contiennent_son_nom() {
         let domaines = vec!["toomics.com".to_string()];
         assert_eq!(
-            valider_url_challenge("https://toomics.com.attaquant.com/check", &domaines)
+            valider_url_challenge("https://toomics.com.attaquant.com/check", &domaines, None)
                 .unwrap_err(),
             ERREUR_DOMAINE_CHALLENGE
         );
         assert_eq!(
-            valider_url_challenge("https://attaquant-toomics.com/check", &domaines).unwrap_err(),
+            valider_url_challenge("https://attaquant-toomics.com/check", &domaines, None)
+                .unwrap_err(),
             ERREUR_DOMAINE_CHALLENGE
         );
     }
@@ -1114,14 +1279,17 @@ mod tests {
     #[test]
     fn challenge_refuse_un_schema_non_http_et_des_identifiants() {
         let domaines = domaines_exemple();
-        assert!(valider_url_challenge("file://exemple.com/check", &domaines).is_err());
-        assert!(valider_url_challenge("https://utilisateur@exemple.com/check", &domaines).is_err());
+        assert!(valider_url_challenge("file://exemple.com/check", &domaines, None).is_err());
+        assert!(
+            valider_url_challenge("https://utilisateur@exemple.com/check", &domaines, None)
+                .is_err()
+        );
     }
 
     #[test]
     fn challenge_refuse_une_source_sans_domaine_declare() {
         assert_eq!(
-            valider_url_challenge("https://exemple.com/check", &[]).unwrap_err(),
+            valider_url_challenge("https://exemple.com/check", &[], None).unwrap_err(),
             ERREUR_DOMAINE_CHALLENGE
         );
     }
@@ -1129,8 +1297,8 @@ mod tests {
     #[test]
     fn challenge_accepte_un_domaine_alternatif_declare() {
         let domaines = vec!["mangalib.org".to_string(), "mangalib.me".to_string()];
-        assert!(valider_url_challenge("https://mangalib.me/check", &domaines).is_ok());
-        assert!(valider_url_challenge("https://www.mangalib.me/check", &domaines).is_ok());
+        assert!(valider_url_challenge("https://mangalib.me/check", &domaines, None).is_ok());
+        assert!(valider_url_challenge("https://www.mangalib.me/check", &domaines, None).is_ok());
     }
 
     #[test]
@@ -1143,6 +1311,108 @@ mod tests {
         assert_eq!(
             diagnostic,
             "challenge refusé source=MANGADEX host=example.net"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Hôte d'image (2026-10-13) — la lecture n'avait aucun chemin de
+    // vérification : `pagecache` transformait le `CHALLENGE_REQUIRED` du moteur
+    // en page introuvable. Ces cas verrouillent la politique choisie.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn hote_dimage_autorise_sur_son_propre_hote() {
+        // Le cas qui Unlock tout : la page est servie par un CDN qui n'est pas
+        // le domaine du parseur, et la fenêtre doit pouvoir s'y ouvrir.
+        assert!(valider_url_challenge(
+            "https://cdn.tiers.fr/img/001.jpg",
+            &domaines_exemple(),
+            Some("cdn.tiers.fr")
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn hote_dimage_n_autorise_pas_un_autre_hote() {
+        // **La condition 2 de `valider_url_challenge`.** Sans elle, un site
+        // demanderait l'autorisation pour `cdn.fr` et ferait ouvrir la fenêtre
+        // sur une cible de son choix — la fenêtre est un navigateur complet.
+        assert_eq!(
+            valider_url_challenge(
+                "https://interbanque.example/prive",
+                &domaines_exemple(),
+                Some("cdn.tiers.fr")
+            )
+            .unwrap_err(),
+            ERREUR_DOMAINE_CHALLENGE
+        );
+    }
+
+    #[test]
+    fn hote_dimage_prive_ou_local_est_refuse() {
+        // **La condition 1.** Une source peut mettre 127.0.0.1 ou l'adresse des
+        // métadonnées d'instance dans ses URL de pages : la fenêtre ne doit
+        // jamais y naviguer.
+        for hote in [
+            "127.0.0.1",
+            "169.254.169.254",
+            "10.1.2.3",
+            "192.168.1.10",
+            "172.16.0.1",
+            "localhost",
+            "metadata.google.internal",
+            "bd.cdn.local",
+        ] {
+            assert_eq!(
+                valider_url_challenge(
+                    &format!("https://{hote}/img.jpg"),
+                    &domaines_exemple(),
+                    Some(hote)
+                )
+                .unwrap_err(),
+                ERREUR_DOMAINE_CHALLENGE,
+                "{hote} ne doit jamais autoriser une fenêtre"
+            );
+        }
+    }
+
+    #[test]
+    fn hote_public_accepte_un_nom_public_norminal() {
+        // Contrôle **positif** : sans lui, une liste de refus ne prouverait rien,
+        // et une régression qui refuserait tout passerait le test.
+        for hote in [
+            "cdn.tiers.fr",
+            "c.sushiscan.net",
+            "img.reimg.org",
+            "8.8.8.8",
+        ] {
+            assert!(hote_public(hote), "{hote} devrait être accepté");
+        }
+    }
+
+    #[test]
+    fn aucun_hote_image_ne_ouvre_la_fenetre_tel_quel() {
+        // Le second chemin ne contourne pas les autres règles : pas de schéma
+        // douteux, pas d'identifiants dans l'URL.
+        assert!(valider_url_challenge(
+            "file://cdn.tiers.fr/img.jpg",
+            &domaines_exemple(),
+            Some("cdn.tiers.fr")
+        )
+        .is_err());
+        assert!(valider_url_challenge(
+            "https://moi:secret@cdn.tiers.fr/img.jpg",
+            &domaines_exemple(),
+            Some("cdn.tiers.fr")
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn source_sans_domaine_sans_hote_image_reste_refusee() {
+        assert_eq!(
+            valider_url_challenge("https://exemple.com/check", &[], None).unwrap_err(),
+            ERREUR_DOMAINE_CHALLENGE
         );
     }
 }

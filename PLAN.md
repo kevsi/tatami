@@ -2142,3 +2142,250 @@ TOONFR. L'hypothèse était séduisante ; elle est fausse.
 - `cd engine; gradle test --tests org.tatami.engine.MangaDexFrUserSourceProbeTest --rerun-tasks` — **1 test réussi** : le parseur réel Nashorn évalue le script et vérifie son identifiant, son nom et sa langue. `node --check <chemin de mangadexFr.js>` — syntaxe acceptée.
 - `source-hentai-scantrad.js` et `source-ortega-scans.js` ont été renommés en `.disabled` (sauvegardes conservées) ; le loader ne découvre que `*.js`. `hentai-scantrad.js` conservé comme version canonique, qui contient les entités typographiques manquantes ; `ortega-scans.js` conservé, son doublon vérifié identique par SHA-256.
 - Ces scripts résident dans AppData, hors du dépôt et ne sont donc pas inclus dans le commit de ce journal.
+
+### Mesure décisive — le WebView2 obtient 200, OkHttp obtient 403 (2026-10-13)
+
+C'est la mesure listée comme « en attente » depuis le 2026-10-13, et elle a été
+faite : **la fenêtre de vérification accède réellement la source**, donc
+l'option B n'est plus une hypothèse.
+
+Sondes CDP sur le **WebView2 de l'application réelle** (`--remote-debugging-port`
+sur 9223, `Edg/155.0.4283.45`) : même profil, même UA que la fenêtre, aucune
+valeur de cookie lue ni journalisée.
+
+| sonde | client | résultat mesuré |
+|---|---|---|
+| navigation vers `toonfr.com/webtoon/` | WebView2 | **403** `cf-mitigated: challenge`, `server=cloudflare`, titre « Un instant… », `navigator.webdriver=false` |
+| ~10 s plus tard, même onglet | WebView2 | **200**, `cf-mitigated=null`, titre « Manga – Toonfr » |
+| `fetch('/webtoon/', {credentials:'include'})` | WebView2, sans naviguer | **200**, **178 573 o**, titre « Manga – Toonfr », **168 liens** `a[href*="/webtoon/"]` |
+| rejeu avec la même clearance | OkHttp / Conscrypt | **403** → `CHALLENGE_UNREPLAYABLE` |
+| même clearance, `impersonate=chrome` | `curl_cffi` (2026-10-13) | **403** |
+
+**Ce que la mesure tranche.** La seule variable qui fait passer de 403 à 200 est
+**la pile cliente** : même IP, même clearance, même page. Le « refus n'est pas
+expliqué » peut donc être remplacé par une cause mesurée — le rejeu est refusé
+parce que ce n'est pas le client qui a résolu.
+
+**Ce qu'elle écarte.** `curl_cffi` en profil Chrome échouant aussi, l'empreinte
+TLS seule n'explique pas le refus : un profil Chrome « correct » ne suffit pas,
+ce qui rend l'option B (transporter par le vrai navigateur) plus solide encore.
+
+**Ce qui reste ouvert, et que le spike doit mesurer** : rien de tout cela ne dit
+encore que la webview peut servir les **images**, ni ce qu'il advient à
+l'expiration de la clearance.
+
+### Spike d'une journée — option B (décision humaine du 2026-10-13)
+
+L'option B est engagée **sous condition** : un spike d'une journée, puis
+go/no-go. Aucun code de production n'est écrit avant le go.
+
+**Rappel de la règle** : la webview ne parle qu'à Rust (§4). Le spike ne change
+pas cette règle, il mesure ce qu'elle coûte.
+
+#### Axe A — canal de retour sécurisé
+
+*Question* : comment la webview rend N octets de HTML à Rust sans que la page
+distante puisse déclencher quoi que ce soit ?
+
+*Déjà prouvé* : le canal tiré existe et fonctionne sur une page **distante** —
+`challenge.rs` appelle `eval_with_callback` sur la fenêtre de vérification
+(`identite_de_la_fenetre`, ligne ~947) pour lire l'UA et les cookies.
+
+*À mesurer* :
+1. `window.__TAURI_INTERNALS__` est-il exposé à la page distante ? Si oui,
+   c'est une surface d'attaque : une source malveillante pourrait invoquer des
+   commandes. À relever **avant** toute autre chose.
+2. Une webview **cachée** (non visible), naviguée vers un hôte de la liste
+   blanche, rend-elle le HTML par ce même canal tiré ?
+
+*GO si* : canal tiré uniquement, liste blanche d'hôtes validée côté Rust, et la
+page distante ne peut invoquer aucune commande.
+
+#### Axe B — images
+
+*Question* : le CDN des pages d'un chapitre est-il un autre hôte ? Et un `fetch`
+cross-origin y donne-t-il des octets, ou CORS le refuse-t-il ?
+
+*GO si* : les octets d'une image de chapitre sont récupérables depuis la webview
+— cross-origin, ou à défaut par navigation d'un onglet dédié.
+
+#### Axe C — expiration de la clearance
+
+*Question* : combien de temps la `cf_clearance` vaut-elle réellement, et que
+se passe-t-il quand elle expire ?
+
+*Mesure* : lire l'`expiresAt` du cookie après résolution — **métadonnées seules,
+jamais la valeur**. Puis provoquer l'expiration et observer le comportement.
+
+*GO si* : l'expiration est détectable et ne coûte qu'une réouverture de fenêtre,
+sans boucle.
+
+#### Axe D — un chapitre complet
+
+*Question* : bout en bout, une série → sa liste de chapitres → les URLs de pages
+→ **toutes** les images, en n'utilisant que le transport webview.
+
+*GO si* : un chapitre complet s'affiche dans le lecteur, sans qu'OkHttp ne soit
+sollicité pour cette source.
+
+#### Verdict
+
+Go si **les quatre axes** sont GO. Sinon l'option s'arrête ici et l'on revient à
+l'option A (dire la vérité à l'utilisateur sans promettre d'accès).
+
+### Spike — résultats et go/no-go (2026-10-13, ~20 h)
+
+Mesures faites sur le **WebView2 de l'application réelle** (port 9223) et par
+lecture du source de `tauri 2.12.1`. Aucune valeur de cookie lue ni journalisée.
+
+#### Axe A — canal de retour : **GO, avec une réserve de conception**
+
+*Mesuré sur la fenêtre Tauri, origine distante `https://toonfr.com`*
+(titre « Just a moment... ») :
+
+| surface exposée | mesuré |
+|---|---|
+| `typeof window.__TAURI_INTERNALS__` | **`object`** |
+| `Object.keys(...)` | **`["plugins"]`** |
+| `.invoke` | **`function`** |
+| `.transformCallback` | **`function`** |
+
+Donc **toute page distante chargée dans une fenêtre Tauri reçoit un
+`__TAURI_INTERNALS__` fonctionnel**. Ce n'est pas une faille ouverte pour
+autant, et voici pourquoi — la source tranche :
+
+- `tauri/src/manager/webview.rs:168-184` : l'injection est **inconditionnelle**,
+  pour toute webview que l'app crée. Aucun test sur l'URL.
+- `tauri/src/webview/mod.rs:2080` : `if (plugin_command.is_some()
+  || has_app_acl_manifest || !is_local) && … && invoke.acl.is_none()` — l'ACL est
+  **forcée dès que l'origine n'est pas locale**. Une page distante ne peut donc
+  pas atteindre une commande sans capability explicite.
+- `tauri/src/ipc/authority.rs:413/430` : le refus est produit sous la forme
+  `"health not allowed. Plugin not found"` — **c'est le message exact que la
+  fenêtre de vérification a rendu**, donc le refus a réellement été exercé par
+  l'ACL et non par une absence de commande.
+
+**Conséquence de conception, à ne pas rater** : le canal de retour doit être
+**tiré** (Rust initie), comme `appliquer_cookies`/`identite_de_la_fenetre` le
+font déjà par `eval_with_callback`. Ne **jamais** compter sur la page distante
+pour nous pousser quoi que ce soit : cela exigerait une capability `remote`,
+donc une commande joignable depuis un contenu non maîtrisé.
+
+**Réserve ouverte** : `eval_with_callback` n'a jamais transporté 178 Ko. Le
+canal est prouvé pour ~200 octets (UA, cookies). La taille maximale supportée
+par le pont Tauri est **non mesurée** — c'est la première mesure à faire au
+jour 1 de l'implémentation.
+
+#### Axe B — images : **GO**
+
+| mesure | valeur |
+|---|---|
+| images fetchées par le navigateur | **24**, toutes `200 image/jpeg` |
+| octets totaux | **3 115 913 o** |
+| lecture corps via `Network.getResponseBody` | **189 912 o** réels, `base64` |
+| hôte des images | **`toonfr.com`** (même hôte que les pages) |
+
+Le `fetch()` JS échoue en `Failed to fetch` sur les URLs de page, mais **le
+navigateur, lui, les charge** (`naturalWidth: 1024`) et le corps est lisible par
+CDP. Le transport webview atteint donc bien les octets des images.
+
+#### Axe C — expiration de la clearance : **GO, et l'hypothèse est écartée**
+
+```
+cookie nom=cf_clearance domaine=toonfr.com chemin=/ expiration=1823454519
+         secure=true httpOnly=true longueurValeur=597
+```
+
+`1823454519` → **2027-10-13 19:08:39 UTC**, soit **365 jours** de validité.
+L'expiration n'est donc **pas** la cause du refus du rejeu. Il n'y a rien à
+mesurer de plus sur cet axe.
+
+#### Axe D — un chapitre complet : **GO sur le transport, non prouvé bout en bout**
+
+| étape | résultat |
+|---|---|
+| `/webtoon/` (accueil) | **200**, 178 573 o, 168 liens |
+| page série | **200**, **48 chapitres** listés |
+| page chapitre | **200**, **80 images** (20 chargées, 24 requêtes) |
+
+La chaîne complète est obtenue par le navigateur, images comprises. **Ce qui
+n'est pas prouvé** : le chapitre affiché dans le **lecteur** de l'application.
+Le test bout en bout exigera l'implémentation du transport.
+
+#### Verdict
+
+**GO sous conditions.** Les trois questions qui décidaient si l'option B valait
+plusieurs jours de travail sont tranchées par la mesure :
+
+1. le navigateur obtient 200 là où OkHttp obtient 403 (mesure du jour) ;
+2. les **octets des images** sont atteignables (Axe B) ;
+3. l'expiration n'est pas en cause (Axe C).
+
+Et la sécurité ne s'oppose pas au transport tiré, pourvu qu'on n'accorde
+**aucune** commande à la fenêtre distante.
+
+**Deux réserves avant d'engager le jour 1** :
+- `eval_with_callback` sur 178 Ko : à mesurer en premier (risque de troncature) ;
+- pas de test en conditions réelles : le chapitre 42 de *Semantic Error* a été
+  obtenu par le navigateur, pas affiché par le lecteur.
+
+### Implémentation — option B (début 2026-10-13)
+
+**Mini-plan (écrit avant de coder, §11).**
+1. Mesurer le plafond du canal tiré (`eval_with_callback` → 178 Ko) → décide si
+   le transport HTML tient en une lecture ou s'il faut découper.
+2. Moteur : mémoire URL → HTML + intercepteur qui sert la mémoire **avant** le
+   réseau, et signale sinon l'hôte à router. Aucune dépendance à CDP (port de
+   debug absent en production, cf. §15).
+3. Cœur : webview **cachée**, liste blanche d'hôtes issue de `domaines_source`,
+   attente de la fin du challenge par `reste_interstitiel` (déjà testé), puis
+   lecture du HTML par le canal tiré et `injecter` dans le moteur.
+4. Rejeu de la requête initiale, et lecture d'un chapitre complet dans le
+   lecteur — le test qui n'a pas été fait pendant le spike.
+5. Portes : `cargo fmt/clippy/test` pour le cœur, `gradle test` pour le moteur,
+   et une sonde NDJSON de bout en bout.
+
+Point d'architecture à ne pas manquer : le canal est **tiré** par Rust, jamais
+poussé par la page (réserve Axe A). Aucune capability ajoutée.
+
+### Implémentation — étape 1 : mémoire webview côté moteur (2026-10-13)
+
+**Mesure 0 d'abord, comme annoncé : le plafond du canal tiré.**
+`outerHTML` de la page chapitre de TOONFR = **124 984 caractères**, retourné
+**intact en une lecture de 38 ms**. La réserve du spike (« jamais transporté
+178 Ko ») est levée : pas de découpage à écrire.
+
+**Ce qui est livré.**
+- `engine/.../WebViewMemoire.kt` : mémoire URL → HTML (TTL 5 min, alignée sur
+  `RejeuRefuse.FRAICHEUR_MS`), clé sans fragment mais **avec** requête, et
+  `intercepteurWebView` qui sert la mémoire **après** `RateLimitInterceptor`
+  et **avant** `CloudFlareInterceptor`. L'ordre est le point fragile : un 403
+  capté par `CloudFlareInterceptor` deviendrait exception, et une page déjà
+  obtenue par le navigateur serait challengée une seconde fois.
+- `EngineContext.kt` : 2 lignes, `addInterceptor(intercepteurWebView)`.
+- `Server.kt` : méthode de protocole `injecter` (`url` + `html`). Aucune
+  validation d'hôte **volontairement ici** : la liste blanche est faite côté
+  Rust, avant l'appel — une seule fois, pas à chaque couche.
+
+**Un bug que ma propre sonde a attrapé, à relire avant de copier ce motif.**
+J'avais écrit `return@Interceptor chain.proceed(requete).newBuilder()...build()`
+— donc la vraie requête réseau **partait**, puis son résultat était jeté. La
+mémoire aurait provoqué exactement le challenge qu'elle sert à éviter. Corrigé
+en `Response.Builder()` pur. Leçon de forme : pour fabriquer une réponse, on ne
+passe **jamais** par `proceed`.
+
+**Portes.**
+- `gradle test --tests WebViewMemoireTest --rerun-tasks` → **8 tests, 0 échec**.
+- **Porte prouvée rouge** : en remettant `chain.proceed`, deux tests tombent
+  (`une page captive par la webview bypass le challenge sans toucher le reseau`,
+  `une URL challenge reconnue en memoire ne passe pas par CloudFlareInterceptor`)
+  avec `IllegalStateException: aucune réponse dans ce test` — le réseau a bien
+  été sollicité. C'est le nom qui prouve que la porte vise le câblage, pas la
+  simple présence du module.
+- `gradle test --rerun-tasks` → **179 tests, 1 échec** : `ZenMangaInterceptionTest`,
+  **préexistant** (consigné le 2026-10-13 ligne 2129, échec réseau, sans
+  rapport avec ce changement). 170 avant → 179 après, mes 8 tests inclus.
+
+**Ce qui reste.** Côté Rust : la webview cachée, la liste blanche d'hôtes issue
+de `domaines_source`, l'attente de fin de challenge par `reste_interstitiel`,
+et le rejeu de la requête ensuite. C'est l'étape 3 du plan.

@@ -1214,6 +1214,33 @@ private suspend fun dispatchNatif(
             .put("contentType", contentType)
     }
 
+    "injecter" -> {
+        // **Transport webview, moitié moteur.** Le HTML capturé par la fenêtre
+        // de vérification entre ici ; `WebViewMemoire` le sert à la requête
+        // suivante sur la même URL, avant tout réseau (spike du 2026-10-13 :
+        // le WebView2 obtient 200 où OkHttp obtient 403, même clearance).
+        //
+        // Aucune validation de source : ce qui est injecté est du HTML, et le
+        // valider supposerait de connaître la source de chaque page. La
+        // liste blanche d'hôtes est faite côté Rust, avant l'appel — c'est là
+        // qu'est la confiance, une seule fois.
+        val url = p.reqString("url")
+        val html = p.reqString("html")
+        WebViewMemoire.injecter(url, html)
+        if (challengeDebug) {
+            // La longueur, jamais le contenu : une page de source n'est pas un
+            // secret, mais rien ne justifie de recopier 125 Ko dans le journal.
+            System.err.println(
+                "[challenge-debug] webview html injecte url=${WebViewMemoire.cle(url)} " +
+                    "octets=${html.length} totalMemoire=${WebViewMemoire.taille()}",
+            )
+        }
+        JSONObject()
+            .put("ok", true)
+            .put("octets", html.length)
+            .put("memoire", WebViewMemoire.taille())
+    }
+
     "setCookies" -> {
         val sourceName = p.reqString("source")
         parseSource(sourceName) // valide le nom

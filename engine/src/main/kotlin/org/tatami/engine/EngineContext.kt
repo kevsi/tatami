@@ -130,6 +130,12 @@ class EngineContext : MangaLoaderContext() {
             fabriqueTls?.let { sslSocketFactory(it.usine, it.gestionnaire) }
         }
         .addInterceptor(RateLimitInterceptor())
+        // **Premier après le débit, donc avant CloudFlareInterceptor.** La
+        // mémoire webview doit être servie **avant** qu'un 403 ne devienne une
+        // exception : sinon une page déjà capturée par le navigateur serait
+        // challengée une seconde fois. Mesure du 2026-10-13 : TOONFR rend 200
+        // dans le WebView2 et 403 dans OkHttp, clearance identique.
+        .addInterceptor(intercepteurWebView)
         .addInterceptor(CloudFlareInterceptor(cookieJar))
         .addInterceptor(LazyLoadInterceptor())
         .addInterceptor { chain ->

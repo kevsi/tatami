@@ -61,6 +61,34 @@ internal class CloudFlareInterceptor(
             }
             throw CloudFlareProtectionException(url = url)
         }
+        // **Le 403 du rejeu, quand Cloudflare ne le reconnaît plus comme une
+        // protection.** Mesuré le 2026-10-13 sur TOONFR : la première
+        // requête est bien détectée (`CloudFlareProtectionException`, d'où
+        // `CHALLENGE_REQUIRED`), la fenêtre aboutit, `cf_clearance` est lu et
+        // appliqué… puis le rejeu reçoit **403** et
+        // `CloudFlareHelper.checkResponseForProtection` répond
+        // `PROTECTION_NOT_DETECTED`. L'interception laisse donc passer, et le
+        // parseur explose en `HttpStatusException: Status=403`, remonté en
+        // `INTERNAL`.
+        //
+        // Ce que l'utilisateur voyait : « 1 cookie transmis », puis TOONFR
+        // bloqué, sans aucun message exploitable. Et comme `INTERNAL` n'est ni
+        // `CHALLENGE_REQUIRED` ni `CHALLENGE_UNREPLAYABLE`, la chaîne
+        // existante pour dire « le rejeu est refusé, ne redemande pas » ne se
+        // déclenchait jamais.
+        //
+        // Le classement ne dépend d'aucun marqueur Cloudflare, donc rien à
+        // deviner : **la requête portait déjà une `cf_clearance`** (la
+        // vérification a donc été faite) et le site répond 403/503 malgré tout.
+        // C'est la définition même d'un rejeu refusé. Sans ce cookie, le 403
+        // reste un 403 ordinaire et le comportement ne change pas.
+        val clearance = porteUneClearance(request.url)
+        if (clearance != null && (response.code == 403 || response.code == 503)) {
+            val urlRefusee = response.request.url.toString()
+            response.close()
+            RejeuRefuse.marquer(clearance.domain)
+            throw CloudFlareUnreplayableException(url = urlRefusee)
+        }
         // **Une réponse normale annule l'échec précédent.** Sans cette ligne,
         // un site qui ré-autorise resterait bloqué jusqu'à l'expiration, alors
         // qu'il vient de nous répondre : la mémoire ne serait plus le reflet du

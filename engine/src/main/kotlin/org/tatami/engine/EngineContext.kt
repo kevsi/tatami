@@ -134,19 +134,12 @@ class EngineContext : MangaLoaderContext() {
         .addInterceptor(LazyLoadInterceptor())
         .addInterceptor { chain ->
             val requete = chain.request()
-            // **En-tetes de navigateur, SANS les client hints.**
-            //
-            // Source : `Kotatsu-Redo/Kotatsu-Redo`,
-            // `browser/cloudflare/CloudFlareInterceptClient.kt`. Kotatsu rejoue
-            // les requetes de la WebView avec OkHttp en recopiant ses en-tetes
-            // reelles, moins une liste de blocage explicite :
-            // `sec-ch-ua`, `sec-ch-ua-full-version-list`, `x-requested-with`.
-            // Autrement dit : le jeu d'en-tetes qui passe **retire** les
-            // client hints. Notre hypothese d'hier (les ajouter) etait donc
-            // a l'envers.
-            //
-            // Mesure : seul le User-Agent ne suffisait pas, et ajouter un
-            // Referer isole non plus (4 variantes, toutes refusees).
+            val clearance = cookieJar.loadForRequest(requete.url)
+                .any { it.name == "cf_clearance" }
+            // Les valeurs par défaut historiques restent pour les hôtes sans
+            // profil challenge. Sur un hôte avec clearance, le network
+            // interceptor remplace les en-têtes navigateur par ceux dérivés du
+            // profil capturé dans la WebView.
             val entetes = requete.newBuilder()
 
             // **Les en-tetes que le parseur declare.** On ne les invente pas :
@@ -208,7 +201,7 @@ class EngineContext : MangaLoaderContext() {
             // declare `Firefox/116`) annulait silencieusement
             // `userAgentChallengePour` — mesure du 2026-10-11 : on demandait
             // `Edg/154`, c'est `Firefox/116` qui partait.
-            val impose = userAgentChallengePour(requete.url.host)
+            val impose = if (clearance) userAgentChallengePour(requete.url.host) else null
             if (impose != null) {
                 entetes.header("User-Agent", impose)
             } else if (demande.header("User-Agent") == null) {
@@ -229,6 +222,15 @@ class EngineContext : MangaLoaderContext() {
                 entetes.header("Sec-Fetch-Site", "same-origin")
                 entetes.header("Sec-Fetch-User", "?1")
                 entetes.header("Upgrade-Insecure-Requests", "1")
+            }
+            if (
+                clearance &&
+                identiteNavigateurChallengePour(requete.url.host) != null &&
+                impose != null
+            ) {
+                // Laisser BridgeInterceptor déclarer gzip afin qu'il marque
+                // cette requête comme transparente et décompresse la réponse.
+                entetes.removeHeader("Accept-Encoding")
             }
             chain.proceed(entetes.build())
         }
@@ -257,7 +259,22 @@ class EngineContext : MangaLoaderContext() {
         // parce que c'est lui qui débrouille la réponse : ZENMANGA chiffre ses
         // images et son `ImageCodec` (SEC / XOR) n'est décodé que là. Ajouté plus
         // haut, CloudFlare et le lazy-load verraient les octets déjà transformés.
-        .addInterceptor(intercepteurParser)        .connectTimeout(20, TimeUnit.SECONDS)
+        .addInterceptor(intercepteurParser)
+        .addNetworkInterceptor { chain ->
+            val requete = chain.request()
+            val clearance = cookieJar.loadForRequest(requete.url)
+                .any { it.name == "cf_clearance" }
+            val identite =
+                if (clearance) identiteNavigateurChallengePour(requete.url.host) else null
+            val userAgent =
+                if (clearance) userAgentChallengePour(requete.url.host) else null
+            if (identite == null || userAgent == null) {
+                chain.proceed(requete)
+            } else {
+                chain.proceed(appliquerEntetesNavigateur(requete, identite, userAgent))
+            }
+        }
+        .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
         .build()

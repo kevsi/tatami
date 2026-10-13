@@ -2121,3 +2121,10 @@ TOONFR. L'hypothèse était séduisante ; elle est fausse.
 - Porte Kotlin : `cd engine; gradle test --tests org.tatami.engine.BrowserIdentityTest --rerun-tasks` — **2 tests exécutés, 2 réussis**.
 - Portes Rust : `cd apps/desktop/src-tauri; cargo fmt` puis `cargo fmt --check` — propre ; `cargo clippy --all-targets -- -D warnings` — propre ; `cargo test --lib -j 2` — **195 réussis**.
 - `cargo test -j 2` complet reste à relancer : l'exécutable `tatami-desktop.exe` est verrouillé par le processus PID 14084 ; je ne l'ai pas arrêté.
+
+### Journal 2026-10-13 — en-têtes de rejeu dérivés de la WebView
+
+- Remplacement des en-têtes navigateur uniquement si `cf_clearance` et profil sont présents ; `sec-ch-ua*`/UA/langues dérivent du profil, `Accept-Encoding` reste à `gzip`, et le log masque les cookies et valeurs non navigateur.
+- `cd engine; gradle test --tests org.tatami.engine.BrowserIdentityTest --tests org.tatami.engine.ChallengeHeadersTest --tests org.tatami.engine.RejeuRefuseTest --tests org.tatami.engine.CookieRejoueTest --rerun-tasks` — **31 tests réussis**, dont contrôle sans clearance et réponse gzip réellement décodée.
+- `cd engine; gradle test --rerun-tasks` — **170 tests, 1 échec** sur le test réseau `ZenMangaInterceptionTest` : la liste est présente mais la source ne renvoie aucun chapitre. Rejoué isolément, même échec à la même assertion ; les deux autres tests du fichier passent. Aucun clearance/profil n'est configuré pour ZENMANGA, donc le nouveau chemin ne s'exécute pas.
+- **Mesure réelle TOONFR à faire** : elle exige une clearance WebView fraîche et une reconstruction du sidecar ; le processus Tatami PID 14084 est encore ouvert et verrouille son exécutable.

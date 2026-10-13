@@ -72,7 +72,16 @@ type Manga = {
 };
 // `uploadDate` est déjà émis par le moteur (epoch ms, 0 si la source ne le
 // fournit pas) : Rust fait du pass-through, seul le type le ignorait.
-type Chapter = { url: string; title?: string | null; number?: number; uploadDate?: number | null };
+// `premium` suit la même règle — mesuré le 2026-10-13, une source scriptée
+// l'émet et le cœur le relaie sans le toucher. `invoke<Type>` reste une
+// affirmation que rien ne vérifie : c'est ce que `pnpm ipc:check` surveille.
+type Chapter = {
+  url: string;
+  title?: string | null;
+  number?: number;
+  uploadDate?: number | null;
+  premium?: boolean;
+};
 type Page = {
   index: number;
   url: string;
@@ -2422,7 +2431,25 @@ export default function Home() {
       // effacait la santé de A, et la fenêtre de challenge était rattachée à A.
       if (items.length > 0) clearHealthFor([s.name]);
       setLatest((prev) => (offset === 0 ? items : [...prev, ...items]));
-      setLatestOffset(offset + items.length);
+      // On avance de la **fenêtre demandée** (`pageSize`), pas du nombre
+      // reçu. Les deux ne sont pas égaux quand une source rend des pages plus
+      // courtes que la limite, et c'est alors que la pagination s'arrêtait.
+      //
+      // Mesuré le 2026-10-13, `limit = 24` :
+      //   `custom:hentai-scantrad` rend 10 fiches → l'interface relançait avec
+      //     `offset=10`, et le moteur **refuse** un `offset` qui n'est pas un
+      //     multiple de `limit` (`Server.kt`, garde `offset % limit != 0`) :
+      //     réponse vide. La source s'affichait « une seule page » alors que
+      //     `offset=24` rend 10 fiches, et `offset=48` en rend 10 autres.
+      //   `custom:pantheon-scan` : 12 fiches → `offset=12` → vide ;
+      //     `offset=24` → 12. Même arrêt.
+      //
+      // La garde du moteur reste : elle corrige un vrai cas
+      // (`custom:aniverse`, 14 séries sans page 2) où une liste incomplète
+      // faisait boucler l'interface sur la même page. C'est l'interface qui
+      // doit avancer par la fenêtre qu'elle a demandée, sinon elle demande un
+      // décalage qu'aucun jeu de résultats ne peut servir.
+      setLatestOffset(offset + pageSize);
       // Une source qui renvoie 0 au-delà de la première page ne pagine pas
       // (mesuré sur EXHENTAI) : on masque le bouton au lieu de le laisser
       // promising des résultats qui n'existent pas.
@@ -5724,6 +5751,18 @@ if (reader) {
                           distingue pas, et absent pour un lecteur d'écran.
                           Le nombre de pages lues est inclu : il dit où
                           reprendre, pas seulement quel chapitre. */}
+                      {c.premium && (
+                        // Mention **textuelle**, comme « vous êtes ici » :
+                        // une couleur seule serait invisible pour qui ne la
+                        // distingue pas. Mesuré le 2026-10-13 : l'API des
+                        // images répond 403 « Accès non autorisé » sur un
+                        // chapitre premium, et 200 sur un chapitre gratuit —
+                        // sans distinction liée au compte. Le dire ici évite
+                        // d'ouvrir un chapitre qui ne se lira pas.
+                        <span className="chapter-premium">
+                          {t('libelle.chapitre.premium')}
+                        </span>
+                      )}
                       {courant && (
                         <span className="chapter-ici">
                           {progression && repriseUtile(progression) && progression.page_count > 0

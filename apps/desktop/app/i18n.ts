@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 // i18n minimal, sans dépendance.
 //
@@ -20,57 +20,58 @@
 // La langue est une simple préférence d'affichage : elle vit dans
 // `localStorage` (AGENTS.md §6, qui réserve SQLite aux données métier).
 
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from "react";
 
-export type Lang = 'fr' | 'en';
+export type Lang = "fr" | "en";
 
-const LANG_KEY = 'tatami.lang';
+const LANG_KEY = "tatami.lang";
 
 const FR = {
   // --- Navigation
-  'nav.accueil': 'Accueil',
-  'nav.catalogues': 'Catalogues',
-  'nav.telechargements': 'Téléchargements',
-  'nav.parametres': 'Paramètres',
-  'app.nom': 'Tatami',
+  "nav.accueil": "Accueil",
+  "nav.catalogues": "Catalogues",
+  "nav.telechargements": "Téléchargements",
+  "nav.parametres": "Paramètres",
+  "app.nom": "Tatami",
 
   // --- Tri des titres d'une source
-  'tri.source': 'Ordre du site',
-  'tri.az': 'A → Z',
-  'tri.za': 'Z → A',
-  'tri.titre': 'Tri des titres',
+  "tri.source": "Ordre du site",
+  "tri.az": "A → Z",
+  "tri.za": "Z → A",
+  "tri.titre": "Tri des titres",
 
   // --- Réglages : contenu
-  'reglages.telechargement': 'Téléchargement',
-  'reglages.par.page': 'Nombre de webtoons par page',
-  'reglages.catalogues': 'Catalogues affichés',
-  'reglages.rating.suggestive': 'Suggestive — défaut, exclut le contenu adulte',
-  'reglages.rating.safe': 'Safe — plusieurs sources renvoient alors zéro résultat',
-  'reglages.rating.all': 'Toutes — aucun filtre',
-  'reglages.contenu': 'Contenu',
-  'reglages.contenu.affiche': 'Contenu affiché',
-  'reglages.contenu.note':
-    'Une seule classification à la fois : les sources n’en acceptent pas plusieurs. Les sources qui n’exposent pas de classification ne sont pas filtrées.',
+  "reglages.telechargement": "Téléchargement",
+  "reglages.par.page": "Nombre de webtoons par page",
+  "reglages.catalogues": "Catalogues affichés",
+  "reglages.rating.suggestive": "Suggestive — défaut, exclut le contenu adulte",
+  "reglages.rating.safe":
+    "Safe — plusieurs sources renvoient alors zéro résultat",
+  "reglages.rating.all": "Toutes — aucun filtre",
+  "reglages.contenu": "Contenu",
+  "reglages.contenu.affiche": "Contenu affiché",
+  "reglages.contenu.note":
+    "Une seule classification à la fois : les sources n’en acceptent pas plusieurs. Les sources qui n’exposent pas de classification ne sont pas filtrées.",
 
   // --- Réglages : catégories
-  'reglages.categories': 'Catégories de favoris',
-  'reglages.categories.note':
-    'Un favori appartient à une seule catégorie. Supprimer une catégorie ne supprime pas ses favoris : ils reviennent en « sans catégorie ».',
-  'reglages.categories.vide': 'Aucune catégorie pour l’instant.',
-  'reglages.categories.nouvelle': 'Nouvelle catégorie…',
-  'reglages.categories.ajouter': 'Ajouter',
-  'reglages.categories.supprimer': 'Supprimer',
-  'reglages.categories.monter': 'Monter la catégorie {nom}',
-  'reglages.categories.descendre': 'Descendre la catégorie {nom}',
-  'reglages.categories.nom': 'Nom de la catégorie {nom}',
-  'reglages.categories.couleur': 'Couleur de {nom}',
+  "reglages.categories": "Catégories de favoris",
+  "reglages.categories.note":
+    "Un favori appartient à une seule catégorie. Supprimer une catégorie ne supprime pas ses favoris : ils reviennent en « sans catégorie ».",
+  "reglages.categories.vide": "Aucune catégorie pour l’instant.",
+  "reglages.categories.nouvelle": "Nouvelle catégorie…",
+  "reglages.categories.ajouter": "Ajouter",
+  "reglages.categories.supprimer": "Supprimer",
+  "reglages.categories.monter": "Monter la catégorie {nom}",
+  "reglages.categories.descendre": "Descendre la catégorie {nom}",
+  "reglages.categories.nom": "Nom de la catégorie {nom}",
+  "reglages.categories.couleur": "Couleur de {nom}",
 
   // --- Réglages : réseau
-  'reglages.reseau': 'Réseau',
-  'reglages.reseau.delai': 'Délai avant abandon',
-  'reglages.reseau.secondes': '{n} secondes',
-  'reglages.reseau.note':
-    'Certaines sources scannent tout leur catalogue avant de répondre (EXHENTA : 36 s). Au-delà du délai, la source est signalée hors service plutôt que de faire attendre.',
+  "reglages.reseau": "Réseau",
+  "reglages.reseau.delai": "Délai avant abandon",
+  "reglages.reseau.secondes": "{n} secondes",
+  "reglages.reseau.note":
+    "Certaines sources scannent tout leur catalogue avant de répondre (EXHENTA : 36 s). Au-delà du délai, la source est signalée hors service plutôt que de faire attendre.",
 
   // --- Notifications système (tâche 3.3) ---
   //
@@ -80,376 +81,392 @@ const FR = {
   // `notif.s*`) plutôt que d'une phrase à deux accolades, parce qu'un pluriel
   // imbriqué dans une seule clé finit toujours par mentir sur l'une des deux
   // langues.
-  'notif.titre': 'Nouveaux chapitres',
-  'notif.titre.panneau': 'Notifications système',
-  'notif.c1': '1 nouveau chapitre',
-  'notif.cn': '{n} nouveaux chapitres',
-  'notif.c1p': '1 nouveau chapitre ou plus',
-  'notif.cnp': '{n} nouveaux chapitres ou plus',
-  'notif.s1': '1 série',
-  'notif.sn': '{s} séries',
-  'notif.reglage': 'Prévenir quand un passage en trouve',
-  'notif.reglage.note':
-    'Une seule alerte par passage, jamais une par chapitre. Couper cette option n’arrête pas la veille.',
-  'notif.reglage.note2':
-    'Tant que la fenêtre a le focus, l’alerte reste muette : le flux « mises à jour » de l’accueil montre déjà la même chose.',
+  "notif.titre": "Nouveaux chapitres",
+  "notif.titre.panneau": "Notifications système",
+  "notif.c1": "1 nouveau chapitre",
+  "notif.cn": "{n} nouveaux chapitres",
+  "notif.c1p": "1 nouveau chapitre ou plus",
+  "notif.cnp": "{n} nouveaux chapitres ou plus",
+  "notif.s1": "1 série",
+  "notif.sn": "{s} séries",
+  "notif.reglage": "Prévenir quand un passage en trouve",
+  "notif.reglage.note":
+    "Une seule alerte par passage, jamais une par chapitre. Couper cette option n’arrête pas la veille.",
+  "notif.reglage.note2":
+    "Tant que la fenêtre a le focus, l’alerte reste muette : le flux « mises à jour » de l’accueil montre déjà la même chose.",
 
   // --- Journaux de diagnostic (tâche 5.5) ---
   //
   // Les notes expliquent ce qui est conservé et ce qui est remplacé : une
   // promesse de confidentialité qu'on n'explique pas est une promesse qu'on ne
   // peut pas vérifier.
-  'journal.titre': 'Journaux de diagnostic',
-  'journal.exporter': 'Exporter un rapport',
-  'journal.exporter.note':
-    'Écrit un fichier texte dans vos Téléchargements, à joindre à un rapport de bug.',
-  'journal.purger': 'Supprimer les journaux',
-  'journal.purger.note':
-    'Supprime les journaux écrits sur le disque. Sans effet sur votre bibliothèque.',
-  'journal.fait': 'Rapport écrit : {chemin}',
-  'journal.purge.ok': '{n} fichier(s) supprimé(s).',
-  'journal.purge.rien': 'Aucun journal à supprimer.',
-  'journal.mention':
-    'Le rapport contient vos comptes et vos identifiants de source, utiles au diagnostic. Vos URL de manga y sont remplacées par une empreinte.',
-  'journal.echec': 'Échec : {raison}',
+  "journal.titre": "Journaux de diagnostic",
+  "journal.exporter": "Exporter un rapport",
+  "journal.exporter.note":
+    "Écrit un fichier texte dans vos Téléchargements, à joindre à un rapport de bug.",
+  "journal.purger": "Supprimer les journaux",
+  "journal.purger.note":
+    "Supprime les journaux écrits sur le disque. Sans effet sur votre bibliothèque.",
+  "journal.fait": "Rapport écrit : {chemin}",
+  "journal.purge.ok": "{n} fichier(s) supprimé(s).",
+  "journal.purge.rien": "Aucun journal à supprimer.",
+  "journal.mention":
+    "Le rapport contient vos comptes et vos identifiants de source, utiles au diagnostic. Vos URL de manga y sont remplacées par une empreinte.",
+  "journal.echec": "Échec : {raison}",
 
   // --- Démarrage automatique (tâche 3.4) ---
-  'demarrage.titre': 'Démarrage automatique',
-  'demarrage.reglage': 'Lancer Tatami à l’ouverture de ma session',
-  'demarrage.lecture': 'Lecture de l’état du système…',
-  'demarrage.indisponible':
-    'Le système refuse d’enregistrer un démarrage automatique ; l’option reste indisponible.',
-  'demarrage.note':
-    'Indépendant de « fermer met dans la zone » : les deux réglages n’ont pas la même conséquence.',
+  "demarrage.titre": "Démarrage automatique",
+  "demarrage.reglage": "Lancer Tatami à l’ouverture de ma session",
+  "demarrage.lecture": "Lecture de l’état du système…",
+  "demarrage.indisponible":
+    "Le système refuse d’enregistrer un démarrage automatique ; l’option reste indisponible.",
+  "demarrage.note":
+    "Indépendant de « fermer met dans la zone » : les deux réglages n’ont pas la même conséquence.",
 
   // --- Zone de notification (tâche 3.4) ---
   //
   // Ces libellés sont **appliqués par Rust** via `set_libelles` : le menu est
   // créé par le cœur (pour qu'il existe même si la webview échoue), donc ses
   // textes viennent d'ici.
-  'zone.ouvrir': 'Ouvrir Tatami',
-  'zone.quitter': 'Quitter',
+  "zone.ouvrir": "Ouvrir Tatami",
+  "zone.quitter": "Quitter",
 
   // --- Durées (partagées par les réglages du planificateur) ---
-  'duree.min': '{n} min',
-  'duree.heure1': '1 h',
-  'duree.heure': '{n} h',
-  'duree.jour1': '1 jour',
-  'duree.jour': '{n} jours',
+  "duree.min": "{n} min",
+  "duree.heure1": "1 h",
+  "duree.heure": "{n} h",
+  "duree.jour1": "1 jour",
+  "duree.jour": "{n} jours",
 
   // --- Réglages du planificateur (tâche 3.5) ---
-  'plan.titre': 'Veille des nouveautés',
-  'plan.chargement': 'Lecture des réglages…',
-  'plan.actif': 'Chercher les nouveaux chapitres',
-  'plan.dernier': 'Dernière vérification : {quand}.',
-  'plan.jamais': "Aucune vérification enregistrée depuis le lancement de la veille.",
-  'plan.periode': 'Fréquence',
-  'plan.periode.valeur': 'toutes les {duree}',
+  "plan.titre": "Veille des nouveautés",
+  "plan.chargement": "Lecture des réglages…",
+  "plan.actif": "Chercher les nouveaux chapitres",
+  "plan.dernier": "Dernière vérification : {quand}.",
+  "plan.jamais":
+    "Aucune vérification enregistrée depuis le lancement de la veille.",
+  "plan.periode": "Fréquence",
+  "plan.periode.valeur": "toutes les {duree}",
   // Accord en genre : « mise » est féminin, donc « 1 heure », pas « 1 h ».
-  'plan.periode.heure1': 'toutes les 1 heure',
-  'plan.delai.source': 'Délai entre deux requêtes à la même source',
-  'plan.delai.valeur': '{n} s',
-  'plan.max.passe': 'Favoris vérifiés par passage',
-  'plan.max.sources': 'Sources interrogées par passage',
-  'plan.note':
-    'Les favoris écartés par un plafond ne sont pas perdus : ils passent en tête du passage suivant.',
-  'plan.erreur': 'Réglage illisible : {detail}',
+  "plan.periode.heure1": "toutes les 1 heure",
+  "plan.delai.source": "Délai entre deux requêtes à la même source",
+  "plan.delai.valeur": "{n} s",
+  "plan.max.passe": "Favoris vérifiés par passage",
+  "plan.max.sources": "Sources interrogées par passage",
+  "plan.note":
+    "Les favoris écartés par un plafond ne sont pas perdus : ils passent en tête du passage suivant.",
+  "plan.erreur": "Réglage illisible : {detail}",
 
   // --- Écran « état des sources » (tâche 5.4) ---
   // --- Flux « mises à jour » (tâche 3.2) ---
   // Le compte vient toujours de `total`, jamais de `chapitres.length` : le moteur
   // plafonne la liste, donc la longueur annoncerait un nombre faux.
-  'maj.bandeau1': '1 mise à jour',
-  'maj.bandeau': '{n} mises à jour',
-  'maj.bandeau.vu': 'Mises à jour',
+  "maj.bandeau1": "1 mise à jour",
+  "maj.bandeau": "{n} mises à jour",
+  "maj.bandeau.vu": "Mises à jour",
   // Le nombre seul, sans libellé, ne disait pas ce qu'il comptait. On nomme ce
   // qui a déjà été vu : c'est l'information utile (« 3, dont 1 déjà vue »).
   // Deux clés, pas une avec « (s) » — et accord en genre : « mise à jour » est
   // féminin, donc « vue », pas « vu ».
-  'maj.dont.non.vus1': 'dont 1 déjà vue',
-  'maj.dont.non.vus': 'dont {n} déjà vues',
-  'maj.tout.vu': 'Tout marquer comme lu',
-  'maj.nouveau1': '1 nouveau chapitre',
-  'maj.nouveaux': '{n} nouveaux chapitres',
-  'maj.voir.tronque1': 'Voir le chapitre signalé (et {reste} de plus)',
-  'maj.voir.tronque': 'Voir les {n} chapitres signalés (et {reste} de plus)',
-  'maj.voir1': 'Voir le chapitre signalé',
-  'maj.et.pas.de.plus1': '1 autre non listé',
-  'maj.et.pas.de.plus': '{n} autres non listés',
+  "maj.dont.non.vus1": "dont 1 déjà vue",
+  "maj.dont.non.vus": "dont {n} déjà vues",
+  "maj.tout.vu": "Tout marquer comme lu",
+  "maj.nouveau1": "1 nouveau chapitre",
+  "maj.nouveaux": "{n} nouveaux chapitres",
+  "maj.voir.tronque1": "Voir le chapitre signalé (et {reste} de plus)",
+  "maj.voir.tronque": "Voir les {n} chapitres signalés (et {reste} de plus)",
+  "maj.voir1": "Voir le chapitre signalé",
+  "maj.et.pas.de.plus1": "1 autre non listé",
+  "maj.et.pas.de.plus": "{n} autres non listés",
 
-  'etat.titre': 'État des sources',
-  'etat.tout.va':
-    'Aucune source en échec. Les pannes mémorisées sont effacées dès qu’une visite réussit.',
+  "etat.titre": "État des sources",
+  "etat.tout.va":
+    "Aucune source en échec. Les pannes mémorisées sont effacées dès qu’une visite réussit.",
   // Pluriel et singulier séparés : mesuré le 2026-10-05, l'écran affichait
   // « 1 source(s) » et « 1 months ago » — l'anglais ne prend pas le pluriel
   // comme le français, une seule clé ne peut pas servir les deux.
-  'etat.resume1': '1 source en échec lors d’une visite.',
-  'etat.resume': '{n} sources en échec lors des visites.',
-  'etat.sources1': '1 source',
-  'etat.sources': '{n} sources',
-  'etat.source': 'Source',
-  'etat.code': 'Erreur',
-  'etat.dernier': 'Signalée',
-  'etat.reessayer': 'Tout réessayer',
+  "etat.resume1": "1 source en échec lors d’une visite.",
+  "etat.resume": "{n} sources en échec lors des visites.",
+  "etat.sources1": "1 source",
+  "etat.sources": "{n} sources",
+  "etat.source": "Source",
+  "etat.code": "Erreur",
+  "etat.dernier": "Signalée",
+  "etat.reessayer": "Tout réessayer",
 
   // --- Ancienneté traduite. Elle était en français en dur (`sinceFr`),
   //     contrairement à AGENTS.md §7 : mesuré le 2026-10-05, l’interface en
   //     anglais affichait « 3 mois » pour la date d’une panne. ---
-  'temps.aujourdhui': 'aujourd’hui',
-  'temps.instance': 'à l’instant',
-  'temps.min': 'il y a {n} min',
-  'temps.heure': 'il y a {n} h',
-  'temps.jour': 'il y a {n} j',
-  'temps.mois1': 'il y a 1 mois',
-  'temps.mois': 'il y a {n} mois',
-  'temps.an': 'il y a 1 an',
-  'temps.ans': 'il y a {n} ans',
+  "temps.aujourdhui": "aujourd’hui",
+  "temps.instance": "à l’instant",
+  "temps.min": "il y a {n} min",
+  "temps.heure": "il y a {n} h",
+  "temps.jour": "il y a {n} j",
+  "temps.mois1": "il y a 1 mois",
+  "temps.mois": "il y a {n} mois",
+  "temps.an": "il y a 1 an",
+  "temps.ans": "il y a {n} ans",
 
   // --- Réglages : langue
-  'reglages.apparence': 'Apparence',
-  'reglages.apparence.sombre': 'Sombre',
-  'reglages.apparence.clair': 'Clair',
-  'reglages.apparence.note':
-    'Le lecteur reste sombre dans les deux thèmes : les pages sont majoritairement blanches, un fond clair ferait disparaître leurs bords.',
-  'reglages.langue': 'Langue',
-  'reglages.langue.fr': 'Français',
-  'reglages.langue.en': 'English',
-  'reglages.langue.note': 'Change la langue de toute l’interface. Les titres restent dans leur langue d’origine.',
+  "reglages.apparence": "Apparence",
+  "reglages.apparence.sombre": "Sombre",
+  "reglages.apparence.clair": "Clair",
+  "reglages.apparence.note":
+    "Le lecteur reste sombre dans les deux thèmes : les pages sont majoritairement blanches, un fond clair ferait disparaître leurs bords.",
+  "reglages.langue": "Langue",
+  "reglages.langue.fr": "Français",
+  "reglages.langue.en": "English",
+  "reglages.langue.note":
+    "Change la langue de toute l’interface. Les titres restent dans leur langue d’origine.",
 
   // --- Catalogue
-  'catalogue.sources.disponibles': '{n} sources disponibles',
-  'catalogue.sources.desactivees': '{n} désactivée{s}',
-  'catalogue.rechercher': 'Rechercher un catalogue…',
-  'catalogue.langue.toutes': 'Toutes',
-  'catalogue.desactivees.afficher': 'Afficher les {n} source{s} désactivée{s}',
-  'catalogue.reactiver.tout': 'Tout réactiver',
-  'catalogue.hors.service': 'hors service',
-  'catalogue.desactivees.note':
-    'Les sources désactivées restent enregistrées, elles sont juste masquées.',
-  'catalogue.vide.titre': 'Aucune source à afficher',
-  'catalogue.vide.texte': 'Aucune source ne correspond à « {nom} ».',
-  'catalogue.ouvrir': 'Ouvrir la source {nom}',
-  'catalogue.desactiver': 'Désactiver la source {nom}',
-  'catalogue.reactiver': 'Réactiver la source {nom}',
+  "catalogue.sources.disponibles": "{n} sources disponibles",
+  "catalogue.sources.desactivees": "{n} désactivée{s}",
+  "catalogue.rechercher": "Rechercher un catalogue…",
+  "catalogue.langue.toutes": "Toutes",
+  "catalogue.desactivees.afficher": "Afficher les {n} source{s} désactivée{s}",
+  "catalogue.reactiver.tout": "Tout réactiver",
+  "catalogue.hors.service": "hors service",
+  "catalogue.desactivees.note":
+    "Les sources désactivées restent enregistrées, elles sont juste masquées.",
+  "catalogue.vide.titre": "Aucune source à afficher",
+  "catalogue.vide.texte": "Aucune source ne correspond à « {nom} ».",
+  "catalogue.ouvrir": "Ouvrir la source {nom}",
+  "catalogue.desactiver": "Désactiver la source {nom}",
+  "catalogue.reactiver": "Réactiver la source {nom}",
 
   // --- Sources personnalisées (S2) ---
   // Panneau dans les réglages : importer, lister, supprimer des scripts .js.
-  'sources.perso.titre': 'Sources personnalisées',
-  'sources.perso.note':
+  "sources.perso.titre": "Sources personnalisées",
+  "sources.perso.note":
     "Importez un script JavaScript (.js, max 256 Ko) qui s'adapte à un site non couvert par les sources intégrées. Le moteur le charge au démarrage.",
-  'sources.perso.importer': 'Importer un script…',
-  'sources.perso.en.cours': 'Import en cours…',
-  'sources.perso.vide': 'Aucune source personnalisée.',
-  'sources.perso.supprimer': 'Supprimer la source {nom}',
-  'sources.perso.ok': 'Source « {nom} » importée.',
-  'sources.perso.erreur': 'Import impossible : {raison}',
-  'sources.perso.suppr.ok': 'Source « {nom} » supprimée.',
-  'sources.perso.suppr.erreur': 'Suppression impossible : {raison}',
+  "sources.perso.importer": "Importer un script…",
+  "sources.perso.en.cours": "Import en cours…",
+  "sources.perso.vide": "Aucune source personnalisée.",
+  "sources.perso.supprimer": "Supprimer la source {nom}",
+  "sources.perso.ok": "Source « {nom} » importée.",
+  "sources.perso.erreur": "Import impossible : {raison}",
+  "sources.perso.suppr.ok": "Source « {nom} » supprimée.",
+  "sources.perso.suppr.erreur": "Suppression impossible : {raison}",
   // Un fichier importé n'est pas un fichier CHARGÉ : le moteur peut refuser de
   // l'évaluer, et il ne l'annonce que sur stderr. Sans cette ligne, l'écran
   // montrait un script cassé comme s'il fonctionnait (mesuré le 2026-10-10).
   // On n'affiche que le refus : une mention « chargée » sur chaque rangée serait
   // de la décoration, et surtout une clé que rien ne prouve.
-  'sources.perso.refuse': 'Refusée par le moteur : {raison}',
+  "sources.perso.refuse": "Refusée par le moteur : {raison}",
   // Confirmation en deux temps : le bouton de suppression s'intègre par
   // « Confirmer », avec une issue (Annuler). Pas de dialogue natif : la
   // capability ne vaut que `dialog:allow-open` (AGENTS.md §7, strict minimum).
-  'sources.perso.confirmer': 'Supprimer {nom}',
-  'sources.perso.annuler': 'Annuler',
+  "sources.perso.confirmer": "Supprimer {nom}",
+  "sources.perso.annuler": "Annuler",
   // Badge affiché dans la grille du catalogue sur les cartes custom.
-  'catalogue.perso': 'Perso',
+  "catalogue.perso": "Perso",
   // Barre « Sources importées » du catalogue (S2.3). `{s}` porte le pluriel
   // comme `catalogue.desactivees.afficher` : une seule clé ne peut pas servir
   // les deux langues.
-  'catalogue.import.compte': '{n} source importée{s}',
+  "catalogue.import.compte": "{n} source importée{s}",
 
   // --- Liste des titres
 
   // --- Fiche
-  'fiche.ajouter.favori': '♡ Ajouter aux favoris',
-  'fiche.dans.favoris': '♥ Dans vos favoris',
-  'fiche.sans.categorie': 'Sans catégorie',
+  "fiche.ajouter.favori": "♡ Ajouter aux favoris",
+  "fiche.dans.favoris": "♥ Dans vos favoris",
+  "fiche.sans.categorie": "Sans catégorie",
 
   // --- Accueil
-  'accueil.continuer': 'Continuer la lecture',
-  'accueil.incognito': 'Incognito',
-  'accueil.incognito.note':
+  "accueil.continuer": "Continuer la lecture",
+  "accueil.incognito": "Incognito",
+  "accueil.incognito.note":
     "Masque de l'accueil les titres classés adultes par leur source. Ils restent accessibles en recherche.",
-  'accueil.lu.recemment': '{n} lus récemment',
-  'accueil.lu.recemment1': '{n} lu récemment',
-  'accueil.favori': '{n} favoris',
-  'accueil.favori1': '{n} favori',
-  'accueil.reprendre': 'Reprendre',
-  'accueil.oublier': 'Oublier',
-  'accueil.fiche.titre': 'Ouvrir la fiche de {titre}',
-  'notification.fermer': 'Fermer la notification',
-  'accueil.vos.signets': 'Vos signets',
-  'accueil.pages.marquees': '{n} page{s} marquée{s}',
-  'accueil.rouvrir': 'Rouvrir',
-  'accueil.retirer': 'Retirer',
-  'accueil.vos.favoris': 'Vos favoris',
-  'accueil.vider.historique': 'Vider l’historique',
-  'accueil.favoris.vide':
-    'Aucun favori. Ouvrez un webtoon puis cliquez sur l’icône ♥.',
-  'accueil.favoris.filtre.vide': 'Aucun favori dans cette catégorie.',
-  'accueil.filtre.toutes': 'Toutes',
-  'accueil.filtre.sans': 'Sans catégorie ({n})',
-  'accueil.rien.a.reprendre': 'Rien à reprendre. Lancez une lecture depuis un catalogue, elle apparaîtra ici.',
-  'accueil.oublier.titre': 'Oublier {titre} dans l’historique',
-  'accueil.ouvrir.favori': 'Ouvrir {titre}',
-  'accueil.retirer.favori': 'Retirer {titre} des favoris',
-  'accueil.ouverture': 'Ouverture…',
-  'accueil.page.sur': 'page {p}/{n} · {quand}',
-  'catalogue.bandeau.langues': 'Toutes les langues',
-  'catalogue.compte.langues':
-    '{n} sources réparties en {langs} langues. Choisissez une langue pour parcourir ses sources.',
-  'catalogue.chargement': 'Chargement des séries…',
-  'chapitres.chargement': 'Chargement des chapitres…',
-  'accueil.chargement': 'Chargement de votre bibliothèque…',
-  'telechargements.chargement': 'Chargement de la bibliothèque téléchargée…',
-  'lecteur.page.sur': '{n} / {total}',
-  'catalogue.vide.langue': 'Toutes les sources de cette langue sont désactivées.',
-  'telechargements.verification.ouverte':
-    '{source} demande une vérification : une fenêtre va s’ouvrir, confirmez-y vous-même puis relancez le téléchargement.',
-  'telechargements.verification.titre': 'Vérification — {source}',
-  'telechargements.verification.note':
-    'Confirmez dans la fenêtre du site. Une fois fait, revenez ici et relancez le téléchargement : le cookie sera transmis automatiquement.',
-  'telechargements.verification.appliquer': 'C’est fait, appliquer',
-  'telechargements.verification.fermer': 'Fermer',
-  'telechargements.verification.aucun.cookie':
-    'Aucun cookie : la vérification n’est sans doute pas terminée.',
-  'telechargements.verification.cookies':
-    '{n} cookie(s) transmis à {source}. Relancez le téléchargement.',
-  'telechargements.verification.erreur': 'Vérification non appliquée : {detail}',
-  'telechargements.lecture.VIDE':
-    'Le fichier de « {chapitre} » ne contient aucune page lisible. Lance le téléchargement de nouveau, ou ouvre le .cbz dans un autre lecteur.',
-  'telechargements.lecture.horsligne': 'Hors ligne — lu dans le fichier téléchargé',
-  'telechargements.lecture.lancer': 'Lire',
-  'lecteur.navigation': 'Changer de page',
-  'lecteur.largeur': 'Largeur de la page en pourcentage',
-  'lecteur.chapitre': 'Changer de chapitre',
-  'lecteur.signet.info': 'Marquer cette page pour la retrouver plus tard',
-  'lecteur.page.une': 'Page {n}',
-  'lecteur.page.indisponible.numero': 'Page {n} : {raison}',
-  'lecteur.plein.ecran': 'Plein écran',
-  'lecteur.plein.ecran.erreur': 'Plein écran indisponible : {raison}',
-  'telechargements.chapitres.ouvrir': 'Choisir un chapitre',
-  'telechargements.chapitres.aucun': 'Aucun chapitre téléchargé pour le moment.',
-  'lecteur.horsligne': 'Hors ligne',
-  'lecteur.chargement': 'Chargement du chapitre…',
-    'lecteur.page.indisponible': 'Page indisponible chez la source.',
-    'lecteur.pages.manquantes':
-    '{n} page(s) sur {total} ne sont pas servies par la source. Le reste du chapitre est lisible.',
-  'telechargements.aucun': 'Aucun webtoon téléchargé pour l’instant.',
-  'telechargements.recap': 'Récapitulatif des téléchargements',
-  'telechargements.stat.webtoons': 'webtoon{s}',
-  'telechargements.stat.chapitres': 'chapitres',
-  'telechargements.stat.disque': 'sur le disque',
-  'telechargements.stat.a.completer': 'à compléter',
-  'telechargements.vos.webtoons': 'Vos webtoons',
-  'telechargements.chapitres.compte': '{n}/{total} chapitres',
-  'telechargements.chapitres.compte1': '{n}/{total} chapitre',
+  "accueil.lu.recemment": "{n} lus récemment",
+  "accueil.lu.recemment1": "{n} lu récemment",
+  "accueil.favori": "{n} favoris",
+  "accueil.favori1": "{n} favori",
+  "accueil.reprendre": "Reprendre",
+  "accueil.oublier": "Oublier",
+  "accueil.fiche.titre": "Ouvrir la fiche de {titre}",
+  "notification.fermer": "Fermer la notification",
+  "accueil.vos.signets": "Vos signets",
+  "accueil.pages.marquees": "{n} page{s} marquée{s}",
+  "accueil.rouvrir": "Rouvrir",
+  "accueil.retirer": "Retirer",
+  "accueil.vos.favoris": "Vos favoris",
+  "accueil.vider.historique": "Vider l’historique",
+  "accueil.favoris.vide":
+    "Aucun favori. Ouvrez un webtoon puis cliquez sur l’icône ♥.",
+  "accueil.favoris.filtre.vide": "Aucun favori dans cette catégorie.",
+  "accueil.filtre.toutes": "Toutes",
+  "accueil.filtre.sans": "Sans catégorie ({n})",
+  "accueil.rien.a.reprendre":
+    "Rien à reprendre. Lancez une lecture depuis un catalogue, elle apparaîtra ici.",
+  "accueil.oublier.titre": "Oublier {titre} dans l’historique",
+  "accueil.ouvrir.favori": "Ouvrir {titre}",
+  "accueil.retirer.favori": "Retirer {titre} des favoris",
+  "accueil.ouverture": "Ouverture…",
+  "accueil.page.sur": "page {p}/{n} · {quand}",
+  "catalogue.bandeau.langues": "Toutes les langues",
+  "catalogue.compte.langues":
+    "{n} sources réparties en {langs} langues. Choisissez une langue pour parcourir ses sources.",
+  "catalogue.chargement": "Chargement des séries…",
+  "chapitres.chargement": "Chargement des chapitres…",
+  "accueil.chargement": "Chargement de votre bibliothèque…",
+  "telechargements.chargement": "Chargement de la bibliothèque téléchargée…",
+  "lecteur.page.sur": "{n} / {total}",
+  "catalogue.vide.langue":
+    "Toutes les sources de cette langue sont désactivées.",
+  "telechargements.verification.ouverte":
+    "{source} demande une vérification : une fenêtre va s’ouvrir, confirmez-y vous-même puis relancez le téléchargement.",
+  "telechargements.verification.titre": "Vérification — {source}",
+  "telechargements.verification.note":
+    "Confirmez dans la fenêtre du site. Une fois fait, revenez ici et relancez le téléchargement : le cookie sera transmis automatiquement.",
+  "telechargements.verification.appliquer": "C’est fait, appliquer",
+  "telechargements.verification.fermer": "Fermer",
+  "telechargements.verification.aucun.cookie":
+    "Aucun cookie : la vérification n’est sans doute pas terminée.",
+  "telechargements.verification.cookies":
+    "{n} cookie(s) transmis à {source}. Relancez le téléchargement.",
+  "telechargements.verification.erreur":
+    "Vérification non appliquée : {detail}",
+  "telechargements.lecture.VIDE":
+    "Le fichier de « {chapitre} » ne contient aucune page lisible. Lance le téléchargement de nouveau, ou ouvre le .cbz dans un autre lecteur.",
+  "telechargements.lecture.horsligne":
+    "Hors ligne — lu dans le fichier téléchargé",
+  "telechargements.lecture.lancer": "Lire",
+  "lecteur.navigation": "Changer de page",
+  "lecteur.largeur": "Largeur de la page en pourcentage",
+  "lecteur.chapitre": "Changer de chapitre",
+  "lecteur.signet.info": "Marquer cette page pour la retrouver plus tard",
+  "lecteur.page.une": "Page {n}",
+  "lecteur.page.indisponible.numero": "Page {n} : {raison}",
+  "lecteur.plein.ecran": "Plein écran",
+  "lecteur.plein.ecran.erreur": "Plein écran indisponible : {raison}",
+  "telechargements.chapitres.ouvrir": "Choisir un chapitre",
+  "telechargements.chapitres.aucun":
+    "Aucun chapitre téléchargé pour le moment.",
+  "lecteur.horsligne": "Hors ligne",
+  "lecteur.chargement": "Chargement du chapitre…",
+  "lecteur.page.indisponible": "Page indisponible chez la source.",
+  "lecteur.pages.manquantes":
+    "{n} page(s) sur {total} ne sont pas servies par la source. Le reste du chapitre est lisible.",
+  "telechargements.aucun": "Aucun webtoon téléchargé pour l’instant.",
+  "telechargements.recap": "Récapitulatif des téléchargements",
+  "telechargements.stat.webtoons": "webtoon{s}",
+  "telechargements.stat.chapitres": "chapitres",
+  "telechargements.stat.disque": "sur le disque",
+  "telechargements.stat.a.completer": "à compléter",
+  "telechargements.vos.webtoons": "Vos webtoons",
+  "telechargements.chapitres.compte": "{n}/{total} chapitres",
+  "telechargements.chapitres.compte1": "{n}/{total} chapitre",
   // Une clé unique ne peut pas servir les deux langues : le français et
   // l'anglais n'ont pas la même règle de pluriel (leçon AGENTS.md §14).
-  'telechargements.chapitres.sans.total': '{n} chapitres',
-  'telechargements.chapitres.sans.total1': '1 chapitre',
+  "telechargements.chapitres.sans.total": "{n} chapitres",
+  "telechargements.chapitres.sans.total1": "1 chapitre",
 
   // --- Import d'un dossier de webtoon (tâche 2.4) ---
-  'import.titre': 'Importer un dossier',
-  'import.note':
-    'Copie les fichiers .cbz d’un dossier de votre disque dans la bibliothèque, pour les lire hors ligne.',
-  'import.dossier.choisir': 'Choisir un dossier…',
-  'import.en.cours': 'Import en cours…',
-  'import.rapport.fermer': 'Masquer le résultat',
-  'import.rapport.ok': '{n} chapitres importés dans « {titre} ».',
-  'import.rapport.ok1': '1 chapitre importé dans « {titre} ».',
-  'import.rapport.refuses': '{n} fichiers n’ont pas été importés :',
-  'import.rapport.refuse1': '1 fichier n’a pas été importé :',
-  'import.erreur': 'Import impossible : {raison}',
+  "import.titre": "Importer un dossier",
+  "import.note":
+    "Copie les fichiers .cbz d’un dossier de votre disque dans la bibliothèque, pour les lire hors ligne.",
+  "import.dossier.choisir": "Choisir un dossier…",
+  "import.en.cours": "Import en cours…",
+  "import.rapport.fermer": "Masquer le résultat",
+  "import.rapport.ok": "{n} chapitres importés dans « {titre} ».",
+  "import.rapport.ok1": "1 chapitre importé dans « {titre} ».",
+  "import.rapport.refuses": "{n} fichiers n’ont pas été importés :",
+  "import.rapport.refuse1": "1 fichier n’a pas été importé :",
+  "import.erreur": "Import impossible : {raison}",
   // Motifs d'import : les clés sont les **codes** renvoyés par Rust
   // (`RefusCode` sérialisé en kebab-case), donc ajouter un motif côté moteur
   // oblige à ajouter la paire de clés — et `i18n:check` le signalera.
-  'import.refus.pas-un-cbz': 'ce n’est pas un fichier .cbz',
-  'import.refus.archive-illisible': 'archive illisible ({detail})',
-  'import.refus.aucune-image': 'l’archive ne contient aucune image',
-  'import.refus.nom-chapitre': 'ce nom de fichier ne peut pas servir de nom de chapitre',
-  'import.refus.collision': 'un autre chapitre de ce dossier porte déjà le nom {detail}',
-  'import.refus.copie-impossible': 'copie impossible ({detail})',
-  'telechargements.file': 'File de téléchargement',
-  'telechargements.file.interrompue': 'File interrompue',
-  'telechargements.file.interrompue.note':
-    '{n} webtoon{s} attendaient encore des chapitres. Les chapitres déjà téléchargés seront ignorés.',
-  'telechargements.file.reprendre': 'Reprendre la file',
-  'telechargements.file.abandonner': 'Abandonner la file',
+  "import.refus.pas-un-cbz": "ce n’est pas un fichier .cbz",
+  "import.refus.archive-illisible": "archive illisible ({detail})",
+  "import.refus.aucune-image": "l’archive ne contient aucune image",
+  "import.refus.nom-chapitre":
+    "ce nom de fichier ne peut pas servir de nom de chapitre",
+  "import.refus.collision":
+    "un autre chapitre de ce dossier porte déjà le nom {detail}",
+  "import.refus.copie-impossible": "copie impossible ({detail})",
+  "telechargements.file": "File de téléchargement",
+  "telechargements.file.interrompue": "File interrompue",
+  "telechargements.file.interrompue.note":
+    "{n} webtoon{s} attendaient encore des chapitres. Les chapitres déjà téléchargés seront ignorés.",
+  "telechargements.file.reprendre": "Reprendre la file",
+  "telechargements.file.abandonner": "Abandonner la file",
 
   // --- Téléchargements
-  'fiche.chapitres.vide': 'Aucun chapitre disponible sur cette source.',
-  'source.chapitres.vide': 'Clique un webtoon pour voir ses chapitres.',
-  'source.chapitres.recents': 'Chapitres récents',
-  'source.vide': 'Aucun résultat sur cette source.',
-  'telechargements.dossier': 'Dossier de téléchargement',
-  'telechargements.dossier.note':
-    'Les chapitres sont écrits dans ce dossier, un .cbz par chapitre. Changer de dossier ne déplace rien : les téléchargements déjà faits restent dans l’ancien, et la bibliothèque n’affichera plus que ceux du nouveau.',
-  'telechargements.dossier.parcourir': 'Choisir un dossier…',
-  'telechargements.dossier.defaut': 'Revenir au dossier par défaut',
-  'telechargements.dossier.ligne': 'Dossier de téléchargement :',
-  'telechargements.dossier.change':
-    'Dossier changé. Les prochains téléchargements iront là.',
-  'telechargements.dossier.retour': 'Retour au dossier {chemin}',
-  'telechargements.dossier.erreur': 'Dossier de téléchargement : {raison}',
-  'telechargements.pause': 'Mettre en pause',
-  'telechargements.pause.note':
-    'Le chapitre en cours est terminé, puis la file s’arrête. Reprendre la reprendra où elle s’est arrêtée.',
-  'telechargements.pause.etat': 'en pause',
-  'telechargements.effacer.file': 'Effacer la file',
-  'telechargements.supprimer.titre': 'Supprimer {nom} ?',
-  'telechargements.supprimer.note':
-    '{n} chapitre(s), {poids} seront supprimés du dossier de téléchargements. Le webtoon reste téléchargeable ensuite.',
-  'telechargements.supprimer.definitif': 'Supprimer définitivement',
-  'telechargements.annuler': 'Annuler',
+  "fiche.chapitres.vide": "Aucun chapitre disponible sur cette source.",
+  "source.chapitres.vide": "Clique un webtoon pour voir ses chapitres.",
+  "source.chapitres.recents": "Chapitres récents",
+  "source.vide": "Aucun résultat sur cette source.",
+  "telechargements.dossier": "Dossier de téléchargement",
+  "telechargements.dossier.note":
+    "Les chapitres sont écrits dans ce dossier, un .cbz par chapitre. Changer de dossier ne déplace rien : les téléchargements déjà faits restent dans l’ancien, et la bibliothèque n’affichera plus que ceux du nouveau.",
+  "telechargements.dossier.parcourir": "Choisir un dossier…",
+  "telechargements.dossier.defaut": "Revenir au dossier par défaut",
+  "telechargements.dossier.ligne": "Dossier de téléchargement :",
+  "telechargements.dossier.change":
+    "Dossier changé. Les prochains téléchargements iront là.",
+  "telechargements.dossier.retour": "Retour au dossier {chemin}",
+  "telechargements.dossier.erreur": "Dossier de téléchargement : {raison}",
+  "telechargements.pause": "Mettre en pause",
+  "telechargements.pause.note":
+    "Le chapitre en cours est terminé, puis la file s’arrête. Reprendre la reprendra où elle s’est arrêtée.",
+  "telechargements.pause.etat": "en pause",
+  "telechargements.effacer.file": "Effacer la file",
+  "telechargements.supprimer.titre": "Supprimer {nom} ?",
+  "telechargements.supprimer.note":
+    "{n} chapitre(s), {poids} seront supprimés du dossier de téléchargements. Le webtoon reste téléchargeable ensuite.",
+  "telechargements.supprimer.definitif": "Supprimer définitivement",
+  "telechargements.annuler": "Annuler",
 
   // --- Lecteur
-  'lecteur.signet': 'Signet',
-  'lecteur.signet.actif': 'Signet ✓',
+  "lecteur.signet": "Signet",
+  "lecteur.signet.actif": "Signet ✓",
 
   // --- Erreurs
-  'erreur.lecture': 'Lecture impossible : {raison}',
-  'erreur.chapitres': 'Chapitres indisponibles : {raison}',
-  'erreur.source.inconnue':
+  "erreur.lecture": "Lecture impossible : {raison}",
+  "erreur.chapitres": "Chapitres indisponibles : {raison}",
+  "erreur.source.inconnue":
     "Source inconnue : cette série n'est rattachée à aucun catalogue. Réouvre sa fiche depuis le catalogue, ou réessaie depuis l'accueil.",
-  'erreur.chapitre.vide': 'Ce chapitre n’a aucune page lisible.',
-  'erreur.signet': 'Signet : {raison}',
-  'erreur.categorie': 'Catégorie : {raison}',
-  'erreur.favori': 'Favori : {raison}',
-  'erreur.source': 'Activation de la source impossible : {raison}',
-  'erreur.reactivation': 'Réactivation impossible : {raison}',
-  'erreur.purge': 'Purge impossible : {raison}',
-  'erreur.delai': "{source} n'a pas répondu à temps. Site mort ou trop lent.",
-  'erreur.verification': '{source} demande une vérification anti-robot, pas encore gérée.',
-  'erreur.verification.non.rejouable':
+  "erreur.chapitre.vide": "Ce chapitre n’a aucune page lisible.",
+  "erreur.signet": "Signet : {raison}",
+  "erreur.categorie": "Catégorie : {raison}",
+  "erreur.favori": "Favori : {raison}",
+  "erreur.source": "Activation de la source impossible : {raison}",
+  "erreur.reactivation": "Réactivation impossible : {raison}",
+  "erreur.purge": "Purge impossible : {raison}",
+  "erreur.delai": "{source} n'a pas répondu à temps. Site mort ou trop lent.",
+  "erreur.verification":
+    "{source} demande une vérification anti-robot, pas encore gérée.",
+  "erreur.verification.non.rejouable":
     "{source} exige une vérification que l'application ne sait pas rejouer. Ouvrir la source dans un navigateur reste possible.",
-  'challenge.domaine.indisponible':
+  "challenge.domaine.indisponible":
     "L'URL de vérification ne correspond à aucun domaine déclaré pour cette source.",
-  'challenge.non.rejouable':
+  "challenge.non.rejouable":
     "La vérification de {source} a abouti, mais le site refuse quand même la requête. Ce n'est pas un problème de connexion : la source reste inaccessible depuis l'application.",
-  'erreur.source.bloquee':
-    'La vérification de {source} n’a pas pu être reproduite : cette source reste inaccessible.',
-  'erreur.compte.requis':
-    '{source} demande un compte pour ouvrir ce chapitre. Cette source n’est pas utilisable sans.',
-  'erreur.surcharge': '{source} est surchargé. Réessaie dans quelques minutes.',
-  'erreur.domaine': 'Le domaine de {source} n’existe plus.',
-  'erreur.404': '{source} renvoie 404 : la source est hors service.',
-  'erreur.403': '{source} bloque les requêtes (403).',
-  'erreur.serveur': '{source} a renvoyé une erreur serveur.',
-  'erreur.categories.ordre': 'Ordre des catégories : {raison}',
-  'erreur.suppression': 'Suppression impossible : {raison}',
-  'erreur.telechargement': 'Téléchargement : {raison}',
-  'erreur.telechargement.chapitre': 'Chapitre « {chapitre} » : {raison}',
-  'erreur.fiche': 'Fiche indisponible : {raison}',
-  'telechargements.chapitres': '{s} chapitre{s}',
-  'telechargements.deja.la': 'déjà là',
-  'telechargements.en.echec': 'en échec',
-  'telechargements.chapitres.nouveaux': '{n} nouveau(x) chapitre(s)',
+  "erreur.source.bloquee":
+    "La vérification de {source} n’a pas pu être reproduite : cette source reste inaccessible.",
+  "erreur.compte.requis":
+    "{source} demande un compte pour ouvrir ce chapitre. Cette source n’est pas utilisable sans.",
+  "erreur.surcharge": "{source} est surchargé. Réessaie dans quelques minutes.",
+  "erreur.domaine": "Le domaine de {source} n’existe plus.",
+  "erreur.404": "{source} renvoie 404 : la source est hors service.",
+  "erreur.403": "{source} bloque les requêtes (403).",
+  "erreur.serveur": "{source} a renvoyé une erreur serveur.",
+  "erreur.source.morte":
+    "{source} est hors service : son domaine a disparu ou la page demandée n’existe plus.",
+  "erreur.origine.injoignable":
+    "{source} est momentanément indisponible : le serveur du site ne répond plus (Cloudflare).",
+  "erreur.parseur.perime":
+    "{source} a changé de page : son parseur doit être mis à jour.",
+  "erreur.categories.ordre": "Ordre des catégories : {raison}",
+  "erreur.suppression": "Suppression impossible : {raison}",
+  "erreur.telechargement": "Téléchargement : {raison}",
+  "erreur.telechargement.chapitre": "Chapitre « {chapitre} » : {raison}",
+  "erreur.fiche": "Fiche indisponible : {raison}",
+  "telechargements.chapitres": "{s} chapitre{s}",
+  "telechargements.deja.la": "déjà là",
+  "telechargements.en.echec": "en échec",
+  "telechargements.chapitres.nouveaux": "{n} nouveau(x) chapitre(s)",
 
   // --- Libellés qui étaient écrits en français dans le JSX (audit 2026-10-08) ---
   //
@@ -459,74 +476,77 @@ const FR = {
   // section « Notifications système » ci-dessus interdit déjà par convention :
   // le français et l'anglais n'ont pas la même règle, donc un pluriel construit
   // dans le composant ment dans une des deux langues.
-  'chapitres.compte1': '{n} chapitre · {k} sélectionné',
-  'chapitres.compte': '{n} chapitres · {k} sélectionnés',
-  'chapitres.compte.selection1': '{n} chapitre · 1 sélectionné',
-  'chapitres.compte.selection': '{n} chapitres · {k} sélectionnés',
-  'libelle.aucun': 'Aucun',
-  'libelle.rechercher': 'Rechercher',
-  'libelle.annuler': 'Annuler',
-  'libelle.selectionner': 'Sélectionner',
-  'libelle.categories.vides':
-    'Créez vos catégories dans Réglages pour ranger vos favoris.',
-  'libelle.recherche.aria': 'Rechercher un webtoon dans cette source',
-  'libelle.recherche.placeholder': 'Rechercher un webtoon.',
-  'libelle.selection.nb': 'Nombre de chapitres à sélectionner ({n})',
-  'libelle.selection.un': 'Sélectionner {chapitre}',
-  'libelle.chapitre.introuvable': 'Aucun chapitre ne correspond à « {q} ».',
-  'libelle.webtoon.sans.chapitre': "Ce webtoon n'a plus aucun chapitre lisible.",
-  'libelle.verification.note':
+  "chapitres.compte1": "{n} chapitre · {k} sélectionné",
+  "chapitres.compte": "{n} chapitres · {k} sélectionnés",
+  "chapitres.compte.selection1": "{n} chapitre · 1 sélectionné",
+  "chapitres.compte.selection": "{n} chapitres · {k} sélectionnés",
+  "libelle.aucun": "Aucun",
+  "libelle.rechercher": "Rechercher",
+  "libelle.annuler": "Annuler",
+  "libelle.selectionner": "Sélectionner",
+  "libelle.categories.vides":
+    "Créez vos catégories dans Réglages pour ranger vos favoris.",
+  "libelle.recherche.aria": "Rechercher un webtoon dans cette source",
+  "libelle.recherche.placeholder": "Rechercher un webtoon.",
+  "libelle.selection.nb": "Nombre de chapitres à sélectionner ({n})",
+  "libelle.selection.un": "Sélectionner {chapitre}",
+  "libelle.chapitre.introuvable": "Aucun chapitre ne correspond à « {q} ».",
+  "libelle.webtoon.sans.chapitre":
+    "Ce webtoon n'a plus aucun chapitre lisible.",
+  "libelle.verification.note":
     "Ce site demande une vérification anti-robot. Résous-la dans la fenêtre qui va s'ouvrir, puis reviens ici : les cookies seront transmis au moteur et la requête rejouée.",
-  'libelle.verification.resoudre': 'Résoudre la vérification',
-  'libelle.verification.applique': "C'est fait, réessayer",
-  'libelle.verification.cookies': '{n} cookie(s) transmis à {source}.',
-  'libelle.verification.fenetre.fermee':
-    'La fenêtre de vérification est fermée : ses cookies sont illisibles. Rouvre la fenêtre, passe la vérification, puis clique ici.',
-  'libelle.verification.non.appliquee': 'Vérification non appliquée :',
-  'libelle.verification.annulation': 'Annulation impossible : {raison}',
-  'fiche.statut': 'Statut',
-  'fiche.reprendre': 'Reprendre la lecture',
-  'fiche.reprendre.chapitre': 'Reprendre « {chapitre} »',
-  'libelle.chapitre.ici': 'Vous êtes ici',
-  'libelle.chapitre.en.cours': 'Vous êtes ici · page {page}/{total}',
-  'libelle.chapitre.courant': 'Chapitre courant : {chapitre}',
-  'fiche.auteur': 'Auteur',
-  'fiche.genres': 'Genres',
-  'fiche.titre.alternatif': 'Titre alternatif',
-  'fiche.note': 'Note',
-  'fiche.note.valeur': '{note} / 5',
-  'fiche.source': 'Source',
-  'fiche.etat.ONGOING': 'En cours',
-  'fiche.etat.FINISHED': 'Terminé',
-  'fiche.etat.ABANDONED': 'Abandonné',
-  'fiche.etat.LICENSED': 'Sous licence',
-  'fiche.etat.PUBLISHING_FINISHED': 'Publication terminée',
-  'fiche.etat.ON_HIATUS': 'En pause',
-  'fiche.etat.NOT_YET': 'Pas encore publié',
-  'fiche.etat.DISCONTINUED': 'Interrompu',
-  'lia.aller.page': 'Aller à la page',
-  'lia.selection.rapide': 'Sélection rapide de chapitres',
-  'lia.filtrer': 'Filtrer les chapitres par numéro ou titre',
-  'lia.filtrer.court': 'Filtrer un chapitre…',
-  'libelle.tout': 'Tout',
-  'libelle.supprimer': 'Supprimer',
-  'libelle.telecharger': 'Télécharger',
-  'libelle.telecharger.un': 'Télécharger {chapitre}',
-  'sources.tout.desactiver': 'Tout désactiver',
-  'sources.tout.activer': 'Tout activer',
-  'dl.en.cours': 'Téléchargement.',
-  'dl.selection': 'Télécharger la sélection ({n})',
-  'dl.compter': 'Télécharger ({n})',
-  'recent.en.cours': '{n} en cours.',
-  'notice.telecharge': 'Téléchargé : {f}',
-  'selection.webtoon1': '{n} webtoon sélectionné',
-  'selection.webtoon': '{n} webtoons sélectionnés',
-  'catalogue.webtoon1': '{n} webtoon',
-  'catalogue.webtoon': '{n} webtoons',
-  'catalogue.source1': '{n} source',
-  'catalogue.source': '{n} sources',
-  'bandeau.base_en_memoire':
-    'La base de données est en mémoire : les favoris et l\'historique ne seront pas conservés.',
+  "libelle.verification.resoudre": "Résoudre la vérification",
+  "libelle.verification.applique": "C'est fait, réessayer",
+  "libelle.verification.cookies": "{n} cookie(s) transmis à {source}.",
+  "libelle.verification.fenetre.fermee":
+    "La fenêtre de vérification est fermée : ses cookies sont illisibles. Rouvre la fenêtre, passe la vérification, puis clique ici.",
+  "libelle.verification.non.appliquee": "Vérification non appliquée :",
+  "libelle.verification.annulation": "Annulation impossible : {raison}",
+  "fiche.statut": "Statut",
+  "fiche.reprendre": "Reprendre la lecture",
+  "fiche.reprendre.chapitre": "Reprendre « {chapitre} »",
+  "libelle.chapitre.ici": "Vous êtes ici",
+  "libelle.chapitre.en.cours": "Vous êtes ici · page {page}/{total}",
+  "libelle.chapitre.courant": "Chapitre courant : {chapitre}",
+  "libelle.chapitre.premium":
+    "Réservé aux abonnés — lisible seulement avec un abonnement actif",
+  "fiche.auteur": "Auteur",
+  "fiche.genres": "Genres",
+  "fiche.titre.alternatif": "Titre alternatif",
+  "fiche.note": "Note",
+  "fiche.note.valeur": "{note} / 5",
+  "fiche.source": "Source",
+  "fiche.etat.ONGOING": "En cours",
+  "fiche.etat.FINISHED": "Terminé",
+  "fiche.etat.ABANDONED": "Abandonné",
+  "fiche.etat.LICENSED": "Sous licence",
+  "fiche.etat.PUBLISHING_FINISHED": "Publication terminée",
+  "fiche.etat.ON_HIATUS": "En pause",
+  "fiche.etat.NOT_YET": "Pas encore publié",
+  "fiche.etat.DISCONTINUED": "Interrompu",
+  "lia.aller.page": "Aller à la page",
+  "lia.selection.rapide": "Sélection rapide de chapitres",
+  "lia.filtrer": "Filtrer les chapitres par numéro ou titre",
+  "lia.filtrer.court": "Filtrer un chapitre…",
+  "libelle.tout": "Tout",
+  "libelle.supprimer": "Supprimer",
+  "libelle.telecharger": "Télécharger",
+  "libelle.telecharger.un": "Télécharger {chapitre}",
+  "sources.tout.desactiver": "Tout désactiver",
+  "sources.tout.activer": "Tout activer",
+  "dl.en.cours": "Téléchargement.",
+  "dl.selection": "Télécharger la sélection ({n})",
+  "dl.compter": "Télécharger ({n})",
+  "recent.en.cours": "{n} en cours.",
+  "notice.telecharge": "Téléchargé : {f}",
+  "selection.webtoon1": "{n} webtoon sélectionné",
+  "selection.webtoon": "{n} webtoons sélectionnés",
+  "catalogue.webtoon1": "{n} webtoon",
+  "catalogue.webtoon": "{n} webtoons",
+  "catalogue.source1": "{n} source",
+  "catalogue.source": "{n} sources",
+  "bandeau.base_en_memoire":
+    "La base de données est en mémoire : les favoris et l'historique ne seront pas conservés.",
 } as const;
 
 type Cle = keyof typeof FR;
@@ -537,376 +557,390 @@ type Cle = keyof typeof FR;
  * seule garantie qu'on ne peut pas contourner sans le voir.
  */
 const EN: Record<Cle, string> = {
-  'nav.accueil': 'Home',
-  'nav.catalogues': 'Catalogues',
-  'nav.telechargements': 'Downloads',
-  'nav.parametres': 'Settings',
-  'app.nom': 'Tatami',
+  "nav.accueil": "Home",
+  "nav.catalogues": "Catalogues",
+  "nav.telechargements": "Downloads",
+  "nav.parametres": "Settings",
+  "app.nom": "Tatami",
 
-  'tri.source': 'Site order',
-  'tri.az': 'A → Z',
-  'tri.za': 'Z → A',
-  'tri.titre': 'Sort titles',
-  'reglages.telechargement': 'Download',
-  'reglages.par.page': 'Number of webtoons per page',
-  'reglages.catalogues': 'Catalogues shown',
-  'reglages.rating.suggestive': 'Suggestive — default, excludes adult content',
-  'reglages.rating.safe': 'Safe — several sources then return zero results',
-  'reglages.rating.all': 'All — no filter',
-  'reglages.contenu': 'Content',
-  'reglages.contenu.affiche': 'Content shown',
-  'reglages.contenu.note':
-    'One rating at a time: sources do not accept several. Sources that expose no rating are not filtered.',
+  "tri.source": "Site order",
+  "tri.az": "A → Z",
+  "tri.za": "Z → A",
+  "tri.titre": "Sort titles",
+  "reglages.telechargement": "Download",
+  "reglages.par.page": "Number of webtoons per page",
+  "reglages.catalogues": "Catalogues shown",
+  "reglages.rating.suggestive": "Suggestive — default, excludes adult content",
+  "reglages.rating.safe": "Safe — several sources then return zero results",
+  "reglages.rating.all": "All — no filter",
+  "reglages.contenu": "Content",
+  "reglages.contenu.affiche": "Content shown",
+  "reglages.contenu.note":
+    "One rating at a time: sources do not accept several. Sources that expose no rating are not filtered.",
 
-  'reglages.categories': 'Favourite categories',
-  'reglages.categories.note':
-    'A favourite belongs to a single category. Deleting a category does not delete its favourites: they go back to “no category”.',
-  'reglages.categories.vide': 'No category yet.',
-  'reglages.categories.nouvelle': 'New category…',
-  'reglages.categories.ajouter': 'Add',
-  'reglages.categories.supprimer': 'Delete',
-  'reglages.categories.monter': 'Move {nom} up',
-  'reglages.categories.descendre': 'Move {nom} down',
-  'reglages.categories.nom': 'Name of category {nom}',
-  'reglages.categories.couleur': 'Colour of {nom}',
+  "reglages.categories": "Favourite categories",
+  "reglages.categories.note":
+    "A favourite belongs to a single category. Deleting a category does not delete its favourites: they go back to “no category”.",
+  "reglages.categories.vide": "No category yet.",
+  "reglages.categories.nouvelle": "New category…",
+  "reglages.categories.ajouter": "Add",
+  "reglages.categories.supprimer": "Delete",
+  "reglages.categories.monter": "Move {nom} up",
+  "reglages.categories.descendre": "Move {nom} down",
+  "reglages.categories.nom": "Name of category {nom}",
+  "reglages.categories.couleur": "Colour of {nom}",
 
-  'reglages.reseau': 'Network',
-  'reglages.reseau.delai': 'Timeout',
-  'reglages.reseau.secondes': '{n} seconds',
-  'reglages.reseau.note':
-    'Some sources scan their whole catalogue before answering (EXHENTA: 36 s). Past the timeout the source is marked as down rather than made to wait.',
+  "reglages.reseau": "Network",
+  "reglages.reseau.delai": "Timeout",
+  "reglages.reseau.secondes": "{n} seconds",
+  "reglages.reseau.note":
+    "Some sources scan their whole catalogue before answering (EXHENTA: 36 s). Past the timeout the source is marked as down rather than made to wait.",
 
   // --- System notifications (task 3.3) ---
-  'notif.titre': 'New chapters',
-  'notif.titre.panneau': 'System notifications',
-  'notif.c1': '1 new chapter',
-  'notif.cn': '{n} new chapters',
-  'notif.c1p': '1 new chapter or more',
-  'notif.cnp': '{n} new chapters or more',
-  'notif.s1': '1 series',
-  'notif.sn': '{s} series',
-  'notif.reglage': 'Tell me when a run finds something',
-  'notif.reglage.note':
-    'One alert per run, never one per chapter. Turning this off does not stop the watch.',
-  'notif.reglage.note2':
-    'While the window has focus the alert stays quiet: the “updates” feed on the home screen already shows the same thing.',
+  "notif.titre": "New chapters",
+  "notif.titre.panneau": "System notifications",
+  "notif.c1": "1 new chapter",
+  "notif.cn": "{n} new chapters",
+  "notif.c1p": "1 new chapter or more",
+  "notif.cnp": "{n} new chapters or more",
+  "notif.s1": "1 series",
+  "notif.sn": "{s} series",
+  "notif.reglage": "Tell me when a run finds something",
+  "notif.reglage.note":
+    "One alert per run, never one per chapter. Turning this off does not stop the watch.",
+  "notif.reglage.note2":
+    "While the window has focus the alert stays quiet: the “updates” feed on the home screen already shows the same thing.",
 
   // --- Diagnostic logs (task 5.5) ---
-  'journal.titre': 'Diagnostic logs',
-  'journal.exporter': 'Export a report',
-  'journal.exporter.note':
-    'Writes a text file in your Downloads, to attach to a bug report.',
-  'journal.purger': 'Delete the logs',
-  'journal.purger.note': 'Deletes the logs written on disk. Your library is untouched.',
-  'journal.fait': 'Report written: {chemin}',
-  'journal.purge.ok': '{n} file(s) deleted.',
-  'journal.purge.rien': 'No log to delete.',
-  'journal.mention':
-    'The report contains your counts and your source identifiers, which help diagnose. Your manga URLs are replaced by a fingerprint.',
-  'journal.echec': 'Failed: {raison}',
+  "journal.titre": "Diagnostic logs",
+  "journal.exporter": "Export a report",
+  "journal.exporter.note":
+    "Writes a text file in your Downloads, to attach to a bug report.",
+  "journal.purger": "Delete the logs",
+  "journal.purger.note":
+    "Deletes the logs written on disk. Your library is untouched.",
+  "journal.fait": "Report written: {chemin}",
+  "journal.purge.ok": "{n} file(s) deleted.",
+  "journal.purge.rien": "No log to delete.",
+  "journal.mention":
+    "The report contains your counts and your source identifiers, which help diagnose. Your manga URLs are replaced by a fingerprint.",
+  "journal.echec": "Failed: {raison}",
 
   // --- Autostart (task 3.4) ---
-  'demarrage.titre': 'Start on login',
-  'demarrage.reglage': 'Launch Tatami when I sign in',
-  'demarrage.lecture': 'Reading the system state…',
-  'demarrage.indisponible':
-    'The system refuses to register an autostart entry; the option stays unavailable.',
-  'demarrage.note':
-    'Independent from “closing hides to the notification area”: the two settings do not have the same consequence.',
+  "demarrage.titre": "Start on login",
+  "demarrage.reglage": "Launch Tatami when I sign in",
+  "demarrage.lecture": "Reading the system state…",
+  "demarrage.indisponible":
+    "The system refuses to register an autostart entry; the option stays unavailable.",
+  "demarrage.note":
+    "Independent from “closing hides to the notification area”: the two settings do not have the same consequence.",
 
   // --- Notification area (task 3.4) ---
-  'zone.ouvrir': 'Open Tatami',
-  'zone.quitter': 'Quit',
+  "zone.ouvrir": "Open Tatami",
+  "zone.quitter": "Quit",
 
   // --- Durations (shared with the scheduler settings) ---
-  'duree.min': '{n} min',
-  'duree.heure1': '1 h',
-  'duree.heure': '{n} h',
-  'duree.jour1': '1 day',
-  'duree.jour': '{n} days',
+  "duree.min": "{n} min",
+  "duree.heure1": "1 h",
+  "duree.heure": "{n} h",
+  "duree.jour1": "1 day",
+  "duree.jour": "{n} days",
 
   // --- Scheduler settings (task 3.5) ---
-  'plan.titre': 'New-chapter watch',
-  'plan.chargement': 'Reading settings…',
-  'plan.actif': 'Look for new chapters',
-  'plan.dernier': 'Last checked: {quand}.',
-  'plan.jamais': 'No check recorded since the watch started.',
-  'plan.periode': 'Frequency',
-  'plan.periode.valeur': 'every {duree}',
-  'plan.periode.heure1': 'every 1 hour',
-  'plan.delai.source': 'Delay between two requests to the same source',
-  'plan.delai.valeur': '{n} s',
-  'plan.max.passe': 'Favourites checked per run',
-  'plan.max.sources': 'Sources queried per run',
-  'plan.note':
-    'Favourites skipped because of a cap are not lost: they go to the front of the next run.',
-  'plan.erreur': 'Unreadable setting: {detail}',
+  "plan.titre": "New-chapter watch",
+  "plan.chargement": "Reading settings…",
+  "plan.actif": "Look for new chapters",
+  "plan.dernier": "Last checked: {quand}.",
+  "plan.jamais": "No check recorded since the watch started.",
+  "plan.periode": "Frequency",
+  "plan.periode.valeur": "every {duree}",
+  "plan.periode.heure1": "every 1 hour",
+  "plan.delai.source": "Delay between two requests to the same source",
+  "plan.delai.valeur": "{n} s",
+  "plan.max.passe": "Favourites checked per run",
+  "plan.max.sources": "Sources queried per run",
+  "plan.note":
+    "Favourites skipped because of a cap are not lost: they go to the front of the next run.",
+  "plan.erreur": "Unreadable setting: {detail}",
 
   // --- Source status screen (task 5.4) ---
   // --- "Updates" feed (task 3.2) ---
-  'maj.bandeau1': '1 update',
-  'maj.bandeau': '{n} updates',
-  'maj.bandeau.vu': 'Updates',
-  'maj.dont.non.vus1': 'of which 1 already seen',
-  'maj.dont.non.vus': 'of which {n} already seen',
-  'maj.tout.vu': 'Mark all as read',
-  'maj.nouveau1': '1 new chapter',
-  'maj.nouveaux': '{n} new chapters',
-  'maj.voir.tronque1': 'See the flagged chapter (and {reste} more)',
-  'maj.voir.tronque': 'See the {n} flagged chapters (and {reste} more)',
-  'maj.voir1': 'See the flagged chapter',
-  'maj.et.pas.de.plus1': '1 other not listed',
-  'maj.et.pas.de.plus': '{n} others not listed',
+  "maj.bandeau1": "1 update",
+  "maj.bandeau": "{n} updates",
+  "maj.bandeau.vu": "Updates",
+  "maj.dont.non.vus1": "of which 1 already seen",
+  "maj.dont.non.vus": "of which {n} already seen",
+  "maj.tout.vu": "Mark all as read",
+  "maj.nouveau1": "1 new chapter",
+  "maj.nouveaux": "{n} new chapters",
+  "maj.voir.tronque1": "See the flagged chapter (and {reste} more)",
+  "maj.voir.tronque": "See the {n} flagged chapters (and {reste} more)",
+  "maj.voir1": "See the flagged chapter",
+  "maj.et.pas.de.plus1": "1 other not listed",
+  "maj.et.pas.de.plus": "{n} others not listed",
 
-  'etat.titre': 'Source status',
-  'etat.tout.va': 'No source has failed. Recorded failures are cleared as soon as a visit succeeds.',
-  'etat.resume1': '1 source failed during a visit.',
-  'etat.resume': '{n} sources failed during visits.',
-  'etat.sources1': '1 source',
-  'etat.sources': '{n} sources',
-  'etat.source': 'Source',
-  'etat.code': 'Error',
-  'etat.dernier': 'Reported',
-  'etat.reessayer': 'Retry all',
+  "etat.titre": "Source status",
+  "etat.tout.va":
+    "No source has failed. Recorded failures are cleared as soon as a visit succeeds.",
+  "etat.resume1": "1 source failed during a visit.",
+  "etat.resume": "{n} sources failed during visits.",
+  "etat.sources1": "1 source",
+  "etat.sources": "{n} sources",
+  "etat.source": "Source",
+  "etat.code": "Error",
+  "etat.dernier": "Reported",
+  "etat.reessayer": "Retry all",
 
   // --- Translated age of an event (was hardcoded French in `sinceFr`) ---
-  'temps.aujourdhui': 'today',
-  'temps.instance': 'just now',
-  'temps.min': '{n} min ago',
-  'temps.heure': '{n} h ago',
-  'temps.jour': '{n} d ago',
-  'temps.mois1': '1 month ago',
-  'temps.mois': '{n} months ago',
-  'temps.an': '1 year ago',
-  'temps.ans': '{n} years ago',
+  "temps.aujourdhui": "today",
+  "temps.instance": "just now",
+  "temps.min": "{n} min ago",
+  "temps.heure": "{n} h ago",
+  "temps.jour": "{n} d ago",
+  "temps.mois1": "1 month ago",
+  "temps.mois": "{n} months ago",
+  "temps.an": "1 year ago",
+  "temps.ans": "{n} years ago",
 
-  'reglages.apparence': 'Appearance',
-  'reglages.apparence.sombre': 'Dark',
-  'reglages.apparence.clair': 'Light',
-  'reglages.apparence.note':
-    'The reader stays dark in both themes: pages are mostly white, and a light background would make their edges disappear.',
-  'reglages.langue': 'Language',
-  'reglages.langue.fr': 'Français',
-  'reglages.langue.en': 'English',
-  'reglages.langue.note':
-    'Changes the language of the whole interface. Titles stay in their original language.',
+  "reglages.apparence": "Appearance",
+  "reglages.apparence.sombre": "Dark",
+  "reglages.apparence.clair": "Light",
+  "reglages.apparence.note":
+    "The reader stays dark in both themes: pages are mostly white, and a light background would make their edges disappear.",
+  "reglages.langue": "Language",
+  "reglages.langue.fr": "Français",
+  "reglages.langue.en": "English",
+  "reglages.langue.note":
+    "Changes the language of the whole interface. Titles stay in their original language.",
 
-  'catalogue.sources.disponibles': '{n} sources available',
-  'catalogue.sources.desactivees': '{n} disabled',
-  'catalogue.rechercher': 'Search a catalogue…',
-  'catalogue.langue.toutes': 'All',
-  'catalogue.desactivees.afficher': 'Show the {n} disabled source{s}',
-  'catalogue.reactiver.tout': 'Enable all',
-  'catalogue.hors.service': 'down',
-  'catalogue.desactivees.note':
-    'Disabled sources stay recorded, they are only hidden.',
-  'catalogue.vide.titre': 'No source to show',
-  'catalogue.vide.texte': 'No source matches “{nom}”.',
-  'catalogue.ouvrir': 'Open source {nom}',
-  'catalogue.desactiver': 'Disable source {nom}',
-  'catalogue.reactiver': 'Enable source {nom}',
+  "catalogue.sources.disponibles": "{n} sources available",
+  "catalogue.sources.desactivees": "{n} disabled",
+  "catalogue.rechercher": "Search a catalogue…",
+  "catalogue.langue.toutes": "All",
+  "catalogue.desactivees.afficher": "Show the {n} disabled source{s}",
+  "catalogue.reactiver.tout": "Enable all",
+  "catalogue.hors.service": "down",
+  "catalogue.desactivees.note":
+    "Disabled sources stay recorded, they are only hidden.",
+  "catalogue.vide.titre": "No source to show",
+  "catalogue.vide.texte": "No source matches “{nom}”.",
+  "catalogue.ouvrir": "Open source {nom}",
+  "catalogue.desactiver": "Disable source {nom}",
+  "catalogue.reactiver": "Enable source {nom}",
 
   // --- Custom sources (S2) ---
-  'sources.perso.titre': 'Custom sources',
-  'sources.perso.note':
-    'Import a JavaScript script (.js, max 256 KB) that adapts to a site not covered by built-in sources. The engine loads it on startup.',
-  'sources.perso.importer': 'Import a script…',
-  'sources.perso.en.cours': 'Importing…',
-  'sources.perso.vide': 'No custom sources.',
-  'sources.perso.supprimer': 'Delete source {nom}',
-  'sources.perso.ok': 'Source "{nom}" imported.',
-  'sources.perso.erreur': 'Import failed: {raison}',
-  'sources.perso.suppr.ok': 'Source "{nom}" deleted.',
-  'sources.perso.suppr.erreur': 'Deletion failed: {raison}',
+  "sources.perso.titre": "Custom sources",
+  "sources.perso.note":
+    "Import a JavaScript script (.js, max 256 KB) that adapts to a site not covered by built-in sources. The engine loads it on startup.",
+  "sources.perso.importer": "Import a script…",
+  "sources.perso.en.cours": "Importing…",
+  "sources.perso.vide": "No custom sources.",
+  "sources.perso.supprimer": "Delete source {nom}",
+  "sources.perso.ok": 'Source "{nom}" imported.',
+  "sources.perso.erreur": "Import failed: {raison}",
+  "sources.perso.suppr.ok": 'Source "{nom}" deleted.',
+  "sources.perso.suppr.erreur": "Deletion failed: {raison}",
   // An imported file is not a LOADED file: the engine can refuse to evaluate it,
   // and it only says so on stderr. Without this line the settings screen showed
   // a broken script as if it worked (measured 2026-10-10). Only the refusal is
   // shown: a "loaded" note on every row would be decoration.
-  'sources.perso.refuse': 'Refused by the engine: {raison}',
-  'sources.perso.confirmer': 'Delete {nom}',
-  'sources.perso.annuler': 'Cancel',
-  'catalogue.perso': 'Custom',
-  'catalogue.import.compte': '{n} imported source{s}',
+  "sources.perso.refuse": "Refused by the engine: {raison}",
+  "sources.perso.confirmer": "Delete {nom}",
+  "sources.perso.annuler": "Cancel",
+  "catalogue.perso": "Custom",
+  "catalogue.import.compte": "{n} imported source{s}",
 
+  "fiche.ajouter.favori": "♡ Add to favourites",
+  "fiche.dans.favoris": "♥ In your favourites",
+  "fiche.sans.categorie": "No category",
 
-  'fiche.ajouter.favori': '♡ Add to favourites',
-  'fiche.dans.favoris': '♥ In your favourites',
-  'fiche.sans.categorie': 'No category',
-
-  'accueil.rien.a.reprendre':
-    'Nothing to resume. Start reading from a catalogue and it will show up here.',
-  'accueil.oublier.titre': 'Forget {titre} in the history',
-  'accueil.ouvrir.favori': 'Open {title}',
-  'accueil.retirer.favori': 'Remove {title} from favorites',
-  'accueil.ouverture': 'Opening…',
-  'accueil.page.sur': 'page {p}/{n} · {quand}',
-  'catalogue.bandeau.langues': 'All languages',
-  'catalogue.compte.langues':
-    '{n} sources across {langs} languages. Pick a language to browse its sources.',
-  'catalogue.chargement': 'Loading series…',
-  'chapitres.chargement': 'Loading chapters…',
-  'accueil.chargement': 'Loading your library…',
-  'telechargements.chargement': 'Loading the downloaded library…',
-  'lecteur.page.sur': '{n} / {total}',
-  'catalogue.vide.langue': 'Every source in this language is disabled.',
-  'telechargements.verification.ouverte':
-    '{source} asks for a verification: a window will open, confirm there yourself then retry the download.',
-  'telechargements.verification.titre': 'Verification — {source}',
-  'telechargements.verification.note':
-    'Confirm in the site window. Once done, come back and retry the download: the cookie is sent automatically.',
-  'telechargements.verification.appliquer': 'Done, apply',
-  'telechargements.verification.fermer': 'Close',
-  'telechargements.verification.aucun.cookie':
-    'No cookie: the verification is probably not finished.',
-  'telechargements.verification.cookies':
-    '{n} cookie(s) sent to {source}. Retry the download.',
-  'telechargements.verification.erreur': 'Verification not applied: {detail}',
-  'telechargements.lecture.VIDE':
-    'The file for “{chapitre}” contains no readable page. Download it again, or open the .cbz in another reader.',
-  'telechargements.lecture.horsligne': 'Offline — read from the downloaded file',
-  'telechargements.lecture.lancer': 'Read',
-  'lecteur.navigation': 'Change page',
-  'lecteur.largeur': 'Page width as a percentage',
-  'lecteur.chapitre': 'Change chapter',
-  'lecteur.signet.info': 'Bookmark this page to find it later',
-  'lecteur.page.une': 'Page {n}',
-  'lecteur.page.indisponible.numero': 'Page {n}: {reason}',
-  'lecteur.plein.ecran': 'Fullscreen',
-  'lecteur.plein.ecran.erreur': 'Fullscreen unavailable: {raison}',
-  'telechargements.chapitres.ouvrir': 'Choose a chapter',
-  'telechargements.chapitres.aucun': 'No chapter downloaded yet.',
-  'lecteur.horsligne': 'Offline',
-  'lecteur.chargement': 'Loading chapter…',
+  "accueil.rien.a.reprendre":
+    "Nothing to resume. Start reading from a catalogue and it will show up here.",
+  "accueil.oublier.titre": "Forget {titre} in the history",
+  "accueil.ouvrir.favori": "Open {title}",
+  "accueil.retirer.favori": "Remove {title} from favorites",
+  "accueil.ouverture": "Opening…",
+  "accueil.page.sur": "page {p}/{n} · {quand}",
+  "catalogue.bandeau.langues": "All languages",
+  "catalogue.compte.langues":
+    "{n} sources across {langs} languages. Pick a language to browse its sources.",
+  "catalogue.chargement": "Loading series…",
+  "chapitres.chargement": "Loading chapters…",
+  "accueil.chargement": "Loading your library…",
+  "telechargements.chargement": "Loading the downloaded library…",
+  "lecteur.page.sur": "{n} / {total}",
+  "catalogue.vide.langue": "Every source in this language is disabled.",
+  "telechargements.verification.ouverte":
+    "{source} asks for a verification: a window will open, confirm there yourself then retry the download.",
+  "telechargements.verification.titre": "Verification — {source}",
+  "telechargements.verification.note":
+    "Confirm in the site window. Once done, come back and retry the download: the cookie is sent automatically.",
+  "telechargements.verification.appliquer": "Done, apply",
+  "telechargements.verification.fermer": "Close",
+  "telechargements.verification.aucun.cookie":
+    "No cookie: the verification is probably not finished.",
+  "telechargements.verification.cookies":
+    "{n} cookie(s) sent to {source}. Retry the download.",
+  "telechargements.verification.erreur": "Verification not applied: {detail}",
+  "telechargements.lecture.VIDE":
+    "The file for “{chapitre}” contains no readable page. Download it again, or open the .cbz in another reader.",
+  "telechargements.lecture.horsligne":
+    "Offline — read from the downloaded file",
+  "telechargements.lecture.lancer": "Read",
+  "lecteur.navigation": "Change page",
+  "lecteur.largeur": "Page width as a percentage",
+  "lecteur.chapitre": "Change chapter",
+  "lecteur.signet.info": "Bookmark this page to find it later",
+  "lecteur.page.une": "Page {n}",
+  "lecteur.page.indisponible.numero": "Page {n}: {reason}",
+  "lecteur.plein.ecran": "Fullscreen",
+  "lecteur.plein.ecran.erreur": "Fullscreen unavailable: {raison}",
+  "telechargements.chapitres.ouvrir": "Choose a chapter",
+  "telechargements.chapitres.aucun": "No chapter downloaded yet.",
+  "lecteur.horsligne": "Offline",
+  "lecteur.chargement": "Loading chapter…",
   // « not served by the source » : the wording matters. Measured on
   // `custom:mangadex-api` (2026-10-09) — chapter 1 serves 7/8 pages as ~200 KB
   // JPEGs, chapter 3 serves 0/8, same code, same second. The 404 is MangaDex's,
   // so the English must not blame the network or the app.
-  'lecteur.page.indisponible': 'Page not served by the source.',
-  'lecteur.pages.manquantes':
-    '{n} of {total} pages are not served by the source. The rest of the chapter is readable.',
-  'telechargements.aucun': 'No webtoon downloaded yet.',
-  'telechargements.recap': 'Downloads summary',
-  'telechargements.stat.webtoons': 'webtoon{s}',
-  'telechargements.stat.chapitres': 'chapters',
-  'telechargements.stat.disque': 'on disk',
-  'telechargements.stat.a.completer': 'to finish',
-  'telechargements.vos.webtoons': 'Your webtoons',
-  'telechargements.chapitres.compte': '{n}/{total} chapters',
-  'telechargements.chapitres.compte1': '{n}/{total} chapter',
-  'telechargements.chapitres.sans.total': '{n} chapters',
-  'telechargements.chapitres.sans.total1': '1 chapter',
+  "lecteur.page.indisponible": "Page not served by the source.",
+  "lecteur.pages.manquantes":
+    "{n} of {total} pages are not served by the source. The rest of the chapter is readable.",
+  "telechargements.aucun": "No webtoon downloaded yet.",
+  "telechargements.recap": "Downloads summary",
+  "telechargements.stat.webtoons": "webtoon{s}",
+  "telechargements.stat.chapitres": "chapters",
+  "telechargements.stat.disque": "on disk",
+  "telechargements.stat.a.completer": "to finish",
+  "telechargements.vos.webtoons": "Your webtoons",
+  "telechargements.chapitres.compte": "{n}/{total} chapters",
+  "telechargements.chapitres.compte1": "{n}/{total} chapter",
+  "telechargements.chapitres.sans.total": "{n} chapters",
+  "telechargements.chapitres.sans.total1": "1 chapter",
 
   // --- Webtoon folder import (task 2.4) ---
-  'import.titre': 'Import a folder',
-  'import.note':
-    'Copies the .cbz files from a folder on your disk into the library, so you can read them offline.',
-  'import.dossier.choisir': 'Choose a folder…',
-  'import.en.cours': 'Importing…',
-  'import.rapport.fermer': 'Hide the result',
-  'import.rapport.ok': 'Imported {n} chapters into “{titre}”.',
-  'import.rapport.ok1': 'Imported 1 chapter into “{titre}”.',
-  'import.rapport.refuses': '{n} files were not imported:',
-  'import.rapport.refuse1': '1 file was not imported:',
-  'import.erreur': 'Import failed: {raison}',
+  "import.titre": "Import a folder",
+  "import.note":
+    "Copies the .cbz files from a folder on your disk into the library, so you can read them offline.",
+  "import.dossier.choisir": "Choose a folder…",
+  "import.en.cours": "Importing…",
+  "import.rapport.fermer": "Hide the result",
+  "import.rapport.ok": "Imported {n} chapters into “{titre}”.",
+  "import.rapport.ok1": "Imported 1 chapter into “{titre}”.",
+  "import.rapport.refuses": "{n} files were not imported:",
+  "import.rapport.refuse1": "1 file was not imported:",
+  "import.erreur": "Import failed: {raison}",
   // Import refusal reasons: the keys are the **codes** returned by Rust.
-  'import.refus.pas-un-cbz': 'not a .cbz file',
-  'import.refus.archive-illisible': 'unreadable archive ({detail})',
-  'import.refus.aucune-image': 'the archive holds no image',
-  'import.refus.nom-chapitre': 'this file name cannot be used as a chapter name',
-  'import.refus.collision': 'another chapter in this folder is already named {detail}',
-  'import.refus.copie-impossible': 'copy failed ({detail})',
-  'telechargements.file': 'Download queue',
-  'telechargements.file.interrompue': 'Interrupted queue',
-  'telechargements.file.interrompue.note':
-    '{n} webtoon{s} were still waiting for chapters. Already downloaded chapters will be skipped.',
-  'telechargements.file.reprendre': 'Resume the queue',
-  'telechargements.file.abandonner': 'Abandon the queue',
-  'accueil.continuer': 'Continue reading',
-  'accueil.incognito': 'Incognito',
-  'accueil.incognito.note':
-    'Hides titles their source rates as adult. They stay reachable through search.',
-  'accueil.lu.recemment': '{n} recently read',
-  'accueil.lu.recemment1': '{n} recently read',
-  'accueil.favori': '{n} favourites',
-  'accueil.favori1': '{n} favourite',
-  'accueil.reprendre': 'Resume',
-  'accueil.oublier': 'Forget',
-  'accueil.fiche.titre': 'Open the details for {titre}',
-  'notification.fermer': 'Close the notification',
-  'accueil.vos.signets': 'Your bookmarks',
-  'accueil.pages.marquees': '{n} page{s} marked',
-  'accueil.rouvrir': 'Open',
-  'accueil.retirer': 'Remove',
-  'accueil.vos.favoris': 'Your favourites',
-  'accueil.vider.historique': 'Clear history',
-  'accueil.favoris.vide': 'No favourite yet. Open a webtoon then click the ♥ icon.',
-  'accueil.favoris.filtre.vide': 'No favourite in this category.',
-  'accueil.filtre.toutes': 'All',
-  'accueil.filtre.sans': 'No category ({n})',
+  "import.refus.pas-un-cbz": "not a .cbz file",
+  "import.refus.archive-illisible": "unreadable archive ({detail})",
+  "import.refus.aucune-image": "the archive holds no image",
+  "import.refus.nom-chapitre":
+    "this file name cannot be used as a chapter name",
+  "import.refus.collision":
+    "another chapter in this folder is already named {detail}",
+  "import.refus.copie-impossible": "copy failed ({detail})",
+  "telechargements.file": "Download queue",
+  "telechargements.file.interrompue": "Interrupted queue",
+  "telechargements.file.interrompue.note":
+    "{n} webtoon{s} were still waiting for chapters. Already downloaded chapters will be skipped.",
+  "telechargements.file.reprendre": "Resume the queue",
+  "telechargements.file.abandonner": "Abandon the queue",
+  "accueil.continuer": "Continue reading",
+  "accueil.incognito": "Incognito",
+  "accueil.incognito.note":
+    "Hides titles their source rates as adult. They stay reachable through search.",
+  "accueil.lu.recemment": "{n} recently read",
+  "accueil.lu.recemment1": "{n} recently read",
+  "accueil.favori": "{n} favourites",
+  "accueil.favori1": "{n} favourite",
+  "accueil.reprendre": "Resume",
+  "accueil.oublier": "Forget",
+  "accueil.fiche.titre": "Open the details for {titre}",
+  "notification.fermer": "Close the notification",
+  "accueil.vos.signets": "Your bookmarks",
+  "accueil.pages.marquees": "{n} page{s} marked",
+  "accueil.rouvrir": "Open",
+  "accueil.retirer": "Remove",
+  "accueil.vos.favoris": "Your favourites",
+  "accueil.vider.historique": "Clear history",
+  "accueil.favoris.vide":
+    "No favourite yet. Open a webtoon then click the ♥ icon.",
+  "accueil.favoris.filtre.vide": "No favourite in this category.",
+  "accueil.filtre.toutes": "All",
+  "accueil.filtre.sans": "No category ({n})",
 
-  'fiche.chapitres.vide': 'No chapter available on this source.',
-  'source.chapitres.vide': 'Click a webtoon to see its chapters.',
-  'source.chapitres.recents': 'Recent chapters',
-  'source.vide': 'No result on this source.',
-  'telechargements.dossier': 'Downloads folder',
-  'telechargements.dossier.note':
-    'Chapters are written to this folder, one .cbz per chapter. Changing it moves nothing: existing downloads stay where they are, and the library will only show the ones in the new folder.',
-  'telechargements.dossier.parcourir': 'Choose a folder…',
-  'telechargements.dossier.defaut': 'Back to the default folder',
-  'telechargements.dossier.ligne': 'Downloads folder:',
-  'telechargements.dossier.change': 'Folder changed. New downloads will go there.',
-  'telechargements.dossier.retour': 'Back to {chemin}',
-  'telechargements.dossier.erreur': 'Downloads folder: {raison}',
-  'telechargements.pause': 'Pause',
-  'telechargements.pause.note':
-    'The current chapter finishes, then the queue stops. Resuming continues where it left off.',
-  'telechargements.pause.etat': 'paused',
-  'telechargements.effacer.file': 'Clear the queue',
-  'telechargements.supprimer.titre': 'Delete {nom}?',
-  'telechargements.supprimer.note':
-    '{n} chapter(s), {poids} will be deleted from the downloads folder. The webtoon stays downloadable.',
-  'telechargements.supprimer.definitif': 'Delete permanently',
-  'telechargements.annuler': 'Cancel',
+  "fiche.chapitres.vide": "No chapter available on this source.",
+  "source.chapitres.vide": "Click a webtoon to see its chapters.",
+  "source.chapitres.recents": "Recent chapters",
+  "source.vide": "No result on this source.",
+  "telechargements.dossier": "Downloads folder",
+  "telechargements.dossier.note":
+    "Chapters are written to this folder, one .cbz per chapter. Changing it moves nothing: existing downloads stay where they are, and the library will only show the ones in the new folder.",
+  "telechargements.dossier.parcourir": "Choose a folder…",
+  "telechargements.dossier.defaut": "Back to the default folder",
+  "telechargements.dossier.ligne": "Downloads folder:",
+  "telechargements.dossier.change":
+    "Folder changed. New downloads will go there.",
+  "telechargements.dossier.retour": "Back to {chemin}",
+  "telechargements.dossier.erreur": "Downloads folder: {raison}",
+  "telechargements.pause": "Pause",
+  "telechargements.pause.note":
+    "The current chapter finishes, then the queue stops. Resuming continues where it left off.",
+  "telechargements.pause.etat": "paused",
+  "telechargements.effacer.file": "Clear the queue",
+  "telechargements.supprimer.titre": "Delete {nom}?",
+  "telechargements.supprimer.note":
+    "{n} chapter(s), {poids} will be deleted from the downloads folder. The webtoon stays downloadable.",
+  "telechargements.supprimer.definitif": "Delete permanently",
+  "telechargements.annuler": "Cancel",
 
-  'lecteur.signet': 'Bookmark',
-  'lecteur.signet.actif': 'Bookmark ✓',
+  "lecteur.signet": "Bookmark",
+  "lecteur.signet.actif": "Bookmark ✓",
 
-  'erreur.lecture': 'Cannot read: {raison}',
-  'erreur.chapitres': 'Chapters unavailable: {raison}',
-  'erreur.source.inconnue':
-    'Unknown source: this series is not attached to any catalogue. Open its page from the catalogue, or try again from Home.',
-  'erreur.chapitre.vide': 'This chapter has no readable page.',
-  'erreur.signet': 'Bookmark: {raison}',
-  'erreur.categorie': 'Category: {raison}',
-  'erreur.favori': 'Favourite: {raison}',
-  'erreur.source': 'Cannot enable source: {raison}',
-  'erreur.reactivation': 'Cannot re-enable: {raison}',
-  'erreur.purge': 'Cannot clear: {raison}',
-  'erreur.delai': '{source} did not answer in time. Site down or very slow.',
-  'erreur.verification': '{source} asks for an anti-bot check, not handled yet.',
-  'erreur.verification.non.rejouable':
+  "erreur.lecture": "Cannot read: {raison}",
+  "erreur.chapitres": "Chapters unavailable: {raison}",
+  "erreur.source.inconnue":
+    "Unknown source: this series is not attached to any catalogue. Open its page from the catalogue, or try again from Home.",
+  "erreur.chapitre.vide": "This chapter has no readable page.",
+  "erreur.signet": "Bookmark: {raison}",
+  "erreur.categorie": "Category: {raison}",
+  "erreur.favori": "Favourite: {raison}",
+  "erreur.source": "Cannot enable source: {raison}",
+  "erreur.reactivation": "Cannot re-enable: {raison}",
+  "erreur.purge": "Cannot clear: {raison}",
+  "erreur.delai": "{source} did not answer in time. Site down or very slow.",
+  "erreur.verification":
+    "{source} asks for an anti-bot check, not handled yet.",
+  "erreur.verification.non.rejouable":
     "{source} requires a verification the app cannot replay. Opening the source in a browser still works.",
-  'challenge.domaine.indisponible':
-    'The verification URL does not match any domain declared for this source.',
-  'challenge.non.rejouable':
+  "challenge.domaine.indisponible":
+    "The verification URL does not match any domain declared for this source.",
+  "challenge.non.rejouable":
     "The check for {source} succeeded, but the site still refuses the request. This is not a connection problem: the source stays unreachable from the app.",
-  'erreur.source.bloquee': 'The verification for {source} could not be reproduced: this source remains inaccessible.',
-  'erreur.compte.requis':
-    '{source} asks for an account to open this chapter. This source is unusable without one.',
-  'erreur.surcharge': '{source} is overloaded. Try again in a few minutes.',
-  'erreur.domaine': 'The domain of {source} no longer exists.',
-  'erreur.404': '{source} returns 404: the source is out of service.',
-  'erreur.403': '{source} blocks requests (403).',
-  'erreur.serveur': '{source} returned a server error.',
-  'erreur.categories.ordre': 'Category order: {raison}',
-  'erreur.suppression': 'Cannot delete: {raison}',
-  'erreur.telechargement': 'Download: {raison}',
-  'erreur.telechargement.chapitre': 'Chapter "{chapitre}": {raison}',
-  'erreur.fiche': 'Details unavailable: {raison}',
-  'telechargements.chapitres': '{s} chapter{s}',
-  'telechargements.deja.la': 'already there',
-  'telechargements.en.echec': 'failed',
-  'telechargements.chapitres.nouveaux': '{n} new chapter(s)',
+  "erreur.source.bloquee":
+    "The verification for {source} could not be reproduced: this source remains inaccessible.",
+  "erreur.compte.requis":
+    "{source} asks for an account to open this chapter. This source is unusable without one.",
+  "erreur.surcharge": "{source} is overloaded. Try again in a few minutes.",
+  "erreur.domaine": "The domain of {source} no longer exists.",
+  "erreur.404": "{source} returns 404: the source is out of service.",
+  "erreur.403": "{source} blocks requests (403).",
+  "erreur.serveur": "{source} returned a server error.",
+  "erreur.source.morte":
+    "{source} is out of service: its domain is gone or the requested page no longer exists.",
+  "erreur.origine.injoignable":
+    "{source} is temporarily unavailable: the site server no longer responds (Cloudflare).",
+  "erreur.parseur.perime":
+    "{source} changed its pages: its parser needs to be updated.",
+  "erreur.categories.ordre": "Category order: {raison}",
+  "erreur.suppression": "Cannot delete: {raison}",
+  "erreur.telechargement": "Download: {raison}",
+  "erreur.telechargement.chapitre": 'Chapter "{chapitre}": {raison}',
+  "erreur.fiche": "Details unavailable: {raison}",
+  "telechargements.chapitres": "{s} chapter{s}",
+  "telechargements.deja.la": "already there",
+  "telechargements.en.echec": "failed",
+  "telechargements.chapitres.nouveaux": "{n} new chapter(s)",
 
   // --- Labels that were written in French inside the JSX (audit 2026-10-08) ---
   //
@@ -914,73 +948,76 @@ const EN: Record<Cle, string> = {
   // the clearest case: it built its plural by hand, which the "System
   // notifications" section already forbids by convention, because French and
   // English do not share a rule.
-  'chapitres.compte1': '{n} chapter · {k} selected',
-  'chapitres.compte': '{n} chapters · {k} selected',
-  'chapitres.compte.selection1': '{n} chapter · 1 selected',
-  'chapitres.compte.selection': '{n} chapters · {k} selected',
-  'libelle.aucun': 'None',
-  'libelle.rechercher': 'Search',
-  'libelle.annuler': 'Cancel',
-  'libelle.selectionner': 'Select',
-  'libelle.categories.vides': 'Create your categories in Settings to sort your favourites.',
-  'libelle.recherche.aria': 'Search a webtoon in this source',
-  'libelle.recherche.placeholder': 'Search a webtoon.',
-  'libelle.selection.nb': 'Number of chapters to select ({n})',
-  'libelle.selection.un': 'Select {chapitre}',
-  'libelle.chapitre.introuvable': 'No chapter matches “{q}”.',
-  'libelle.webtoon.sans.chapitre': 'This webtoon has no readable chapter left.',
-  'libelle.verification.note':
-    'This site asks for an anti-robot check. Solve it in the window that is about to open, then come back: the cookies are sent to the engine and the request is replayed.',
-  'libelle.verification.resoudre': 'Solve the check',
-  'libelle.verification.applique': "Done, retry",
-  'libelle.verification.cookies': '{n} cookie(s) sent to {source}.',
-  'libelle.verification.fenetre.fermee':
-    'The check window is closed, so its cookies cannot be read. Reopen the window, solve the check, then click here.',
-  'libelle.verification.non.appliquee': 'Check not applied:',
-  'libelle.verification.annulation': 'Could not cancel: {raison}',
-  'fiche.statut': 'Status',
-  'fiche.reprendre': 'Resume reading',
-  'fiche.reprendre.chapitre': 'Resume "{chapitre}"',
-  'libelle.chapitre.ici': 'You are here',
-  'libelle.chapitre.en.cours': 'You are here · page {page}/{total}',
-  'libelle.chapitre.courant': 'Current chapter: {chapitre}',
-  'fiche.auteur': 'Author',
-  'fiche.genres': 'Genres',
-  'fiche.titre.alternatif': 'Alternative title',
-  'fiche.note': 'Rating',
-  'fiche.note.valeur': '{note} / 5',
-  'fiche.source': 'Source',
-  'fiche.etat.ONGOING': 'Ongoing',
-  'fiche.etat.FINISHED': 'Finished',
-  'fiche.etat.ABANDONED': 'Abandoned',
-  'fiche.etat.LICENSED': 'Licensed',
-  'fiche.etat.PUBLISHING_FINISHED': 'Publication finished',
-  'fiche.etat.ON_HIATUS': 'On hiatus',
-  'fiche.etat.NOT_YET': 'Not yet published',
-  'fiche.etat.DISCONTINUED': 'Discontinued',
-  'lia.aller.page': 'Go to page',
-  'lia.selection.rapide': 'Quick chapter selection',
-  'lia.filtrer': 'Filter chapters by number or title',
-  'lia.filtrer.court': 'Filter a chapter…',
-  'libelle.tout': 'All',
-  'libelle.supprimer': 'Delete',
-  'libelle.telecharger': 'Download',
-  'libelle.telecharger.un': 'Download {chapitre}',
-  'sources.tout.desactiver': 'Disable all',
-  'sources.tout.activer': 'Enable all',
-  'dl.en.cours': 'Downloading.',
-  'dl.selection': 'Download selection ({n})',
-  'dl.compter': 'Download ({n})',
-  'recent.en.cours': '{n} in progress.',
-  'notice.telecharge': 'Downloaded: {f}',
-  'selection.webtoon1': '{n} webtoon selected',
-  'selection.webtoon': '{n} webtoons selected',
-  'catalogue.webtoon1': '{n} webtoon',
-  'catalogue.webtoon': '{n} webtoons',
-  'catalogue.source1': '{n} source',
-  'catalogue.source': '{n} sources',
-  'bandeau.base_en_memoire':
-    'The database is in memory: favourites and history will not be persisted.',
+  "chapitres.compte1": "{n} chapter · {k} selected",
+  "chapitres.compte": "{n} chapters · {k} selected",
+  "chapitres.compte.selection1": "{n} chapter · 1 selected",
+  "chapitres.compte.selection": "{n} chapters · {k} selected",
+  "libelle.aucun": "None",
+  "libelle.rechercher": "Search",
+  "libelle.annuler": "Cancel",
+  "libelle.selectionner": "Select",
+  "libelle.categories.vides":
+    "Create your categories in Settings to sort your favourites.",
+  "libelle.recherche.aria": "Search a webtoon in this source",
+  "libelle.recherche.placeholder": "Search a webtoon.",
+  "libelle.selection.nb": "Number of chapters to select ({n})",
+  "libelle.selection.un": "Select {chapitre}",
+  "libelle.chapitre.introuvable": "No chapter matches “{q}”.",
+  "libelle.webtoon.sans.chapitre": "This webtoon has no readable chapter left.",
+  "libelle.verification.note":
+    "This site asks for an anti-robot check. Solve it in the window that is about to open, then come back: the cookies are sent to the engine and the request is replayed.",
+  "libelle.verification.resoudre": "Solve the check",
+  "libelle.verification.applique": "Done, retry",
+  "libelle.verification.cookies": "{n} cookie(s) sent to {source}.",
+  "libelle.verification.fenetre.fermee":
+    "The check window is closed, so its cookies cannot be read. Reopen the window, solve the check, then click here.",
+  "libelle.verification.non.appliquee": "Check not applied:",
+  "libelle.verification.annulation": "Could not cancel: {raison}",
+  "fiche.statut": "Status",
+  "fiche.reprendre": "Resume reading",
+  "fiche.reprendre.chapitre": 'Resume "{chapitre}"',
+  "libelle.chapitre.ici": "You are here",
+  "libelle.chapitre.en.cours": "You are here · page {page}/{total}",
+  "libelle.chapitre.courant": "Current chapter: {chapitre}",
+  "libelle.chapitre.premium":
+    "Subscribers only — readable with an active subscription",
+  "fiche.auteur": "Author",
+  "fiche.genres": "Genres",
+  "fiche.titre.alternatif": "Alternative title",
+  "fiche.note": "Rating",
+  "fiche.note.valeur": "{note} / 5",
+  "fiche.source": "Source",
+  "fiche.etat.ONGOING": "Ongoing",
+  "fiche.etat.FINISHED": "Finished",
+  "fiche.etat.ABANDONED": "Abandoned",
+  "fiche.etat.LICENSED": "Licensed",
+  "fiche.etat.PUBLISHING_FINISHED": "Publication finished",
+  "fiche.etat.ON_HIATUS": "On hiatus",
+  "fiche.etat.NOT_YET": "Not yet published",
+  "fiche.etat.DISCONTINUED": "Discontinued",
+  "lia.aller.page": "Go to page",
+  "lia.selection.rapide": "Quick chapter selection",
+  "lia.filtrer": "Filter chapters by number or title",
+  "lia.filtrer.court": "Filter a chapter…",
+  "libelle.tout": "All",
+  "libelle.supprimer": "Delete",
+  "libelle.telecharger": "Download",
+  "libelle.telecharger.un": "Download {chapitre}",
+  "sources.tout.desactiver": "Disable all",
+  "sources.tout.activer": "Enable all",
+  "dl.en.cours": "Downloading.",
+  "dl.selection": "Download selection ({n})",
+  "dl.compter": "Download ({n})",
+  "recent.en.cours": "{n} in progress.",
+  "notice.telecharge": "Downloaded: {f}",
+  "selection.webtoon1": "{n} webtoon selected",
+  "selection.webtoon": "{n} webtoons selected",
+  "catalogue.webtoon1": "{n} webtoon",
+  "catalogue.webtoon": "{n} webtoons",
+  "catalogue.source1": "{n} source",
+  "catalogue.source": "{n} sources",
+  "bandeau.base_en_memoire":
+    "The database is in memory: favourites and history will not be persisted.",
 };
 
 const DICTIONNAIRES: Record<Lang, Record<Cle, string>> = { fr: FR, en: EN };
@@ -991,8 +1028,8 @@ const abonnes = new Set<() => void>();
 
 /** La langue est une préférence d'affichage : `localStorage` suffit. */
 function lireLangue(): Lang {
-  if (typeof window === 'undefined') return 'fr';
-  return window.localStorage.getItem(LANG_KEY) === 'en' ? 'en' : 'fr';
+  if (typeof window === "undefined") return "fr";
+  return window.localStorage.getItem(LANG_KEY) === "en" ? "en" : "fr";
 }
 
 function abonner(cb: () => void): () => void {
@@ -1013,13 +1050,13 @@ function abonner(cb: () => void): () => void {
  * Ici on ne le fait plus qu'au changement explicite de langue.
  */
 function alignerAttribut(): void {
-  if (typeof document === 'undefined') return;
+  if (typeof document === "undefined") return;
   document.documentElement.lang = lireLangue();
 }
 
 /** Change la langue et prévient tous les composants. */
 export function setLang(lang: Lang): void {
-  if (typeof window !== 'undefined') {
+  if (typeof window !== "undefined") {
     window.localStorage.setItem(LANG_KEY, lang);
   }
   // Utile pour les lecteurs d'écran et le rendu des chiffres.
@@ -1040,7 +1077,7 @@ export interface I18n {
  * de langue est visible immédiatement partout.
  */
 export function useI18n(): I18n {
-  const lang = useSyncExternalStore(abonner, lireLangue, () => 'fr' as Lang);
+  const lang = useSyncExternalStore(abonner, lireLangue, () => "fr" as Lang);
   const t = (key: Cle, vars?: Record<string, string | number>): string => {
     // Repli sur le français si la clé manque : convertir l'interface écran par
     // écran ne doit jamais afficher une clé brute à l'utilisateur.

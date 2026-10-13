@@ -1275,6 +1275,25 @@ button:disabled {
   color: var(--accent-ink, var(--text));
   }
 
+  /* Mention « réservé aux abonnés », sur un chapitre premium.
+     Même contrat que `.chapter-ici` : une pastille **textuelle**, lisible
+     par un lecteur d'écran, et pas seulement une couleur.
+
+     Le ton est celui de l'information (`--accent-dim*`), **pas** celui de
+     l'erreur (`--danger*`) : un chapitre payant n'est pas une panne, et le
+     rougesuggérerait à tort qu'il faille réessayer. Mesuré le 2026-10-13 :
+     l'API des images répond 403 sur ces chapitres, pour tout le monde. */
+  .chapter-premium {
+    display: inline-block;
+    margin-top: 2px;
+    padding: 1px 6px;
+    border-radius: var(--r-sm);
+    background: var(--accent-dim);
+    color: var(--accent-dim-texte);
+    font-size: 11px;
+    font-weight: 700;
+  }
+
 /* Le bouton « reprendre » de la fiche. `btn btn-primary` donne déjà la forme ;
    cette règle ne fait que l'écarter du titre, sinon il touche le `page-head`. */
 .reprendre {
@@ -1560,6 +1579,39 @@ button:disabled {
   flex-direction: column;
   align-items: center;
   scrollbar-gutter: stable;
+  /* La barre doit se VOIR. Mesuré le 2026-10-10 : le pouce héritait de
+     `--surface-3` (#333333) sur le fond du lecteur (#16151d, volontairement
+     identique dans les deux thèmes), soit **1,43:1** — une commande invisible.
+     Demande de l'utilisateur : « rendre le scroll un peu plus visible, pour que
+     les gens utilisent ».
+
+     `--text-3` est le SEUL jeton existant qui passe le seuil de 3:1 dans les
+     deux thèmes : 6,36:1 en sombre, 3,60:1 en clair. `--accent` plafonne à
+     3,04:1 en clair, donc il est écarté — de justesse, mais écarté.
+
+     `auto` et non `thin` : la règle globale `*` imposait `thin`. C'est le
+     `scrollbar-gutter: stable` déjà posé qui empêche la mise en page de sauter. */
+  scrollbar-width: auto;
+  scrollbar-color: var(--text-3) transparent;
+}
+
+/* Chromium (la webview Tauri) : `scrollbar-width` n'y est qu'un indice, la
+   largeur réelle se règle par la pseudo-élément. La bordure transparente amincit
+   le pouce SANS changer sa couleur, donc sans toucher au contraste mesuré
+   ci-dessus — un pouce plus fin mais de la même couleur. */
+.webtoon::-webkit-scrollbar {
+  width: 14px;
+}
+
+.webtoon::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.webtoon::-webkit-scrollbar-thumb {
+  background: var(--text-3);
+  border-radius: var(--r-sm);
+  border: 4px solid transparent;
+  background-clip: content-box;
 }
 
 .webtoon img {

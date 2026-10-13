@@ -24,15 +24,18 @@
  * garantie reste entière, une clé inexistante ne compile toujours pas.
  */
 export type CleErreur =
-  | 'erreur.delai'
-  | 'erreur.verification'
-  | 'erreur.verification.non.rejouable'
-  | 'erreur.compte.requis'
-  | 'erreur.surcharge'
-  | 'erreur.domaine'
-  | 'erreur.404'
-  | 'erreur.403'
-  | 'erreur.serveur';
+  | "erreur.delai"
+  | "erreur.verification"
+  | "erreur.verification.non.rejouable"
+  | "erreur.compte.requis"
+  | "erreur.surcharge"
+  | "erreur.source.morte"
+  | "erreur.origine.injoignable"
+  | "erreur.parseur.perime"
+  | "erreur.domaine"
+  | "erreur.404"
+  | "erreur.403"
+  | "erreur.serveur";
 
 /**
  * Signature du traducteur, pour les fonctions de module qui doivent parler.
@@ -41,7 +44,10 @@ export type CleErreur =
  * clé inexistante. Une `string` large accepterait n'importe quelle faute de
  * frappe en silence.
  */
-export type Traduire = (key: CleErreur, vars?: Record<string, string | number>) => string;
+export type Traduire = (
+  key: CleErreur,
+  vars?: Record<string, string | number>,
+) => string;
 
 /**
  * `true` quand l'erreur dit qu'un challenge a été résolu et que le **rejeu**
@@ -56,7 +62,7 @@ export type Traduire = (key: CleErreur, vars?: Record<string, string | number>) 
  * produirait « demande une vérification » et la fenêtre se rouvrirait.
  */
 export function estRejeuRefuse(raw: string): boolean {
-  return /CHALLENGE_UNREPLAYABLE/i.test(raw.replace(/\s+/g, ' ').trim());
+  return /CHALLENGE_UNREPLAYABLE/i.test(raw.replace(/\s+/g, " ").trim());
 }
 
 /**
@@ -71,38 +77,57 @@ export function describeError(
   sourceName: string,
   t: Traduire,
 ): string {
-  const s = raw.replace(/\s+/g, ' ').trim();
+  const s = raw.replace(/\s+/g, " ").trim();
   if (/TIMEOUT|timeout/i.test(s)) {
-    return t('erreur.delai', { source: sourceName });
+    return t("erreur.delai", { source: sourceName });
   }
   if (estRejeuRefuse(s)) {
     // Le message ne promet aucun réessai : il n'y en a pas d'utile. Le message
     // « pas encore gérée » de `erreur.verification` conviendrait ici et serait
     // un mensonge — il promet une action que rien ne peut réussir.
-    return t('erreur.verification.non.rejouable', { source: sourceName });
+    return t("erreur.verification.non.rejouable", { source: sourceName });
   }
   if (/CHALLENGE_REQUIRED/i.test(s)) {
-    return t('erreur.verification', { source: sourceName });
+    return t("erreur.verification", { source: sourceName });
   }
   // 401 : le site exige un compte. Ni un challenge ni une panne réseau — demander
   // une vérification anti-robot ici serait futile, c'est un compte qu'il faut.
   if (/AUTH_REQUIRED/i.test(s)) {
-    return t('erreur.compte.requis', { source: sourceName });
+    return t("erreur.compte.requis", { source: sourceName });
   }
   if (/RATE_LIMITED/i.test(s)) {
-    return t('erreur.surcharge', { source: sourceName });
+    return t("erreur.surcharge", { source: sourceName });
+  }
+  // Codes du moteur, **avant** les heuristiques de message. Mesuré le
+  // 2026-10-12 : 83 des 98 sources FR échouaient en `INTERNAL` avec une
+  // exception Java brute. Le moteur classe désormais par type et par code
+  // HTTP ; ce tri doit passer en premier, sinon `Status=523` serait encore
+  // rangé dans les 5xx génériques et l'utilisateur n'y gagnerait rien.
+  //
+  // `SOURCE_DEAD` et `ORIGIN_DOWN` sont volontairement distincts : le premier
+  // ne reviendra pas (le domaine a disparu), le second peut revenir (le serveur
+  // a été rallumé). Dire « hors service » pour une panne d'origine serait un
+  // mensonge qui décourage l'utilisateur de réessayer.
+  if (/SOURCE_DEAD/i.test(s)) {
+    return t("erreur.source.morte", { source: sourceName });
+  }
+  if (/ORIGIN_DOWN/i.test(s)) {
+    return t("erreur.origine.injoignable", { source: sourceName });
+  }
+  if (/PARSER_OUTDATED/i.test(s)) {
+    return t("erreur.parseur.perime", { source: sourceName });
   }
   if (/UnknownHostException/i.test(s)) {
-    return t('erreur.domaine', { source: sourceName });
+    return t("erreur.domaine", { source: sourceName });
   }
   if (/404|NotFoundException/i.test(s)) {
-    return t('erreur.404', { source: sourceName });
+    return t("erreur.404", { source: sourceName });
   }
   if (/403/.test(s)) {
-    return t('erreur.403', { source: sourceName });
+    return t("erreur.403", { source: sourceName });
   }
   if (/500|502|503/.test(s)) {
-    return t('erreur.serveur', { source: sourceName });
+    return t("erreur.serveur", { source: sourceName });
   }
   const short = s.length > 140 ? `${s.slice(0, 140)}…` : s;
   return `${sourceName} : ${short}`;

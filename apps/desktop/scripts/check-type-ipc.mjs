@@ -25,6 +25,9 @@ import { fileURLToPath } from 'node:url';
 const ICI = dirname(fileURLToPath(import.meta.url));
 const RENDU = join(ICI, '..', 'app', 'page.tsx');
 const SRC_TAURI = join(ICI, '..', 'src-tauri', 'src');
+// scripts/ → desktop/ → apps/ → racine du dépôt.
+const CONTRAT = join(ICI, '..', '..', '..', 'contract', 'protocol.json');
+const protocole = JSON.parse(readFileSync(CONTRAT, 'utf8'));
 
 /** Paires déclarées : type TypeScript, structure Rust, fichier Rust. */
 const PAIRES = [
@@ -81,6 +84,21 @@ function versSerpent(s) {
   return s.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 }
 
+/** Types TS dont le producteur est le **schéma du contrat**, pas une
+ *  structure Rust : le cœur renvoie du JSON brut (`serde_json::Value`), donc
+ *  aucune discipline de structure ne s'applique. C'est ce qui a laissé passer
+ *  `uploadDate` puis `premium` — un `invoke<Type>` reste une assertion, et le
+ *  seul endroit décrivant ce que le moteur émet est `contract/protocol.json`.
+ */
+const TYPES_SCHEMA = ['Chapter'];
+
+/** Champs déclarés dans `contract/protocol.json` pour une `$defs`. */
+function champsSchema(protocole, def) {
+  const noeud = protocole.$defs?.[def];
+  if (!noeud?.properties) return null;
+  return Object.keys(noeud.properties);
+}
+
 const sourceTs = readFileSync(RENDU, 'utf8');
 const echecs = [];
 
@@ -109,6 +127,27 @@ for (const [typeTs, structRust, fichier] of PAIRES) {
           (serpent !== champ && rust.includes(serpent)
             ? ` (le nom est en camelCase, le cœur envoie du snake_case)`
             : ''),
+      );
+    }
+  }
+}
+
+for (const typeTs of TYPES_SCHEMA) {
+  const ts = champsTypeTs(sourceTs, typeTs);
+  if (!ts) {
+    echecs.push(`  ${typeTs} : type introuvable dans app/page.tsx`);
+    continue;
+  }
+  const def = typeTs.toLowerCase();
+  const schema = champsSchema(protocole, def);
+  if (!schema) {
+    echecs.push(`  ${typeTs} : $defs.${def} introuvable dans contract/protocol.json`);
+    continue;
+  }
+  for (const champ of ts) {
+    if (!schema.includes(champ)) {
+      echecs.push(
+        `  ${typeTs}.${champ} : le schéma $defs.${def} ne déclare pas « ${champ} »`,
       );
     }
   }

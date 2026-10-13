@@ -9,7 +9,7 @@ const nextConfig = {
     unoptimized: true,
   },
   // En dev, les assets passent par le serveur Next local.
-  assetPrefix: isProd ? undefined : `http://${internalHost}:3000`,
+  assetPrefix: isProd ? undefined : `http://${internalHost}:3001`,
   // **Pas d'indicateur de développement.** Next pose un bouton flottant dans le
   // coin de l'écran, en bas à gauche — donc **sur la page de lecture**, par-dessus
   // le contenu. Signalé par l'utilisateur comme « un footer inutile ».

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "predev": "node -e \"require('fs').existsSync('../../engine/dist/tatami-engine/runtime/bin/java.exe')||require('child_process').execSync('powershell -File ../../scripts/build-engine.ps1',{stdio:'inherit'})\"",
-    "dev": "next dev -H 127.0.0.1",
+    "dev": "next dev -H localhost -p 3001",
     "prebuild": "node -e \"require('fs').existsSync('../../engine/dist/tatami-engine/runtime/bin/java.exe')||require('child_process').execSync('powershell -File ../../scripts/build-engine.ps1',{stdio:'inherit'})\"",
     "build": "next build",
     "lint": "eslint",

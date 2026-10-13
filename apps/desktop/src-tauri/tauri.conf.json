@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "app.tatami.desktop",
   "build": {
-    "devUrl": "http://127.0.0.1:3000",
+    "devUrl": "http://localhost:3001",
     "frontendDist": "../out",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"

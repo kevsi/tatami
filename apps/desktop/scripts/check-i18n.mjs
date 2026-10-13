@@ -85,7 +85,11 @@ function bornes(source, nom) {
   // kebab-case, et sans lui elles **disparaissaient** du dictionnaire que cette
   // porte analyse. Un trou symétrique : la clé invisible pour la porte ne
   // pouvait pas non plus être déclarée morte.
-  const cles = [...bloc.matchAll(/^\s*'([a-z][a-zA-Z0-9_.-]*)':/gm)].map((m) => m[1]);
+  // Les deux styles de guillemets sont acceptés : le dictionnaire a été
+  // reformaté en guillemets doubles, et le motif n'en acceptait que les
+  // apostrophes — la porte lisait alors **0 clé** et déclarait quand même
+  // « aucune clé morte ». Une porte qui ne voit rien ne peut pas crier.
+  const cles = [...bloc.matchAll(/^\s*['"]([a-z][a-zA-Z0-9_.-]*)['"]\s*:/gm)].map((m) => m[1]);
   return [...new Set(cles)];
 }
 
@@ -110,17 +114,23 @@ const pageSansCommentaires = page
 // compilateur reste la vraie porte ; ce script ne doit pas crier plus fort que
 // lui.
 const K = '[a-z][a-zA-Z0-9_.-]*';
-const litteraux = [...pageSansCommentaires.matchAll(new RegExp(`\\bt\\(\\s*'(${K})'`, 'g'))].map((m) => m[1]);
-const viaTables = [...pageSansCommentaires.matchAll(new RegExp(`\\bcle:\\s*'(${K})'`, 'g'))].map((m) => m[1]);
+// Apostrophe **ou** guillemet double. Les quatre motifs ci-dessous n'en
+// acceptaient qu'une, alors que le code et le dictionnaire ont été reformatés
+// en guillemets doubles : la porte ne voyait plus aucune clé *utilisée*, donc
+// aucune clé n'était morte non plus. Elle annonçait « 0 clé » et « aucun
+// problème » — deux verts qui ne voulaient rien dire.
+const Q = `['"]`;
+const litteraux = [...pageSansCommentaires.matchAll(new RegExp(`\\bt\\(\\s*${Q}(${K})${Q}`, 'g'))].map((m) => m[1]);
+const viaTables = [...pageSansCommentaires.matchAll(new RegExp(`\\bcle:\\s*${Q}(${K})${Q}`, 'g'))].map((m) => m[1]);
 const viaTernaire = [
-  ...pageSansCommentaires.matchAll(new RegExp(`\\bt\\([^)]*\\?\\s*'(${K})'\\s*:\\s*'(${K})'`, 'g')),
+  ...pageSansCommentaires.matchAll(new RegExp(`\\bt\\([^)]*\\?\\s*${Q}(${K})${Q}\\s*:\\s*${Q}(${K})${Q}`, 'g')),
 ].flatMap((m) => [m[1], m[2]]);
 // **Table de correspondance** : `const MOTIF_REFUS: Record<Code, Cle> = { 'code': 'clé' }`.
 // La clé y est un littéral sans `t()` autour. Sans cette forme, les six motifs
 // d'import étaient déclarés morts alors qu'ils sont affichés — mesuré le
 // 2026-10-05. Un littéral **égal à une clé déclarée** est une référence ; les
 // commentaires étant retirés plus haut, une clé citée en prose ne compte pas.
-const viaTable = [...pageSansCommentaires.matchAll(new RegExp(`'(${K})'`, 'g'))]
+const viaTable = [...pageSansCommentaires.matchAll(new RegExp(`${Q}(${K})${Q}`, 'g'))]
   .map((m) => m[1])
   .filter((cle) => frSet.has(cle));
 // **Clés construites par gabarit** : `t(\`fiche.etat.${state}\`)\`. La partie

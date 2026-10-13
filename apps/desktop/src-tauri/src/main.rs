@@ -285,6 +285,7 @@ fn main() {
             challenge::open_challenge,
             challenge::solve_challenge,
             challenge::cancel_challenge,
+            challenge::webview_lire,
             custom_source::importer_source,
             custom_source::lister_sources_custom,
             custom_source::supprimer_source_custom,

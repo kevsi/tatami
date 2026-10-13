@@ -2389,3 +2389,61 @@ passe **jamais** par `proceed`.
 **Ce qui reste.** Côté Rust : la webview cachée, la liste blanche d'hôtes issue
 de `domaines_source`, l'attente de fin de challenge par `reste_interstitiel`,
 et le rejeu de la requête ensuite. C'est l'étape 3 du plan.
+
+### Implémentation — étapes 2 et 3 : webview cachée + rejeu (2026-10-13)
+
+**Mesure 0 d'abord, comme annoncé.** Le canal tiré porte le HTML **en une
+lecture** : `outerHTML` de la page chapitre de TOONFR = 124 984 caractères,
+retourné intact en **38 ms**. La réserve du spike est levée, pas de découpage.
+
+**Moitié Rust.** `challenge.rs` : commande `webview_lire(source, url)`.
+- liste blanche réutilisée telle quelle (`valider_url_challenge(url,
+  domaines_source(source), None)`) — donc **la même** garantie que la fenêtre de
+  vérification : jamais un hôte annoncé par le site ;
+- webview **cachée** (`.visible(false)`), étiquette `webview-<source>` —
+  **distincte** de `challenge-<source>`, qui est visible et se ferme. Confondre
+  les deux ferait rouvrir une fenêtre visible à chaque page, ou chercher une
+  fenêtre déjà fermée ;
+- fenêtre **réutilisée** : `navigate` sur l'existante plutôt qu'une construction
+  par page (12 Go de machine, un JVM) ;
+- attente de la fin du challenge par `reste_interstitiel` — la leçon du
+  2026-10-11 (« 7 cookies passés » alors que personne n'avait résolu). Une page
+  illisible est traitée comme « pas encore résolue », jamais comme un succès ;
+- puis `eval_with_callback("document.documentElement.outerHTML")` et `injecter`
+  vers le moteur.
+
+**Moitié front.** `loadSource` tente le transport **avant** d'ouvrir le bandeau,
+avec une garde `transportDejaTente` contre la récursion : si le transport
+réussit mais que le rejeu échoue encore, on retombe sur le bandeau plutôt que de
+reboucler. Trois clés i18n ajoutées (fr + en).
+
+**Un piège de porte, à relire.** `aucune_commande_tauri_nest_morte` a refusé le
+build dès que `webview_lire` a été enregistrée sans appelant — c'est **la porte
+qui fait son travail** (leçon du 2026-10-04 : elle ne mord pas au moment où on
+l'écrit, mais après branchement). Corrigé par le câblage front, pas par sa
+suppression.
+
+**Et un piège que j'ai failli prendre.** Après avoir réparé un test en
+restaurant un fichier par `Copy-Item`, `cargo test` est resté rouge : le backup
+conserve le `mtime` d'origine, donc cargo n'a **rien recompilé** et l'ancien
+code cassé tournait encore. C'est la leçon du 2026-10-05 déjà écrite dans
+`AGENTS.md` §14, et je viens de la payer une deuxième fois. Le symptôme était
+trompeur : le source affichait le bon code, le binaire exécutait l'ancien.
+Forcer `LastWriteTime` a suffi.
+
+**Portes, toutes passées.**
+- `gradle test --rerun-tasks` (moteur) : 179 tests, 1 échec **préexistant**
+  (`ZenMangaInterceptionTest`, réseau, ligne 2129 du journal) ;
+- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
+  : **198 + 1 + 23 tests verts**, dont `aucune_commande_tauri_nest_morte` ;
+- front : `typecheck`, `lint`, `i18n:check`, `hooks:check`, `francais:check`,
+  `perso:check`, `ipc:check` — tous verts.
+
+**Porte prouvée rouge** (étape 2) : en faisant rendre `challenge_label` à
+`transport_label`, `la_webview_de_transport_n_est_pas_la_fenetre_de_verification`
+tombe en nommant la confusion — `left: "challenge-TOONFR", right: "webview-TOONFR"`.
+
+**Ce qui reste — étape 4.** Reconstruire le moteur (`scripts/build-engine.ps1`),
+puis la mesure qui n'a **jamais** été faite : un chapitre de TOONFR affiché dans
+le **lecteur**, de bout en bout, sans fenêtre visible. C'est le critère de
+succès du spike, pas encore atteint.

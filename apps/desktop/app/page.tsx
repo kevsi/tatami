@@ -2437,7 +2437,12 @@ export default function Home() {
     if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [reveal, checked]);
 
-  async function loadSource(s: Source, offset = 0, opts?: { tags?: string[]; query?: string }) {
+  async function loadSource(
+    s: Source,
+    offset = 0,
+    opts?: { tags?: string[]; query?: string },
+    transportDejaTente = false,
+  ) {
     const useTags = opts?.tags ?? activeTags;
     const useQuery = opts?.query ?? mangaQuery;
     setSelected(s);
@@ -2519,6 +2524,48 @@ export default function Home() {
           setNotice(t('challenge.non.rejouable', { source: nomSource(s) }));
           return;
         }
+
+        // ─── Transport webview, avant tout bandeau. ───
+        //
+        // Mesuré le 2026-10-13 (spike) : le WebView2 résout seul le challenge
+        // et obtient 200 là où OkHttp obtient 403. On tente donc le transport
+        // **avant** de déranger l'utilisateur avec une fenêtre de vérification.
+        //
+        // `transportDejaTente` est la garde anti-récursion : si le transport
+        // réussit mais que le rejeu échoue encore (page différente, mémoire
+        // expirée), on ne repart pas dans le transport — on retombe sur le
+        // bandeau, seul chemin restant.
+        if (!transportDejaTente) {
+          setNotice(t('challenge.transport.attente', { source: nomSource(s) }));
+          try {
+            const octets = await invoke<number>('webview_lire', {
+              source: s.name,
+              url,
+            });
+            if (octets > 0) {
+              setNotice(
+                t('challenge.transport.reussi', { octets: formatBytes(octets) }),
+              );
+              await loadSource(s, offset, opts, true);
+              return;
+            }
+            setNotice(
+              t('challenge.transport.echoue', {
+                raison: 'page vide',
+              }),
+            );
+          } catch (erreurTransport) {
+            // Échec **silencieux sur l'erreur brute** : elle peut contenir une
+            // URL, et le bandeau de challenge est le chemin prévu. On le dit
+            // en une phrase traduite, sans promesse de réessai.
+            setNotice(
+              t('challenge.transport.echoue', {
+                raison: String(erreurTransport).slice(0, 80),
+              }),
+            );
+          }
+        }
+
         // Borne anti-boucle. Au-delà de MAX_CHALLENGES tentatives : plus de
         // bandeau « Résoudre », plus de fenêtre — l'utilisateur ne peut plus
         // relancer un cycle qui ne se terminait jamais (mesuré sur TOONFR).

@@ -443,6 +443,12 @@ const FR = {
     "{source} est refusée par sa protection anti-robot, sans aucune vérification à passer. Ouvrir la source dans un navigateur reste la seule voie.",
   "challenge.domaine.indisponible":
     "L'URL de vérification ne correspond à aucun domaine déclaré pour cette source.",
+  "challenge.transport.reussi":
+    "{source} : page obtenue par le navigateur ({octets}), sans vérification à passer.",
+  "challenge.transport.attente":
+    "{source} : obtention de la page par le navigateur…",
+  "challenge.transport.echoue":
+    "{source} : la page n'a pas pu être obtenue par le navigateur ({raison}).",
   "challenge.non.rejouable":
     "La vérification de {source} a abouti, mais le site refuse quand même la requête. Ce n'est pas un problème de connexion : la source reste inaccessible depuis l'application.",
   "erreur.source.bloquee":
@@ -919,6 +925,12 @@ const EN: Record<Cle, string> = {
     "{source} is refused by its anti-robot protection, with no check to pass. Opening the source in a browser is the only way.",
   "challenge.domaine.indisponible":
     "The verification URL does not match any domain declared for this source.",
+  "challenge.transport.reussi":
+    "{source}: page obtained through the browser ({octets}), with no check to pass.",
+  "challenge.transport.attente":
+    "{source}: fetching the page through the browser…",
+  "challenge.transport.echoue":
+    "{source}: the page could not be obtained through the browser ({raison}).",
   "challenge.non.rejouable":
     "The check for {source} succeeded, but the site still refuses the request. This is not a connection problem: the source stays unreachable from the app.",
   "erreur.source.bloquee":

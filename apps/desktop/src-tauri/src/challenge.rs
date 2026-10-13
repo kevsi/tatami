@@ -847,6 +847,149 @@ pub async fn solve_challenge(
     appliquer_cookies(&app, &sup, &source, &parsed).await
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Transport webview (option B)
+//
+// Mesuré le 2026-10-13 (spike consigné dans `PLAN.md`) : le WebView2 résout
+// seul le challenge Cloudflare de TOONFR en ~10 s et obtient **200** là où
+// OkHttp, avec la même clearance, obtient **403**. Le seul client accepté est
+// celui qui a résolu. D'où ce module : au lieu de contrefaire l'empreinte
+// d'OkHttp, on **demande au navigateur**.
+//
+// Deux moitiés, et elles ne se parlent jamais dans le mauvais sens :
+//   - ici (Rust) : webview **cachée**, liste blanche d'hôtes, attente de la fin
+//     du challenge, puis lecture du HTML par le canal **tiré** ;
+//   - côté moteur (`WebViewMemoire`) : mémoire URL → HTML servie **avant**
+//     `CloudFlareInterceptor`, pour que la requête suivante ne soit plus
+//     challengée.
+//
+// Le canal est tiré par Rust, jamais poussé par la page : `eval_with_callback`
+// est lu ici, et la page n'a aucune commande à appeler (cf. la mesure de
+// surface du spike — `invoke` existe sur l'origine distante, mais l'ACL Tauri
+// le refuse hors fenêtre `main`).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Délai d'attente de la fin du challenge dans la webview de transport.
+///
+/// Mesuré le 2026-10-13 sur TOONFR : le Turnstile non-interactif se résout
+/// **seul** en ~10 s, sans aucun clic. On laisse large pour un site plus lent,
+/// et surtout parce qu'un challenge qui demande un geste mérite qu'on attende
+/// l'utilisateur plutôt qu'on renonce au bout de 10 s.
+const TRANSPORT_DELAI: Duration = Duration::from_secs(60);
+
+/// Cadence de l'attente de la fin du challenge.
+const TRANSPORT_PAS: Duration = Duration::from_millis(500);
+
+/// Étiquette de la webview cachée. **Distincte** de `challenge-<source>` : la
+/// fenêtre de vérification est visible et se ferme après résolution, celle-ci
+/// est cachée, réutilisée, et ne se ferme qu'avec l'application.
+fn transport_label(source: &str) -> String {
+    format!("webview-{}", super::download::sanitize(source))
+}
+
+/// Obtient le HTML d'une page protégée en la faisant rendre par une webview
+/// cachée, puis le pousse dans la mémoire du moteur.
+///
+/// Renvoie le nombre d'octets de HTML injectés.
+#[tauri::command]
+pub async fn webview_lire(
+    app: AppHandle,
+    sup: State<'_, Arc<Supervisor>>,
+    source: String,
+    url: String,
+) -> Result<usize, String> {
+    // **La liste blanche, avant tout.** Même validation que la fenêtre de
+    // vérification, donc même garantie : l'hôte doit être l'un des domaines
+    // connus du moteur pour cette source. On ne navigue jamais sur un hôte
+    // annoncé par le site.
+    let domaines = sup.domaines_source(&source).await;
+    let parsed = match valider_url_challenge(&url, &domaines, None) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            tracing::warn!("{}", diagnostic_refus_challenge(&source, &url));
+            return Err(error);
+        }
+    };
+    let label = transport_label(&source);
+    let fenetre = match app.get_webview_window(&label) {
+        Some(existante) => {
+            // Réutilisée : ouvrir une webview coûte un processus et de la
+            // mémoire (12 Go de machine, un JVM, cf. AGENTS.md §3). On navigue
+            // la même.
+            existante
+        }
+        None => {
+            // **Cachée.** Aucune usurpation d'UA (leçon du 2026-10-11 : trois
+            // signaux contradictoires faisaient boucler le Turnstile), et
+            // `.visible(false)` : l'utilisateur n'a rien à décider ici.
+            let construite =
+                WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed.clone()))
+                    .title(format!("Transport — {source}"))
+                    .inner_size(1024.0, 768.0)
+                    .visible(false)
+                    .build()
+                    .map_err(|e| format!("ouverture de la webview de transport : {e}"))?;
+            construite
+        }
+    };
+
+    // Navigation. Sur une fenêtre réutilisée, la page précédente est encore
+    // affichée : sans navigate, on lirait le contenu de la page d'avant.
+    fenetre
+        .navigate(parsed.clone())
+        .map_err(|e| format!("navigation de la webview de transport : {e}"))?;
+
+    // Attendre la fin du challenge. Tant que la page affiche l'interstitielle,
+    // le HTML n'est pas le contenu — c'est la leçon de la mesure du 2026-10-11
+    // (« 7 cookies passés » alors que personne n'avait résolu).
+    let limite = std::time::Instant::now() + TRANSPORT_DELAI;
+    let mut interstitiel = true;
+    while interstitiel && std::time::Instant::now() < limite {
+        tokio::time::sleep(TRANSPORT_PAS).await;
+        interstitiel = lire_page(&app, &label)
+            .await
+            .map(|page| page.interstitiel)
+            // Une page illisible n'est pas une page résolue : on continue
+            // d'attendre, on ne conclut pas sur un échec de lecture.
+            .unwrap_or(true);
+    }
+    if interstitiel {
+        return Err(format!(
+            "challenge non résolu en {} s sur {}",
+            TRANSPORT_DELAI.as_secs(),
+            parsed.host_str().unwrap_or("hôte inconnu")
+        ));
+    }
+
+    // Laisser la page finir de se construire après la disparition de
+    // l'interstitielle : le titre change avant que le contenu ne soit peint.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // **Le canal tiré.** `eval_with_callback` lit le résultat dans la page ;
+    // mesuré le 2026-10-13, 124 984 caractères revenus intacts en 38 ms.
+    let html = evaluer_javascript(&fenetre, "document.documentElement.outerHTML")
+        .await
+        .and_then(|v| v.as_str().map(str::to_string))
+        .filter(|h| !h.is_empty())
+        .ok_or_else(|| "lecture du HTML rendu impossible".to_string())?;
+
+    tracing::info!(
+        "challenge: transport webview source={source} octets={} host={}",
+        html.len(),
+        parsed.host_str().unwrap_or("?")
+    );
+
+    sup.request(
+        "injecter",
+        json!({ "url": parsed.as_str(), "html": html }),
+        Duration::from_secs(20),
+    )
+    .await
+    .map_err(|e| format!("injecter : {e}"))?;
+
+    Ok(html.len())
+}
+
 /// Lit les cookies de la fenêtre, les pousse au moteur, ferme la fenêtre.
 ///
 /// Partagée par le bouton manuel (`solve_challenge`) et par la surveillance
@@ -1094,8 +1237,8 @@ mod tests {
     use super::{
         action_surveillance, challenge_en_cours, challenge_label, diagnostic_refus_challenge,
         domaine_effectif, enregistrer_surveillance, hote_public, reste_interstitiel,
-        retirer_surveillance, surveillances, valider_url_challenge, Action, LectureCookies,
-        ERREUR_DOMAINE_CHALLENGE,
+        retirer_surveillance, surveillances, transport_label, valider_url_challenge, Action,
+        LectureCookies, ERREUR_DOMAINE_CHALLENGE,
     };
 
     /// **Le defaut du 2026-10-11, en une assertion.** La surveillance a
@@ -1487,6 +1630,54 @@ mod tests {
         assert_eq!(
             valider_url_challenge("https://exemple.com/check", &[], None).unwrap_err(),
             ERREUR_DOMAINE_CHALLENGE
+        );
+    }
+
+    // ─── Transport webview (option B) ───
+
+    /// **Pourquoi deux fenêtres, et pas une.** La fenêtre de vérification est
+    /// visible et se **ferme** après résolution (`appliquer_cookies` finit par
+    /// `window.close()`). La webview de transport, elle, est cachée et
+    /// **réutilisée** : elle survit à une lecture pour servir la suivante, et
+    /// ne coûte donc un processus qu'une fois.
+    ///
+    /// Les confondre ferait que le transport rouvre une fenêtre visible à
+    /// chaque page — ou, pire, chercherait une fenêtre déjà fermée et
+    /// échouerait pour toujours.
+    #[test]
+    fn la_webview_de_transport_n_est_pas_la_fenetre_de_verification() {
+        assert_eq!(transport_label("TOONFR"), "webview-TOONFR");
+        assert_eq!(challenge_label("TOONFR"), "challenge-TOONFR");
+        assert_ne!(
+            transport_label("TOONFR"),
+            challenge_label("TOONFR"),
+            "deux fenêtres de durées de vie différentes ne peuvent pas partager une étiquette"
+        );
+    }
+
+    /// Le nom de source entre dans une étiquette de fenêtre, donc dans le
+    /// système de fenêtres de Tauri : `sanitize` s'applique comme ailleurs.
+    /// Valeurs relevées dans `download::sanitize` (`/` et `\` → `_`), pas
+    /// devinées.
+    #[test]
+    fn l_etiquette_de_transport_est_assainie() {
+        assert_eq!(transport_label("a/b\\c"), "webview-a_b_c");
+    }
+
+    /// Le transport réutilise la **même** liste blanche que la fenêtre de
+    /// vérification. Ce test le prouve sur le cas qui compte : un hôte qui
+    /// n'appartient pas à la source est refusé, donc la webview cachée ne
+    /// navigue jamais sur un domaine annoncé par le site.
+    #[test]
+    fn le_transport_refuse_un_hote_hors_domaines_de_la_source() {
+        assert!(
+            valider_url_challenge("https://exemple.com/check", &domaines_exemple(), None).is_ok(),
+            "l'hôte de la source passe"
+        );
+        assert!(
+            valider_url_challenge("https://interbanque.example/", &domaines_exemple(), None)
+                .is_err(),
+            "un hôte étranger est refusé par la même validation"
         );
     }
 }

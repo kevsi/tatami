@@ -73,6 +73,32 @@ struct PageFenetre {
 /// - le formulaire `#challenge-form` de l'interstitielle ;
 /// - le script `/cdn-cgi/challenge-platform/`, charge par cette page.
 ///
+/// Un corps HTML qui est la page de verification de Cloudflare, et non le contenu.
+///
+/// **Pourquoi ce critere, et pas le script seul.** Mesure le 2026-10-14 :
+/// `/cdn-cgi/challenge-platform/` est present aussi sur **sushiscan.net**, qui
+/// n'est pourtant pas protege. Ce marqueur seul refuserait donc un catalogue
+/// sain. Le critere retenu exige les **deux** : le titre « Just a moment… » et
+/// la configuration `_cf_chl_opt`, qui n'apparaissent ensemble que sur la page
+/// de verification (mesure : Astral 403 les porte, Sushiscan 200 ne les porte
+/// pas).
+///
+/// Ce garde ne voit que le HTML : il ne remplace pas `reste_interstitiel`, qui
+/// lit la fenetre. Il empeche qu'un corps de verification soit injecte comme s'il
+/// etait le contenu.
+fn est_page_de_verification(html: &str) -> bool {
+    let bas = html.to_ascii_lowercase();
+    let titre_verification = bas
+        .find("<title>")
+        .map(|i| {
+            bas[i + "<title>".len()..]
+                .trim_start()
+                .starts_with("just a moment")
+        })
+        .unwrap_or(false);
+    titre_verification && bas.contains("_cf_chl_opt")
+}
+
 /// Testee sans navigateur, sur des formes reelles.
 fn reste_interstitiel(titre: &str, formulaire: bool, script: bool) -> bool {
     if formulaire || script {
@@ -1070,6 +1096,18 @@ pub(crate) async fn lire_par_transport(
         }
     };
 
+    // **Une page de verification n'est jamais un contenu.** Mesure le
+    // 2026-10-14 : le transport relisait la page « Un instant… » (6 071 o),
+    // l'injectait, et le moteur la resservait en 200 OK pendant 5 minutes. Le
+    // rejeu recevait alors du HTML sans catalogue. On refuse donc ici, avant
+    // l'injection et avant de journaliser un succès.
+    if est_page_de_verification(&corps) {
+        return Err(format!(
+            "la vérification n'est pas résolue sur {} : la page reçue est encore la page de contrôle",
+            parsed.host_str().unwrap_or("hôte inconnu")
+        ));
+    }
+
     tracing::info!(
         "challenge: transport webview source={source} octets={} host={}",
         corps.len(),
@@ -1360,8 +1398,8 @@ pub async fn cancel_challenge(app: AppHandle, source: String) -> Result<(), Stri
 mod tests {
     use super::{
         action_surveillance, challenge_en_cours, challenge_label, diagnostic_refus_challenge,
-        domaine_effectif, enregistrer_surveillance, hote_public, resoudre_rendu,
-        reste_interstitiel, retirer_surveillance, surveillances, transport_label,
+        domaine_effectif, enregistrer_surveillance, est_page_de_verification, hote_public,
+        resoudre_rendu, reste_interstitiel, retirer_surveillance, surveillances, transport_label,
         valider_url_challenge, Action, LectureCookies, ERREUR_DOMAINE_CHALLENGE,
     };
 
@@ -1381,6 +1419,40 @@ mod tests {
         assert!(reste_interstitiel("Just a moment...", false, false));
         // Un titre qui ne dit rien, mais avec le formulaire de verification.
         assert!(reste_interstitiel("hentaizone.xyz", true, false));
+    }
+
+    /// La page de verification d'Astral, telle que mesuree le 2026-10-14 : elle
+    /// doit etre refusee avant injection.
+    #[test]
+    fn une_page_de_verification_n_est_jamais_injectee() {
+        let verification = "<!DOCTYPE html><html><head><title>Just a moment...</title>\
+            <script>window._cf_chl_opt={cvId:'3'};</script></head><body></body></html>";
+        assert!(
+            est_page_de_verification(verification),
+            "la page de verification doit etre reconnue, sinon elle est injectee"
+        );
+    }
+
+    /// Le faux positif a eviter : Sushiscan porte le script de Cloudflare sans
+    /// etre protege. Son catalogue doit passer, sinon le garde casse une source saine.
+    #[test]
+    fn un_catalogue_sain_n_est_jamais_refuse() {
+        let catalogue = "<!DOCTYPE html><html><head><title>Sushiscan - Scan FR</title>\
+            <script src=\"/cdn-cgi/challenge-platform/h/g/scripts.js\"></script></head>\
+            <body><a href=\"/catalogue/sawako/\">Sawako</a></body></html>";
+        assert!(
+            !est_page_de_verification(catalogue),
+            "un catalogue sain porte le script Cloudflare sans etre bloque : il ne doit pas etre refuse"
+        );
+    }
+
+    /// Le cas limite : un titre « Just a moment » sans la configuration de
+    /// verification n'est pas une verification (un article qui parle de Cloudflare).
+    #[test]
+    fn le_titre_seul_ne_suffit_pas() {
+        let article = "<html><head><title>Just a moment of silence</title></head>\
+            <body>texte</body></html>";
+        assert!(!est_page_de_verification(article));
     }
 
     /// La contre-epreuve : sans ce test, le garde-derouillerait des que la

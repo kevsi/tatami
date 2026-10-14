@@ -220,6 +220,8 @@ function action(conclusion) {
   switch (conclusion) {
     case "site_mort":
       return "retirer du catalogue, avec la date du relevé dans le motif";
+    case "site_deplace":
+      return "retirer l'ancienne source et, si le contenu est francophone, ajouter la nouvelle";
     case "parseur_casse":
       return "source personnalisée vers la bonne page, ou correction amont du parseur";
     case "client_refuse":
@@ -277,16 +279,68 @@ const nav = JSON.parse(readFileSync(REPERE_NAVIGATEUR, "utf8"));
 
 const parSourceNav = new Map(nav.resultats.map((r) => [r.source, r]));
 
+// (la construction de `sites` est plus bas, après le chargement des
+//  corrections humaines : elles doivent exister avant qu'il soit calculé)
+
+/**
+ * Corrections humaines, appliquées **après** le croisement.
+ *
+ * ## Pourquoi un fichier séparé
+ *
+ * Une correction faite à la main dans le JSON de sortie serait effacée au
+ * prochain `node scripts/normaliser-sites.mjs`, et l'audit recommencerait à
+ * compter EPSILONSOFT parmi les cibles du transport. Les observations
+ * humaines sont donc des **données**, avec leur provenance, que l'outil
+ * applique — comme un patch versionné, pas comme une retouche.
+ *
+ * ## La discipline
+ *
+ * Une correction **doit nommer sa preuve**. `notes.md` est un relevé manuel :
+ * il fait autorité sur ce que le site est devenu, pas sur ce que le code
+ * supporte. Donc une observation sans verdict mesuré n'écrase pas une
+ * conclusion, elle s'ajoute en `note_humaine`.
+ */
+const REPERE_CORRECTIONS = arg("corrections", "docs/mesures/corrections-humaines.json");
+let corrections = { corrections: [], observations: {} };
+try {
+  corrections = JSON.parse(readFileSync(REPERE_CORRECTIONS, "utf8"));
+} catch {
+  console.error(
+    `Corrections absentes : ${REPERE_CORRECTIONS}. Le rapport sera celui des mesures seules.`,
+  );
+}
+
+const parSourceCorrection = new Map((corrections.corrections ?? []).map((c) => [c.source, c]));
+
 const sites = (audit.releves ?? []).map((r) => {
   const mesureNav = parSourceNav.get(r.source) ?? null;
   const urlDemandee = r.urlFinale ?? null;
-  const { conclusion, raison } = conclure(r.verdict, mesureNav, urlDemandee);
+  const calcule = conclure(r.verdict, mesureNav, urlDemandee);
+  const correction = parSourceCorrection.get(r.source) ?? null;
+  const note = corrections.observations?.[r.source] ?? null;
+
+  // Une correction sans preuve ne remplace rien : elle commente.
+  const sansPreuve = correction && !correction.preuve;
+  const conclusion = correction?.conclusion ?? calcule.conclusion;
+  const raison = correction?.raison ?? (sansPreuve ? calcule.raison : correction?.raison) ?? calcule.raison;
+  const actionFinale = correction?.action ?? action(conclusion);
+
   const fin = abouti(r);
   return {
     source: r.source,
     conclusion,
     raison,
-    action: action(conclusion),
+    action: actionFinale,
+    corrige_par: correction
+      ? {
+          source: "docs/mesures/notes.md (relevé manuel)",
+          conclusion_d_origin: calcule.conclusion,
+          ...(sansPreuve
+            ? { note: "sans preuve mesurée : la conclusion d'origine est conservée" }
+            : {}),
+        }
+      : null,
+    note_humaine: note ?? correction?.note ?? null,
     cloudflare: evidenceCloudflare(r.verdict, r.message, mesureNav),
     url_demandee: urlDemandee,
     preuve_moteur: {

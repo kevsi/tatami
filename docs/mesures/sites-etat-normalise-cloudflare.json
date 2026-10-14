@@ -1,5 +1,5 @@
 {
-  "genere_le": "2026-10-14 09:59:06",
+  "genere_le": "2026-10-14 14:02:15",
   "question": "Sources derrière Cloudflare : le site est-il mort, ou le parseur est-il cassé ?",
   "complement": "Chaque entrée porte `cloudflare.base` : la preuve retenue. Rien n'est classé « protégé » par défaut.",
   "methode": {
@@ -16,9 +16,9 @@
   },
   "regle": "Pas de mesure navigateur → a_verifier. Jamais un verdict deviné.",
   "compte": {
-    "parseur_casse": 3,
+    "parseur_casse": 4,
     "site_mort": 27,
-    "client_refuse": 5
+    "client_refuse": 4
   },
   "sources": [
     {
@@ -26,6 +26,8 @@
       "conclusion": "parseur_casse",
       "raison": "https://astral-manga.fr/manga/ ne rend pas de contenu exploitable dans un vrai navigateur (Astral Manga)",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": "notes.md : « astral manga marche », le catalogue est sur /catalog et les chapitres sur /manga/<uuid>/chapter/<uuid>. **Non vérifié par moi** : la mesure est restée sur l'interstitielle Cloudflare.",
       "cloudflare": {
         "oui": true,
         "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
@@ -57,7 +59,12 @@
       "source": "BERSERKSCAN",
       "conclusion": "site_mort",
       "raison": "Cloudflare berserkscan.com | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
-      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "action": "retirer du catalogue — le successeur existe mais est anglophone, donc hors périmètre v1",
+      "corrige_par": {
+        "source": "docs/mesures/notes.md (relevé manuel)",
+        "conclusion_d_origin": "site_mort"
+      },
+      "note_humaine": "notes.md : le site a migré vers https://www.gutsberserk.com/manga/berserk-chapter-379/, « c'est une source anglaise ». Confirme le 523 mesuré sur l'ancien domaine.",
       "cloudflare": {
         "oui": true,
         "base": "page d'erreur Cloudflare servie par le site : « berserkscan.com | 523: Origin is unreachable »"
@@ -88,7 +95,12 @@
       "source": "BLUELOCKSCAN",
       "conclusion": "site_mort",
       "raison": "Cloudflare bluelockscan.com | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
-      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "action": "retirer du catalogue — le successeur existe mais est anglophone, donc hors périmètre v1",
+      "corrige_par": {
+        "source": "docs/mesures/notes.md (relevé manuel)",
+        "conclusion_d_origin": "site_mort"
+      },
+      "note_humaine": "notes.md : migration vers https://w52.blue-lock-manga.com/manga/blue-lock-chapter-189/, « aussi anglaise ». Confirme le 522 mesuré sur l'ancien domaine.",
       "cloudflare": {
         "oui": true,
         "base": "page d'erreur Cloudflare servie par le site : « bluelockscan.com | 523: Origin is unreachable »"
@@ -120,6 +132,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -141,6 +155,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -162,6 +178,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -183,6 +201,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 522 — propre à un proxy Cloudflare"
@@ -204,6 +224,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -222,9 +244,14 @@
     },
     {
       "source": "EPSILONSOFT",
-      "conclusion": "client_refuse",
-      "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
-      "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert /manga/ (19 liens) mais **aucun** n'est un lien de mangas ; la vraie liste est /library (30 liens /serie/)",
+      "action": "écrire une source personnalisée vers https://epsilonsoft.to/library",
+      "corrige_par": {
+        "source": "docs/mesures/notes.md (relevé manuel)",
+        "conclusion_d_origin": "client_refuse"
+      },
+      "note_humaine": "l'audit l'avait classé client_refuse parce que 19 liens passaient le seuil « ≥ 5 liens » du critère navigateur. Le seuil était trop grossier : une page de navigation n'est pas une liste de mangas.",
       "cloudflare": {
         "oui": true,
         "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
@@ -256,6 +283,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -277,6 +306,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare haikyuu.fr | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "page d'erreur Cloudflare servie par le site : « haikyuu.fr | 523: Origin is unreachable »"
@@ -308,6 +339,8 @@
       "conclusion": "parseur_casse",
       "raison": "https://hellsparadisescan.com/ ne rend pas de contenu exploitable dans un vrai navigateur (Un instant…)",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "page d'erreur Cloudflare servie par le site : « Un instant… »"
@@ -339,6 +372,8 @@
       "conclusion": "client_refuse",
       "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
       "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
@@ -370,6 +405,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -391,6 +428,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 522 — propre à un proxy Cloudflare"
@@ -412,6 +451,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 521 — propre à un proxy Cloudflare"
@@ -433,6 +474,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare kingdomscan.com | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "page d'erreur Cloudflare servie par le site : « kingdomscan.com | 523: Origin is unreachable »"
@@ -464,6 +507,8 @@
       "conclusion": "site_mort",
       "raison": "chaîne TLS de l'origine cassée (manga-mana.com | 525: SSL handshake failed) — pas un problème de challenge",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "page d'erreur Cloudflare servie par le site : « manga-mana.com | 525: SSL handshake failed »"
@@ -495,6 +540,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -516,6 +563,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare myheroacademiascan.com | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "page d'erreur Cloudflare servie par le site : « myheroacademiascan.com | 523: Origin is unreachable »"
@@ -547,6 +596,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -568,6 +619,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -589,6 +642,8 @@
       "conclusion": "client_refuse",
       "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
       "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
@@ -620,6 +675,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 522 — propre à un proxy Cloudflare"
@@ -641,6 +698,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -662,6 +721,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 525 — propre à un proxy Cloudflare"
@@ -683,6 +744,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -704,6 +767,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare scanboruto.fr | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "page d'erreur Cloudflare servie par le site : « scanboruto.fr | 523: Origin is unreachable »"
@@ -735,6 +800,8 @@
       "conclusion": "client_refuse",
       "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
       "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
@@ -766,6 +833,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare scanjujutsukaisen.com | 522: Connection timed out — l'origine est éteinte, aucun client ne peut la lire",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
@@ -797,6 +866,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -818,6 +889,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert https://sushiscan.net, le moteur demande null — le parseur vise la mauvaise page",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "classée SOURCE_BLOCKED par CloudFlareHelper, le détecteur du moteur"
@@ -852,6 +925,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"
@@ -873,6 +948,8 @@
       "conclusion": "client_refuse",
       "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
       "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
@@ -904,6 +981,8 @@
       "conclusion": "site_mort",
       "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": true,
         "base": "code HTTP 523 — propre à un proxy Cloudflare"

@@ -74,20 +74,54 @@ const ATTENTE_STABILITE_S = 25;
 const PLANCHER_STABILITE_S = 8;
 
 /**
- * Compte les liens internes **distincts**, sans fragment ni query string.
- * C'est le nombre qui décide du verdict, pas le statut HTTP.
+ * Compte les liens **distincts**, sans fragment ni query string, et sépare
+ * les liens de navigation des liens qui pointent vers une œuvre.
+ *
+ * ## Pourquoi cette séparation, mesurée le 2026-10-14
+ *
+ * Compter tous les liens donnait 19 à `epsilonsoft.to/manga/` — et 19 ≥ 5,
+ * donc verdict « servie ». La page a été classée **cible du transport** à tort :
+ * c'est une page de navigation, et **zéro** de ses liens ne mène à une œuvre.
+ * La vraie liste, `/library`, en a 30 en `/serie/`.
+ *
+ * Même famille que le « 200 sans contenu » : un critère trop grossier laisse
+ * passer du vide. Un menu, un pied de page et un carrousel donnent autant de
+ * liens qu'un catalogue.
+ *
+ * On ne juge donc **pas** sur ce décompte seul — il est enregistré comme
+ * preuve, et c'est le croisement avec le moteur qui tranche. Mais un rapport
+ * qui ne les distingue pas ne peut pas être lu.
  */
+/**
+ * Motifs d'un lien vers **une œuvre**.
+ *
+ * `/manga-` en faisait partie, et le test l'a supprimé : `/manga-list?page=1`
+ * — une page de liste — était compté comme une œuvre. Un motif trop large
+ * fabrique exactement le faux positif qu'on veut éviter.
+ *
+ * Limites assumées, énoncées plutôt que rattrapées : `/read/<slug>/<n>`
+ * (RIMUSCANS) n'est pas reconnu. Ajouter des motifs jusqu'à ce que tout
+ * ressemble à une œuvre rendrait le décompte inexploitable.
+ */
+const MOTIFS_OEUVRE = /\/manga\/|\/serie\/|\/series\/|\/webtoon\/|\/catalogue\/|\/catalog\//i;
+
 const exprLiens = `JSON.stringify((() => {
-  const vus = new Set();
+  const vus = new Set(), chefs = new Set();
+  const oeuvre = ${MOTIFS_OEUVRE.source};
   for (const a of document.querySelectorAll('a[href]')) {
     const h = a.getAttribute('href');
-    if (h && !h.startsWith('#') && h.length > 4) vus.add(h.split('?')[0]);
+    if (!h || h.startsWith('#') || h.length <= 4) continue;
+    const propre = h.split('?')[0];
+    vus.add(propre);
+    if (oeuvre.test(propre)) chefs.add(propre);
   }
-  return vus.size;
+  return { tous: vus.size, oeuvre: chefs.size };
 })())`;
 
 async function compterLiens(send, sid) {
-  return Number((await evalJs(send, sid, exprLiens)) ?? 0);
+  const v = (await evalJs(send, sid, exprLiens)) ?? null;
+  if (v && typeof v === "object") return v;
+  return { tous: Number(v ?? 0), oeuvre: 0 };
 }
 
 /** Un statut seul ne suffit pas : le titre Cloudflare dit *pourquoi*. */
@@ -175,6 +209,12 @@ function classer(statuts, titre, liens, octets) {
   if (/(522|523):\s*(connection timed out|origin is unreachable)/i.test(t)) return "MORTE";
   if (/525:\s*ssl handshake failed/i.test(t)) return "TLS";
   if (statuts.length === 1 && statuts[0] === 404) return "PERIMEE";
+  // Le verdict reste porté par le nombre **total** de liens : le décompte des
+  // liens d'œuvre est enregistré comme **preuve** dans le rapport, mais il ne
+  // devient pas un verdict à lui seul. Un site dont les œuvres sont liées par
+  // une redirection ou une query ne passerait pas un filtre de motif, et
+  // conclure « vide » à partir d'un motif serait une faute symétrique de
+  // celle qu'on vient de corriger.
   if (statuts.includes(200)) return liens >= 5 ? "UTILE" : "VIDE";
   return "BLOQUE";
 }
@@ -221,13 +261,13 @@ async function mesurer(send, events, url) {
     //        paraît « stable » alors que la page n'est simplement pas encore
     //        arrivée. Ce n'est pas une théorie : c'est exactement ce qui a fait
     //        relever HENTAIZONE à 0 lien.
-    let liens = 0;
+    let liens = { tous: 0, oeuvre: 0 };
     let precedent = -1;
     for (let i = 0; i < ATTENTE_STABILITE_S * 2; i++) {
       liens = await compterLiens(send, sessionId);
       const Chargée = i >= PLANCHER_STABILITE_S;
-      if (Chargée && liens === precedent) break;
-      precedent = liens;
+      if (Chargée && liens.tous === precedent) break;
+      precedent = liens.tous;
       await sleep(500);
     }
     const octets = Number(
@@ -238,7 +278,8 @@ async function mesurer(send, events, url) {
     return {
       statuts: stats,
       titre: String(titre).slice(0, 70),
-      liensInternes: liens,
+      liensInternes: liens.tous,
+      liensOeuvre: liens.oeuvre,
       octetsHtml: octets,
       ms: Date.now() - t0,
       verdict: classer(stats, titre, liens, octets),
@@ -287,7 +328,7 @@ for (const { source, url } of aTester) {
   try {
     const r = await mesurer(send, events, url);
     console.log(
-      `${r.verdict.padEnd(8)} statuts=[${r.statuts}] liens=${r.liensInternes} ` +
+      `${r.verdict.padEnd(8)} statuts=[${r.statuts}] liens=${r.liensInternes} (œuvre ${r.liensOeuvre ?? 0}) ` +
         `html=${r.octetsHtml} ${Math.round(r.ms / 1000)}s "${r.titre}"`,
     );
     resultats.push({ source, url, ...r });

@@ -1,0 +1,89 @@
+{
+  "_commentaire": [
+    "Corrections et observations humaines, appliquées par scripts/normaliser-sites.mjs",
+    "APRÈS le croisement des deux mesures. Elles existent parce qu'une mesure",
+    "ne dit pas tout : elle classe, elle ne connaît pas l'intention d'un site.",
+    "",
+    "Provenance obligatoire pour chaque entrée : `docs/mesures/notes.md` est un",
+    "relevé manuel de l'utilisateur, daté du 2026-10-14. Il n'est pas",
+    "reproductible par un script, donc il ne doit pas être traité comme une",
+    "mesure automatique — d'où ce fichier séparé.",
+    "",
+    "Une correction ne remplace une conclusion que si elle nomme sa preuve."
+  ],
+  "corrections": [
+    {
+      "source": "EPSILONSOFT",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert /manga/ (19 liens) mais **aucun** n'est un lien de mangas ; la vraie liste est /library (30 liens /serie/)",
+      "action": "écrire une source personnalisée vers https://epsilonsoft.to/library",
+      "preuve": "mesurée le 2026-10-14 : /manga/ → 0 lien de détail, /library → 30 liens /serie/",
+      "note": "l'audit l'avait classé client_refuse parce que 19 liens passaient le seuil « ≥ 5 liens » du critère navigateur. Le seuil était trop grossier : une page de navigation n'est pas une liste de mangas."
+    },
+    {
+      "source": "BLUESOLO",
+      "conclusion": "site_deplace",
+      "raison": "le domaine a changé : le site vit sur bluesolo.org/comics, l'ancien domaine a disparu",
+      "action": "retirer l'ancienne source ; signaler bigsolo.org comme alternative",
+      "preuve": "notes.md : « bluesolo pointe vers https://bluesolo.org/comics avec https://bluesolo.org/read/battle-tendency/fr/vol/7/ch/68 »",
+      "note": "l'audit l'avait classé site_mort (domaine disparu) — c'est vrai du domaine, faux du site."
+    },
+    {
+      "source": "BERSERKSCAN",
+      "action": "retirer du catalogue — le successeur existe mais est anglophone, donc hors périmètre v1",
+      "note": "notes.md : le site a migré vers https://www.gutsberserk.com/manga/berserk-chapter-379/, « c'est une source anglaise ». Confirme le 523 mesuré sur l'ancien domaine.",
+      "preuve": "les deux mesures : 523 côté navigateur, SOURCE/ORIGIN côté moteur"
+    },
+    {
+      "source": "BLUELOCKSCAN",
+      "action": "retirer du catalogue — le successeur existe mais est anglophone, donc hors périmètre v1",
+      "note": "notes.md : migration vers https://w52.blue-lock-manga.com/manga/blue-lock-chapter-189/, « aussi anglaise ». Confirme le 522 mesuré sur l'ancien domaine.",
+      "preuve": "les deux mesures : 522 côté navigateur"
+    },
+    {
+      "source": "ANTEIKUSCAN",
+      "action": "retirer du catalogue",
+      "note": "notes.md : « ANTEIKUSCAN a migré vers patreon ». Un site passé sur une plateforme de financement n'est plus une source de scans.",
+      "preuve": "notes.md + PARSER_OUTDATED côté moteur"
+    },
+    {
+      "source": "RAIJINSCANS",
+      "raison": "le site a changé d'adresse : aniverse.fr/manga/<slug> et aniverse.fr/read/<slug>/<uuid>",
+      "note": "notes.md. Le contenu a été repris ailleurs, donc la source n'est pas morte.",
+      "preuve": "notes.md ; côté navigateur l'ancien site répond encore"
+    },
+    {
+      "source": "FMTEAM",
+      "action": "retirer du catalogue",
+      "note": "notes.md : « FMTEAM a retirer »",
+      "preuve": "notes.md"
+    },
+    {
+      "source": "FRMANGA",
+      "action": "retirer du catalogue",
+      "note": "notes.md : « FRMANGA a retirer ». Mesuré aussi : le navigateur met 179 s et n'obtient rien.",
+      "preuve": "notes.md + BLOQUE côté navigateur"
+    },
+    {
+      "source": "FRSCAN",
+      "action": "retirer du catalogue",
+      "note": "notes.md : « FRSCAN a retirer »",
+      "preuve": "notes.md + PARSER_OUTDATED côté moteur"
+    }
+  ],
+  "observations": {
+    "ANIMESAMA": "notes.md : le site répond, page de webtoon connue — https://anime-sama.to/catalogue/conquering-the-academy-with-just-a-sashimi-knife/scan/vf/",
+    "ASTRALMANGA": "notes.md : « astral manga marche », le catalogue est sur /catalog et les chapitres sur /manga/<uuid>/chapter/<uuid>. **Non vérifié par moi** : la mesure est restée sur l'interstitielle Cloudflare.",
+    "BANANASCAN": "notes.md : https://bananascans.com/manga/harumichi/vol3/1",
+    "HHENTAIFR": "notes.md : fonctionne, chapitre connu https://hhentai.fr/manga/milf-exchange-plan/chapitre-87/",
+    "LIRESCAN": "notes.md : le domaine lire-scan.me a changé ; le site utile est lire-manga.com, avec /manga/list-mode/ et /manga/<slug>/ puis /<slug>-chapitre-<n>/",
+    "RIMUSCANS": "notes.md : catalogue sur https://rimuscan.fr/catalogue, série sur /manga/<slug>, lecture sur /read/<slug>/<n>",
+    "SUSHI SCAN": "notes.md : https://sushiscan.net/catalogue/ — à distinguer de SUSHISCANFR, mesuré à 0 lien",
+    "ORTEGA": "notes.md : https://ortegascans.fr/serie/love-for-sale/chapter/1 — source personnalisée, hors du catalogue JAR",
+    "PANTHEONSCAN": "notes.md : https://pantheon-scan.com/manga/infinite-mage/chapitre-106/",
+    "MANGAKAWAII": "notes.md : https://www.mangakawaii.fr/manga/star-martial-god-technique/651",
+    "HENTAISCANTRADVF": "notes.md : l'hôte utile est hentai-scantrad.org ; les mangas sont aussi repris sur manga-scantrad.io",
+    "TOOMICSFR": "notes.md : https://toomics.com/fr/webtoon/ranking et /fr/webtoon/detail/code/162779/ep/1/toon/6436",
+    "EPSILONSOFT_2": "notes.md confirme la liste sur https://epsilonsoft.to/library et les chapitres sur /serie/<slug>/chapter/<id>"
+  }
+}

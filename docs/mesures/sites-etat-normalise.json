@@ -1,5 +1,5 @@
 {
-  "genere_le": "2026-10-14 09:59:06",
+  "genere_le": "2026-10-14 14:02:15",
   "question": "Pour chaque source : le site est-il mort, ou le parseur est-il cassé ?",
   "complement": "Hors sources derrière Cloudflare : celles-ci sont dans docs/mesures/sites-etat-normalise-cloudflare.json.",
   "methode": {
@@ -17,7 +17,8 @@
   "regle": "Pas de mesure navigateur → a_verifier. Jamais un verdict deviné.",
   "compte": {
     "parseur_casse": 32,
-    "site_mort": 21,
+    "site_mort": 20,
+    "site_deplace": 1,
     "ok": 10
   },
   "sources": [
@@ -26,6 +27,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": "notes.md : le site répond, page de webtoon connue — https://anime-sama.to/catalogue/conquering-the-academy-with-just-a-sashimi-knife/scan/vf/",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -57,7 +60,12 @@
       "source": "ANTEIKUSCAN",
       "conclusion": "parseur_casse",
       "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
-      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "action": "retirer du catalogue",
+      "corrige_par": {
+        "source": "docs/mesures/notes.md (relevé manuel)",
+        "conclusion_d_origin": "parseur_casse"
+      },
+      "note_humaine": "notes.md : « ANTEIKUSCAN a migré vers patreon ». Un site passé sur une plateforme de financement n'est plus une source de scans.",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -79,6 +87,8 @@
       "conclusion": "parseur_casse",
       "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -100,6 +110,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": "notes.md : https://bananascans.com/manga/harumichi/vol3/1",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -130,6 +142,8 @@
       "conclusion": "site_mort",
       "raison": "domaine parking mis en vente — « bentoscan.com for sale — memorable .com domain | ED.com » : le site n'existe plus, il a été revendu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -157,9 +171,14 @@
     },
     {
       "source": "BLUESOLO",
-      "conclusion": "site_mort",
-      "raison": "le domaine a disparu",
-      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "conclusion": "site_deplace",
+      "raison": "le domaine a changé : le site vit sur bluesolo.org/comics, l'ancien domaine a disparu",
+      "action": "retirer l'ancienne source ; signaler bigsolo.org comme alternative",
+      "corrige_par": {
+        "source": "docs/mesures/notes.md (relevé manuel)",
+        "conclusion_d_origin": "site_mort"
+      },
+      "note_humaine": "l'audit l'avait classé site_mort (domaine disparu) — c'est vrai du domaine, faux du site.",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -181,6 +200,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -202,6 +223,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -223,6 +246,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -243,7 +268,12 @@
       "source": "FMTEAM",
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
-      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "action": "retirer du catalogue",
+      "corrige_par": {
+        "source": "docs/mesures/notes.md (relevé manuel)",
+        "conclusion_d_origin": "parseur_casse"
+      },
+      "note_humaine": "notes.md : « FMTEAM a retirer »",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -273,7 +303,12 @@
       "source": "FRMANGA",
       "conclusion": "parseur_casse",
       "raison": "null ne rend pas de contenu exploitable dans un vrai navigateur (www.frmanga.com)",
-      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "action": "retirer du catalogue",
+      "corrige_par": {
+        "source": "docs/mesures/notes.md (relevé manuel)",
+        "conclusion_d_origin": "parseur_casse"
+      },
+      "note_humaine": "notes.md : « FRMANGA a retirer ». Mesuré aussi : le navigateur met 179 s et n'obtient rien.",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -301,7 +336,12 @@
       "source": "FRSCAN",
       "conclusion": "parseur_casse",
       "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
-      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "action": "retirer du catalogue",
+      "corrige_par": {
+        "source": "docs/mesures/notes.md (relevé manuel)",
+        "conclusion_d_origin": "parseur_casse"
+      },
+      "note_humaine": "notes.md : « FRSCAN a retirer »",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -323,6 +363,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -344,6 +386,8 @@
       "conclusion": "ok",
       "raison": "parcours complet abouti jusqu'à une image décodée",
       "action": "rien",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -369,6 +413,8 @@
       "conclusion": "ok",
       "raison": "parcours complet abouti jusqu'à une image décodée",
       "action": "rien",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -394,6 +440,8 @@
       "conclusion": "ok",
       "raison": "parcours complet abouti jusqu'à une image décodée",
       "action": "rien",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -419,6 +467,8 @@
       "conclusion": "parseur_casse",
       "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": "notes.md : l'hôte utile est hentai-scantrad.org ; les mangas sont aussi repris sur manga-scantrad.io",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -440,6 +490,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": "notes.md : fonctionne, chapitre connu https://hhentai.fr/manga/milf-exchange-plan/chapitre-87/",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -470,6 +522,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -500,6 +554,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -521,6 +577,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -542,6 +600,8 @@
       "conclusion": "parseur_casse",
       "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -564,6 +624,8 @@
       "conclusion": "ok",
       "raison": "parcours complet abouti jusqu'à une image décodée",
       "action": "rien",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -589,6 +651,8 @@
       "conclusion": "ok",
       "raison": "parcours complet abouti jusqu'à une image décodée",
       "action": "rien",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -614,6 +678,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -644,6 +710,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": "notes.md : le domaine lire-scan.me a changé ; le site utile est lire-manga.com, avec /manga/list-mode/ et /manga/<slug>/ puis /<slug>-chapitre-<n>/",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -674,6 +742,8 @@
       "conclusion": "parseur_casse",
       "raison": "null ne rend pas de contenu exploitable dans un vrai navigateur (Redirect)",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -704,6 +774,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -734,6 +806,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -755,6 +829,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -785,6 +861,8 @@
       "conclusion": "ok",
       "raison": "parcours complet abouti jusqu'à une image décodée",
       "action": "rien",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -810,6 +888,8 @@
       "conclusion": "parseur_casse",
       "raison": "null ne rend pas de contenu exploitable dans un vrai navigateur (VIDE)",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -840,6 +920,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -873,6 +955,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": "notes.md : https://www.mangakawaii.fr/manga/star-martial-god-technique/651",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -894,6 +978,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -926,6 +1012,8 @@
       "conclusion": "parseur_casse",
       "raison": "null ne rend pas de contenu exploitable dans un vrai navigateur (MANGA Plus by SHUEISHA)",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -960,6 +1048,8 @@
       "conclusion": "ok",
       "raison": "parcours complet abouti jusqu'à une image décodée",
       "action": "rien",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -985,6 +1075,8 @@
       "conclusion": "parseur_casse",
       "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1006,6 +1098,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1027,6 +1121,8 @@
       "conclusion": "parseur_casse",
       "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1048,6 +1144,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": "notes.md : https://pantheon-scan.com/manga/infinite-mage/chapitre-106/",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1078,6 +1176,8 @@
       "conclusion": "site_mort",
       "raison": "certificat refusé par le navigateur — « Erreur de confidentialité » : aucun client TLS ne peut lire ce site",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1106,6 +1206,8 @@
       "conclusion": "site_mort",
       "raison": "domaine parking mis en vente — « papscan.com is for sale — Buy now for $8,300 | GoDaddy » : le site n'existe plus, il a été revendu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1136,6 +1238,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1164,8 +1268,13 @@
     {
       "source": "RAIJINSCANS",
       "conclusion": "parseur_casse",
-      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
+      "raison": "le site a changé d'adresse : aniverse.fr/manga/<slug> et aniverse.fr/read/<slug>/<uuid>",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": {
+        "source": "docs/mesures/notes.md (relevé manuel)",
+        "conclusion_d_origin": "parseur_casse"
+      },
+      "note_humaine": "notes.md. Le contenu a été repris ailleurs, donc la source n'est pas morte.",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1196,6 +1305,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1217,6 +1328,8 @@
       "conclusion": "site_mort",
       "raison": "certificat refusé par le navigateur — « Erreur de confidentialité » : aucun client TLS ne peut lire ce site",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1245,6 +1358,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": "notes.md : catalogue sur https://rimuscan.fr/catalogue, série sur /manga/<slug>, lecture sur /read/<slug>/<n>",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1275,6 +1390,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1296,6 +1413,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1317,6 +1436,8 @@
       "conclusion": "parseur_casse",
       "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1338,6 +1459,8 @@
       "conclusion": "ok",
       "raison": "parcours complet abouti jusqu'à une image décodée",
       "action": "rien",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1363,6 +1486,8 @@
       "conclusion": "parseur_casse",
       "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1384,6 +1509,8 @@
       "conclusion": "ok",
       "raison": "parcours complet abouti jusqu'à une image décodée",
       "action": "rien",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1409,6 +1536,8 @@
       "conclusion": "parseur_casse",
       "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1430,6 +1559,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1460,6 +1591,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1481,6 +1614,8 @@
       "conclusion": "parseur_casse",
       "raison": "null ne rend pas de contenu exploitable dans un vrai navigateur (SushiScan - Lecture en Ligne | Scans | Mangas | Manhwa | Manhua | BD |)",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1514,6 +1649,8 @@
       "conclusion": "parseur_casse",
       "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
       "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "corrige_par": null,
+      "note_humaine": "notes.md : https://toomics.com/fr/webtoon/ranking et /fr/webtoon/detail/code/162779/ep/1/toon/6436",
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1544,6 +1681,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1565,6 +1704,8 @@
       "conclusion": "ok",
       "raison": "parcours complet abouti jusqu'à une image décodée",
       "action": "rien",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1590,6 +1731,8 @@
       "conclusion": "site_mort",
       "raison": "le domaine a disparu",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"
@@ -1611,6 +1754,8 @@
       "conclusion": "site_mort",
       "raison": "certificat refusé par le navigateur — « Erreur de confidentialité » : aucun client TLS ne peut lire ce site",
       "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "corrige_par": null,
+      "note_humaine": null,
       "cloudflare": {
         "oui": false,
         "base": "aucun marqueur Cloudflare dans les deux mesures"

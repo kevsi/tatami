@@ -52,7 +52,7 @@ var SOURCE = {
             .replace(/<[^>]*>/g, " ")
             .replace(/&nbsp;/gi, " ")
             .replace(/&amp;/gi, "&")
-            .replace(/&(?:#0?39|apos);/gi, "'")
+            .replace(/&(?:#0?39|apos|rsquo|lsquo);/gi, "'")
             .replace(/&quot;/gi, '"')
             .replace(/&[a-z]+;/gi, " ")
             .replace(/\s+/g, " ")
@@ -71,25 +71,43 @@ var SOURCE = {
         // **absolues**. Une regex qui exige `href="/manga/…"` ne trouve rien,
         // sans lever d'erreur. `[^"]*` tolère les deux formes ; le chemin est
         // reconstruit, parce que le contrat concatène `baseUrl`.
+        //
+        // Le motif capture les attributs de l'ancre à part (groupe 1 et 4),
+        // parce que le **titre est dans `title="…"`** et la **couverture dans
+        // l'<img> imbriqué**. Mesuré le 2026-10-14 dans l'application : sans
+        // couverture, le moteur répond `fetchCover … URL vide (refuse :)` et la
+        // grille affiche 12 cartes sans une seule image — silencieusement.
         var re = new RegExp(
-            '<a[^>]+href="[^"]*\\/manga\\/([a-z0-9-]+)\\/"[^>]*>([\\s\\S]*?)</a>',
+            '<a([^>]*href="[^"]*\\/manga\\/([a-z0-9-]+)\\/")([^>]*)>([\\s\\S]*?)</a>',
             "gi"
         );
         var vus = {};
         var resultats = [];
         var m;
         while ((m = re.exec(html)) !== null) {
-            var slug = m[1];
+            var slug = m[2];
             // Un chapitre `/manga/<slug>/chapitre-3/` ne matche pas ci-dessus :
             // `[a-z0-9-]+` s'arrête à la barre et le motif exige la fin du
             // guillemet. L'exclusion reste, par sécurité.
             if (slug.indexOf("chapitre") >= 0) continue;
             if (vus[slug]) continue;
-            var nom = SOURCE.texte(m[2]);
+            var attrs = m[1] + " " + m[3];
+            var attrTitre = /title="([^"]*)"/i.exec(attrs);
+            var nom = attrTitre ? SOURCE.texte(attrTitre[1]) : SOURCE.texte(m[4]);
             if (!nom) continue;
+            // La couverture est l'image **imbriquée dans l'ancre** : c'est elle
+            // qui porte `/wp-content/uploads/`, sur le CDN `r2.dev`. Prendre la
+            // première image de la page rendrait le logo du site.
+            var img = /<img[^>]+src="([^"]+)"/i.exec(m[4]);
+            var couverture = img ? SOURCE.texte(img[1]) : "";
             vus[slug] = true;
             var href = "/manga/" + slug + "/";
-            resultats.push({ id: href, title: nom, coverUrl: "", url: href });
+            resultats.push({
+                id: href,
+                title: nom,
+                coverUrl: couverture,
+                url: href,
+            });
         }
         return JSON.stringify(resultats);
     },

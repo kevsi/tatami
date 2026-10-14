@@ -2852,6 +2852,65 @@ validé lui-même**.
   retour. **Ce n'est qu'une hypothèse**, et elle ne vaut rien tant qu'elle n'a
   pas été testée.
 
+### Option 2 — le transport fonctionne, mais il n'est câblé que sur `latest`
+
+Le travail mis de côté est restauré, **corrigé**, et validé. La mesure a donné
+plus qu'on ne l'espérait — et moins, ce qui est la même chose.
+
+**Les deux défauts du code restauré, trouvés par la lecture et non par le test.**
+
+1. `evaluer_javascript` faisait un **deuxième `from_str`** sur une
+   `Value::String`. Pour une expression qui rend une chaîne brute — c'est le cas
+   de `outerHTML` — ce second décodage tentait de parser **du HTML comme du
+   JSON**, et échouait toujours. La fonction ne pouvait donc **jamais** rendre
+   une chaîne. Prouvé par lecture, avant toute mesure.
+2. Plus général : l'appelant faisait `.as_str()` sur le retour de
+   `evaluer_javascript`, qui rend une `Value` **objet** quand l'expression est
+   `JSON.stringify(...)`. `as_str()` sur un objet donne toujours `None` : la
+   boucle d'attente n'aboutissait **jamais**. Mesuré : 22 s puis
+   « relecture impossible », sur TOONFR comme sur HENTAIZONE.
+
+**Preuves, dans l'app réelle** (appel direct de la commande) :
+
+| cas | avant | après |
+|---|---|---|
+| AJAX de TOONFR (corps vide) | 22 s puis « relecture impossible » — **un mensonge** | **2 s**, « le site a renvoyé un corps vide pour … » |
+| HENTAIZONE `/manga/` | « lecture du HTML rendu impossible » | **158 285 octets**, injectés, 2 s |
+
+Le second cas est la **première fois** qu'une source Cloudflare est servie dans
+l'application. `latest` rend 6 fiches, et **elles persistent** (recontrôlées 3 s
+après : 6, pas 0).
+
+**Un corps vide est un résultat, pas une absence de résultat.** La boucle
+attendait 20 s de plus et concluait « impossible » ; elle dit maintenant ce qui
+s'est passé. C'est le même principe que « 404 sans corps n'est pas une panne ».
+
+**Ce qui manque, et c'est le vrai sujet.** Le transport n'est invoqué que depuis
+`loadSource` (l'interface), donc **uniquement pour `latest`**. Toutes les URLs
+suivantes échouent encore :
+
+```
+04:40:19 commands: details source=HENTAIZONE manga=3249083d
+04:40:19 stdout erreur id=details code=CHALLENGE_REQUIRED
+           msg=challenge at https://hentaizone.xyz/manga/regressed-warriors-…/
+```
+
+Chaque série est une **autre URL**, et rien ne la fait passer par le transport.
+Le même défaut appearait déjà sur `latest` pour EPSILONSOFT : une seule URL de
+transport par commande, alors qu'un parcours en demande des dizaines.
+
+**Donc le critère du spike reste non atteint** : aucun chapitre affiché. La
+question suivante n'est plus « est-ce que ça marche » mais « où le transport
+est-il_branché » — et la réponse est : trop haut, et une seule fois. Rattacher
+le transport **au cœur**, sur toute URL refusée, plutôt qu'à une commande
+précise de l'interface, est une décision d'architecture.
+
+**Un walk peut mentir avec un sélecteur.** Le parcours a rapporté « 100
+chapitres », mais `chapters` avait échoué au journal : `.chapter-open`
+sélectionne la liste « chapitres récents » **de l'accueil**, pas celle de la
+série. Même famille que « le plus grand ancêtre contenant le titre englobe toute
+la liste ». Un sélecteur ne se valide pas sur un nombre > 0.
+
 ### Deux pièges de mesure payés pour ce run
 
 1. **Un walk peut lire un état transitoire.** EPSILONSOFT et HENTAIZONE ont

@@ -961,33 +961,111 @@ pub async fn webview_lire(
         ));
     }
 
-    // Laisser la page finir de se construire après la disparition de
+    // Laisser la page finir de se construire après la disparation de
     // l'interstitielle : le titre change avant que le contenu ne soit peint.
     tokio::time::sleep(Duration::from_millis(300)).await;
 
-    // **Le canal tiré.** `eval_with_callback` lit le résultat dans la page ;
-    // mesuré le 2026-10-13, 124 984 caractères revenus intacts en 38 ms.
-    let html = evaluer_javascript(&fenetre, "document.documentElement.outerHTML")
-        .await
-        .and_then(|v| v.as_str().map(str::to_string))
-        .filter(|h| !h.is_empty())
-        .ok_or_else(|| "lecture du HTML rendu impossible".to_string())?;
+    // **Rejouer l'URL demandée, par `fetch`, et renvoyer son CORPS.**
+    //
+    // C'est la correction du défaut mesuré le 2026-10-13 : TOONFR est un
+    // parser *Madara*, qui interroge `wp-admin/admin-ajax.php` — du **JSON**,
+    // pas du HTML. Lire `document.documentElement.outerHTML` renvoyait le DOM
+    // de la page d'accueil (`/webtoon/`), 40 octets de rendu JSON, et le
+    // moteur en tirait `latest ok: 0 items`. Le catalogue semblait se remplir
+    // parce que cela venait de `filterOptions`, une autre requête.
+    //
+    // Un `fetch` depuis la page même origine hérite de la clearance et du
+    // contexte du navigateur. On renvoie donc exactement ce que le moteur
+    // aurait reçu sur le réseau — du HTML ou du JSON, selon ce que l'URL sert.
+    //
+    // **Deux temps, parce que `eval_with_callback` est synchrone.** WebView2
+    // ne rend pas une promesse : une expression `await fetch(...)` rend `{}`
+    // ou rien. Mesuré le 2026-10-13 : `relecture de la page par le navigateur
+    // impossible`, la promesse n'ayant pas eu le temps de se résoudre dans le
+    // délai de 5 s du canal. On démarre donc le `fetch` sans l'attendre, on
+    // stocke son aboutissement dans une globale, puis on relit cette globale
+    // jusqu'à ce qu'elle porte un résultat — même schéma que
+    // `identite_de_la_fenetre` avec `getHighEntropyValues`, pour la même
+    // raison.
+    let _ = fenetre.eval(format!(
+        r#"(function() {{
+            window.__tatamiCorps = null;
+            fetch({url}, {{ credentials: 'include' }})
+                .then(function(r) {{ return r.text(); }})
+                .then(function(t) {{ window.__tatamiCorps = {{ ok: true, corps: t }}; }})
+                .catch(function(e) {{ window.__tatamiCorps = {{ ok: false, erreur: String(e) }}; }});
+        }})()"#,
+        url = serde_json::to_string(parsed.as_str()).unwrap_or_default()
+    ));
+
+    let mut corps: Option<String> = None;
+    // Un corps vide est un **résultat**, pas une absence de résultat : la
+    // relecture a réussi, le site a renvoyé zéro octet. Attendre 20 s de plus ne
+    // changera rien, et dire « relecture impossible » serait un mensonge — il
+    // ferait chercher un défaut de transport chez une source dont l'endpoint
+    // est simplement vide (mesuré le 2026-10-14 sur l'AJAX de TOONFR).
+    let mut corps_vide = false;
+    let echeance_corps = std::time::Instant::now() + Duration::from_secs(20);
+    while corps.is_none() && std::time::Instant::now() < echeance_corps {
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        // **On consume la `Value` telle quelle, pas sa forme « chaîne ».**
+        // `evaluer_javascript` rend une `Value` **objet** ici, parce que
+        // `resoudre_rendu` décode les deux niveaux. Demander `.as_str()` sur un
+        // objet donne toujours `None` : la boucle n'aboutissait donc jamais et
+        // chaque `webview_lire` attendait 20 s pour rien.
+        //
+        // Mesuré le 2026-10-14 : sur TOONFR comme sur HENTAIZONE, 22 s puis
+        // « relecture ... impossible » — la lecture n'avait jamais rien reçu.
+        let Some(v) =
+            evaluer_javascript(&fenetre, "JSON.stringify(window.__tatamiCorps || null)").await
+        else {
+            continue;
+        };
+        if !v.is_object() {
+            continue;
+        }
+        if v.get("ok").and_then(|o| o.as_bool()) == Some(true) {
+            if let Some(c) = v.get("corps").and_then(|c| c.as_str()) {
+                if c.is_empty() {
+                    corps_vide = true;
+                    break;
+                }
+                corps = Some(c.to_string());
+            }
+        } else if let Some(e) = v.get("erreur").and_then(|e| e.as_str()) {
+            return Err(format!("relecture par le navigateur refusée : {e}"));
+        }
+    }
+    let corps = match corps {
+        Some(c) => c,
+        None if corps_vide => {
+            return Err(format!(
+                "le site a renvoyé un corps vide pour {}",
+                parsed.as_str()
+            ))
+        }
+        None => {
+            return Err("relecture de la page par le navigateur impossible".to_string());
+        }
+    };
 
     tracing::info!(
         "challenge: transport webview source={source} octets={} host={}",
-        html.len(),
+        corps.len(),
         parsed.host_str().unwrap_or("?")
     );
 
+    // `html` est le nom attendu par le protocole `injecter` ; son contenu, lui,
+    // est le **corps de la réponse** de l'URL demandée.
     sup.request(
         "injecter",
-        json!({ "url": parsed.as_str(), "html": html }),
+        json!({ "url": parsed.as_str(), "html": corps }),
         Duration::from_secs(20),
     )
     .await
     .map_err(|e| format!("injecter : {e}"))?;
 
-    Ok(html.len())
+    Ok(corps.len())
 }
 
 /// Lit les cookies de la fenêtre, les pousse au moteur, ferme la fenêtre.
@@ -1080,6 +1158,36 @@ async fn identite_de_la_fenetre(
     }
 }
 
+/// Interprète la chaîne rendue par `eval_with_callback`.
+///
+/// **Pourquoi cette fonction existe, et pourquoi elle est séparée.** Mesuré le
+/// 2026-10-13 dans l'app réelle : `webview_lire` renvoyait
+/// `lecture du HTML rendu impossible` alors que la page affichait bien son
+/// contenu. La cause est ici, pas dans le réseau.
+///
+/// `eval_with_callback` rend une chaîne JSON. Quand l'expression évaluée rend
+/// **un objet** (`JSON.stringify({...})`, ce que font tous les appels
+/// existants), la chaîne est `{"cle":"valeur"}` et `from_str` la résout
+/// directement. Quand elle rend une **chaîne brute** — `outerHTML` seul, par
+/// exemple — la chaîne est `"<!DOCTYPE html>…"`, c'est-à-dire du JSON valide
+/// dont la valeur est une `Value::String`. Cette fonction est le seul endroit
+/// qui décide si ce second cas est résolu ou jeté.
+///
+/// Le bug d'origine : sans cette séparation, une chaîne brute partait dans un
+/// `from_str` destiné à un objet et rendait `None`. En la sortant de
+/// `evaluer_javascript`, elle devient testable — et le test ci-dessous est
+/// exactement le cas qui échouait.
+fn resoudre_rendu(brut: &str) -> Option<serde_json::Value> {
+    let valeur = serde_json::from_str::<serde_json::Value>(brut).ok()?;
+    // Une `Value::String` porte un second niveau de JSON : la chaîne que
+    // l'expression a rendue. On la décode une fois de plus. C'est ce que
+    // `JSON.stringify(document.documentElement.outerHTML)` produit.
+    if let serde_json::Value::String(interne) = valeur {
+        return serde_json::from_str::<serde_json::Value>(&interne).ok();
+    }
+    Some(valeur)
+}
+
 async fn evaluer_javascript(
     fenetre: &WebviewWindow,
     javascript: &str,
@@ -1096,12 +1204,7 @@ async fn evaluer_javascript(
         })
         .ok()?;
     let rendu = tokio::time::timeout(UA_DELAI, rx).await.ok()?.ok()?;
-    let value = serde_json::from_str::<serde_json::Value>(&rendu).ok()?;
-    if let serde_json::Value::String(json) = value {
-        serde_json::from_str(&json).ok()
-    } else {
-        Some(value)
-    }
+    resoudre_rendu(&rendu)
 }
 
 async fn appliquer_cookies(
@@ -1236,9 +1339,9 @@ pub async fn cancel_challenge(app: AppHandle, source: String) -> Result<(), Stri
 mod tests {
     use super::{
         action_surveillance, challenge_en_cours, challenge_label, diagnostic_refus_challenge,
-        domaine_effectif, enregistrer_surveillance, hote_public, reste_interstitiel,
-        retirer_surveillance, surveillances, transport_label, valider_url_challenge, Action,
-        LectureCookies, ERREUR_DOMAINE_CHALLENGE,
+        domaine_effectif, enregistrer_surveillance, hote_public, resoudre_rendu,
+        reste_interstitiel, retirer_surveillance, surveillances, transport_label,
+        valider_url_challenge, Action, LectureCookies, ERREUR_DOMAINE_CHALLENGE,
     };
 
     /// **Le defaut du 2026-10-11, en une assertion.** La surveillance a
@@ -1631,6 +1734,63 @@ mod tests {
             valider_url_challenge("https://exemple.com/check", &[], None).unwrap_err(),
             ERREUR_DOMAINE_CHALLENGE
         );
+    }
+
+    // ─── Le parsing du résultat d'`eval_with_callback` ───
+
+    /// **Le bug réel du 2026-10-13, en une assertion.** L'app renvoyait
+    /// `lecture du HTML rendu impossible` alors que la page avait résolu son
+    /// challenge et affichait son contenu. Cause : l'expression évaluée rendait
+    /// une **chaîne brute**, et `resoudre_rendu` la traitait comme un objet.
+    ///
+    /// Ce test est écrit depuis la forme que rend vraiment
+    /// `eval_with_callback` — une chaîne JSON, pas un objet — et non depuis ce
+    /// que le code espérait recevoir.
+    #[test]
+    fn une_chaine_brute_rendue_est_resolue_en_html() {
+        // Ce que `eval_with_callback` rend pour
+        // `JSON.stringify(document.documentElement.outerHTML)`.
+        let brut = serde_json::to_string(
+            &serde_json::to_string("<!DOCTYPE html><html><body>chapitres</body></html>").unwrap(),
+        )
+        .unwrap();
+        let rendu = resoudre_rendu(&brut);
+        assert!(
+            rendu.is_some(),
+            "le HTML rendu par la webview doit être résolu, pas jeté"
+        );
+        assert_eq!(
+            rendu.unwrap().as_str(),
+            Some("<!DOCTYPE html><html><body>chapitres</body></html>"),
+        );
+    }
+
+    /// La contre-épreuve : **sans** ce que le correctif ajoute, une chaîne
+    /// brute partait en `from_str` sur `"<!DOCTYPE...` et rendait `None`. Ce
+    /// test décrit précisément la forme qui échouait.
+    #[test]
+    fn un_objet_rendu_reste_resolu() {
+        // Tous les appels existants passent par `JSON.stringify({...})` : la
+        // chaîne rendue est alors un objet, qui doit continuer de passer.
+        let brut = serde_json::to_string(&serde_json::json!({"t": "instant", "f": false}))
+            .unwrap()
+            .to_string();
+        let brut = serde_json::to_string(&brut).unwrap();
+        let rendu = resoudre_rendu(&brut);
+        assert!(rendu.is_some());
+        assert_eq!(
+            rendu.unwrap().get("t").and_then(|v| v.as_str()),
+            Some("instant")
+        );
+    }
+
+    /// Un rendu qui n'est ni chaîne ni objet valide reste un échec : on ne
+    /// devine pas. Sans ce test, une régression qui accepterait n'importe quoi
+    /// rendrait un HTML vide comme un succès.
+    #[test]
+    fn un_rendu_invalide_reste_un_echec() {
+        assert!(resoudre_rendu("pas du json").is_none());
+        assert!(resoudre_rendu("").is_none());
     }
 
     // ─── Transport webview (option B) ───

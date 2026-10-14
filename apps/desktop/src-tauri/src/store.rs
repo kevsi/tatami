@@ -1207,9 +1207,20 @@ mod tests {
     fn store_vierge() -> (Store, PathBuf) {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COMPTEUR: AtomicU64 = AtomicU64::new(0);
+        // Le PID **ne suffit pas** : Windows réutilise les identifiants de processus.
+        // Un run interrompu laisse son dossier derrière — le `nettoyer` est sauté par le
+        // `panic!` — et le run suivant, qui récupère le même PID et le même compteur,
+        // retombe dessus. Mesuré le 2026-10-14 : le test des sauvegardes échouait une
+        // fois sur cinq avec « exactement une sauvegarde attendue », parce que deux
+        // dossiers fusionnaient et que le nouveau test y trouvait la sauvegarde de
+        // l'ancien. Le nanoseconde rend le nom unique entre deux runs.
         let dir = std::env::temp_dir().join(format!(
-            "tatami-test-{}-{}",
+            "tatami-test-{}-{}-{}",
             std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0),
             COMPTEUR.fetch_add(1, Ordering::Relaxed)
         ));
         let path = dir.join("tatami.db");

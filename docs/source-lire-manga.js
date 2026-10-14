@@ -109,7 +109,7 @@ var SOURCE = {
         }
 
         var titre = SOURCE.texte(
-            (/<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html) || [, mangaUrl])[1],
+            (/<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html) || [, mangaUrl])[1]
         );
 
         var couverture = "";
@@ -119,7 +119,7 @@ var SOURCE = {
 
         var resume = SOURCE.texte(
             (/<div[^>]+class="[^"]*(?:entry-content|desc)[^"]*"[^>]*>([\s\S]*?)<\/div>/i
-                .exec(html) || ["", ""])[1],
+                .exec(html) || ["", ""])[1]
         ).slice(0, 1200);
 
         var brut = SOURCE.texte(html).toLowerCase();

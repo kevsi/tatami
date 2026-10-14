@@ -69,7 +69,7 @@ var SOURCE = {
 
         var re = new RegExp(
             '<a[^>]+href="(/manga/([a-z0-9-]+)/)"[^>]*>([\\s\\S]*?)</a>',
-            "gi",
+            "gi"
         );
         var vus = {};
         var resultats = [];
@@ -105,13 +105,13 @@ var SOURCE = {
         }
 
         var titre = SOURCE.texte(
-            (/<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html) || [, mangaUrl])[1],
+            (/<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html) || [, mangaUrl])[1]
         );
 
         var couverture = "";
         var reImg = new RegExp(
             '<img[^>]+(?:src|data-src)="([^"]+' + SOURCE.UPLOADS + '[^"]+)"',
-            "gi",
+            "gi"
         );
         var i = reImg.exec(html);
         if (i) couverture = i[1];
@@ -120,7 +120,7 @@ var SOURCE = {
             (/<div[^>]+class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(html) || [
                 "",
                 "",
-            ])[1],
+            ])[1]
         ).slice(0, 1200);
 
         var brut = SOURCE.texte(html).toLowerCase();
@@ -133,7 +133,7 @@ var SOURCE = {
         var vus = {};
         var reChap = new RegExp(
             '<a[^>]+href="(/manga/[a-z0-9-]+/chapitre-\\d+/)"[^>]*>([\\s\\S]*?)</a>',
-            "gi",
+            "gi"
         );
         var c;
         while ((c = reChap.exec(html)) !== null) {
@@ -170,7 +170,7 @@ var SOURCE = {
         // et les vignettes de la série, qui ne sont pas des pages.
         var bloc = new RegExp(
             '<div[^>]+class="[^"]*reading-content[^"]*"[\\s\\S]*?(?=<div[^>]+class="[^"]*(?:comment|related|share))',
-            "i",
+            "i"
         ).exec(html);
         var zone = bloc ? bloc[0] : html;
 

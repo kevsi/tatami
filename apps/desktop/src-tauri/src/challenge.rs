@@ -879,6 +879,15 @@ const TRANSPORT_DELAI: Duration = Duration::from_secs(60);
 
 /// Cadence de l'attente de la fin du challenge.
 const TRANSPORT_PAS: Duration = Duration::from_millis(500);
+/// Plancher avant d'accepter que la page soit stable.
+///
+/// Sans lui, « 0 lien lu deux fois de suite » passe pour une page stable alors
+/// qu'elle n'est pas encore arrivée. Mesuré le 2026-10-14 : c'est ce défaut qui
+/// faisait relever HENTAIZONE à 0 lien au lieu de 48.
+const TRANSPORT_PLANCHER: Duration = Duration::from_secs(4);
+/// Expression de comptage : un nombre, pas un objet, pour que `as_u64` suffise.
+const EXPR_LIENS_PAGE: &str =
+    "String([...document.querySelectorAll('a[href]')].filter(a=>a.getAttribute('href')&&a.getAttribute('href').length>4).length)";
 
 /// Étiquette de la webview cachée. **Distincte** de `challenge-<source>` : la
 /// fenêtre de vérification est visible et se ferme après résolution, celle-ci
@@ -982,9 +991,32 @@ pub(crate) async fn lire_par_transport(
         ));
     }
 
-    // Laisser la page finir de se construire après la disparation de
-    // l'interstitielle : le titre change avant que le contenu ne soit peint.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // **Attendre que la page ait du contenu**, pas seulement que
+    // l'interstitielle ait disparu.
+    //
+    // Mesuré le 2026-10-14 : ces 300 ms fixes donnaient 6 201 octets là où un
+    // appel manuel, dans la même session, en donnait 158 285. Le titre change
+    // **avant** que la page soit peinte, donc « plus d'interstitielle » n'est pas
+    // « page chargée » — et le `fetch` relisait la coquille vide.
+    //
+    // Le critère est l'**absence de changement** du nombre de liens, avec un
+    // plancher : « 0 lien lu deux fois » passerait pour stable alors que la page
+    // n'est pas encore arrivée. C'est le défaut que la sonde navigateur a subi le
+    // même jour, pour exactement la même raison.
+    let plancher = std::time::Instant::now() + TRANSPORT_PLANCHER;
+    let limite_contenu = std::time::Instant::now() + TRANSPORT_DELAI;
+    let mut precedent: Option<u64> = None;
+    while std::time::Instant::now() < limite_contenu {
+        tokio::time::sleep(TRANSPORT_PAS).await;
+        let liens = match evaluer_javascript(&fenetre, EXPR_LIENS_PAGE).await {
+            Some(v) => v.as_u64(),
+            None => continue,
+        };
+        if liens == precedent && std::time::Instant::now() >= plancher {
+            break;
+        }
+        precedent = liens;
+    }
 
     // **Rejouer l'URL demandée, par `fetch`, et renvoyer son CORPS.**
     //

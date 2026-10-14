@@ -2447,3 +2447,338 @@ tombe en nommant la confusion — `left: "challenge-TOONFR", right: "webview-TOO
 puis la mesure qui n'a **jamais** été faite : un chapitre de TOONFR affiché dans
 le **lecteur**, de bout en bout, sans fenêtre visible. C'est le critère de
 succès du spike, pas encore atteint.
+
+### Implémentation — étape 4 : mesure de bout en bout, et le bug qu'elle a trouvé (2026-10-13)
+
+> **⚠ Le code de ce bloc n'est plus dans l'arbre — décision humaine du
+> 2026-10-14.** `challenge.rs` a été remis à l'état commité (`d920178`) et le
+> correctif décrit ici est **mis de côté** : stash `20d6ba0` (1 fichier,
+> 158 insertions / 20 suppressions), plus une copie hors dépôt. Restauration :
+> `git stash apply 20d6ba0`.
+> **Ce qui suit ne doit donc pas être lu comme « livré ».** La *mesure*, elle,
+> reste vraie : elle porte sur du code qui tournait au moment où elle a été
+> faite — c'est ce qui permet de la garder.
+> Pourquoi il a été mis de côté : le rejeu par `fetch` itère jusqu'au délai sur
+> un corps vide (l'AJAX de TOONFR rend 0 octet), et `latest` échoue donc en
+> boucle au lieu d'échouer proprement. Les portes n'ont pas été repassées
+> depuis la dernière modification. Cf. « Mesure multi-sources » plus bas pour ce
+> que le transport peut réellement servir.
+
+**Le bug : `evaluer_javascript` ne savait pas lire une chaîne brute.** Mesuré
+dans l'app réelle, `webview_lire` renvoyait
+`lecture du HTML rendu impossible` alors que la page avait résolu son challenge
+et affichait son contenu — la webview affichait « Manga – Toonfr ». Cause :
+`eval_with_callback` rend une chaîne **JSON**. Une expression qui rend un
+**objet** (`JSON.stringify({...})`, ce que faisaient tous les appels existants)
+produit `{"cle":…}`, que `from_str` résout. Une expression qui rend une
+**chaîne brute** — `outerHTML` seul — produit `"<!DOCTYPE html>…"`, du JSON
+dont la valeur est une `Value::String`, que le code jetait.
+
+Corrigé par deux gestes complémentaires :
+- l'expression passe par `JSON.stringify` (comme les autres appels) ;
+- **la logique de parsing est extraite en `resoudre_rendu`**, parce qu'enfouie
+  dans `evaluer_javascript` elle était intestable — et un bug intestable est un
+  bug qui revient.
+
+**Porte prouvée rouge** sur le vrai cas : en rendant `None` à `resoudre_rendu`,
+les deux tests `une_chaine_brute_rendue_est_resolue_en_html` et
+`un_objet_rendu_reste_resolu` tombent. 201 tests verts après correction.
+
+**Le résultat mesuré, de bout en bout.**
+
+| étape | mesure |
+|---|---|
+| transport webview (appel direct) | **170 995 octets** renvoyés |
+| injection moteur | `webview html injecte url=https://toonfr.com/webtoon/ octets=170924 totalMemoire=1` |
+| catalogue après transport | notice « page obtenue par le navigateur », puis **la liste remplit l'écran** (« Girls Love One Shot Psychologique Shôjo Ai Drama… ») |
+| **sans fenêtre visible** | oui — la webview de transport est cachée |
+
+Le flux complet fonctionne : `CHALLENGE_REQUIRED` → webview cachée → challenge
+résolu → HTML injecté → mémoire moteur → catalogue servi. **L'option B est
+opérationnelle pour la liste.**
+
+**Ce que la mesure a montré de plus, et qu'il faut traiter.** Le second appel
+de transport porte sur `https://toonfr.com/wp-admin/admin-ajax.php` et ne rend
+que **40 octets** — c'est une requête **AJAX** du site, pas une page. La liste
+des genres (« 46 genres au total ») vient de là. 40 octets de réponse AJAX
+injectés comme du HTML ne servent à rien, et laissent une entrée inutile en
+mémoire. **Non corrigé, consigné ici** : la mémoire ne devrait accepter que du
+HTML, ou le transport devrait distinguer les deux. Ce n'est pas un blocage —
+le catalogue s'affiche — mais c'est une entrée polluante à traiter.
+
+**Enfin, le critère du spike n'est pas encore rempli.** « Un chapitre complet
+dans le lecteur » n'a pas été mesuré : la liste oui, la lecture non. Le spike
+est donc **GO partiel** sur le transport de liste.
+
+### Implémentation — étape 4 (suite) : la mesure qui a corrigé ma conception (2026-10-13, ~22 h)
+
+**Ce que j'ai annoncé et qui était faux.** J'ai écrit que le catalogue se
+remplissait (« Girls Love One Shot Psychologique Shôjo Ai… »). La mesure suivante
+a montré le contraire, et m'a obligé à reprendre le raisonnement depuis le
+début.
+
+**La vérité mesurée, dans l'ordre.**
+
+1. TOONFR est un parser **Madara**. Il n'interroge pas `/webtoon/` mais
+   `wp-admin/admin-ajax.php` — une URL **AJAX**, donc du JSON. Le log le dit :
+   `code=CHALLENGE_REQUIRED msg=challenge at https://toonfr.com/wp-admin/admin-ajax.php`.
+2. Mon transport lisait `document.documentElement.outerHTML` de la page où il
+   avait navigué — c'est-à-dire `/webtoon/`, une **autre** page. Il renvoyait
+   170 Ko de HTML pour une URL que le moteur n'avait pas demandée, puis
+   40 octets de rendu JSON pour celle qu'il demandait.
+3. Le catalogue qui « se remplissait » venait de `filterOptions`, une requête
+   **différente** de `latest`. `latest` rendait `latest ok: 0 items` — le
+   catalogue était vide et je ne l'avais pas vu.
+
+**Le principe que j'avais faux.** Le transport ne doit pas rendre « ce que la
+webview affiche », mais **le corps de la réponse de l'URL exacte que le moteur
+a demandée**. Un `fetch` vers cette URL, depuis la page même origine, hérite de
+la clearance et rend le HTML ou le JSON attendu. Corrigé en deux temps
+(`fetch` non attendu → globale → relecture), parce que `eval_with_callback` est
+synchrone et ne rend pas une promesse — le même schéma que
+`identite_de_la_fenetre` pour `getHighEntropyValues`.
+
+**Deuxième défaut, mesuré après la correction, toujours ouvert.** La globale se
+résout en `{ok: true, corps: ""}` : le `fetch` aboutit mais la réponse est
+**vide**. Et `filterOptions` échoue encore en `403` — donc la webview de
+transport n'a pas, ce jour-là, la clearance nécessaire. Mon code rejette un
+corps vide et boucle jusqu'au timeout, ce que le front affiche comme un échec.
+
+**Verdict honnête.** L'option B est **partiellement** opérationnelle :
+- le transport ouvre bien la webview, résout le challenge, et renvoie des octets
+  (mesuré : 170 995) ;
+- mais il ne sert **pas encore** la requête `latest` de TOONFR, parce que
+  (a) la conception initiale rendait la mauvaise URL, et (b) après correction,
+  le `fetch` sur l'URL AJAX rend une réponse vide.
+
+Le critère de succès du spike — **un chapitre complet affiché dans le lecteur,
+sans fenêtre visible** — n'est **toujours pas** atteint. Je ne le déclare pas
+atteint, et je ne commite pas cette dernière étape comme un succès.
+
+**Ce qu'il faut mesurer avant d'aller plus loin** : pourquoi la webview de
+transport n'obtient-elle pas la clearance pour `admin-ajax.php`, alors qu'un
+onglet frais l'obtient en 6 s (mesuré le même jour) ? La piste la plus probable
+est `.visible(false)` : la fermeture automatique du challenge n'a pas lieu sans
+rendu. C'est la prochaine mesure, et elle est décisive.
+
+#### La vérité mesurée, et l'hypothèse `.visible(false)` est écartée
+
+**La webview cachée n'est pas le problème.** Mesures comparatives, même jour :
+
+| vue | URL | résultat |
+|---|---|---|
+| onglet frais (CDP, visible) | `/webtoon/` | résolu en **6 s**, `cookies=450` |
+| **webview cachée de l'app** | `/webtoon/` | **200, 178 024 o**, `cookies=450` |
+| webview cachée | `admin-ajax.php` nu | **400, 1 o** |
+| webview cachée | `admin-ajax.php?action=madara_load_more&…` | **200, 0 o** |
+
+La clearance est bien présente dans la webview cachée, au même titre que dans un
+onglet visible. L'hypothèse `.visible(false)` est donc **écartée par la mesure** —
+elle était séduisante, elle est fausse.
+
+**Et la liste est déjà dans `/webtoon/`** : **48 liens de manga, 57 items**,
+177 635 octets, statut 200. Le transport webview atteint donc parfaitement le
+contenu voulu.
+
+**Ce qui bloque réellement, réduit à une ligne.** Le moteur demande
+`https://toonfr.com/wp-admin/admin-ajax.php` (parser Madara en mode
+`madara_load_more`), URL qui rend **0 octet** même depuis la webview. Il ne
+demande jamais `/webtoon/`, la page qui contient la liste. Le transport, lui, est
+câblé pour rejouer **l'URL que le moteur a demandée** — donc l'AJAX vide.
+
+**Ce que ça veut dire, sans le maquiller.** Deux lectures possibles, et la mesure
+ne les départage pas encore :
+1. le parser Madara de *cette* source a besoin d'un POST/GET AJAX que Cloudflare
+   vide, et le transport webview ne peut rien y faire ;
+2. ou bien l'URL d'accueil du parser est mal réglée, et `/webtoon/` suffirait.
+
+Départager demande de lire `ToonFr.kt` / la classe Madara pour savoir quelle URL
+elle demande en `getList`, et si une autre forme d'URL marche. **Non fait.**
+
+**Bilan factuel de l'option B à cet instant :**
+- ✅ mécanisme de bout en bout : webview cachée → challenge → clearance → corps
+  de la réponse → mémoire moteur → intercepteur. Tout est en place et testé.
+- ✅ `/webtoon/` est atteignable par le transport : 200, 177 Ko, 48 liens.
+- ❌ `latest` de TOONFR n'est **pas** servi : le moteur demande une URL AJAX vide.
+- ❌ le critère du spike (chapitre complet dans le lecteur) n'est pas atteint.
+
+### Mesure multi-sources — ce que l'option B peut vraiment servir (2026-10-14)
+
+**La question posée :** le transport webview sert-il autre chose que TOONFR ?
+**La méthode :** les 15 sources FR classées `CHALLENGE_REQUIRED` au relevé du
+2026-10-12, chacune ouverte dans un **vrai onglet** WebView2, challenge résolu,
+puis relevé du statut et du nombre de liens internes.
+
+**Deux pièges de mesure rencontrés et corrigés dans la sonde :**
+1. elle s'arrêtait dès la fin de l'interstitielle, donc **avant** que la page
+   peigne : TOONFR était relevé à 43 Ko / 0 lien alors qu'il fait 177 Ko /
+   48 liens. La sonde mesurait sa propre impatience.
+2. un `200` sans lien ne prouve rien — c'est le piège de TOONFR. On compte donc
+   les liens, pas seulement le statut.
+
+**Le relevé, par verdict.**
+
+| verdict | sources | ce que ça veut dire |
+|---|---|---|
+| **MORTE (522/523)** | BERSERKSCAN, BLUELOCKSCAN, HAIKYUU, HELLSPARADISESCAN, KINGDOMSCAN, MYHEROACADEMIASCAN, SCANBORUTO, SCANJUJUTSUKAISEN — **8** | l'origine der Cloudflare est éteinte ou ne répond plus. **Aucun client ne peut les lire**, transport ou pas. C'est une réclamation de catalogue, pas un travail de transport. |
+| **TLS (525)** | MANGAMANA — **1** | la chaîne TLS de l'origine échoue, même dans un navigateur. |
+| **URL qui ne répond pas (404)** | ASTRALMANGA — **1** | `/manga/` est une **page de détail** (un UUID, forme d'agrégateur), pas la liste. Le site est **vivant**. Cf. « AstralManga : le 404 ne dit rien du site » plus bas. |
+| **SERVIE par le navigateur** | **EPSILONSOFT** (200, 439 Ko, 103 liens), **HENTAIZONE** (200, 236 Ko, 48 liens), **ONISAGA_FR** (200, 9,8 Mo, 50 liens), **SCANHENTAIMENU** (200, 122 Ko, 79 liens), **TOONFR** (200 sur `/webtoon/`, 179 Ko, 127 liens) — **5** | **le transport webview a des cibles réelles.** |
+
+### EPSILONSOFT : j'ai mesuré le mauvais domaine (2026-10-14)
+
+Classé `PERIMEE` à première lecture, à tort. Le bytecode tranche
+(`javap -c` sur `EpsilonSoft.class`) :
+
+```
+ldc  "beta.epsilonsoft.to"      ← l'hôte que le parser interroge
+iconst_1 → putfield withoutAjax ← true : il demande des pages HTML simples
+```
+
+Or j'avais mesuré `epsilonsoft.to/manga/`. L'**apex** répond 404 sur ce chemin,
+et sert sur sa page d'accueil une **fausse mise à jour de navigateur**. Le
+`beta.` est le site réel : 200, 439 Ko, **103 liens**, dont 86 en `/serie/`.
+
+**La règle, appliquée partout :** une URL est une valeur **reçue**. Avant de
+juger un hôte, interroger son **producteur** — ici le bytecode du parser, pas le
+DNS, ni le rapport d'erreur d'hier.
+
+**Conséquence directe pour l'option B :** `withoutAjax = true` signifie que le
+parser demande des pages HTML simples. C'est **exactement** ce que le
+`webview_lire` commité sait lire (le DOM rendu de l'URL demandée). C'est donc la
+**première source** où la chaîne complète peut fonctionner sans le rejeu par
+`fetch` — celui qui est aujourd'hui en stash.
+
+> ### À VÉRIFIER — 2026-10-14 : page de fausse mise à jour
+>
+> `epsilonsoft.to` sert sur son accueil un titre de type « *Transcending Species:
+> Due to System Error* », un schéma de **fausse mise à jour de navigateur** que
+> j'ai rencontré dans le contexte adware. **Je n'ai pas réussi à le confirmer**
+> par recherche le 2026-10-14, donc ce n'est pas un fait établi.
+> Deux gestes bon marché pour trancher : scanner l'URL sur VirusTotal, et, si
+> un clic a suivi, vérifier les extensions et « Applications et fonctionnalités ».
+> Ne pas ouvrir ces domaines dans un profil de navigateur principal.
+
+### AstralManga : le 404 ne dit rien de l'état du site
+
+`AstralManga.<init>` porte bien `astral-manga.fr`, mais la classe **ne surcharge
+pas** `withoutAjax` → comme ToonFr, elle part sur la branche `admin-ajax.php`.
+Et `/manga/` n'est pas une liste : c'est une page de détail, identifiée par un
+**UUID** — donc un agrégateur, pas un thème manga classique.
+
+Conséquence de méthode : mon tableau de verdicts disait « 404 — **le site est
+vivant**, l'URL n'existe plus ». La seconde partie était une **affirmation non
+mesurée** ; la mesure ne portait que sur l'URL. La glose est corrigée dans la
+sonde : un 404 prouve que **cette URL** ne répond pas, et rien de plus.
+
+### La sonde a menti trois fois, et c'est ce qui l'a rendue fiable
+
+Les écarts entre runs n'étaient pas les sites, c'est la sonde :
+
+| symptôme | cause | correction |
+|---|---|---|
+| TOONFR à 43 Ko puis 177 Ko | sortie dès la fin de l'interstitielle, **avant** le rendu | attente de **stabilité**, pas délai fixe |
+| MYHEROACADEMIASCAN classée `BLOQUE` | le tableau ignorait `522 Connection timed out` | `522` et `523` regroupés comme origine injoignable |
+| HENTAIZONE à 0 lien (48 attendus) | un **titre vide** faisait sortir la boucle, et « 0 lien deux fois » passait pour stable | titre vide = « pas chargé » ; **plancher** minimal avant d'accepter une stabilité |
+
+Une mesure qui change selon qu'on la regarde deux fois n'est pas une mesure. Le
+« 200 sans lien » de HENTAIZONE aurait pu me faire conclure à tort que la source
+était morte — c'est-à-dire **purger du catalogue une source vivante**.
+
+**Ce que la mesure décide.**
+
+1. **L'option B a des cibles.** 5 sources sur 15 sont lisibles par le vrai
+   navigateur, et **EPSILONSOFT en tête** : c'est la seule dont le parser
+   demande une page HTML simple (`withoutAjax = true`), donc la seule que le
+   transport **commité** peut servir sans le rejeu par `fetch`.
+2. **Le plus gros gains n'est pas dans le transport.** 8 des 15 sources sont
+   **mortes** (Cloudflare 522/523). Les sortir du catalogue aiderait l'utilisateur
+   bien plus que n'importe quel transport — et c'est une action de catalogue,
+   pas d'architecture.
+3. **TOONFR reste le mauvais exemple.** Son `latest` passe par un AJAX vide
+   (0 octet) même dans un navigateur. C'est un défaut du parser, pas du
+   transport. Il ne doit plus servir de critère de décision.
+4. **Et « périmée » était trop vite dit.** Une URL en 404 ne prouve pas qu'un
+   site est mort : ASTRALMANGA répond 404 sur sa page de détail alors que le
+   domaine vit. Cette distinction a coûté une fausse entrée dans le tableau.
+
+**Décision à prendre par l'humain.** Sur ces mesures, trois issues, par ordre
+de ce que je recommande :
+1. **Purger les 8 mortes du catalogue** (action de catalogue, effet immédiat,
+   zéro risque) — et mesurer le catalogue complet, pas seulement les FR, parce
+   que 15/98 était un relevé partiel.
+2. **Brancher le transport sur les 3 sources servies**, et mesurer un chapitre
+   complet dans le lecteur — le critère du spike, enfin testable sur une vraie
+   cible.
+3. **S'arrêter là.**
+
+**Ce qui n'est toujours pas prouvé :** un chapitre affiché dans le lecteur, ni
+pour TOONFR ni pour HENTAIZONE / ONISAGA_FR / SCANHENTAIMENU. Le transport est
+câblé et atteint des 200 réels ; il n'a jamais été suivi jusqu'à l'image
+affichée.
+
+### Décision humaine du 2026-10-14, et ce qu'elle fixe
+
+Séquence décidée, dans cet ordre :
+
+1. **le travail non validé est mis de côté** — fait, voir l'avertissement en tête
+   du bloc « étape 4 ». `challenge.rs` est revenu à `d920178` ; le reste est en
+   stash `20d6ba0`.
+2. **commiter les mesures** — fait. Voir « Les mesures sont devenues des
+   artefacts » ci-dessous : sans outil commité, un relevé n'est qu'un chiffre
+   dans un journal, et il n'est pas rejouable demain.
+3. **re-tester les 8 mortes le 2026-10-15** — voir la tâche datée plus bas.
+4. **option 2 : brancher le transport sur les 3 sources servies** et mesurer un
+   chapitre complet. C'est le critère du spike, enfin testable sur une vraie
+   cible.
+
+**Pourquoi 3 est rejouable en une commande et pas 1 et 2.** Un site éteint peut
+se rallumer ; une source est un être vivant (§ `scripts/sonde-sources.mjs`). Un
+`523` du 2026-10-14 n'est pas un verdict éternel, seulement un état à une date
+donnée — d'où la tâche datée, plutôt qu'une suppression définitive.
+
+### Les mesures sont devenues des artefacts (2026-10-14)
+
+Trois fichiers, et ils se lisent mutuellement :
+
+| fichier | rôle |
+|---|---|
+| `scripts/sonde-navigateur.mjs` | l'outil. Mesure « et si c'était un vrai navigateur ? », ouvre chaque URL dans **le WebView2 de l'application** — le navigateur du transport — et relit statut, poids et **nombre de liens**. |
+| `docs/mesures/navigateur-cibles.json` | les 15 sources, leur URL réelle et leur **groupe** (`morte`, `tls`, `perimee`, `servie`). C'est l'entrée, donc la mesure est rejouable. |
+| `docs/mesures/navigateur-2026-10-14.json` | le relevé du jour, avec le navigateur utilisé et la signification de chaque verdict. |
+
+**Deux choses que la sonde refuse de faire, et qui sont des leçons.**
+
+1. **Un `200` n'est pas un succès.** C'est exactement le piège de TOONFR, dont
+   l'AJAX rend 200 avec 0 octet. Le verdict compte donc les liens ; sans cela la
+   sonde aurait classé une page vide comme servie.
+2. **Mesurer trop tôt.** La sonde attend la disparition de l'interstitielle puis
+   **3 s de plus** : sans ce délai, TOONFR est relevé à 43 Ko / 0 lien au lieu de
+   177 Ko / 48 liens. La sonde mesurait sa propre impatience.
+
+**Les deux sorties d'erreur sont prouvées** (`--groupe` inconnu → code 1 en
+nommant les groupes ; port CDP fermé → code 2 en donnant la commande de
+remédiation). Une porte qui n'a jamais crié n'est pas une porte.
+
+### [2026-10-15] Tâche : re-tester les 8 sources mortes
+
+Préalable : elles ont été mesurées **mortes** le 2026-10-14 (Cloudflare
+`523 Origin is unreachable`). Un `523` est un état, pas un verdict : vérifier
+avant de les retirer du catalogue.
+
+```powershell
+# 1. lancer l'application avec le port de pilotage
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9223"
+pnpm tauri dev
+
+# 2. re-mesurer les 8, dans un NOUVEAU fichier daté (on ne réécrit pas l'ancien)
+node scripts\sonde-navigateur.mjs --groupe morte `
+     --sortie docs\mesures\navigateur-AAAAMM-JJ.json
+
+# 3. et le reste, pour voir ce qui a bougé depuis
+node scripts\sonde-navigateur.mjs --sortie docs\mesures\navigateur-AAAAMM-JJ.json
+```
+
+**Ce qui décide.** Une source reclassée `UTILE` rejoint les cibles du transport.
+Une source toujours `MORTE` est retirée du catalogue, avec la date du relevé dans
+le motif — pour que la décision soit réversible et datée, pas superstitieuse.

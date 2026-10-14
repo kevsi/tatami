@@ -1,0 +1,61 @@
+{
+  "origine": "docs/mesures/sources-fr.json — les 15 sources FR classées CHALLENGE_REQUIRED au relevé du 2026-10-12. `url` est l'URL que le moteur a réellement demandée (et sur laquelle Cloudflare a répondu), relevée par scripts/sonde-sources.mjs.",
+  "groupes": {
+    "morte": "Cloudflare 523 : l'origine est éteinte. Aucun client ne peut la lire — action de catalogue, pas de transport.",
+    "tls": "525 : la chaîne TLS de l'origine échoue, même dans un navigateur.",
+    "perimee": "404 : le site est vivant et le navigateur passe, mais l'URL demandée n'existe plus — le parser demande une page périmée.",
+    "servie": "200 avec du contenu exploitable : cible réelle pour le transport webview."
+  },
+  "sources": [
+    { "source": "BERSERKSCAN", "url": "https://berserkscan.com/", "groupe": "morte" },
+    { "source": "BLUELOCKSCAN", "url": "https://bluelockscan.com/", "groupe": "morte" },
+    { "source": "HAIKYUU", "url": "https://haikyuu.fr/", "groupe": "morte" },
+    { "source": "HELLSPARADISESCAN", "url": "https://hellsparadisescan.com/", "groupe": "morte" },
+    { "source": "KINGDOMSCAN", "url": "https://kingdomscan.com/", "groupe": "morte" },
+    { "source": "MYHEROACADEMIASCAN", "url": "https://myheroacademiascan.com/", "groupe": "morte" },
+    { "source": "SCANBORUTO", "url": "https://scanboruto.fr/", "groupe": "morte" },
+    { "source": "SCANJUJUTSUKAISEN", "url": "https://scanjujutsukaisen.com/", "groupe": "morte" },
+
+    { "source": "MANGAMANA", "url": "https://www.manga-mana.com/liste-mangas", "groupe": "tls" },
+
+    {
+      "source": "ASTRALMANGA",
+      "url": "https://astral-manga.fr/manga/",
+      "groupe": "perimee",
+      "note": "**`/manga/` n'est pas l'URL de liste.** Le domaine du parser est bien `astral-manga.fr` (`AstralManga.<init>`), mais la classe **ne surcharge pas** `withoutAjax` : comme ToonFr, elle part sur la branche `admin-ajax.php`. L'URL `/manga/` du relevé du 2026-10-12 est une URL de **page de détail** — un UUID, forme d'agrégateur — pas la liste. Verdict `PERIMEE` = « cette URL ne répond pas », et non « le site est mort » : les deux sont distincts et seul le premier est mesuré."
+    },
+
+    {
+      "source": "EPSILONSOFT",
+      "url": "https://beta.epsilonsoft.to/",
+      "groupe": "servie",
+      "releve": "200, 438 750 o, **86 liens `/serie/`**, titre « Epsilon Soft »",
+      "note": "**L'hôte mesuré le 2026-10-14 était le mauvais.** Le bytecode de `EpsilonSoft.<init>` porte `ldc \"beta.epsilonsoft.to\"` : le parser interroge le sous-domaine `beta.`, pas l'apex. Or l'apex `epsilonsoft.to` répond 404 sur `/manga/` et sert sur sa page d'accueil une **fausse mise à jour de navigateur** (schéma d'adware connu — `À VÉRIFIER`, voir PLAN.md). Leçon : une URL est une valeur **reçue** ; il faut interroger son producteur, ici le bytecode, avant de juger l'hôte. Ce même parser déclare `withoutAjax = true` (`iconst_1 → putfield`), donc il demande des **pages HTML simples** : c'est la première source que le transport webview peut servir de bout en bout."
+    },
+
+    {
+      "source": "HENTAIZONE",
+      "url": "https://hentaizone.xyz/manga/",
+      "groupe": "servie",
+      "releve": "200, 193 181 o, 48 liens — « Manga Archive - HentaiZone »"
+    },
+    {
+      "source": "ONISAGA_FR",
+      "url": "https://onisaga.com/browse",
+      "groupe": "servie",
+      "releve": "200, 9 796 873 o, 50 liens — « Explore The Best Manga - OniSaga »"
+    },
+    {
+      "source": "SCANHENTAIMENU",
+      "url": "https://x-manga.org/manga/",
+      "groupe": "servie",
+      "releve": "200, 122 089 o, 79 liens — « Manga Archive – X-MANGA »"
+    },
+    {
+      "source": "TOONFR",
+      "url": "https://toonfr.com/webtoon/",
+      "groupe": "servie",
+      "note": "URL mesurée = `listUrl` du parser (bytecode de ToonFr), pas l'URL que le moteur demande. `latest` passe par `wp-admin/admin-ajax.php` (`withoutAjax=false`), qui rend 0 octet même dans le navigateur. Donc TOONFR est un défaut de parser, pas de transport."
+    }
+  ]
+}

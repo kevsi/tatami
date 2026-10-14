@@ -1,0 +1,215 @@
+{
+  "date": "2026-10-14",
+  "groupe": "tous",
+  "navigateur": "Edg/155.0.4283.45",
+  "portCdp": 9223,
+  "question": "Un vrai navigateur obtient-il du contenu sur les URLs que le client HTTP du moteur n'atteint pas ?",
+  "lecture": {
+    "MORTE": {
+      "signification": "Origine injoignable (Cloudflare 522 délai dépassé / 523 éteinte) — aucun client ne peut la lire",
+      "nombre": 8
+    },
+    "TLS": {
+      "signification": "TLS (525, handshake d'origine cassé) — pas un problème de challenge",
+      "nombre": 1
+    },
+    "UTILE": {
+      "signification": "SERVIE par le navigateur — cible réelle pour le transport",
+      "nombre": 5
+    },
+    "VIDE": {
+      "signification": "200 sans contenu exploitable — l'URL demandée est mauvaise ou l'AJAX est vide",
+      "nombre": 0
+    },
+    "PERIMEE": {
+      "signification": "404 sur CETTE URL — à elle seule elle ne dit **pas** si le site est vivant. Mesuré le 2026-10-14 : `/manga/` répond 404 sur epsilonsoft.to alors que `beta.epsilonsoft.to` (le seul hôte que le parser interroge) rend 86 liens. Le site-vivant est une **autre** mesure.",
+      "nombre": 1
+    },
+    "BLOQUE": {
+      "signification": "Aucun statut 200 et pas de code d'origine Cloudflare connu — **verdict à ne pas conclure** : réessayer ou lire la page manuellement",
+      "nombre": 0
+    }
+  },
+  "resultats": [
+    {
+      "source": "BERSERKSCAN",
+      "url": "https://berserkscan.com/",
+      "statuts": [
+        523
+      ],
+      "titre": "berserkscan.com | 523: Origin is unreachable",
+      "liensInternes": 2,
+      "octetsHtml": 6935,
+      "ms": 8536,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "BLUELOCKSCAN",
+      "url": "https://bluelockscan.com/",
+      "statuts": [
+        522
+      ],
+      "titre": "bluelockscan.com | 522: Connection timed out",
+      "liensInternes": 2,
+      "octetsHtml": 6991,
+      "ms": 24310,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "HAIKYUU",
+      "url": "https://haikyuu.fr/",
+      "statuts": [
+        523
+      ],
+      "titre": "haikyuu.fr | 523: Origin is unreachable",
+      "liensInternes": 2,
+      "octetsHtml": 6905,
+      "ms": 8178,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "HELLSPARADISESCAN",
+      "url": "https://hellsparadisescan.com/",
+      "statuts": [
+        522
+      ],
+      "titre": "hellsparadisescan.com | 522: Connection timed out",
+      "liensInternes": 2,
+      "octetsHtml": 7021,
+      "ms": 24166,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "KINGDOMSCAN",
+      "url": "https://kingdomscan.com/",
+      "statuts": [
+        523
+      ],
+      "titre": "kingdomscan.com | 523: Origin is unreachable",
+      "liensInternes": 2,
+      "octetsHtml": 6935,
+      "ms": 7800,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "MYHEROACADEMIASCAN",
+      "url": "https://myheroacademiascan.com/",
+      "statuts": [
+        523
+      ],
+      "titre": "myheroacademiascan.com | 523: Origin is unreachable",
+      "liensInternes": 2,
+      "octetsHtml": 6977,
+      "ms": 19018,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "SCANBORUTO",
+      "url": "https://scanboruto.fr/",
+      "statuts": [
+        523
+      ],
+      "titre": "scanboruto.fr | 523: Origin is unreachable",
+      "liensInternes": 2,
+      "octetsHtml": 6923,
+      "ms": 9236,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "SCANJUJUTSUKAISEN",
+      "url": "https://scanjujutsukaisen.com/",
+      "statuts": [
+        523
+      ],
+      "titre": "scanjujutsukaisen.com | 523: Origin is unreachable",
+      "liensInternes": 2,
+      "octetsHtml": 6971,
+      "ms": 12473,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "MANGAMANA",
+      "url": "https://www.manga-mana.com/liste-mangas",
+      "statuts": [
+        525
+      ],
+      "titre": "manga-mana.com | 525: SSL handshake failed",
+      "liensInternes": 5,
+      "octetsHtml": 7501,
+      "ms": 5106,
+      "verdict": "TLS"
+    },
+    {
+      "source": "ASTRALMANGA",
+      "url": "https://astral-manga.fr/manga/",
+      "statuts": [
+        404
+      ],
+      "titre": "Astral Manga",
+      "liensInternes": 1,
+      "octetsHtml": 33211,
+      "ms": 6242,
+      "verdict": "PERIMEE"
+    },
+    {
+      "source": "EPSILONSOFT",
+      "url": "https://beta.epsilonsoft.to/",
+      "statuts": [
+        200
+      ],
+      "titre": "Epsilon Soft",
+      "liensInternes": 103,
+      "octetsHtml": 439113,
+      "ms": 12167,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "HENTAIZONE",
+      "url": "https://hentaizone.xyz/manga/",
+      "statuts": [
+        200
+      ],
+      "titre": "Manga Archive - HentaiZone",
+      "liensInternes": 48,
+      "octetsHtml": 236160,
+      "ms": 7349,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "ONISAGA_FR",
+      "url": "https://onisaga.com/browse",
+      "statuts": [
+        200
+      ],
+      "titre": "Explore The Best Manga - OniSaga",
+      "liensInternes": 50,
+      "octetsHtml": 9796717,
+      "ms": 44237,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "SCANHENTAIMENU",
+      "url": "https://x-manga.org/manga/",
+      "statuts": [
+        200
+      ],
+      "titre": "Manga Archive – X-MANGA",
+      "liensInternes": 79,
+      "octetsHtml": 122089,
+      "ms": 7717,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "TOONFR",
+      "url": "https://toonfr.com/webtoon/",
+      "statuts": [
+        200
+      ],
+      "titre": "Manga – Toonfr",
+      "liensInternes": 127,
+      "octetsHtml": 179449,
+      "ms": 6591,
+      "verdict": "UTILE"
+    }
+  ]
+}

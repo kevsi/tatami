@@ -1757,3 +1757,44 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   demandée puis vidée par un filtre est le piège « 0 résultat ne prouve rien » ;
   la sonde le crie désormais. Et `SOURCE.id` n'est **pas** l'identité : il est lu
   et validé, mais c'est le nom de fichier que la base et l'interface connaissent.
+
+- **Un rejeu supposé peut être la valeur réelle du site, et le « byte à byte » ne
+  le démontrait pas.** Mesuré le 2026-10-14 : après redémarrage de
+  l'application **et** du sidecar, `webview_lire` sur HENTAIZONE rendait
+  **exactement 6 201 octets**, comme six heures plus tôt — ce qui accablait la
+  mémoire du moteur. Or trois `fetch` hors application donnent **403 « Just a
+  moment… », 5 710 octets**, et la webview en a 6 201 : deux identités de client,
+  deux variantes de la même page de vérification. La réponse était donc la
+  **vraie réponse du réseau**, à cet instant. Corollaires : (a) une valeur
+  constante n'est pas la preuve d'un rejeu, c'est la preuve d'un *déterminisme*,
+  et il faut demander de quoi ; (b) le témoin qui tranche est la mesure
+  **hors application** du même endpoint, pas une deuxième exécution de la même
+  chaîne ; (c) `cf_clearance` était **présente** (295 cookies, dont
+  `.hentaizone.xyz`) et Cloudflare refusait quand même — l'absence de cookie
+  n'était donc pas la cause, contrairement à ce que la lecture du journal
+  suggérait.
+
+- **Le chemin du transport n'est pas celui qu'on croit, et le log le dit.** Les
+  mesures de 14 h 20 sortaient de `challenge::webview_lire`, une **commande
+  Tauri** qui appelle `lire_par_transport` directement. Or `latest` passe par
+  `Supervisor::request_avec_transport`, qui **journalise** `transport: …` dans
+  ses deux branches (succès et échec). Aucune ligne de ce type n'existe dans le
+  journal, jamais — donc ces mesures ne passaient pas par ce chemin, et un
+  `invoke('latest')` de sondage n'y entre pas. Règle : avant de sonder une
+  chaîne, vérifier **quelle ligne de log elle écrit** et la retrouver dans le
+  journal ; si elle n'y est pas, on ne mesure pas le chemin qu'on croit.
+
+- **`transport_a_tenter` est testée et verte, et `latest` ne l'a pas empruntée.**
+  La fonction est **pure**, ses tests passent sur le message exact du journal —
+  et pourtant `latest` a rendu l'erreur d'origine en 516 ms, sans passer par le
+  transport. Ce n'est donc pas « la fonction a été oubliée » : c'est une
+  **contradiction mesurée** entre un test vert et un comportement réel. Elle
+  mérite un nom et une cause avant toute correction, pas un `if` de plus.
+
+- **Une app en `cargo run` garde son serveur de dev par un autre arbre de
+  processus.** Mesuré le 2026-10-14 : en arrêtant `tatami-desktop.exe` **et** son
+  parent `cargo.exe`, le port 3001 est tombé aussi — la webview a alors chargé
+  `chrome-error://chromewebdata/`, dont `location.origin` vaut **`null`**, et
+  tout `invoke` répondait « Origin header is not a valid URL ». Une erreur
+  d'IPC qui accuse l'origine est souvent une **page morte** : lire
+  `location.href` avant de conclure quoi que ce soit sur l'IPC.

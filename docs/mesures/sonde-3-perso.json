@@ -2,94 +2,64 @@
   "date": "2026-10-14",
   "releves": [
     {
-      "source": "custom:bananascans",
+      "source": "ASTRALMANGA",
       "lang": "?",
       "domaines": [],
       "date": "2026-10-14",
       "etapes": {
         "latest": {
-          "code": "OK",
-          "n": 5
-        },
-        "details": {
-          "code": "OK"
-        },
-        "chapters": {
-          "code": "OK",
-          "n": 3
-        },
-        "pages": {
-          "code": "OK",
-          "n": 190
-        },
-        "image": {
-          "code": "OK",
-          "type": "image/jpeg"
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
         }
       },
-      "verdict": "ACTIF",
-      "urlListe": null,
-      "etapeEchec": "image"
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://astral-manga.fr/manga/",
+      "urlFinale": "https://astral-manga.fr/manga/"
     },
     {
-      "source": "custom:hhentai-fr",
+      "source": "SUSHISCAN",
       "lang": "?",
       "domaines": [],
       "date": "2026-10-14",
       "etapes": {
         "latest": {
           "code": "OK",
-          "n": 12
+          "n": 24
         },
         "details": {
           "code": "OK"
         },
         "chapters": {
           "code": "OK",
-          "n": 90
+          "n": 59
         },
         "pages": {
           "code": "OK",
-          "n": 6
+          "n": 184
         },
         "image": {
-          "code": "OK",
-          "type": "image/jpeg"
+          "code": "SOURCE_BLOCKED",
+          "type": null
         }
       },
-      "verdict": "ACTIF",
-      "urlListe": null,
-      "etapeEchec": "image"
+      "verdict": "SOURCE_BLOCKED",
+      "urlListe": "https://sushiscan.net/catalogue/black-clover/",
+      "etapeEchec": "image",
+      "message": "source blocked by Cloudflare at https://c.sushiscan.net/wp-content/uploads85/BlackCloverTome1-001.webp"
     },
     {
-      "source": "custom:lire-manga",
+      "source": "TOOMICSFR",
       "lang": "?",
       "domaines": [],
       "date": "2026-10-14",
       "etapes": {
         "latest": {
-          "code": "OK",
-          "n": 43
-        },
-        "details": {
-          "code": "OK"
-        },
-        "chapters": {
-          "code": "OK",
-          "n": 1
-        },
-        "pages": {
-          "code": "OK",
-          "n": 258
-        },
-        "image": {
-          "code": "OK",
-          "type": "image/jpeg"
+          "code": "INTERNAL",
+          "n": 0
         }
       },
-      "verdict": "ACTIF",
-      "urlListe": null,
-      "etapeEchec": "image"
+      "verdict": "INTERNAL",
+      "message": "StreamResetException: stream was reset: INTERNAL_ERROR"
     }
   ]
 }

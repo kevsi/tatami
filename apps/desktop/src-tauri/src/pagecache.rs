@@ -230,17 +230,58 @@ impl PageCache {
     }
 
     /// Enregistre (ou retrouve) la couverture d'une série.
+    ///
+    /// **Un-covert vide ne doit pas figer.** Mesuré le 2026-10-14 sur
+    /// `custom:hhentai-fr` : tant que la source ne fournissait pas de
+    /// `coverUrl`, elle rendait `""`, et `inserer` garde la **première**
+    /// inscription (`if let Some(existant) = … return existant`). Le vide
+    /// restait donc jusqu'au redémarrage de l'application : **1 vignette sur 12**
+    /// s'affichait, et **12 sur 12** après redémarrage, sans qu'une ligne de code
+    /// ait changé. Aucune erreur nulle part — d'où des couvertures « absentes »
+    /// sans cause visible.
+    ///
+    /// Le jeton dérive de `(kind, source, cle)` par hachage : remplacer la
+    /// valeur enregistrée ne change donc **rien** à l'URL que l'interface
+    /// connaît déjà, ce qui rend la correction invisible pour elle.
+    ///
+    /// Seule la **couverture** est rafraîchissable. Une page n'a pas
+    /// d'équivalent : son URL est l'identifiant, et la réinscrire pour changer
+    /// d'octets servirait à rien.
     pub fn register_cover(&self, source: &str, manga_url: &str, cover_url: Option<&str>) -> String {
-        self.inserer(
+        // `Some("")` n'est pas une couverture : c'est l'absence déguisée, et la
+        // traiter comme une valeur explains le défaut ci-dessus.
+        let cover = cover_url
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .map(str::to_string);
+        let token = self.inserer(
             2,
             source,
             manga_url,
             PageRef::Couverture {
                 source: source.to_string(),
                 manga_url: manga_url.to_string(),
-                cover_url: cover_url.map(str::to_string),
+                cover_url: cover.clone(),
             },
-        )
+        );
+        if cover.is_some() {
+            let mut ix = self.index.lock().unwrap_or_else(|e| e.into_inner());
+            let vide = matches!(
+                ix.map.get(&token),
+                Some(PageRef::Couverture { cover_url, .. }) if cover_url.is_none()
+            );
+            if vide {
+                ix.map.insert(
+                    token.clone(),
+                    PageRef::Couverture {
+                        source: source.to_string(),
+                        manga_url: manga_url.to_string(),
+                        cover_url: cover,
+                    },
+                );
+            }
+        }
+        token
     }
 
     fn inserer(&self, kind: u8, source: &str, cle: &str, valeur: PageRef) -> String {
@@ -619,6 +660,65 @@ mod tests {
         assert_eq!(a, b, "un URL identique doit réutiliser le jeton");
         // Une source différente = une autre image, donc un autre jeton.
         assert_ne!(a, c.register("MANGAFR", "https://x/1.jpg"));
+    }
+
+    /// Une couverture vide ne doit pas figer jusqu'au redémarrage.
+    ///
+    /// Mesuré le 2026-10-14 sur `custom:hhentai-fr` : la source rendait
+    /// `coverUrl: ""` tant qu'elle ne le fournissait pas. Comme `inserer`
+    /// renvoie la première inscription sans jamais la réécrire, la grille
+    /// affichait **1 vignette sur 12**, et **12 sur 12** après redémarrage —
+    /// sans changement de code. Le test fige ce comportement : il échoue avec
+    /// l'ancien `register_cover`, qui renvoyait le jeton sans jamais le
+    /// rafraîchir.
+    #[test]
+    fn une_couverture_vide_est_remplacee_par_la_suivante() {
+        let (c, _garde_cache) = cache();
+        let url = "https://x/serie/1";
+
+        // Premier passage : la source ne fournit rien. `Some("")` est l'absence
+        // déguisée — `porter_jeton` ne filtre que `None`.
+        let jeton = c.register_cover("custom:test", url, Some(""));
+        assert_eq!(
+            couverture_de(&c, &jeton),
+            None,
+            "une chaîne vide doit être traitée comme une absence, pas comme une URL"
+        );
+
+        // Second passage : la source fournit enfin la couverture.
+        let jeton2 = c.register_cover("custom:test", url, Some("https://x/couv.jpg"));
+        assert_eq!(
+            jeton, jeton2,
+            "le jeton ne doit pas changer : l'interface le connaît déjà"
+        );
+        assert_eq!(
+            couverture_de(&c, &jeton),
+            Some("https://x/couv.jpg".to_string()),
+            "la couverture vide a figé la grille : c'est le défaut mesuré"
+        );
+    }
+
+    /// Une couverture **présente** ne doit pas être écrasée par une valeur vide
+    /// venue plus tard : `None` ne veut pas dire « prends le vide ».
+    #[test]
+    fn une_couverture_connue_ne_deroule_pas_sur_un_vide() {
+        let (c, _garde_cache) = cache();
+        let url = "https://x/serie/2";
+        let jeton = c.register_cover("custom:test", url, Some("https://x/couv.jpg"));
+        c.register_cover("custom:test", url, None);
+        assert_eq!(
+            couverture_de(&c, &jeton),
+            Some("https://x/couv.jpg".to_string()),
+            "une absence tardive a effacé une couverture déjà connue"
+        );
+    }
+
+    /// La couverture enregistrée, lue par le chemin de production.
+    fn couverture_de(c: &PageCache, jeton: &str) -> Option<String> {
+        match c.resolve(jeton) {
+            Some(PageRef::Couverture { cover_url, .. }) => cover_url,
+            _ => None,
+        }
     }
 
     /// Un PNG dont l'en-tête déclare `l x h`, fabriqué à la main.

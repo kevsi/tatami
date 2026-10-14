@@ -20,12 +20,16 @@
         },
         "pages": {
           "code": "OK",
-          "n": 0
+          "n": 190
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/jpeg"
         }
       },
-      "verdict": "INCERTAIN",
+      "verdict": "ACTIF",
       "urlListe": null,
-      "message": "chapitre sans aucune image"
+      "etapeEchec": "image"
     },
     {
       "source": "custom:hhentai-fr",
@@ -46,12 +50,16 @@
         },
         "pages": {
           "code": "OK",
-          "n": 0
+          "n": 6
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/jpeg"
         }
       },
-      "verdict": "INCERTAIN",
+      "verdict": "ACTIF",
       "urlListe": null,
-      "message": "chapitre sans aucune image"
+      "etapeEchec": "image"
     },
     {
       "source": "custom:lire-manga",
@@ -60,13 +68,28 @@
       "date": "2026-10-14",
       "etapes": {
         "latest": {
-          "code": "INTERNAL",
-          "n": 0
+          "code": "OK",
+          "n": 43
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 1
+        },
+        "pages": {
+          "code": "OK",
+          "n": 258
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/jpeg"
         }
       },
-      "verdict": "INTERNAL",
-      "message": "RuntimeException: java.io.IOException: HTTP 404 pour https://www.lire-manga.com/manga/list-mode/page/1/",
-      "urlFinale": "https://www.lire-manga.com/manga/list-mode/page/1/"
+      "verdict": "ACTIF",
+      "urlListe": null,
+      "etapeEchec": "image"
     }
   ]
 }

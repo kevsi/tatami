@@ -231,6 +231,47 @@ function action(conclusion) {
   }
 }
 
+/**
+ * Cette source est-elle derrière Cloudflare ? Et **sur quelle preuve** ?
+ *
+ * La question n'est pas cosmétique : elle décide de quel fichier la source
+ * atterrit. Deviner « c'est Cloudflare parce que ça bloque » avait produit un
+ * audit entier de sources mortes classées comme protégées — donc traitées par un
+ * transport qui ne pouvait rien pour elles. La base est donc toujours nommée.
+ *
+ * Trois bases, de la plus solide à la plus faible :
+ *
+ * 1. **Un code 52x** (521/522/523/525) : ces codes n'existent pas en HTTP
+ *    normal, seuls les proxys de type Cloudflare les renvoient. Preuve directe.
+ * 2. **Un titre de page d'erreur Cloudflare** vu dans le navigateur
+ *    (« 523: Origin is unreachable », « 525: SSL handshake failed », « Just a
+ *    moment… ») : c'est la page que Cloudflare sert lui-même.
+ * 3. **Le classifieur du moteur** : `CloudFlareHelper` reconnaît la protection
+ *    dans une réponse. C'est notre code, donc c'est une preuve plus faible —
+ *    d'où le champ `preuve` qui la nomme.
+ */
+function evidenceCloudflare(verdictMoteur, message, nav) {
+  const code52x = String(message ?? "").match(/Status=(52[1-5])/);
+  if (code52x) {
+    return { oui: true, base: `code HTTP ${code52x[1]} — propre à un proxy Cloudflare` };
+  }
+  const titre = String(nav?.titre ?? "");
+  if (
+    /origin is unreachable|ssl handshake failed|just a moment|attention required|un instant/i.test(
+      titre,
+    )
+  ) {
+    return { oui: true, base: `page d'erreur Cloudflare servie par le site : « ${titre.slice(0, 60)} »` };
+  }
+  if (/^(CHALLENGE_REQUIRED|CHALLENGE_UNREPLAYABLE|SOURCE_BLOCKED)$/.test(verdictMoteur)) {
+    return {
+      oui: true,
+      base: `classée ${verdictMoteur} par CloudFlareHelper, le détecteur du moteur`,
+    };
+  }
+  return { oui: false, base: "aucun marqueur Cloudflare dans les deux mesures" };
+}
+
 const audit = JSON.parse(readFileSync(REPERE_MOTEUR, "utf8"));
 const nav = JSON.parse(readFileSync(REPERE_NAVIGATEUR, "utf8"));
 
@@ -246,6 +287,7 @@ const sites = (audit.releves ?? []).map((r) => {
     conclusion,
     raison,
     action: action(conclusion),
+    cloudflare: evidenceCloudflare(r.verdict, r.message, mesureNav),
     url_demandee: urlDemandee,
     preuve_moteur: {
       verdict: r.verdict,
@@ -272,34 +314,94 @@ const sites = (audit.releves ?? []).map((r) => {
 const parConclusion = {};
 for (const s of sites) parConclusion[s.conclusion] = (parConclusion[s.conclusion] ?? 0) + 1;
 
-const sortie = {
-  genere_le: new Date().toISOString().slice(0, 19).replace("T", " "),
-  question: "Pour chaque source : le site est-il mort, ou le parseur est-il cassé ?",
-  methode: {
-    moteur: {
-      outil: "scripts/sonde-sources.mjs --deep",
-      releve: REPERE_MOTEUR,
-      mesure: "latest → details → chapters → pages → image",
-    },
-    navigateur: {
-      outil: "scripts/sonde-navigateur.mjs",
-      releve: REPERE_NAVIGATEUR,
-      mesure: "l'URL réellement demandée par le moteur, dans le WebView2 de l'application",
-    },
-  },
-  regle: "Pas de mesure navigateur → a_verifier. Jamais un verdict deviné.",
-  compte: parConclusion,
-  sites,
-};
+/** Compte par conclusion, pour un sous-ensemble. */
+function compter(liste) {
+  const c = {};
+  for (const s of liste) c[s.conclusion] = (c[s.conclusion] ?? 0) + 1;
+  return c;
+}
 
-writeFileSync(SORTIE, `${JSON.stringify(sortie, null, 2)}\n`, "utf8");
+/** En-tête commun : ce que le fichier est, et sur quelles mesures il repose. */
+function entete(question, complement = "") {
+  return {
+    genere_le: new Date().toISOString().slice(0, 19).replace("T", " "),
+    question,
+    complement,
+    methode: {
+      moteur: {
+        outil: "scripts/sonde-sources.mjs --deep",
+        releve: REPERE_MOTEUR,
+        mesure: "latest → details → chapters → pages → image",
+      },
+      navigateur: {
+        outil: "scripts/sonde-navigateur.mjs",
+        releve: REPERE_NAVIGATEUR,
+        mesure: "l'URL réellement demandée par le moteur, dans le WebView2 de l'application",
+      },
+    },
+    regle: "Pas de mesure navigateur → a_verifier. Jamais un verdict deviné.",
+  };
+}
+
+const SORTIE_CLOUDFLARE = arg(
+  "sortie-cloudflare",
+  "docs/mesures/sites-etat-normalise-cloudflare.json",
+);
+
+// **Deux fichiers, pas un.** Les sources derrière Cloudflare et les autres ne
+// se traitent pas de la même façon : une source protégée peut être sauvée par
+// le transport, une source morte non — les mettre ensemble faisait passer
+// 48 sites morts pour des problèmes de protection.
+const avecCloudflare = sites.filter((s) => s.cloudflare.oui);
+const sansCloudflare = sites.filter((s) => !s.cloudflare.oui);
+
+writeFileSync(
+  SORTIE,
+  `${JSON.stringify(
+    {
+      ...entete(
+        "Pour chaque source : le site est-il mort, ou le parseur est-il cassé ?",
+        "Hors sources derrière Cloudflare : celles-ci sont dans " + SORTIE_CLOUDFLARE + ".",
+      ),
+      compte: compter(sansCloudflare),
+      sources: sansCloudflare,
+    },
+    null,
+    2,
+  )}\n`,
+  "utf8",
+);
+
+writeFileSync(
+  SORTIE_CLOUDFLARE,
+  `${JSON.stringify(
+    {
+      ...entete(
+        "Sources derrière Cloudflare : le site est-il mort, ou le parseur est-il cassé ?",
+        "Chaque entrée porte `cloudflare.base` : la preuve retenue. Rien n'est classé « protégé » par défaut.",
+      ),
+      compte: compter(avecCloudflare),
+      sources: avecCloudflare,
+    },
+    null,
+    2,
+  )}\n`,
+  "utf8",
+);
 
 console.log(`\n=== ${sites.length} sources, croisées ===`);
-for (const [k, v] of Object.entries(parConclusion).sort((a, b) => b[1] - a[1])) {
-  console.log(`${k.padEnd(14)} ${v}`);
+console.log(
+  `  derrière Cloudflare : ${avecCloudflare.length}\n  sans Cloudflare      : ${sansCloudflare.length}`,
+);
+console.log(`\n--- ${SORTIE_CLOUDFLARE} (${avecCloudflare.length}) ---`);
+for (const [k, v] of Object.entries(compter(avecCloudflare)).sort((a, b) => b[1] - a[1])) {
+  console.log(`  ${k.padEnd(14)} ${v}`);
 }
-console.log(`\nécrit : ${SORTIE}`);
-console.log("\n--- ce qui demande une action ---");
-for (const s of sites.filter((x) => x.conclusion !== "ok")) {
-  console.log(`${s.source.padEnd(22)} ${s.conclusion.padEnd(14)} ${s.raison.slice(0, 78)}`);
+console.log(`\n--- ${SORTIE} (${sansCloudflare.length}) ---`);
+for (const [k, v] of Object.entries(compter(sansCloudflare)).sort((a, b) => b[1] - a[1])) {
+  console.log(`  ${k.padEnd(14)} ${v}`);
+}
+console.log("\n--- ce qui demande une action, hors Cloudflare ---");
+for (const s of sansCloudflare.filter((x) => x.conclusion !== "ok")) {
+  console.log(`  ${s.source.padEnd(22)} ${s.conclusion.padEnd(14)} ${s.raison.slice(0, 70)}`);
 }

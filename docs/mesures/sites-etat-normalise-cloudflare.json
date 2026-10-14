@@ -1,0 +1,924 @@
+{
+  "genere_le": "2026-10-14 09:59:06",
+  "question": "Sources derrière Cloudflare : le site est-il mort, ou le parseur est-il cassé ?",
+  "complement": "Chaque entrée porte `cloudflare.base` : la preuve retenue. Rien n'est classé « protégé » par défaut.",
+  "methode": {
+    "moteur": {
+      "outil": "scripts/sonde-sources.mjs --deep",
+      "releve": "docs\\mesures\\audit-parcours-fr-2026-10-14.json",
+      "mesure": "latest → details → chapters → pages → image"
+    },
+    "navigateur": {
+      "outil": "scripts/sonde-navigateur.mjs",
+      "releve": "docs\\mesures\\navigateur-audit-2026-10-14.json",
+      "mesure": "l'URL réellement demandée par le moteur, dans le WebView2 de l'application"
+    }
+  },
+  "regle": "Pas de mesure navigateur → a_verifier. Jamais un verdict deviné.",
+  "compte": {
+    "parseur_casse": 3,
+    "site_mort": 27,
+    "client_refuse": 5
+  },
+  "sources": [
+    {
+      "source": "ASTRALMANGA",
+      "conclusion": "parseur_casse",
+      "raison": "https://astral-manga.fr/manga/ ne rend pas de contenu exploitable dans un vrai navigateur (Astral Manga)",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "cloudflare": {
+        "oui": true,
+        "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
+      },
+      "url_demandee": "https://astral-manga.fr/manga/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://astral-manga.fr/manga/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://astral-manga.fr/manga/",
+        "verdict": "VIDE",
+        "statuts": [
+          403,
+          200,
+          404
+        ],
+        "titre": "Astral Manga",
+        "liensInternes": 0,
+        "octetsHtml": 31583
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "BERSERKSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare berserkscan.com | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "page d'erreur Cloudflare servie par le site : « berserkscan.com | 523: Origin is unreachable »"
+      },
+      "url_demandee": "https://berserkscan.com/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://berserkscan.com/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://berserkscan.com/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "berserkscan.com | 523: Origin is unreachable",
+        "liensInternes": 2,
+        "octetsHtml": 6935
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "BLUELOCKSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare bluelockscan.com | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "page d'erreur Cloudflare servie par le site : « bluelockscan.com | 523: Origin is unreachable »"
+      },
+      "url_demandee": "https://bluelockscan.com/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://bluelockscan.com/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://bluelockscan.com/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "bluelockscan.com | 523: Origin is unreachable",
+        "liensInternes": 2,
+        "octetsHtml": 6941
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "CENTURYBOYS20TH",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://20thcenturyboys.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://20thcenturyboys.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "CHAINSAWMANSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://chainsawman-scan.com/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://chainsawman-scan.com/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "DANDADAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://dandadan.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://dandadan.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "DEMONSLAYERSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 522 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://demonslayerscan.com/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=522, URL=[https://demonslayerscan.com/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "DRSTONE",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://drstone.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://drstone.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "EPSILONSOFT",
+      "conclusion": "client_refuse",
+      "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
+      "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "cloudflare": {
+        "oui": true,
+        "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
+      },
+      "url_demandee": "https://epsilonsoft.to/manga/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://epsilonsoft.to/manga/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://epsilonsoft.to/manga/",
+        "verdict": "UTILE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "Epsilon Soft",
+        "liensInternes": 16,
+        "octetsHtml": 61626
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "FIREFORCE",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://fireforce.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://fireforce.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "HAIKYUU",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare haikyuu.fr | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "page d'erreur Cloudflare servie par le site : « haikyuu.fr | 523: Origin is unreachable »"
+      },
+      "url_demandee": "https://haikyuu.fr/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://haikyuu.fr/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://haikyuu.fr/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "haikyuu.fr | 523: Origin is unreachable",
+        "liensInternes": 2,
+        "octetsHtml": 6905
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "HELLSPARADISESCAN",
+      "conclusion": "parseur_casse",
+      "raison": "https://hellsparadisescan.com/ ne rend pas de contenu exploitable dans un vrai navigateur (Un instant…)",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "cloudflare": {
+        "oui": true,
+        "base": "page d'erreur Cloudflare servie par le site : « Un instant… »"
+      },
+      "url_demandee": "https://hellsparadisescan.com/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://hellsparadisescan.com/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://hellsparadisescan.com/",
+        "verdict": "VIDE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "Un instant…",
+        "liensInternes": 2,
+        "octetsHtml": 6971
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "HENTAIZONE",
+      "conclusion": "client_refuse",
+      "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
+      "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "cloudflare": {
+        "oui": true,
+        "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
+      },
+      "url_demandee": "https://hentaizone.xyz/manga/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://hentaizone.xyz/manga/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://hentaizone.xyz/manga/",
+        "verdict": "UTILE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "Manga Archive - HentaiZone",
+        "liensInternes": 48,
+        "octetsHtml": 237772
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "HUNTERXHUNTERSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://hunterxhunterscan.com/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://hunterxhunterscan.com/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "JAPSCANSFR",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 522 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://japscan.foo/manga",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=522, URL=[https://japscan.foo/manga]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "JPSCANVF",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 521 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://lirescanvf.com/manga-list/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=521, URL=[https://lirescanvf.com/manga-list/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "KINGDOMSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare kingdomscan.com | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "page d'erreur Cloudflare servie par le site : « kingdomscan.com | 523: Origin is unreachable »"
+      },
+      "url_demandee": "https://kingdomscan.com/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://kingdomscan.com/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://kingdomscan.com/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "kingdomscan.com | 523: Origin is unreachable",
+        "liensInternes": 2,
+        "octetsHtml": 6935
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "MANGAMANA",
+      "conclusion": "site_mort",
+      "raison": "chaîne TLS de l'origine cassée (manga-mana.com | 525: SSL handshake failed) — pas un problème de challenge",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "page d'erreur Cloudflare servie par le site : « manga-mana.com | 525: SSL handshake failed »"
+      },
+      "url_demandee": "https://www.manga-mana.com/liste-mangas",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://www.manga-mana.com/liste-mangas",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://www.manga-mana.com/liste-mangas",
+        "verdict": "TLS",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "manga-mana.com | 525: SSL handshake failed",
+        "liensInternes": 5,
+        "octetsHtml": 7501
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "MASHLESCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://mashlescan.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://mashlescan.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "MYHEROACADEMIASCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare myheroacademiascan.com | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "page d'erreur Cloudflare servie par le site : « myheroacademiascan.com | 523: Origin is unreachable »"
+      },
+      "url_demandee": "https://myheroacademiascan.com/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://myheroacademiascan.com/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://myheroacademiascan.com/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "myheroacademiascan.com | 523: Origin is unreachable",
+        "liensInternes": 2,
+        "octetsHtml": 6977
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "ONEPIECESCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://onepiecescan.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://onepiecescan.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "ONEPUNCHMANSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://onepunchmanscan.com/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://onepunchmanscan.com/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "ONISAGA_FR",
+      "conclusion": "client_refuse",
+      "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
+      "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "cloudflare": {
+        "oui": true,
+        "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
+      },
+      "url_demandee": "https://onisaga.com/browse",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://onisaga.com/browse",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://onisaga.com/browse",
+        "verdict": "UTILE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "Explore The Best Manga - OniSaga",
+        "liensInternes": 50,
+        "octetsHtml": 9796860
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "OSHINOKO",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 522 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://oshinoko.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=522, URL=[https://oshinoko.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "POSEIDONSCANS",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://poseidonscans.com/series",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://poseidonscans.com/series]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "READERGEN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 525 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://fr.readergen.fr/manga/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=525, URL=[https://fr.readergen.fr/manga/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SAKAMOTODAYS",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://sakamotodays.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://sakamotodays.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SCANBORUTO",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare scanboruto.fr | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "page d'erreur Cloudflare servie par le site : « scanboruto.fr | 523: Origin is unreachable »"
+      },
+      "url_demandee": "https://scanboruto.fr/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://scanboruto.fr/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://scanboruto.fr/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "scanboruto.fr | 523: Origin is unreachable",
+        "liensInternes": 2,
+        "octetsHtml": 6923
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SCANHENTAIMENU",
+      "conclusion": "client_refuse",
+      "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
+      "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "cloudflare": {
+        "oui": true,
+        "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
+      },
+      "url_demandee": "https://x-manga.org/manga/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://x-manga.org/manga/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://x-manga.org/manga/",
+        "verdict": "UTILE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "Manga Archive – X-MANGA",
+        "liensInternes": 79,
+        "octetsHtml": 122091
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SCANJUJUTSUKAISEN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare scanjujutsukaisen.com | 522: Connection timed out — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
+      },
+      "url_demandee": "https://scanjujutsukaisen.com/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://scanjujutsukaisen.com/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://scanjujutsukaisen.com/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "scanjujutsukaisen.com | 522: Connection timed out",
+        "liensInternes": 2,
+        "octetsHtml": 7021
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SNKSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://snkscan.com/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://snkscan.com/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SUSHISCAN",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert https://sushiscan.net, le moteur demande null — le parseur vise la mauvaise page",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "cloudflare": {
+        "oui": true,
+        "base": "classée SOURCE_BLOCKED par CloudFlareHelper, le détecteur du moteur"
+      },
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_BLOCKED",
+        "message": "source blocked by Cloudflare at https://c.sushiscan.net/wp-content/uploads85/BlackCloverTome1-001.webp",
+        "etapes": {
+          "latest": "OK n=24",
+          "details": "OK n=0",
+          "chapters": "OK n=59",
+          "pages": "OK n=184",
+          "image": "SOURCE_BLOCKED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://sushiscan.net",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Sushiscan - Bibliothèque de scans, festin de lectures",
+        "liensInternes": 137,
+        "octetsHtml": 799372
+      },
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=184"
+    },
+    {
+      "source": "TOKYOREVENGERS",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://tokyorevengers.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://tokyorevengers.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "TOONFR",
+      "conclusion": "client_refuse",
+      "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
+      "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "cloudflare": {
+        "oui": true,
+        "base": "classée CHALLENGE_REQUIRED par CloudFlareHelper, le détecteur du moteur"
+      },
+      "url_demandee": "https://toonfr.com/webtoon/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://toonfr.com/webtoon/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://toonfr.com/webtoon/",
+        "verdict": "UTILE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "Manga – Toonfr",
+        "liensInternes": 127,
+        "octetsHtml": 185132
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "VINLANDSAGA",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "cloudflare": {
+        "oui": true,
+        "base": "code HTTP 523 — propre à un proxy Cloudflare"
+      },
+      "url_demandee": "https://vinlandsaga.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://vinlandsaga.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    }
+  ]
+}

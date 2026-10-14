@@ -249,9 +249,33 @@ async function principal() {
   premier.arreter();
 
   const filtre = arg("--lang", "");
+  // Une source perso demandée **explicitement** doit être sondée. Le filtre
+  // `custom:` existe pour le balayage du catalogue (une source perso n'a pas de
+  // domaine register, elle demande son propre moteur), mais il rendait
+  // `--sources custom:…` impossible : la liste demandée était vidée, et la
+  // sonde répondait « 0 source à sonder » sans jamais l'expliquer.
+  //
+  // Mesuré le 2026-10-14 : le nom de contrat est `custom:` + **nom de fichier
+  // sans `.js`** (`Server.kt` : `CUSTOM_PREFIX` + `identiteDe`), et
+  // `dispatchCustom` retire le préfixe — sans lui, la commande part sur le
+  // chemin natif et répond `unknown custom source`. C'est ce nom qu'il faut
+  // passer ici, pas `SOURCE.id` ni le parseur natif du même site.
+  const explicite = aOption("--sources");
   const cibles = catalogue.filter(
-    (s) => !s.name.startsWith("custom:") && (!filtre || s.lang === filtre),
+    (s) =>
+      (explicite || !s.name.startsWith("custom:")) &&
+      (!filtre || s.lang === filtre),
   );
+  if (explicite && cibles.length === 0) {
+    // Une liste demandée puis vidée en silence est le piège « 0 résultat ne
+    // prouve rien » : la sonde affichait « 0 source à sonder » et rendait 0.
+    console.error(
+      `ECHEC — aucune source retenue sur ${catalogue.length} demandee(s). ` +
+        "Le nom est probablement faux : le contrat attend " +
+        '`custom:` + nom de fichier sans `.js`.',
+    );
+    process.exit(1);
+  }
   console.log(
     `${cibles.length} source(s) a sonder${filtre ? ` (langue ${filtre})` : ""}`,
   );

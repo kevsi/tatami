@@ -173,6 +173,13 @@ paires type ↔ structure sont **déclarées** dans le script ; son pendant côt
 Rust est `les_champs_de_history_entry_sont_en_snake_case`, qui fige les noms
 **émis**. Les deux se lisent mutuellement.
 
+**Neuvième porte : `pnpm moteur:check`** (`scripts/check-moteur-js.mjs`) refuse,
+dans `docs/*.js`, une construction que le moteur de l'application refuse et que
+Node accepte. Le sidecar évalue les sources avec **Nashorn 15.6**, pas avec V8 :
+une virgule finale dans les arguments d'un appel est de l'ES2017, donc rejetée
+par Nashorn et acceptée par le test hors ligne. Une source ainsi écrite est
+rejetée à chaud par le loader, et l'application n'affiche rien.
+
 **Commandes de vérification** (figées le 2026-10-05, tâche 0.12). Chacune
 précise son dossier, parce que la plupart échouent depuis la racine :
 
@@ -187,6 +194,7 @@ pnpm chemins:check      # aucun chemin affiché sans cheminLisible(…)
 pnpm pages:check        # le <img> du lecteur gère l'échec et le dit
 pnpm perso:check        # les sources perso sont une tuile, pas un encart
 pnpm ipc:check          # un type TS nomme les champs que le cœur sérialise
+pnpm moteur:check       # un script de source perso est évaluable par Nashorn
 pnpm test               # tests unitaires du front (node:test, lib/)
 pnpm build              # next build
 
@@ -1721,3 +1729,31 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   crie `erreur.verification.non.rejouable`. Même famille que « vérifier que la
   casse a eu lieu avant de conclure sur la porte », mais ici la casse partielle
   est **silencieusement insuffisante**.
+
+- **Un test qui dit « le test lit ce que le moteur lira » alors qu'il le prouve
+  pas.** Mesuré le 2026-10-14 : `scripts/test-source.mjs` chargeait une source
+  paresseuse avec `vm.runInContext`, et son commentaire affirmait « `vm` plutôt
+  qu'un `eval` bricolé, pour que le test lise exactement ce que le moteur
+  lira ». Le moteur est **Nashorn 15.6** (`engine/build.gradle.kts`) ; `vm` est
+  **V8**. Les trois sources écrites ce jour-là ont donc passé le test et ont été
+  **rejetées au chargement**, sur `<eval>:115:8 Expected an operand but found )`
+  — une virgule finale dans les arguments d'un appel, de l'ES2017. Corollaire :
+  un test qui rejoue du code hors de son moteur d'exécution **ne prouve que le
+  code**, jamais son évaluation ; et « le moteur recharge les sources à chaud »
+  est faux ici aussi — il y a bien un `boucleWatcher`, ce qui a rendu le défaut
+  visible dans le journal au lieu de le laisser silencieux. La seconde moitié de
+  la leçon : une **regex qui exige un `href` relatif** ne peut pas mordre un site
+  qui sert des URL absolues. Les trois sites servent `href="https://…/manga/…"`,
+  la fixture portait la forme relative, et le test hors ligne fut vert. Mesure :
+  les trois catalogues répondent 200 avec 24 / 13 / 24 liens, et 0 match.
+
+- **Le nom de contrat d'une source perso est `custom:` + le nom de fichier, et
+  la sonde ne pouvait pas en sonder une.** `Server.kt` compose `CUSTOM_PREFIX`
+  avec `identiteDe(fichier)` (le nom de fichier sans `.js`) ;
+  `dispatchCustom` retire le préfixe, donc un nom sans `custom:` part sur le
+  chemin **natif** et répond « unknown custom source ». Or `sonde-sources.mjs`
+  filtrait `custom:` — y compris ceux passés explicitement par `--sources`, donc
+  `--sources custom:x` sondait **0 source** en Silence. Corollaire : une liste
+  demandée puis vidée par un filtre est le piège « 0 résultat ne prouve rien » ;
+  la sonde le crie désormais. Et `SOURCE.id` n'est **pas** l'identité : il est lu
+  et validé, mais c'est le nom de fichier que la base et l'interface connaissent.

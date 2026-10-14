@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-14",
+  "releves": [
+    {
+      "source": "custom:bananascans",
+      "lang": "?",
+      "domaines": [],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "message": "200 OK sans resultat"
+    },
+    {
+      "source": "custom:hhentai-fr",
+      "lang": "?",
+      "domaines": [],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "message": "200 OK sans resultat"
+    },
+    {
+      "source": "custom:lire-manga",
+      "lang": "?",
+      "domaines": [],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "RuntimeException: java.io.IOException: HTTP 404 pour https://www.lire-manga.com/manga/list-mode/page/1/",
+      "urlFinale": "https://www.lire-manga.com/manga/list-mode/page/1/"
+    }
+  ]
+}

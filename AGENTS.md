@@ -1798,3 +1798,41 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   tout `invoke` répondait « Origin header is not a valid URL ». Une erreur
   d'IPC qui accuse l'origine est souvent une **page morte** : lire
   `location.href` avant de conclure quoi que ce soit sur l'IPC.
+
+- **Une URL d'image dans le HTML peut être entourée d'espaces, et le guillemet
+  peut être simple.** Mesuré le 2026-10-14, sur deux sites différents :
+  `src=" https://cdn.hhentai.fr/…/001.jpg"` (une espace **avant** l'URL) et
+  `data-src=' http://bananascans.com/…/00001_cover.jpeg '` (apostrophes
+  **simples**, deux espaces). Une regex qui exige `src="https` ou `data-src="`
+  ne mord donc **rien**, silencieusement, et le chapitre rend 0 page. Corollaire :
+  après une extraction à 0, la question n'est pas « quel est le bon sélecteur »
+  mais « **quelle forme le serveur écrit-il** » — la lire dans le HTML brut, et
+  la tolérer. Ici : `["']` des deux côtés, puis `trim()`.
+
+- **La première image `/wp-content/uploads/` de la page est le logo du site.**
+  Mesuré le 2026-10-14 sur lire-manga : la fiche annonçait
+  `lire-manga-com.png` (195x50) comme couverture de série. Le marqueur
+  sémantique existait dans la même balise : `itemprop="image"`. Corollaire :
+  un filtre « premier `/wp-content/uploads/` » est un filtre **par position** ;
+  il rend une réponse plausible et fausse, ce qui est pire qu'une erreur.
+
+- **Le texte d'une ancre peut porter des badges, pas le titre ; et une regex de
+  chapitre peut attraper le chapitre d'une AUTRE série.** Mesuré le
+  2026-10-14 sur lire-manga : les 43 séries s'appelaient toutes
+  « Completed Color » (statut + couleur, lus dans l'ancre), le vrai titre étant
+  dans `title="100% (Pope)"` ; et la fiche de « 100% (Pope) » annonçait 1
+  chapitre, `/sex-criminals-chapitre-3/`, extrait d'un widget de recommandation.
+  Les deux sont **silencieux et faux** : une liste correcte, et un chapitre
+  crédible. Corollaire : « le motif a mordu » ne veut pas dire « le motif a
+  attrapé **le bon** » ; une extraction qui rend *quelque chose* demande la même
+  preuve qu'une extraction qui rend *rien*.
+
+- **La sonde profonde est le seul juge, et elle rend un mot qui veut dire
+  quelque chose.** Mesuré le 2026-10-14 : `custom:hhentai-fr`,
+  `custom:bananascans` et `custom:lire-manga` passent les cinq étapes jusqu'à
+  `fetchImage` — 12/90/6, 5/3/190, 43/1/258 pages, toutes en `image/jpeg`. La
+  matinée, ces trois sources donnaient « 200 OK sans résultat », « 200 OK sans
+  résultat » et « 404 », et **aucune fixture n'avait vu aucun de ces défauts**.
+  Corollaire : une fixture est un texte écrit à la main par la même personne que
+  la regex — elle ne peut pas voir une forme qu'on n'a pas pensée. La seule
+  chose qui voie une forme qu'on n'a pas pensée, c'est le HTML du site.

@@ -9,11 +9,23 @@
       "etapes": {
         "latest": {
           "code": "OK",
+          "n": 5
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 3
+        },
+        "pages": {
+          "code": "OK",
           "n": 0
         }
       },
       "verdict": "INCERTAIN",
-      "message": "200 OK sans resultat"
+      "urlListe": null,
+      "message": "chapitre sans aucune image"
     },
     {
       "source": "custom:hhentai-fr",
@@ -23,11 +35,23 @@
       "etapes": {
         "latest": {
           "code": "OK",
+          "n": 12
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 90
+        },
+        "pages": {
+          "code": "OK",
           "n": 0
         }
       },
       "verdict": "INCERTAIN",
-      "message": "200 OK sans resultat"
+      "urlListe": null,
+      "message": "chapitre sans aucune image"
     },
     {
       "source": "custom:lire-manga",

@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use super::pagecache::PageCache;
 use super::supervisor::Supervisor;
@@ -175,6 +175,7 @@ fn latest_params() -> serde_json::Value {
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn latest(
+    app: AppHandle,
     sup: State<'_, Arc<Supervisor>>,
     cache: State<'_, Arc<PageCache>>,
     source: String,
@@ -205,7 +206,13 @@ pub async fn latest(
     if let Some(r) = &rating {
         params["contentRating"] = serde_json::json!(r);
     }
-    let mut r = into_result(sup.request_with_retry("latest", params, timeout).await?)?;
+    // Passage par le transport webview : une source derrière Cloudflare se voit
+    // refuser ici, et le navigateur passe. `request_avec_transport` ne le
+    // tente **qu'une fois par URL** et jamais pour un refus déjà résolu.
+    let mut r = into_result(
+        sup.request_avec_transport(&app, source.trim(), "latest", params, timeout)
+            .await?,
+    )?;
     ajouter_jetons_couverture(&cache, source.trim(), &mut r);
     tracing::info!(
         "latest ok: {} items",
@@ -256,6 +263,7 @@ pub fn into_result(envelope: serde_json::Value) -> Result<serde_json::Value, Str
 /// `chapters` : celle-ci récupère la liste des chapitres, celle-là la fiche.
 #[tauri::command]
 pub async fn details(
+    app: AppHandle,
     sup: State<'_, Arc<Supervisor>>,
     cache: State<'_, Arc<PageCache>>,
     source: String,
@@ -280,7 +288,7 @@ pub async fn details(
         "mangaTitle": manga_title.unwrap_or_default(),
     });
     let mut r = into_result(
-        sup.request_with_retry("details", params, DEEP_TIMEOUT)
+        sup.request_avec_transport(&app, source.trim(), "details", params, DEEP_TIMEOUT)
             .await?,
     )?;
     ajouter_jeton_couverture_unique(&cache, source.trim(), &mut r);
@@ -289,6 +297,7 @@ pub async fn details(
 
 #[tauri::command]
 pub async fn chapters(
+    app: AppHandle,
     sup: State<'_, Arc<Supervisor>>,
     source: String,
     manga_url: String,
@@ -310,7 +319,7 @@ pub async fn chapters(
         "mangaTitle": manga_title.unwrap_or_default(),
     });
     into_result(
-        sup.request_with_retry("chapters", params, DEEP_TIMEOUT)
+        sup.request_avec_transport(&app, source.trim(), "chapters", params, DEEP_TIMEOUT)
             .await?,
     )
 }
@@ -341,6 +350,7 @@ pub fn injecter_dims_et_token(arr: &mut [serde_json::Value], cache: &PageCache, 
 
 #[tauri::command]
 pub async fn pages(
+    app: AppHandle,
     sup: State<'_, Arc<Supervisor>>,
     pages_idx: State<'_, Arc<PageCache>>,
     source: String,
@@ -351,7 +361,7 @@ pub async fn pages(
     }
     let params = serde_json::json!({ "source": source.trim(), "chapterUrl": chapter_url });
     let mut result = into_result(
-        sup.request_with_retry("pages", params, DEEP_TIMEOUT)
+        sup.request_avec_transport(&app, source.trim(), "pages", params, DEEP_TIMEOUT)
             .await?,
     )?;
     if let Some(arr) = result.get_mut("pages").and_then(|v| v.as_array_mut()) {

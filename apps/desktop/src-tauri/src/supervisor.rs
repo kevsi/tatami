@@ -7,7 +7,7 @@
 //! - Chien de garde : toute sortie (crash ou EOF) => backoff puis relance.
 //! - stdout = protocole uniquement ; stderr du moteur redirigé en logs.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -55,6 +55,61 @@ const RETRY_BASE: Duration = Duration::from_millis(1500);
 /// `pub` pour le test de contrat : c'est cette fonction qui décide si un échec
 /// est rejoué, et une réponse d'erreur rejouée comme transitoire ferait boucler
 /// une source morte. Cf. `lib.rs`.
+/// L'URL à rejouer par le transport, extraite du message d'erreur.
+///
+/// Le moteur écrit `challenge at <url>` — c'est cette URL que l'interface
+/// passait déjà à `webview_lire`, mais **seulement** pour la commande qu'elle
+/// venait d'appeler. Elle est ici reprise au même endroit, pour tous les chemins.
+///
+/// ⚠️ Cette URL n'est pas forcément celle qui a échoué : mesuré le 2026-10-14
+/// sur EPSILONSOFT, la requête partait sur `beta.epsilonsoft.to` tandis que le
+/// message annonçait `epsilonsoft.to/manga/`. Rust refuse alors l'URL — c'est le
+/// comportement voulu, ce n'est pas un défaut du transport, mais une divergence
+/// du parseur amont, à corriger là-bas.
+pub fn extraire_url_challenge(message: &str) -> Option<String> {
+    let apres = message.split_once("challenge at ")?.1;
+    let url = apres.split_whitespace().next()?.trim();
+    if url.starts_with("http://") || url.starts_with("https://") {
+        Some(url.to_string())
+    } else {
+        None
+    }
+}
+
+/// Faut-il tenter le transport webview pour cet échec ?
+///
+/// Fonction **pure** : la décision est séparée de son exécution, donc elle se
+/// teste sans fenêtre ni application. Chaque exclusion est mesurée, pas supposée.
+///
+/// - `CHALLENGE_REQUIRED` → **oui**, une fois par URL : le navigateur passe là
+///   où OkHttp est refusé (mesuré le 2026-10-14, 158 285 octets sur HENTAIZONE).
+/// - `CHALLENGE_UNREPLAYABLE` → **jamais** : le rejeu est déjà refusé, rouvrir
+///   une fenêtre ne peut qu'échouer (mesuré le 2026-10-11).
+/// - `SOURCE_BLOCKED` → **jamais** : Cloudflare refuse **sans proposer de
+///   vérification**, il n'y a rien à résoudre.
+/// - `PARSE_ERROR`, `TIMEOUT`, `AUTH_REQUIRED`, `RATE_LIMITED`, réseau → **jamais** :
+///   aucun n'est un refus de signature, un navigateur n'y change rien.
+/// - URL déjà tentée → **jamais** : une tentative par URL, sinon une webview par
+///   commande.
+pub fn transport_a_tenter(message: &str, url: Option<&str>, deja_tente: bool) -> bool {
+    if deja_tente {
+        return false;
+    }
+    let Some(url) = url else {
+        return false;
+    };
+    if url.is_empty() || !message.contains("CHALLENGE_REQUIRED") {
+        return false;
+    }
+    // Un message portant **les deux codes** est un refus : Cloudflare joint
+    // parfois la demande de vérification au refus, et rouvrir une webview sur une
+    // source inaccessible ne peut qu'échouer. Ce test passe donc devant.
+    if message.contains("CHALLENGE_UNREPLAYABLE") {
+        return false;
+    }
+    true
+}
+
 pub fn is_transient(result: &Result<Value, String>) -> bool {
     let Err(message) = result else {
         return false;
@@ -147,6 +202,21 @@ pub struct Supervisor {
     /// User-agent du moteur, appris au `hello`. La fenêtre de résolution
     /// anti-bot s'en sert pour que la clearance soit émise pour le même agent.
     user_agent: Arc<Mutex<String>>,
+    /// URLs déjà passées par le transport webview, **pendant cette session**.
+    ///
+    /// ## Pourquoi une mémoire, et pas seulement une borne par appel
+    ///
+    /// Une borne par appel n'empêche pas la boucle : l'interface demande
+    /// `details`, puis `chapters`, puis `pages`, et chacune reçoit le même refus
+    /// sur une URL **différente**. Sans mémoire, chaque commande ouvrirait une
+    /// webview — sur une machine de 12 Go avec un JVM déjà chargé. La règle est
+    /// donc **une tentative par URL** : la première fois on essaie, la deuxième
+    /// on sait et on ne réessaie pas.
+    ///
+    /// Ce n'est pas une anticipation mais une mesure : le 2026-10-14, un
+    /// parcours HENTAIZONE a fait sept `chapters` refusés d'affilée, chacun sur
+    /// sa propre URL de série.
+    transports_tentes: Mutex<HashSet<String>>,
     /// Derniers avertissements du moteur sur les **scripts personalized**.
     ///
     /// Le moteur écrit sur stderr, jamais sur stdout (cf. contrat) : sans ce
@@ -200,6 +270,7 @@ impl Supervisor {
             child: Arc::new(Mutex::new(None)),
             engine_proc: Arc::new(Mutex::new(None)),
             user_agent: Arc::new(Mutex::new(String::new())),
+            transports_tentes: Mutex::new(HashSet::new()),
             avertissements: Arc::new(Mutex::new(Vec::new())),
             domaines_sources: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -614,6 +685,64 @@ impl Supervisor {
         }
     }
 
+    /// Requête au moteur, avec **un** passage par le transport webview si — et
+    /// seulement si — l'échec est un challenge rejouable jamais tenté.
+    ///
+    /// ## Pourquoi ici, et pas dans l'interface
+    ///
+    /// Tant que le transport n'était appelé que depuis `loadSource`, il ne
+    /// couvrait que `latest`. Mesuré le 2026-10-14 sur HENTAIZONE : la liste
+    /// passait, puis `details` et `chapters` échouaient — **chacune est une
+    /// autre URL**, et rien ne les faisait passer par le transport. Un parcours en
+    /// demande des dizaines : l'interface n'est donc pas l'endroit, c'est ici,
+    /// une fois, que tous les chemins passent.
+    ///
+    /// ## Une tentative par URL, pas une par commande
+    ///
+    /// Voir `transports_tentes`.
+    ///
+    /// Si le transport **échoue**, l'erreur d'origine est renvoyée telle quelle :
+    /// c'est elle que l'interface sait traduire, et un second message ici ferait
+    /// perdre au front la distinction entre « à vérifier » et « inaccessible ».
+    pub async fn request_avec_transport(
+        &self,
+        app: &tauri::AppHandle,
+        source: &str,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value, String> {
+        let premier = self.request(method, params.clone(), timeout).await;
+        let Err(erreur) = &premier else {
+            return premier;
+        };
+        let url = extraire_url_challenge(erreur);
+        let deja_tente = match &url {
+            Some(u) => self.transports_tentes.lock().await.contains(u),
+            None => true,
+        };
+        if !transport_a_tenter(erreur, url.as_deref(), deja_tente) {
+            return premier;
+        }
+        let url = url.expect("transport_a_tenter garantit l'URL");
+        self.transports_tentes.lock().await.insert(url.clone());
+        match crate::challenge::lire_par_transport(app, self, source, &url).await {
+            Ok(octets) => {
+                tracing::info!(
+                    "transport: {method} source={source} octets={octets} — nouvelle tentative"
+                );
+                self.request(method, params, timeout).await
+            }
+            Err(e) => {
+                // L'URL est **déjà** dans la mémoire des tentatives : elle ne sera
+                // pas réessayée au prochain appel. C'est ce qui borne la boucle
+                // quand le navigateur échoue à son tour.
+                tracing::warn!("transport: {method} source={source} échec : {e}");
+                premier
+            }
+        }
+    }
+
     async fn fail_pending(&self, reason: &str) {
         // `pending` puis `child` : conforme à l'invariant documenté dans
         // `request` (jamais `child` tenu en prenant `pending`).
@@ -671,6 +800,125 @@ pub fn dev_sidecar_paths() -> (PathBuf, String) {
 mod tests {
     use super::*;
     use tokio::process::Command as TestCommand;
+
+    // ---- Politique du transport webview -------------------------------------
+    //
+    // Les messages ci-dessous sont **pris dans le journal du 2026-10-14**, pas
+    // inventés : c'est exactement ce que le moteur a écrit.
+
+    /// Le cas nominal : un challenge rejouable ouvre le transport.
+    ///
+    /// Journal : `stdout erreur id=latest-… code=CHALLENGE_REQUIRED msg=challenge
+    /// at https://hentaizone.xyz/manga/`
+    #[test]
+    fn un_challenge_requiert_une_tente_de_transport() {
+        let message = "CHALLENGE_REQUIRED: challenge at https://hentaizone.xyz/manga/";
+        assert_eq!(
+            extraire_url_challenge(message).as_deref(),
+            Some("https://hentaizone.xyz/manga/")
+        );
+        assert!(transport_a_tenter(
+            message,
+            Some("https://hentaizone.xyz/manga/"),
+            false
+        ));
+    }
+
+    /// Un rejeu déjà refusé ne rouvre **jamais** une webview : l'utilisateur a
+    /// fait ce qu'il pouvait et le site refuse quand même.
+    #[test]
+    fn un_rejeu_refuse_ne_tente_jamais_le_transport() {
+        let message =
+            "CHALLENGE_UNREPLAYABLE: challenge at https://toonfr.com/webtoon/ (non rejouable)";
+        assert!(!transport_a_tenter(
+            message,
+            Some("https://toonfr.com/webtoon/"),
+            false
+        ));
+    }
+
+    /// Le vrai piège : un message qui porte **les deux codes** est un refus, pas
+    /// une demande. Cloudflare joint parfois les deux, et sans test d'ordre le
+    /// transport se rouvrirait sur une source inaccessible.
+    #[test]
+    fn un_message_qui_porte_les_deux_codes_est_traite_comme_un_refus() {
+        let message =
+            "CHALLENGE_UNREPLAYABLE: challenge at https://x.example/ — CHALLENGE_REQUIRED au premier essai";
+        assert!(
+            message.contains("CHALLENGE_REQUIRED"),
+            "le message porte bien les deux codes : c'est le cas à couvrir"
+        );
+        assert!(!transport_a_tenter(
+            message,
+            Some("https://x.example/"),
+            false
+        ));
+    }
+
+    /// Cloudflare refuse **sans proposer de vérification** : rien à résoudre.
+    #[test]
+    fn un_blocage_sans_verification_ne_tente_jamais() {
+        let message = "SOURCE_BLOCKED: source blocked by Cloudflare at https://x.example/";
+        assert!(!transport_a_tenter(
+            message,
+            Some("https://x.example/"),
+            false
+        ));
+    }
+
+    /// Une tentative par URL : c'est ce qui empêche une webview par commande.
+    #[test]
+    fn une_url_deja_tentee_ne_tente_plus() {
+        let message = "CHALLENGE_REQUIRED: challenge at https://hentaizone.xyz/manga/";
+        assert!(!transport_a_tenter(
+            message,
+            Some("https://hentaizone.xyz/manga/"),
+            true
+        ));
+    }
+
+    #[test]
+    fn sans_url_le_transport_ne_tente_pas() {
+        let message = "CHALLENGE_REQUIRED: challenge at ";
+        assert_eq!(extraire_url_challenge(message), None);
+        assert!(!transport_a_tenter(message, None, false));
+    }
+
+    /// Un 404, un délai ou une panne réseau ne sont pas des refus de signature :
+    /// un navigateur n'y change rien, et en ouvrir un serait du gaspillage.
+    #[test]
+    fn une_panne_reseau_ne_tente_pas_le_transport() {
+        for message in [
+            "TIMEOUT: delai depasse",
+            "UnknownHostException: hentaizone.xyz",
+            "PARSE_ERROR: html inattendu",
+            "AUTH_REQUIRED: this source asks for an account",
+            "404 NotFoundException",
+        ] {
+            assert!(
+                !transport_a_tenter(message, Some("https://hentaizone.xyz/"), false),
+                "{message} ne doit pas ouvrir de transport"
+            );
+        }
+    }
+
+    /// L'extracteur ne rend jamais autre chose qu'une URL http(s) : la garde de
+    /// `valider_url_challenge` existe pour ça, mais autant ne pas lui laisser du
+    /// travail qui n'est pas le sien.
+    #[test]
+    fn un_non_http_nest_pas_une_url_de_challenge() {
+        for url in [
+            "ftp://hentaizone.xyz/",
+            "javascript:alert(1)",
+            "hentaizone.xyz",
+        ] {
+            assert_eq!(
+                extraire_url_challenge(&format!("challenge at {url}")),
+                None,
+                "{url} ne doit pas être rendu"
+            );
+        }
+    }
 
     /// Un avertissement du moteur sur un script doit être **retenu** : c'est la
     /// seule trace qui dit à l'utilisateur que son fichier n'est pas chargé.

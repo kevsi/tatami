@@ -891,6 +891,16 @@ fn transport_label(source: &str) -> String {
 /// cachée, puis le pousse dans la mémoire du moteur.
 ///
 /// Renvoie le nombre d'octets de HTML injectés.
+///
+/// La commande Tauri est une **enveloppe** : toute la logique vit dans
+/// [`lire_par_transport`], appelable depuis le cœur.
+///
+/// Pourquoi cette séparation : le transport doit pouvoir être tenté depuis
+/// `Supervisor::request_avec_transport`, pour **toute** URL refusée et non
+/// seulement pour la commande que l'interface a appelée. Or un
+/// `#[tauri::command]` ne s'appelle qu'avec un `State<'_, _>`, impossible à
+/// fabriquer hors d'une application. Séparer les deux rend le cœur
+/// capable de se réessayer lui-même.
 #[tauri::command]
 pub async fn webview_lire(
     app: AppHandle,
@@ -898,19 +908,30 @@ pub async fn webview_lire(
     source: String,
     url: String,
 ) -> Result<usize, String> {
+    lire_par_transport(&app, &sup, &source, &url).await
+}
+
+/// Le transport lui-même : lit l'URL par un navigateur caché, injecte le corps
+/// dans la mémoire du moteur. Renvoie le nombre d'octets injectés.
+pub(crate) async fn lire_par_transport(
+    app: &AppHandle,
+    sup: &Supervisor,
+    source: &str,
+    url: &str,
+) -> Result<usize, String> {
     // **La liste blanche, avant tout.** Même validation que la fenêtre de
     // vérification, donc même garantie : l'hôte doit être l'un des domaines
     // connus du moteur pour cette source. On ne navigue jamais sur un hôte
     // annoncé par le site.
-    let domaines = sup.domaines_source(&source).await;
-    let parsed = match valider_url_challenge(&url, &domaines, None) {
+    let domaines = sup.domaines_source(source).await;
+    let parsed = match valider_url_challenge(url, &domaines, None) {
         Ok(parsed) => parsed,
         Err(error) => {
-            tracing::warn!("{}", diagnostic_refus_challenge(&source, &url));
+            tracing::warn!("{}", diagnostic_refus_challenge(source, url));
             return Err(error);
         }
     };
-    let label = transport_label(&source);
+    let label = transport_label(source);
     let fenetre = match app.get_webview_window(&label) {
         Some(existante) => {
             // Réutilisée : ouvrir une webview coûte un processus et de la
@@ -923,7 +944,7 @@ pub async fn webview_lire(
             // signaux contradictoires faisaient boucler le Turnstile), et
             // `.visible(false)` : l'utilisateur n'a rien à décider ici.
             let construite =
-                WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed.clone()))
+                WebviewWindowBuilder::new(app, &label, WebviewUrl::External(parsed.clone()))
                     .title(format!("Transport — {source}"))
                     .inner_size(1024.0, 768.0)
                     .visible(false)
@@ -946,7 +967,7 @@ pub async fn webview_lire(
     let mut interstitiel = true;
     while interstitiel && std::time::Instant::now() < limite {
         tokio::time::sleep(TRANSPORT_PAS).await;
-        interstitiel = lire_page(&app, &label)
+        interstitiel = lire_page(app, &label)
             .await
             .map(|page| page.interstitiel)
             // Une page illisible n'est pas une page résolue : on continue

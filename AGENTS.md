@@ -1787,9 +1787,24 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
 - **`transport_a_tenter` est testée et verte, et `latest` ne l'a pas empruntée.**
   La fonction est **pure**, ses tests passent sur le message exact du journal —
   et pourtant `latest` a rendu l'erreur d'origine en 516 ms, sans passer par le
-  transport. Ce n'est donc pas « la fonction a été oubliée » : c'est une
-  **contradiction mesurée** entre un test vert et un comportement réel. Elle
-  mérite un nom et une cause avant toute correction, pas un `if` de plus.
+  transport. **Cause trouvée le 2026-10-14, et c'est le genre de faute que rien
+  ne signale.** `Supervisor::request` ne renvoie dans `Err` que trois choses :
+  l'écriture sur stdin, le timeout, la mort du sidecar. L'erreur du **moteur**,
+  dont `CHALLENGE_REQUIRED`, arrive dans l'enveloppe `{ok:false, error:{…}}`,
+  donc dans **`Ok`**. Le code faisait `let Err(erreur) = &premier else { return
+  premier }` : il inspectait toujours le mauvais côté, et **le transport n'était
+  tenté sur aucune source, jamais**. Trois faits concordaient : aucune ligne
+  `transport:` dans le journal (dans ses deux branches), `latest` en 0,5 s sans
+  fenêtre de vérification, et une fonction pure testée **jamais alimentée**.
+  Corollaires : (a) un test qui fabrique sa propre chaîne éprouve un **cas
+  idéal**, pas le chemin réel — il faut tester sur la forme que la fonction
+  reçoit vraiment, ici l'enveloppe ; (b) un `Result` dont un seul côté est
+  réellement peuplé est une **omission déguisée** : `Err` serait le nom naturel
+  pour une erreur de moteur, et le fait de ne pas y passer toute la donnée a
+  coûté le chemin entier ; (c) après correction, la première ligne `transport:`
+  jamais vue est arrivée du premier coup — `transport: latest source=ASTRALMANGA
+  octets=6071`, avec la fenêtre de vérification ouverte et 3,3 s au lieu de
+  0,6 s.
 
 - **Une app en `cargo run` garde son serveur de dev par un autre arbre de
   processus.** Mesuré le 2026-10-14 : en arrêtant `tatami-desktop.exe` **et** son

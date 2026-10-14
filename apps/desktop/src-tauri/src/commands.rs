@@ -236,27 +236,33 @@ pub async fn latest(
 /// `tests/contrat_moteur.rs` rejoue sur **chaque** réponse enregistrée. Une
 /// régression ici ne casse rien à la compilation : elle vide un écran, ou
 /// transforme un challenge Cloudflare en « source morte ». Cf. `lib.rs`.
-pub fn into_result(envelope: serde_json::Value) -> Result<serde_json::Value, String> {
-    if envelope.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
-        Ok(envelope
-            .get("result")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null))
-    } else {
-        let e = envelope
-            .get("error")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
-        let code = e
-            .get("code")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("INTERNAL");
-        let msg = e
-            .get("message")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-        Err(format!("{code}: {msg}"))
+pub fn message_erreur(enveloppe: &serde_json::Value) -> Option<String> {
+    if enveloppe.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
+        return None;
     }
+    let e = enveloppe
+        .get("error")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let code = e
+        .get("code")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("INTERNAL");
+    let msg = e
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    Some(format!("{code}: {msg}"))
+}
+
+pub fn into_result(enveloppe: serde_json::Value) -> Result<serde_json::Value, String> {
+    if let Some(message) = message_erreur(&enveloppe) {
+        return Err(message);
+    }
+    Ok(enveloppe
+        .get("result")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null))
 }
 
 /// Tâche 0.17 : fiche détaillée (résumé, état, genres). Distinct de

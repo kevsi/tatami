@@ -91,6 +91,36 @@ pub fn extraire_url_challenge(message: &str) -> Option<String> {
 ///   aucun n'est un refus de signature, un navigateur n'y change rien.
 /// - URL déjà tentée → **jamais** : une tentative par URL, sinon une webview par
 ///   commande.
+///
+/// Le message d'erreur d'une réponse, quel que soit le côté par où il arrive.
+///
+/// **Pourquoi cette fonction existe.** Mesuré le 2026-10-14 :
+/// `Supervisor::request` ne met dans `Err` que trois choses — l'écriture sur
+/// stdin, le timeout, la mort du sidecar. L'erreur du **moteur**, dont
+/// `CHALLENGE_REQUIRED`, arrive dans l'enveloppe `{ok:false, error:{…}}`, donc
+/// dans **`Ok`**. Le code faisait `let Err(erreur) = &premier else { return
+/// premier }`, et inspectait donc toujours le mauvais côté : **le transport
+/// n'était tenté sur aucune source, jamais**.
+///
+/// Les trois faits qui le prouvent, tous mesurés :
+///  - aucune ligne `transport: …` dans le journal, jamais, dans les deux
+///    branches (succès et échec) ;
+///  - `latest` rendait `CHALLENGE_REQUIRED` en 0,5 s sur ASTRALMANGA, sans
+///    fenêtre de vérification ;
+///  - `transport_a_tenter`, pure et testée sur le message exact du journal,
+///    n'était **jamais alimentée** : un test vert sur une fonction qu'aucun
+///    appelant ne fournit d'échec.
+///
+/// Un `Err` reste traité comme une erreur : son message n'a pas d'URL de
+/// challenge, donc le transport ne sera pas tenté — le comportement est
+/// inchangé pour ces trois cas.
+pub fn erreur_de(resultat: &Result<Value, String>) -> Option<String> {
+    match resultat {
+        Err(e) => Some(e.clone()),
+        Ok(enveloppe) => crate::commands::message_erreur(enveloppe),
+    }
+}
+
 pub fn transport_a_tenter(message: &str, url: Option<&str>, deja_tente: bool) -> bool {
     if deja_tente {
         return false;
@@ -713,15 +743,15 @@ impl Supervisor {
         timeout: Duration,
     ) -> Result<Value, String> {
         let premier = self.request(method, params.clone(), timeout).await;
-        let Err(erreur) = &premier else {
+        let Some(erreur) = erreur_de(&premier) else {
             return premier;
         };
-        let url = extraire_url_challenge(erreur);
+        let url = extraire_url_challenge(&erreur);
         let deja_tente = match &url {
             Some(u) => self.transports_tentes.lock().await.contains(u),
             None => true,
         };
-        if !transport_a_tenter(erreur, url.as_deref(), deja_tente) {
+        if !transport_a_tenter(&erreur, url.as_deref(), deja_tente) {
             return premier;
         }
         let url = url.expect("transport_a_tenter garantit l'URL");
@@ -810,6 +840,62 @@ mod tests {
     ///
     /// Journal : `stdout erreur id=latest-… code=CHALLENGE_REQUIRED msg=challenge
     /// at https://hentaizone.xyz/manga/`
+    /// Le cas nominal : un challenge rejouable ouvre le transport.
+    ///
+    /// Journal : `stdout erreur id=latest-… code=CHALLENGE_REQUIRED msg=challenge
+    /// at https://hentaizone.xyz/manga/`
+    ///
+    /// Le message est testé **sur l'enveloppe réellement échouée**, pas sur une
+    /// chaîne fabriquée : c'est la forme que `Supervisor::request` rend
+    /// (`Ok` + `{ok:false}`). Tester sur une chaîne laissait passer le défaut
+    /// mesuré le 2026-10-14 — la fonction était verte, et jamais appelée.
+    #[test]
+    fn une_enveloppe_echouee_ouvre_le_transport() {
+        let reponse: Result<Value, String> = Ok(serde_json::json!({
+            "ok": false,
+            "error": {
+                "code": "CHALLENGE_REQUIRED",
+                "message": "challenge at https://hentaizone.xyz/manga/"
+            }
+        }));
+        let message = super::erreur_de(&reponse).expect("une enveloppe ok:false est une erreur");
+        assert!(message.contains("CHALLENGE_REQUIRED"), "{message}");
+        let url = extraire_url_challenge(&message);
+        assert_eq!(
+            url.as_deref(),
+            Some("https://hentaizone.xyz/manga/"),
+            "l'URL du challenge n'est pas lue dans l'enveloppe : le transport ne s'ouvrirait jamais"
+        );
+        assert!(
+            transport_a_tenter(&message, url.as_deref(), false),
+            "un challenge rejouable doit ouvrir le transport"
+        );
+    }
+
+    /// Une réponse réussie n'expose **aucun** message d'erreur : sans ce test,
+    /// une inversion de `message_erreur` ferait tenter le transport à chaque
+    /// chargement de catalogue.
+    #[test]
+    fn une_enveloppe_reussie_n_expose_aucun_message() {
+        let reponse: Result<Value, String> = Ok(serde_json::json!({
+            "ok": true,
+            "result": { "list": [] }
+        }));
+        assert_eq!(super::erreur_de(&reponse), None);
+    }
+
+    /// Un échec du cœur (timeout, sidecar mort) reste une erreur, et son
+    /// message ne contient aucune URL de challenge : le comportement doit être
+    /// inchangé, donc pas de transport.
+    #[test]
+    fn un_echec_du_coeur_ne_declenche_pas_de_transport() {
+        let reponse: Result<Value, String> = Err("timeout 30s sur latest".to_string());
+        let message = super::erreur_de(&reponse).expect("un Err est une erreur");
+        let url = extraire_url_challenge(&message);
+        assert!(url.is_none(), "{message}");
+        assert!(!transport_a_tenter(&message, url.as_deref(), false));
+    }
+
     #[test]
     fn un_challenge_requiert_une_tente_de_transport() {
         let message = "CHALLENGE_REQUIRED: challenge at https://hentaizone.xyz/manga/";

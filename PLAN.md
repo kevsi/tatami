@@ -2782,3 +2782,86 @@ node scripts\sonde-navigateur.mjs --sortie docs\mesures\navigateur-AAAAMM-JJ.jso
 **Ce qui décide.** Une source reclassée `UTILE` rejoint les cibles du transport.
 Une source toujours `MORTE` est retirée du catalogue, avec la date du relevé dans
 le motif — pour que la décision soit réversible et datée, pas superstitieuse.
+
+### Option 2 — trois défauts de parseur, pas un problème de transport (2026-10-14)
+
+La mesure décisive demandée portait sur une source dont le parseur n'était pas
+déjà condamné. Elle a été conduite sur **HENTAIZONE**, et au passage sur
+EPSILONSOFT et ASTRALMANGA. Résultat : **aucune des trois n'est un problème de
+transport.**
+
+**Ce que dit le bytecode des trois parseurs Madara.**
+
+| source | fait mesuré dans le bytecode | verdict |
+|---|---|---|
+| TOONFR | `listUrl = "webtoon/"` mais **pas** de surcharge `withoutAjax` → branche `admin-ajax.php`, qui rend **0 octet** même dans un vrai navigateur | défaut de parseur |
+| ASTRALMANGA | **aucune** surcharge `withoutAjax` non plus → même branche AJAX | défaut de parseur |
+| EPSILONSOFT | `ldc "beta.epsilonsoft.to"` + `iconst_1 → putfield withoutAjax`, donc pages HTML simples ; mais `listUrl` **par défaut** `manga/`, périmé (le site sert `/library`) | défaut de parseur |
+
+**Deux sources de vérité pour l'hôte, dans le même parseur.** Constantes lues
+dans `MadaraParser` : `"https://"`, `"/page/"`, `"manga/"` (le `listUrl` par
+défaut), `"manga-genre/"`. L'URL rapportée est **reconstruite** par le parseur,
+alors que la requête part sur un autre hôte :
+
+```
+requête réelle :  beta.epsilonsoft.to   → 403 cf-mitigated=challenge
+URL rapportée  :  https://epsilonsoft.to/manga/
+```
+
+Rust refuse alors l'URL (`challenge: hôte d'image refusé`) parce que l'hôte
+annoncé n'est pas un domaine connu de la source. **Le transport n'a donc jamais
+démarré pour EPSILONSOFT.**
+
+**Pour HENTAIZONE, l'URL est correcte** — requête `hentaizone.xyz`, message
+`challenge at https://hentaizone.xyz/manga/`, **même hôte**. Rust accepte. Et là
+le transport démarre, puis échoue.
+
+### Le point exact de rupture, et il est dans notre code
+
+Appel direct de la commande depuis la page (pour isoler le front de Rust) :
+
+```
+invoke('webview_lire', { source: 'HENTAIZONE', url: 'https://hentaizone.xyz/manga/' })
+  → ERREUR :: lecture du HTML rendu impossible
+```
+
+Donc : **front → Rust fonctionne**, la validation d'hôte passe, et l'échec est
+dans la lecture du HTML rendu :
+
+```rust
+let html = evaluer_javascript(&fenetre, "document.documentElement.outerHTML")
+    .and_then(|v| v.as_str().map(str::to_string))
+    .filter(|h| !h.is_empty())
+    .ok_or_else(|| "lecture du HTML rendu impossible".to_string())?;
+```
+
+Et **`resoudre_rendu` est absent de l'arbre commité** (0 occurrence). C'est
+exactement la fonction que le travail mis de côté (stash `20d6ba0`) ajoute. Le
+blocage de l'option B n'est donc pas une cible morte : c'est **le correctif non
+validé lui-même**.
+
+**Ce qui est prouvé et ce qui ne l'est pas.**
+- Prouvé : le transport est câblé, joignable, et son garde d'hôte laisse passer
+  une URL correcte.
+- Prouvé : `latest` échoue pour les trois sources, et **la cause est en amont**,
+  dans la configuration des parseurs.
+- **Non prouvé** : qu'un chapitre s'affiche. Toujours rien.
+- **Non expliqué** : pourquoi la lecture échoue alors qu'elle a réussi sur TOONFR
+  (170 995 octets mesurés le 2026-10-13). Hypothèse à vérifier : une taille de
+  page (HENTAIZONE 236 Ko contre TOONFR 177 Ko) qui dépasserait le canal de
+  retour. **Ce n'est qu'une hypothèse**, et elle ne vaut rien tant qu'elle n'a
+  pas été testée.
+
+### Deux pièges de mesure payés pour ce run
+
+1. **Un walk peut lire un état transitoire.** EPSILONSOFT et HENTAIZONE ont
+   tous deux affiché **6 cartes** puis **0** trois secondes plus tard, avec
+   `latest` en échec au journal. Le même nombre (6) pour deux sources
+   différentes est ce qui a fait tilter : ce n'était pas une liste de mangas.
+   Relire après stabilisation, et croiser avec le journal, pas se fier au premier
+   relevé.
+2. **`webview_lire` ne journalise pas ses échecs.** Il avertit quand il **refuse
+   une URL**, pas quand il échoue ensuite. Donc « aucune ligne `transport` dans le
+   journal » ne prouve pas « le transport n'a pas démarré » — c'est un appel
+   direct via `invoke` qui l'a montré. Corollaire général : **« aucune trace »
+   n'est pas « rien ne s'est passé »**, c'est « rien n'a été écrit ».

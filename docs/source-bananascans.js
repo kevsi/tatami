@@ -178,9 +178,14 @@ var SOURCE = {
         if (!html) return "[]";
 
         // **Jamais `src`** : c'est un GIF 1×1 transparent. Voir l'en-tête.
+        //
+        // Mesuré le 2026-10-14 sur un vrai chapitre (119 020 o) : l'attribut est
+        // `data-src=' … '` — **apostrophes simples**, et l'URL est **encadrée
+        // d'espaces**. Une regex qui cherche `data-src="` ne voit donc aucune
+        // balise, et le chapitre rend 0 page sans erreur.
         var pages = [];
         var vus = {};
-        var re = /<img[^>]+data-src="([^"]+)"[^>]*>/gi;
+        var re = /<img[^>]+data-src=["']([^"']+)["'][^>]*>/gi;
         var m;
         while ((m = re.exec(html)) !== null) {
             var src = SOURCE.image(m[1]);

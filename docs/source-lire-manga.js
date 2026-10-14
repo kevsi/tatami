@@ -68,26 +68,47 @@ var SOURCE = {
 
     // ------------------------------------------------------------------ liste
     getList: function (page, query) {
+        // Mesuré le 2026-10-14 : `/manga/list-mode/page/1/` répond **404**
+        // (225 241 o de page d'erreur), alors que `/manga/` répond 200 avec
+        // 297 100 o et 122 liens distincts. La pagination est `/manga/page/<n>/`,
+        // et `/manga/list-mode/` n'est qu'un lien de menu.
         var url = query
             ? SOURCE.baseUrl + "/?s=" + encodeURIComponent(query)
-            : SOURCE.baseUrl + "/manga/list-mode/page/" + page + "/";
+            : SOURCE.baseUrl + "/manga/page/" + page + "/";
         var html = http.get(url);
         if (!html) return "[]";
 
         // Une série est `/manga/<slug>/`. Les chapitres sont à la racine
         // (`/<slug>-chapitre-<n>/`), donc pas de collision ici — contrairement à
         // hhentai.fr, où les deux vivaient sous `/manga/`.
-        var re = /<a[^>]+href="([^"]*\/manga\/([a-z0-9-]+)\/)"[^>]*>([\s\S]*?)<\/a>/gi;
+        //
+        // Le **titre est dans l'attribut `title`**, pas dans le texte de l'ancre.
+        // Mesuré le 2026-10-14 : l'ancre contient les badges de statut et de
+        // couleur, donc `SOURCE.texte(interieur)` rendait « Completed Color »
+        // pour **les 43 séries** — un titre identique et faux, sans lever la
+        // moindre erreur. L'ancre porte bien `title="100% (Pope)"`.
+        var re = /<a([^>]*href="[^"]*\/manga\/([a-z0-9-]+)\/")([^>]*)>([\s\S]*?)<\/a>/gi;
         var vus = {};
         var resultats = [];
         var m;
         while ((m = re.exec(html)) !== null) {
             var slug = m[2];
+            // **Les liens de navigation vivent aussi sous `/manga/`.** Mesuré le
+            // 2026-10-14 sur `/manga/page/1/` : le catalogue annonce 44 liens,
+            // dont trois qui ne sont pas des séries — `/manga/list-mode/`
+            // (« Manga VF »), `/manga/page/` et `/manga/feed/`. Le premier de la
+            // liste était donc un menu, et il aurait été la « série » affichée
+            // en tête de grille.
+            if (slug === "list-mode" || slug === "page" || slug === "feed") continue;
             if (vus[slug]) continue;
-            var nom = SOURCE.texte(m[3]);
+            var attrs = m[1] + " " + m[3];
+            var attrTitre = /title="([^"]*)"/i.exec(attrs);
+            var attrHref = /href="([^"]*)"/i.exec(m[1]);
+            if (!attrHref) continue;
+            var nom = SOURCE.texte(attrTitre ? attrTitre[1] : m[4]);
             if (!nom) continue;
             vus[slug] = true;
-            var href = SOURCE.chemin(m[1]);
+            var href = SOURCE.chemin(attrHref[1]);
             resultats.push({ id: href, title: nom, coverUrl: "", url: href });
         }
         return JSON.stringify(resultats);
@@ -113,9 +134,18 @@ var SOURCE = {
         );
 
         var couverture = "";
-        var reCouv = /<img[^>]+(?:data-src|src)="([^"]*\/wp-content\/uploads\/[^"]+)"[^>]*>/gi;
+        // Mesuré le 2026-10-14 : la **première** image `/wp-content/uploads/`
+        // de la fiche est le logo du site (`lire-manga-com.png`, 195x50), et la
+        // fiche annonçait donc le logo comme couverture. Le marqueur est
+        // sémantique : `itemprop="image"`. La couverture de la série est en
+        // 400x531 ; celle du widget de recommandation est en 150x228 et n'a pas
+        // `itemprop`.
+        var reCouv = /<img[^>]*itemprop="image"[^>]*>/i;
         var c = reCouv.exec(html);
-        if (c) couverture = SOURCE.baseUrl + SOURCE.chemin(c[1]);
+        if (c) {
+            var u = /src=["']([^"']+)["']/i.exec(c[0]);
+            if (u) couverture = SOURCE.baseUrl + SOURCE.chemin(SOURCE.texte(u[1]));
+        }
 
         var resume = SOURCE.texte(
             (/<div[^>]+class="[^"]*(?:entry-content|desc)[^"]*"[^>]*>([\s\S]*?)<\/div>/i
@@ -127,23 +157,32 @@ var SOURCE = {
         if (brut.indexOf("en cours") >= 0) statut = "ongoing";
         else if (brut.indexOf("termin") >= 0) statut = "finished";
 
-        // Chapitres : `/<slug>-chapitre-<n>/`. Le site les présente du plus
-        // récent au plus ancien ; l'application attend l'inverse.
+        // Chapitres : mesurés le 2026-10-14 sur `/manga/100-pope/`, ils vivent
+        // dans `#chapterlist`, en `<li data-num="…">` avec un
+        // `<span class="chapternum">`, et leurs URL sont `/<slug>-vol-<n>/` —
+        // **pas** `/<slug>-chapitre-<n>/`.
+        //
+        // L'ancien motif `-chapitre-(\d+)` attrapait une recommandation d'une
+        // **autre série** : la fiche de « 100% (Pope) » annonçait 1 chapitre,
+        // `/sex-criminals-chapitre-3/`. Un chapitre sans erreur, et pas le bon.
+        var blocListe = /<div[^>]*id="chapterlist"[\s\S]*?<\/ul>/i.exec(html);
+        var zoneChap = blocListe ? blocListe[0] : "";
         var chapitres = [];
         var vus = {};
-        var reChap = /<a[^>]+href="([^"]*\/([a-z0-9-]+)-chapitre-(\d+)\/)"[^>]*>([\s\S]*?)<\/a>/gi;
+        var reChap =
+            /<li[^>]*data-num="([^"]*)"[\s\S]*?<a[^>]*href="([^"]*)"[\s\S]*?<span[^>]*class="chapternum"[^>]*>([\s\S]*?)<\/span>/gi;
         var m;
-        while ((m = reChap.exec(html)) !== null) {
-            var href = SOURCE.chemin(m[1]);
+        while ((m = reChap.exec(zoneChap)) !== null) {
+            var href = SOURCE.chemin(m[2]);
             if (vus[href]) continue;
             vus[href] = true;
-            var num = parseInt(m[3], 10);
-            var libelle = SOURCE.texte(m[4]);
+            var libelle = SOURCE.texte(m[3]);
+            var num = parseInt(libelle, 10);
             chapitres.push({
                 id: href,
                 // Le libellé prime : la numérotation du site redirige et ne se
                 // déduit pas de l'URL (voir l'en-tête).
-                title: libelle || "Chapitre " + num,
+                title: libelle || m[1],
                 number: isNaN(num) ? chapitres.length + 1 : num,
                 url: href,
             });

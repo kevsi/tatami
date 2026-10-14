@@ -183,11 +183,20 @@ var SOURCE = {
 
         var pages = [];
         var vus = {};
-        var re = /<img[^>]+(?:data-src|src)="(https:[^"]+)"/gi;
+        // **L'espace devant l'URL est dans le HTML servi.** Mesuré le
+        // 2026-10-14 sur `chapitre-87` (267 465 o, 33 images) :
+        // `<img id="image-0" src=" https://cdn.hhentai.fr/…/001.jpg">`. Une regex
+        // exigeant `src="https` ne mord donc **rien** — le chapitre rend 0 page,
+        // sans erreur, et la fixture ne le montrait pas.
+        var re = /<img[^>]+(?:data-src|src)=["']([^"']+)["']/gi;
         var m;
         while ((m = re.exec(zone)) !== null) {
-            var src = m[1];
-            if (src.indexOf(SOURCE.UPLOADS) < 0) continue;
+            var src = String(m[1]).trim();
+            // Les pages sont servies par `cdn.hhentai.fr`, **pas** par
+            // `/wp-content/uploads/` : filtrer sur `SOURCE.UPLOADS` les écartait
+            // toutes, même après le regex corrigé. On exige donc une extension
+            // d'image, ce qui écarte le logo et les vignettes sans nommer d'hôte.
+            if (!/^https?:\/\/\S+\.(?:jpe?g|png|webp|gif)$/i.test(src)) continue;
             if (vus[src]) continue;
             vus[src] = true;
             pages.push({ id: src, url: src });

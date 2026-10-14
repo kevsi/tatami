@@ -63,6 +63,20 @@ var SOURCE = {
 
     // ------------------------------------------------------------------ liste
     getList: function (page, query) {
+        // **Le site ne pagine pas.** Mesuré le 2026-10-14 : `/manga/?page=2/`
+        // et `?page=3/` renvoient la page 1 **au caractère près** — 770 856 o,
+        // les mêmes 19 séries, dans le même ordre. Le catalogue est piloté par
+        // des widgets (« Tendances » hebdomadaire / mensuel / annuel), pas par
+        // une liste paginée ; le paramètre est ignoré.
+        //
+        // Conséquence mesurée dans l'application : elle demandait la page 2,
+        // recevait les mêmes 19 séries, les **ajoutait** à la page 1, et
+        // affichait 38 cartes — chaque série en double, donc 19 clés React
+        // en double, signalées à chaque rendu. « Je n'ai pas mesuré la
+        // pagination au-delà de la page 1 », écrit en tête de ce fichier :
+        // c'était exactement l'angle mort.
+        if (page > 1 && !query) return "[]";
+
         var url = query
             ? SOURCE.baseUrl + "/?s=" + encodeURIComponent(query)
             : SOURCE.baseUrl + "/manga/?page=" + page + "/";

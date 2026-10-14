@@ -1730,6 +1730,17 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   casse a eu lieu avant de conclure sur la porte », mais ici la casse partielle
   est **silencieusement insuffisante**.
 
+- **Un site qui ignore la pagination duplique la grille, et seule l'application
+  le voit.** Mesuré le 2026-10-14 sur sushiscan.net : `/manga/?page=2/` renvoie
+  la page 1 **au caractère près** (770 856 o, mêmes 19 séries). Le test hors
+  ligne sur une réponse seule ne voyait rien — le fichier est propre ; c'est la
+  **suite** des pages qui révèle le doublon. Dans l'app, la page 2 s'ajoutait à
+  la page 1 : 38 cartes, 19 clés React en double, un avertissement à chaque
+  rendu, et l'impression utilisateur de « mangas dupliqués » — exacte.
+  Corollaire : avant de déclarer une liste correcte, demander **la page 2** et
+  la comparer à la page 1 ; réponse identique = pas de pagination, et la source
+  doit rendre vide au-delà de la page 1.
+
 - **Un test qui dit « le test lit ce que le moteur lira » alors qu'il le prouve
   pas.** Mesuré le 2026-10-14 : `scripts/test-source.mjs` chargeait une source
   paresseuse avec `vm.runInContext`, et son commentaire affirmait « `vm` plutôt

@@ -72,30 +72,47 @@ var SOURCE = {
         // `[^"]*` devant `/catalogue/` tolère l'URL absolue et la relative ;
         // les liens de genre sont `/genres/…`, donc ils ne tombent pas ici.
         var re = /<a([^>]*href="[^"]*\/catalogue\/([^"]+)\/")([^>]*)>([\s\S]*?)<\/a>/gi;
-        var vus = {};
-        var resultats = [];
+        // **Regrouper par slug, et garder la première occurrence.** Mesuré le
+        // 2026-10-14 : les 19 séries ont TOUTES une image dans le HTML, mais
+        // pas dans la même ancre — `/manga/` répète chaque série 2 à 6 fois
+        // (grille, « Tendances », widgets), et la **première** occurrence est
+        // parfois sans image. Marquer le slug comme « vu » à ce moment-là
+        // figeait la série sans couverture : 5 vignettes sur 19, alors que le
+        // site en sert 19.
+        //
+        // Corollaire : « j'ai déjà vu cette série » et « j'ai tout ce qu'il
+        // faut sur elle » sont deux questions différentes, et la seconde
+        // demande de continuer à regarder.
+        var parSlug = {};
         var m;
         while ((m = re.exec(html)) !== null) {
             var slug = SOURCE.texte(m[2]);
-            if (!slug || vus[slug]) continue;
+            if (!slug) continue;
             var attrs = m[1] + " " + m[3];
             var attrTitre = /title="([^"]*)"/i.exec(attrs);
-            // Mesuré le 2026-10-14 : la grille `/manga/` porte **19 séries
-            // distinctes**, mais seulement **5** ont une `<img>` imbriquée —
-            // les 14 autres n'ont qu'un titre. On ne les jette donc pas : une
-            // série sans couverture vaut mieux qu'une série absente, et le
-            // journal dira `URL vide` pour elle, ce qui est exact.
             var img = /<img[^>]+src="([^"]+)"/i.exec(m[4]);
             var nom = SOURCE.texte(attrTitre ? attrTitre[1] : m[4]);
-            if (!nom) continue;
-            vus[slug] = true;
-            var href = "/catalogue/" + slug + "/";
-            // La couverture est l'image imbriquée dans l'ancre. Le `?ver=` de
-            // WordPress est conservé tel quel : c'est un cache-buster du site.
+            if (!parSlug[slug]) {
+                parSlug[slug] = { slug: slug, titre: nom, couverture: "" };
+            }
+            var entree = parSlug[slug];
+            if (img && !entree.couverture) {
+                // La couverture est l'image imbriquée dans l'ancre. Le `?ver=`
+                // de WordPress est conservé tel quel : c'est un cache-buster.
+                entree.couverture = SOURCE.texte(img[1]);
+            }
+            if (!entree.titre && nom) entree.titre = nom;
+        }
+
+        var resultats = [];
+        for (var cle in parSlug) {
+            var e = parSlug[cle];
+            if (!e.titre) continue;
+            var href = "/catalogue/" + e.slug + "/";
             resultats.push({
                 id: href,
-                title: nom,
-                coverUrl: img ? SOURCE.texte(img[1]) : "",
+                title: e.titre,
+                coverUrl: e.couverture,
                 url: href,
             });
         }

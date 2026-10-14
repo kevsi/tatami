@@ -1835,4 +1835,22 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   résultat » et « 404 », et **aucune fixture n'avait vu aucun de ces défauts**.
   Corollaire : une fixture est un texte écrit à la main par la même personne que
   la regex — elle ne peut pas voir une forme qu'on n'a pas pensée. La seule
-  chose qui voie une forme qu'on n'a pas pensée, c'est le HTML du site.
+  chose qui voie une forme qu'on n'a pas pensée, c'est le HTML du site. Et la
+  sonde a sa propre lacune, mesurée : elle ne télécharge que des **pages de
+  chapitre**, jamais une **couverture**. Un parcours peut donc être « ACTIF » et
+  afficher une grille sans une seule vignette.
+
+- **Une valeur vide enregistrée en cache n'est pas une absence : c'est une
+  valeur qui fige.** Mesuré le 2026-10-14 sur `custom:hhentai-fr` : 12 cartes,
+  **1** vignette décodée. Le journal répétait `fetchCover … URL vide (refuse :)`
+  pour chaque série. La source, elle, fournissait 12 `coverUrl` sur 12 — donc
+  la faute était ailleurs, et `inserer` (`pagecache.rs`) renvoyait la
+  **première** inscription d'une clé sans jamais la réécrire : le `""` de la
+  première lecture restait jusqu'au redémarrage. Le **témoin qui a tranché** :
+  redémarrer l'application, sans toucher au code, est passé de 1/12 à 12/12.
+  Corollaires : (a) devant « la donnée n'arrive pas », **le redémarrage est une
+  mesure**, pas un remède — il vide les caches mémoire et distingue « la valeur
+  n'a jamais été reçue » de « la valeur a été reçue puis figée » ; (b) une
+  correction qui remplace une valeur vide doit laisser la **valeur connue** intacte
+  — le test inverse (`une_couverture_connue_ne_deroule_pas_sur_un_vide`) est ce
+  qui empêche le correctif d'être un effacement.

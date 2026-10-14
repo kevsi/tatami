@@ -73,7 +73,15 @@ var SOURCE = {
         // Une série est un lien `/manga/<slug>` **sans** `/vol`. Les chapitres
         // partagent le même préfixe : sans cette distinction, la liste est un
         // sommaire de chapitres.
-        var re = /<a[^>]+href="\/manga\/([a-z0-9-]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+        // Le site sert des URL **absolues** (`https://bananascans.com/manga/…`).
+        // Une regex exigeant `href="/manga/…"` ne trouve rien, sans lever
+        // d'erreur. `[^"]*` tolère les deux formes ; c'est le slug qui est
+        // capturé, le chemin est reconstruit pour le contrat.
+        //
+        // Le guillemet juste après le slug exclut de fait les chapitres
+        // (`/manga/harumichi/vol3` a une barre, pas un guillemet), sans avoir à
+        // l'exclure explicitement.
+        var re = /<a[^>]+href="[^"]*\/manga\/([a-z0-9-]+)"[^>]*>([\s\S]*?)<\/a>/gi;
         var vus = {};
         var resultats = [];
         var m;
@@ -135,7 +143,9 @@ var SOURCE = {
         // récent au plus ancien ; l'application attend l'inverse.
         var chapitres = [];
         var vus = {};
-        var reChap = /<a[^>]+href="(\/manga\/[a-z0-9-]+\/vol(\d+))"[^>]*>([\s\S]*?)<\/a>/gi;
+        // URL absolue tolérée, comme dans `getList`. Le groupe 1 reste le **chemin**,
+        // que le contrat attend.
+        var reChap = /<a[^>]+href="[^"]*(\/manga\/[a-z0-9-]+\/vol(\d+))"[^>]*>([\s\S]*?)<\/a>/gi;
         var m;
         while ((m = reChap.exec(html)) !== null) {
             if (vus[m[1]]) continue;

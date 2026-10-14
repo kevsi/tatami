@@ -67,23 +67,28 @@ var SOURCE = {
         var html = http.get(url);
         if (!html) return "[]";
 
+        // `href="https://hhentai.fr/manga/<slug>/"` : le site sert des URL
+        // **absolues**. Une regex qui exige `href="/manga/…"` ne trouve rien,
+        // sans lever d'erreur. `[^"]*` tolère les deux formes ; le chemin est
+        // reconstruit, parce que le contrat concatène `baseUrl`.
         var re = new RegExp(
-            '<a[^>]+href="(/manga/([a-z0-9-]+)/)"[^>]*>([\\s\\S]*?)</a>',
+            '<a[^>]+href="[^"]*\\/manga\\/([a-z0-9-]+)\\/"[^>]*>([\\s\\S]*?)</a>',
             "gi"
         );
         var vus = {};
         var resultats = [];
         var m;
         while ((m = re.exec(html)) !== null) {
-            var href = m[1];
-            var slug = m[2];
-            // Un chapitre est aussi un lien `/manga/…/` : sans cette exclusion,
-            // la liste serait un sommaire de chapitres plutôt qu'un catalogue.
-            if (href.indexOf("chapitre-") >= 0) continue;
+            var slug = m[1];
+            // Un chapitre `/manga/<slug>/chapitre-3/` ne matche pas ci-dessus :
+            // `[a-z0-9-]+` s'arrête à la barre et le motif exige la fin du
+            // guillemet. L'exclusion reste, par sécurité.
+            if (slug.indexOf("chapitre") >= 0) continue;
             if (vus[slug]) continue;
-            var nom = SOURCE.texte(m[3]);
+            var nom = SOURCE.texte(m[2]);
             if (!nom) continue;
             vus[slug] = true;
+            var href = "/manga/" + slug + "/";
             resultats.push({ id: href, title: nom, coverUrl: "", url: href });
         }
         return JSON.stringify(resultats);
@@ -132,7 +137,9 @@ var SOURCE = {
         var chapitres = [];
         var vus = {};
         var reChap = new RegExp(
-            '<a[^>]+href="(/manga/[a-z0-9-]+/chapitre-\\d+/)"[^>]*>([\\s\\S]*?)</a>',
+            // URL absolue tolérée : le site n'émet que des liens préfixés du
+            // domaine. Le groupe 1 reste le **chemin**, que le contrat attend.
+            '<a[^>]+href="[^"]*(\\/manga\\/[a-z0-9-]+\\/chapitre-\\d+\\/)[^"]*"[^>]*>([\\s\\S]*?)</a>',
             "gi"
         );
         var c;

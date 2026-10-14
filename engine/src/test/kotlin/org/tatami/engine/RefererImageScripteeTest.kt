@@ -63,6 +63,42 @@ class RefererImageScripteeTest {
     }
 
     @Test
+    fun `l'origine du site prime sur celle de l'image`() {
+        // Mesuré le 2026-10-14 sur sushiscan.net : les pages sont servies par
+        // `c1.sushiscan.net`, et le CDN répond 403 + page de vérification
+        // (4 572 o) à un Referer venant de lui-même. Avec l'origine du site :
+        // 200, 605 363 o, image/jpeg. Sans ce test, la correction pourrait
+        // revenir sans que rien ne le dise.
+        assertEquals(
+            "https://sushiscan.net/",
+            requeteImageScriptee(
+                "https://c1.sushiscan.net/wp-content/uploads13/SawakoTome30-001.jpg",
+                "https://sushiscan.net",
+            ).header("Referer"),
+        )
+    }
+
+    @Test
+    fun `une baseUrl illisible retombe sur l'origine de l'image`() {
+        // Une source ne doit pas pouvoir empecher ses propres images de se
+        // telecharger : une declaration fautive equivaut a « non declare ».
+        assertEquals(
+            "https://c1.sushiscan.net/",
+            requeteImageScriptee("https://c1.sushiscan.net/i/1.jpg", "pas une url").header("Referer"),
+        )
+        assertEquals(
+            "https://c1.sushiscan.net/",
+            requeteImageScriptee("https://c1.sushiscan.net/i/1.jpg", "   ").header("Referer"),
+        )
+    }
+
+    @Test
+    fun `l'origine du site ne transporte ni chemin ni jeton`() {
+        val referer = site_a_referer("https://sushiscan.net/catalogue/sawako/?jeton=secret")
+        assertEquals("https://sushiscan.net/", referer)
+    }
+
+    @Test
     fun `chaque origine donne son propre Referer`() {
         // Deux sources distinctes ne doivent pas se contaminer : le Referer
         // suit l'URL de l'image, pas une valeur mémorisée.

@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-14",
+  "releves": [
+    {
+      "source": "custom:sushiscan",
+      "lang": "?",
+      "domaines": [],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 19
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 30
+        },
+        "pages": {
+          "code": "OK",
+          "n": 205
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/jpeg"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": null,
+      "etapeEchec": "image"
+    }
+  ]
+}

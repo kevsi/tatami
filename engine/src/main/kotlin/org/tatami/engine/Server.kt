@@ -795,7 +795,7 @@ internal suspend fun dispatchCustom(
                 p.optString("coverUrl", ""),
                 "cover URL for custom source $id / $mangaUrl",
             )
-            telechargerImage(coverUrl, "cover body", context)
+            telechargerImage(coverUrl, "cover body", context, parser.meta.baseUrl)
         }
         "fetchImage" -> {
             // Même validation que `fetchCover`, et pour la même raison : sans
@@ -807,7 +807,7 @@ internal suspend fun dispatchCustom(
             // `.cbz`. Le test `FetchImageReseauLocalTest` le prouve en
             // vérifiant qu'un serveur local n'a reçu **aucune** requête.
             val pageUrl = validerUrlImage(p.reqString("pageUrl"), "page URL for custom source $id")
-            telechargerImage(pageUrl, "image body", context)
+            telechargerImage(pageUrl, "image body", context, parser.meta.baseUrl)
         }
         else -> throw ParamException("method $method not supported for custom sources")
     }
@@ -907,7 +907,7 @@ internal fun clientPourImage(context: EngineContext): OkHttpClient = context.cli
  * d'image à chaud ; le chemin **natif** (`fetch_octets`) en envoie déjà un,
  * le chemin scripté non — c'était une incohérence, pas une fonctionnalité.
  */
-internal fun requeteImageScriptee(url: String): okhttp3.Request {
+internal fun requeteImageScriptee(url: String, origineSite: String? = null): okhttp3.Request {
     // Une seule analyse, réutilisée : `Request.Builder().url()` refuse déjà
     // toute URL illisible, donc une branche « URL non analysable » ici serait
     // **inatteignable**. `toHttpUrl()` lève la même exception que `.url(url)`,
@@ -915,17 +915,51 @@ internal fun requeteImageScriptee(url: String): okhttp3.Request {
     val cible = url.toHttpUrl()
     return okhttp3.Request.Builder()
         .url(cible)
+        // L'**origine déclarée par la source** prime sur celle de l'image.
+        // Mesuré le 2026-10-14 sur sushiscan.net : les pages sont servies par
+        // `c1.sushiscan.net`, **un autre domaine**, et le CDN répond 403 +
+        // page de vérification (4 572 octets) à un `Referer` qui vient de
+        // lui-même. Avec `Referer: https://sushiscan.net/` : **200, 605 363
+        // octets, image/jpeg**. Un `Referer` déduit de l'image revient donc à
+        // se présenter comme un autre site qui la vole — ce qui est
+        // précisément ce que le serveur cherche à écarter.
+        //
+        // L'origine de l'image reste le repli : c'est le bon cas quand le
+        // script ne déclare rien, et le seul qui marche quand tout est servi
+        // depuis un même domaine (mesuré le 2026-10-13 sur rimuscan.fr).
+        //
         // `host` ne garde que l'hôte : le port est écarté, et surtout **jamais
         // le chemin ni la chaîne de requête**, qui peut porter un jeton.
-        .header("Referer", "${cible.scheme}://${cible.host}/")
+        .header("Referer", site_a_referer(origineSite) ?: "${cible.scheme}://${cible.host}/")
         .get()
         .build()
 }
 
+/**
+ * L'origine à annoncer dans le `Referer` : celle que le **script** déclare.
+ *
+ * `null` quand le script ne déclare rien d'exploitable, et l'appelant retombe
+ * alors sur l'origine de l'image. Une `baseUrl` illisible est traitée comme
+ * absente plutôt que comme une erreur : une source ne doit pas pouvoir
+ * empêcher ses propres images de se télécharger.
+ */
+internal fun site_a_referer(origineSite: String?): String? {
+    val brut = origineSite?.trim().orEmpty()
+    if (brut.isEmpty()) return null
+    val u = runCatching { brut.toHttpUrl() }.getOrNull() ?: return null
+    // Ni chemin ni requête : une URL de source peut porter un jeton.
+    return "${u.scheme}://${u.host}/"
+}
+
 /** Télécharge une image déjà validée et la rend en base64, comme le contrat l'attend. */
-private fun telechargerImage(url: String, quoi: String, context: EngineContext): JSONObject =
+private fun telechargerImage(
+    url: String,
+    quoi: String,
+    context: EngineContext,
+    origineSite: String? = null,
+): JSONObject =
     LIMITES_IMAGES.autourDe {
-        clientPourImage(context).newCall(requeteImageScriptee(url)).execute().use { resp ->
+        clientPourImage(context).newCall(requeteImageScriptee(url, origineSite)).execute().use { resp ->
             val bytes = octetsImage(resp, quoi)
             JSONObject()
                 .put("data", java.util.Base64.getEncoder().encodeToString(bytes))

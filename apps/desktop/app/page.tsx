@@ -2558,10 +2558,17 @@ export default function Home() {
             // Échec **silencieux sur l'erreur brute** : elle peut contenir une
             // URL, et le bandeau de challenge est le chemin prévu. On le dit
             // en une phrase traduite, sans promesse de réessai.
+            //
+            // Cas à part : une page de vérification encore affichée. Le cœur
+            // le signale par un code stable (`CHALLENGE_NOT_RESOLVED`) ; on
+            // montre alors la phrase traduite dédiée, et non la raison brute.
+            const texte = String(erreurTransport);
             setNotice(
-              t('challenge.transport.echoue', {
-                raison: String(erreurTransport).slice(0, 80),
-              }),
+              texte.includes('CHALLENGE_NOT_RESOLVED')
+                ? t('erreur.verification.non.rejouable', { source: nomSource(s) })
+                : t('challenge.transport.echoue', {
+                    raison: texte.slice(0, 80),
+                  }),
             );
           }
         }

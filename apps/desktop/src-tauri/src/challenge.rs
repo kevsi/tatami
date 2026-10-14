@@ -37,6 +37,9 @@ use super::supervisor::Supervisor;
 /// Cookie dont la présence marque la résolution du challenge.
 const CF_CLEARANCE: &str = "cf_clearance";
 const ERREUR_DOMAINE_CHALLENGE: &str = "CHALLENGE_DOMAIN_UNAVAILABLE";
+/// Le transport a relu une page de vérification au lieu du contenu. Code stable :
+/// l'interface le reconnaît pour afficher un message traduit, sans texte brut.
+const ERREUR_VERIFICATION_NON_RESOLUE: &str = "CHALLENGE_NOT_RESOLVED";
 /// Cadence de la surveillance automatique.
 const SURVEILLE_PAS: Duration = Duration::from_millis(1500);
 /// Au-delà, on arrête de surveiller : l'utilisateur a soit résolu (les
@@ -1102,10 +1105,11 @@ pub(crate) async fn lire_par_transport(
     // rejeu recevait alors du HTML sans catalogue. On refuse donc ici, avant
     // l'injection et avant de journaliser un succès.
     if est_page_de_verification(&corps) {
-        return Err(format!(
-            "la vérification n'est pas résolue sur {} : la page reçue est encore la page de contrôle",
-            parsed.host_str().unwrap_or("hôte inconnu")
-        ));
+        tracing::warn!(
+            "challenge: page de verification refusee source={source} host={}",
+            parsed.host_str().unwrap_or("?")
+        );
+        return Err(ERREUR_VERIFICATION_NON_RESOLUE.to_string());
     }
 
     tracing::info!(
@@ -1401,6 +1405,7 @@ mod tests {
         domaine_effectif, enregistrer_surveillance, est_page_de_verification, hote_public,
         resoudre_rendu, reste_interstitiel, retirer_surveillance, surveillances, transport_label,
         valider_url_challenge, Action, LectureCookies, ERREUR_DOMAINE_CHALLENGE,
+        ERREUR_VERIFICATION_NON_RESOLUE,
     };
 
     /// **Le defaut du 2026-10-11, en une assertion.** La surveillance a
@@ -1423,6 +1428,13 @@ mod tests {
 
     /// La page de verification d'Astral, telle que mesuree le 2026-10-14 : elle
     /// doit etre refusee avant injection.
+    /// Le code d'erreur doit rester stable : l'interface le reconnaît. Un renommage
+    /// silencieux ferait retomber le front sur le texte brut.
+    #[test]
+    fn le_code_de_verification_non_resolue_est_stable() {
+        assert_eq!(ERREUR_VERIFICATION_NON_RESOLUE, "CHALLENGE_NOT_RESOLVED");
+    }
+
     #[test]
     fn une_page_de_verification_n_est_jamais_injectee() {
         let verification = "<!DOCTYPE html><html><head><title>Just a moment...</title>\

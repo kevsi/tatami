@@ -1,0 +1,264 @@
+{
+    "origine":  "docs/mesures/audit-parcours-fr-2026-10-14.json — les sources FR dont le verdict moteur ne suffit pas a conclure (CHALLENGE_REQUIRED, INTERNAL, INCERTAIN, TIMEOUT_IMAGE, SOURCE_BLOCKED). Pour les autres, le verdict moteur EST la definition : ORIGIN_DOWN et SOURCE_DEAD disent que le site ne repond plus, PARSER_OUTDATED que le parseur ne reconnait plus la page.",
+    "regle":  "url = urlFinale du moteur (celle qu\u0027il a reellement demandee) ; a defaut, le premier domaine declare par le moteur pour cette source.",
+    "sources":  [
+                    {
+                        "source":  "ANIMESAMA",
+                        "url":  "https://anime-sama.to",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INCERTAIN"
+                    },
+                    {
+                        "source":  "ASTRALMANGA",
+                        "url":  "https://astral-manga.fr/manga/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "BANANASCAN",
+                        "url":  "https://banana-scan.com",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INCERTAIN"
+                    },
+                    {
+                        "source":  "BENTOSCAN",
+                        "url":  "https://bentoscan.com",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INCERTAIN"
+                    },
+                    {
+                        "source":  "BERSERKSCAN",
+                        "url":  "https://berserkscan.com/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "BLUELOCKSCAN",
+                        "url":  "https://bluelockscan.com/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "EPSILONSOFT",
+                        "url":  "https://epsilonsoft.to/manga/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "FMTEAM",
+                        "url":  "https://fmteam.fr",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "FRMANGA",
+                        "url":  "https://www.frmanga.com",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "HAIKYUU",
+                        "url":  "https://haikyuu.fr/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "HELLSPARADISESCAN",
+                        "url":  "https://hellsparadisescan.com/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "HENTAIZONE",
+                        "url":  "https://hentaizone.xyz/manga/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "HHENTAIFR",
+                        "url":  "https://hhentai.fr",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INCERTAIN"
+                    },
+                    {
+                        "source":  "HNISCANTRAD",
+                        "url":  "https://hni-scantrad.net",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "KINGDOMSCAN",
+                        "url":  "https://kingdomscan.com/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "LINEWEBTOONS_FR",
+                        "url":  "https://webtoons.com",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "LIRESCAN",
+                        "url":  "https://lire-scan.me",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INCERTAIN"
+                    },
+                    {
+                        "source":  "LUGNICASCANS",
+                        "url":  "https://lugnica-scans.com",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "LUNARHENTAI",
+                        "url":  "https://gloryscans.fr",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "MANGABALL_FR",
+                        "url":  "https://mangaball.net",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "MANGAFR",
+                        "url":  "https://www.mangafr.org",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INCERTAIN"
+                    },
+                    {
+                        "source":  "MANGAHUB",
+                        "url":  "https://mangahub.fr",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INCERTAIN"
+                    },
+                    {
+                        "source":  "MANGAMANA",
+                        "url":  "https://www.manga-mana.com/liste-mangas",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "MANGAMOINS",
+                        "url":  "https://mangamoins.com",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INCERTAIN"
+                    },
+                    {
+                        "source":  "MANGAPLUSPARSER_FR",
+                        "url":  "https://mangaplus.shueisha.co.jp",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "TIMEOUT_IMAGE"
+                    },
+                    {
+                        "source":  "MYHEROACADEMIASCAN",
+                        "url":  "https://myheroacademiascan.com/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "ONISAGA_FR",
+                        "url":  "https://onisaga.com/browse",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "PANTHEONSCAN",
+                        "url":  "https://pantheon-scan.com",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INCERTAIN"
+                    },
+                    {
+                        "source":  "PANTHEONSCAN_FR",
+                        "url":  "https://www.pantheon-scan.fr",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "PAPSCAN",
+                        "url":  "https://papscan.com",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INCERTAIN"
+                    },
+                    {
+                        "source":  "PORNHWASCANS",
+                        "url":  "https://pornhwascans.fr",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "RAIJINSCANS",
+                        "url":  "https://raijin-scans.fr",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INCERTAIN"
+                    },
+                    {
+                        "source":  "REVOLUTIONSCANTRAD",
+                        "url":  "https://www.revolutionscantrad.com",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "RIMUSCANS",
+                        "url":  "https://rimuscan.fr",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INCERTAIN"
+                    },
+                    {
+                        "source":  "SCANBORUTO",
+                        "url":  "https://scanboruto.fr/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "SCANHENTAIMENU",
+                        "url":  "https://x-manga.org/manga/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "SCANJUJUTSUKAISEN",
+                        "url":  "https://scanjujutsukaisen.com/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "SEINEMANGA",
+                        "url":  "https://www.seinemanga.com",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "SUSHISCAN",
+                        "url":  "https://sushiscan.net",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "SOURCE_BLOCKED"
+                    },
+                    {
+                        "source":  "SUSHISCANFR",
+                        "url":  "https://sushiscan.fr",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "TOOMICSFR",
+                        "url":  "https://toomics.com",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    },
+                    {
+                        "source":  "TOONFR",
+                        "url":  "https://toonfr.com/webtoon/",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "CHALLENGE_REQUIRED"
+                    },
+                    {
+                        "source":  "XXXREVOLUTIONSCANTRAD",
+                        "url":  "https://xxx.revolutionscantrad.com",
+                        "groupe":  "audit",
+                        "verdictMoteur":  "INTERNAL"
+                    }
+                ]
+}

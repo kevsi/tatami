@@ -1,0 +1,1861 @@
+{
+  "date": "2026-10-14",
+  "releves": [
+    {
+      "source": "ANIMESAMA",
+      "lang": "fr",
+      "domaines": [
+        "anime-sama.to",
+        "anime-sama.eu"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 24
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "urlListe": "https://anime-sama.to/catalogue/07-ghost",
+      "message": "aucun chapitre"
+    },
+    {
+      "source": "ANTEIKUSCAN",
+      "lang": "fr",
+      "domaines": [
+        "anteikuscan.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "PARSER_OUTDATED",
+          "n": 0
+        }
+      },
+      "verdict": "PARSER_OUTDATED",
+      "message": "ParseException: Cannot find \"#series_tags_page\" at https://qemow.com/go/3115960?subid1=anteikuscan.fr",
+      "urlFinale": "https://qemow.com/go/3115960?subid1=anteikuscan.fr"
+    },
+    {
+      "source": "ASTRALMANGA",
+      "lang": "fr",
+      "domaines": [
+        "astral-manga.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://astral-manga.fr/manga/",
+      "urlFinale": "https://astral-manga.fr/manga/"
+    },
+    {
+      "source": "ASTRAMES",
+      "lang": "fr",
+      "domaines": [
+        "astrames.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "PARSER_OUTDATED",
+          "n": 0
+        }
+      },
+      "verdict": "PARSER_OUTDATED",
+      "message": "ParseException: Cannot find \"#series_tags_page\" at https://qemow.com/go/3115960?subid1=astrames.fr",
+      "urlFinale": "https://qemow.com/go/3115960?subid1=astrames.fr"
+    },
+    {
+      "source": "BANANASCAN",
+      "lang": "fr",
+      "domaines": [
+        "banana-scan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "message": "200 OK sans resultat"
+    },
+    {
+      "source": "BENTOSCAN",
+      "lang": "fr",
+      "domaines": [
+        "bentoscan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "message": "200 OK sans resultat"
+    },
+    {
+      "source": "BERSERKSCAN",
+      "lang": "fr",
+      "domaines": [
+        "berserkscan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://berserkscan.com/",
+      "urlFinale": "https://berserkscan.com/"
+    },
+    {
+      "source": "BLUELOCKSCAN",
+      "lang": "fr",
+      "domaines": [
+        "bluelockscan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://bluelockscan.com/",
+      "urlFinale": "https://bluelockscan.com/"
+    },
+    {
+      "source": "BLUESOLO",
+      "lang": "fr",
+      "domaines": [
+        "www1.bluesolo.org"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "NotFoundException: . Status=404, URL=[https://www1.bluesolo.org/manga/]",
+      "urlFinale": "https://www1.bluesolo.org/manga/"
+    },
+    {
+      "source": "CENTURYBOYS20TH",
+      "lang": "fr",
+      "domaines": [
+        "20thcenturyboys.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://20thcenturyboys.fr/]",
+      "urlFinale": "https://20thcenturyboys.fr/"
+    },
+    {
+      "source": "CHAINSAWMANSCAN",
+      "lang": "fr",
+      "domaines": [
+        "chainsawman-scan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://chainsawman-scan.com/]",
+      "urlFinale": "https://chainsawman-scan.com/"
+    },
+    {
+      "source": "DANDADAN",
+      "lang": "fr",
+      "domaines": [
+        "dandadan.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://dandadan.fr/]",
+      "urlFinale": "https://dandadan.fr/"
+    },
+    {
+      "source": "DEMONSLAYERSCAN",
+      "lang": "fr",
+      "domaines": [
+        "demonslayerscan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=522, URL=[https://demonslayerscan.com/]",
+      "urlFinale": "https://demonslayerscan.com/"
+    },
+    {
+      "source": "DRSTONE",
+      "lang": "fr",
+      "domaines": [
+        "drstone.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://drstone.fr/]",
+      "urlFinale": "https://drstone.fr/"
+    },
+    {
+      "source": "EDSCANLATION",
+      "lang": "fr",
+      "domaines": [
+        "edscanlation.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Hôte inconnu (edscanlation.fr)"
+    },
+    {
+      "source": "ENLIGNEMANGA",
+      "lang": "fr",
+      "domaines": [
+        "www.enlignemanga.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Hôte inconnu (www.enlignemanga.com)"
+    },
+    {
+      "source": "EPSILONSOFT",
+      "lang": "fr",
+      "domaines": [
+        "beta.epsilonsoft.to"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://epsilonsoft.to/manga/",
+      "urlFinale": "https://epsilonsoft.to/manga/"
+    },
+    {
+      "source": "ETHERALRADIANCE",
+      "lang": "fr",
+      "domaines": [
+        "www.etheralradiance.eu"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Hôte inconnu (www.etheralradiance.eu)"
+    },
+    {
+      "source": "FIREFORCE",
+      "lang": "fr",
+      "domaines": [
+        "fireforce.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://fireforce.fr/]",
+      "urlFinale": "https://fireforce.fr/"
+    },
+    {
+      "source": "FMTEAM",
+      "lang": "fr",
+      "domaines": [
+        "fmteam.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "JSONException: JSONObject[\"adult\"] is not a string (class java.lang.Integer : 0)."
+    },
+    {
+      "source": "FRMANGA",
+      "lang": "fr",
+      "domaines": [
+        "www.frmanga.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "ConnectException: Failed to connect to www.frmanga.com/198.251.84.92:443"
+    },
+    {
+      "source": "FRSCAN",
+      "lang": "fr",
+      "domaines": [
+        "fr-scan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "PARSER_OUTDATED",
+          "n": 0
+        }
+      },
+      "verdict": "PARSER_OUTDATED",
+      "message": "ParseException: Root not found at http://ww80.fr-scan.com/?subid1=e2fb0db9-c79f-11f1-af64-1ab4acc8f37c",
+      "urlFinale": "http://ww80.fr-scan.com/?subid1=e2fb0db9-c79f-11f1-af64-1ab4acc8f37c"
+    },
+    {
+      "source": "FRSCANSCOM",
+      "lang": "fr",
+      "domaines": [
+        "frscans.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Hôte inconnu (frscans.com)"
+    },
+    {
+      "source": "FURYOSOCIETY",
+      "lang": "fr",
+      "domaines": [
+        "furyosociety.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 24
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 36
+        },
+        "pages": {
+          "code": "OK",
+          "n": 59
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/jpeg"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": "https://furyosociety.com/series/zetton-sensei/",
+      "etapeEchec": "image"
+    },
+    {
+      "source": "HAIKYUU",
+      "lang": "fr",
+      "domaines": [
+        "haikyuu.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://haikyuu.fr/",
+      "urlFinale": "https://haikyuu.fr/"
+    },
+    {
+      "source": "HARMONYSCAN",
+      "lang": "fr",
+      "domaines": [
+        "harmony-scan.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 12
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 8
+        },
+        "pages": {
+          "code": "OK",
+          "n": 19
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/jpeg"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": "https://harmony-scan.fr/manga/the-novices-frontline/",
+      "etapeEchec": "image"
+    },
+    {
+      "source": "HELLSPARADISESCAN",
+      "lang": "fr",
+      "domaines": [
+        "hellsparadisescan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://hellsparadisescan.com/",
+      "urlFinale": "https://hellsparadisescan.com/"
+    },
+    {
+      "source": "HENTAIORIGINES",
+      "lang": "fr",
+      "domaines": [
+        "hentai-origines.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 24
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 53
+        },
+        "pages": {
+          "code": "OK",
+          "n": 15
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/webp"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": "https://hentai-origines.com/manga/yaribeya-gurashi/",
+      "etapeEchec": "image"
+    },
+    {
+      "source": "HENTAISCANTRADVF",
+      "lang": "fr",
+      "domaines": [
+        "hentai.scantrad-vf.cc"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "PARSER_OUTDATED",
+          "n": 0
+        }
+      },
+      "verdict": "PARSER_OUTDATED",
+      "message": "ParseException: Root not found at https://hentai.scantrad-vf.cc/manga/",
+      "urlFinale": "https://hentai.scantrad-vf.cc/manga/"
+    },
+    {
+      "source": "HENTAIZONE",
+      "lang": "fr",
+      "domaines": [
+        "hentaizone.xyz"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://hentaizone.xyz/manga/",
+      "urlFinale": "https://hentaizone.xyz/manga/"
+    },
+    {
+      "source": "HHENTAIFR",
+      "lang": "fr",
+      "domaines": [
+        "hhentai.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "message": "200 OK sans resultat"
+    },
+    {
+      "source": "HNISCANTRAD",
+      "lang": "fr",
+      "domaines": [
+        "hni-scantrad.net"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "JSONException: JSONObject[\"adult\"] is not a string (class java.lang.Integer : 0)."
+    },
+    {
+      "source": "HUNTERXHUNTERSCAN",
+      "lang": "fr",
+      "domaines": [
+        "hunterxhunterscan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://hunterxhunterscan.com/]",
+      "urlFinale": "https://hunterxhunterscan.com/"
+    },
+    {
+      "source": "INOVASCANMANGA",
+      "lang": "fr",
+      "domaines": [
+        "inovascanmanga.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "NotFoundException: . Status=404, URL=[https://vlxx69.net/api/manga/discover?search=&sort=trending&status=all&genre=all&type=all&year=all]",
+      "urlFinale": "https://vlxx69.net/api/manga/discover?search=&sort=trending&status=all&genre=all&type=all&year=all"
+    },
+    {
+      "source": "JAPSCANSFR",
+      "lang": "fr",
+      "domaines": [
+        "japscan.foo",
+        "japscans.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=522, URL=[https://japscan.foo/manga]",
+      "urlFinale": "https://japscan.foo/manga"
+    },
+    {
+      "source": "JPMANGAS",
+      "lang": "fr",
+      "domaines": [
+        "jpmangas.xyz"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Hôte inconnu (jpmangas.xyz)"
+    },
+    {
+      "source": "JPSCANVF",
+      "lang": "fr",
+      "domaines": [
+        "lirescanvf.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=521, URL=[https://lirescanvf.com/manga-list/]",
+      "urlFinale": "https://lirescanvf.com/manga-list/"
+    },
+    {
+      "source": "KAIJUNO8",
+      "lang": "fr",
+      "domaines": [
+        "kaijuno8.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 1
+        },
+        "details": {
+          "code": "PARSER_OUTDATED"
+        }
+      },
+      "verdict": "PARSER_OUTDATED",
+      "urlListe": "https://kaijuno8.fr",
+      "message": "ParseException: Cannot find \"#All_chapters\" at https://asiafilm.org/4/ebd97cbb70c0230615625ad4eca22808"
+    },
+    {
+      "source": "KINGDOMSCAN",
+      "lang": "fr",
+      "domaines": [
+        "kingdomscan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://kingdomscan.com/",
+      "urlFinale": "https://kingdomscan.com/"
+    },
+    {
+      "source": "LELMANGA",
+      "lang": "fr",
+      "domaines": [
+        "www.lelmanga.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 20
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 129
+        },
+        "pages": {
+          "code": "OK",
+          "n": 22
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/webp"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": "https://www.lelmanga.com/manhua/my-wife-is-a-demon-queen",
+      "etapeEchec": "image"
+    },
+    {
+      "source": "LELSCANVF",
+      "lang": "fr",
+      "domaines": [
+        "lelscanfr.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 24
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 32
+        },
+        "pages": {
+          "code": "OK",
+          "n": 61
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/webp"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": "https://www.lelscanfr.com/manga/maria-no-danzai",
+      "etapeEchec": "image"
+    },
+    {
+      "source": "LINEWEBTOONS_FR",
+      "lang": "fr",
+      "domaines": [
+        "webtoons.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "IllegalStateException: Required value was null."
+    },
+    {
+      "source": "LIRESCAN",
+      "lang": "fr",
+      "domaines": [
+        "lire-scan.me"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "message": "200 OK sans resultat"
+    },
+    {
+      "source": "LUGNICASCANS",
+      "lang": "fr",
+      "domaines": [
+        "lugnica-scans.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "SSLHandshakeException: Read error: ssl=000001F7C2247968: Failure in SSL library, usually a protocol error\nerror:10000438:SSL routines:OPENSSL_internal:TLSV1_ALERT_INTERNAL_ERROR (..\\ssl\\tls_record.cc:"
+    },
+    {
+      "source": "LUNARHENTAI",
+      "lang": "fr",
+      "domaines": [
+        "gloryscans.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "SSLHandshakeException: java.security.cert.CertPathValidatorException: Trust anchor for certification path not found."
+    },
+    {
+      "source": "LUNARSCANS",
+      "lang": "fr",
+      "domaines": [
+        "lunarscans.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Hôte inconnu (lunarscans.fr)"
+    },
+    {
+      "source": "MANGABALL_FR",
+      "lang": "fr",
+      "domaines": [
+        "mangaball.net"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "IllegalStateException: CSRF token not found"
+    },
+    {
+      "source": "MANGAFIRE_FR",
+      "lang": "fr",
+      "domaines": [
+        "mangafire.to"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 24
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 5
+        },
+        "pages": {
+          "code": "OK",
+          "n": 79
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/jpeg"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": "https://mangafire.to/title/pm59x-youre-the-only-one-i-can-see",
+      "etapeEchec": "image"
+    },
+    {
+      "source": "MANGAFR",
+      "lang": "fr",
+      "domaines": [
+        "www.mangafr.org"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "message": "200 OK sans resultat"
+    },
+    {
+      "source": "MANGAHUB",
+      "lang": "fr",
+      "domaines": [
+        "mangahub.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 24
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 77
+        },
+        "pages": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "urlListe": "https://mangahub.fr/manga/my-condition-is-divorce/",
+      "message": "chapitre sans aucune image"
+    },
+    {
+      "source": "MANGAKAWAII",
+      "lang": "fr",
+      "domaines": [
+        "www.mangakawaii.io"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "HttpStatusException: . Status=410, URL=[https://www.mangakawaii.io/manga-list/]",
+      "urlFinale": "https://www.mangakawaii.io/manga-list/"
+    },
+    {
+      "source": "MANGAMANA",
+      "lang": "fr",
+      "domaines": [
+        "www.manga-mana.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://www.manga-mana.com/liste-mangas",
+      "urlFinale": "https://www.manga-mana.com/liste-mangas"
+    },
+    {
+      "source": "MANGAMOINS",
+      "lang": "fr",
+      "domaines": [
+        "mangamoins.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 5
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "urlListe": "https://mangamoins.com/",
+      "message": "aucun chapitre"
+    },
+    {
+      "source": "MANGAPLUSPARSER_FR",
+      "lang": "fr",
+      "domaines": [
+        "mangaplus.shueisha.co.jp"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 9
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 6
+        },
+        "pages": {
+          "code": "OK",
+          "n": 53
+        },
+        "image": {
+          "code": "HANG",
+          "type": null
+        }
+      },
+      "verdict": "TIMEOUT_IMAGE",
+      "urlListe": "https://mangaplus.shueisha.co.jp/titles/700005",
+      "etapeEchec": "image",
+      "message": "aucune reponse"
+    },
+    {
+      "source": "MANGASORIGINES",
+      "lang": "fr",
+      "domaines": [
+        "mangas-origines.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 16
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 212
+        },
+        "pages": {
+          "code": "OK",
+          "n": 19
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/jpeg"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": "https://mangas-origines.fr/oeuvre/return-of-the-mad-demon/",
+      "etapeEchec": "image"
+    },
+    {
+      "source": "MANGASORIGINESUNOFFICIAL",
+      "lang": "fr",
+      "domaines": [
+        "crunchyscan.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "PARSER_OUTDATED",
+          "n": 0
+        }
+      },
+      "verdict": "PARSER_OUTDATED",
+      "message": "ParseException: Root not found at https://qemow.com/go/3115960?subid1=crunchyscan.fr",
+      "urlFinale": "https://qemow.com/go/3115960?subid1=crunchyscan.fr"
+    },
+    {
+      "source": "MANGASSCANS",
+      "lang": "fr",
+      "domaines": [
+        "mangas-scans.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Hôte inconnu (mangas-scans.com)"
+    },
+    {
+      "source": "MASHLESCAN",
+      "lang": "fr",
+      "domaines": [
+        "mashlescan.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://mashlescan.fr/]",
+      "urlFinale": "https://mashlescan.fr/"
+    },
+    {
+      "source": "MYHEROACADEMIASCAN",
+      "lang": "fr",
+      "domaines": [
+        "myheroacademiascan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://myheroacademiascan.com/",
+      "urlFinale": "https://myheroacademiascan.com/"
+    },
+    {
+      "source": "NINEMANGA_FR",
+      "lang": "fr",
+      "domaines": [
+        "fr.niadd.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "PARSER_OUTDATED",
+          "n": 0
+        }
+      },
+      "verdict": "PARSER_OUTDATED",
+      "message": "ParseException: Cannot find \"ul.direlist\" at https://fr.niadd.com/category/index_1",
+      "urlFinale": "https://fr.niadd.com/category/index_1"
+    },
+    {
+      "source": "ONEPIECESCAN",
+      "lang": "fr",
+      "domaines": [
+        "onepiecescan.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://onepiecescan.fr/]",
+      "urlFinale": "https://onepiecescan.fr/"
+    },
+    {
+      "source": "ONEPUNCHMANSCAN",
+      "lang": "fr",
+      "domaines": [
+        "onepunchmanscan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://onepunchmanscan.com/]",
+      "urlFinale": "https://onepunchmanscan.com/"
+    },
+    {
+      "source": "ONISAGA_FR",
+      "lang": "fr",
+      "domaines": [
+        "onisaga.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://onisaga.com/browse",
+      "urlFinale": "https://onisaga.com/browse"
+    },
+    {
+      "source": "OSHINOKO",
+      "lang": "fr",
+      "domaines": [
+        "oshinoko.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=522, URL=[https://oshinoko.fr/]",
+      "urlFinale": "https://oshinoko.fr/"
+    },
+    {
+      "source": "PANTHEONSCAN",
+      "lang": "fr",
+      "domaines": [
+        "pantheon-scan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "message": "200 OK sans resultat"
+    },
+    {
+      "source": "PANTHEONSCAN_FR",
+      "lang": "fr",
+      "domaines": [
+        "www.pantheon-scan.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "SSLPeerUnverifiedException: Hostname www.pantheon-scan.fr not verified:\n    certificate: sha256/BZbHVIVPSjNwwXfgDxWq2BFmDRst9BzKdMUes2jJ9hY=\n    DN: CN=cluster128.hosting.ovh.net\n    subjectAltNames: "
+    },
+    {
+      "source": "PAPSCAN",
+      "lang": "fr",
+      "domaines": [
+        "papscan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "message": "200 OK sans resultat"
+    },
+    {
+      "source": "PORNHWASCANS",
+      "lang": "fr",
+      "domaines": [
+        "pornhwascans.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "SSLHandshakeException: java.security.cert.CertPathValidatorException: Trust anchor for certification path not found."
+    },
+    {
+      "source": "POSEIDONSCANS",
+      "lang": "fr",
+      "domaines": [
+        "poseidonscans.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://poseidonscans.com/series]",
+      "urlFinale": "https://poseidonscans.com/series"
+    },
+    {
+      "source": "RAIJINSCANS",
+      "lang": "fr",
+      "domaines": [
+        "raijin-scans.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "message": "200 OK sans resultat"
+    },
+    {
+      "source": "READERGEN",
+      "lang": "fr",
+      "domaines": [
+        "fr.readergen.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=525, URL=[https://fr.readergen.fr/manga/]",
+      "urlFinale": "https://fr.readergen.fr/manga/"
+    },
+    {
+      "source": "REAPERSCANS_FR",
+      "lang": "fr",
+      "domaines": [
+        "reaper-scans.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "NotFoundException: . Status=404, URL=[https://reaper-scans.fr/series/]",
+      "urlFinale": "https://reaper-scans.fr/series/"
+    },
+    {
+      "source": "REVOLUTIONSCANTRAD",
+      "lang": "fr",
+      "domaines": [
+        "www.revolutionscantrad.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "SSLHandshakeException: Chain validation failed"
+    },
+    {
+      "source": "RIMUSCANS",
+      "lang": "fr",
+      "domaines": [
+        "rimuscan.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 0
+        }
+      },
+      "verdict": "INCERTAIN",
+      "message": "200 OK sans resultat"
+    },
+    {
+      "source": "SAKAMOTODAYS",
+      "lang": "fr",
+      "domaines": [
+        "sakamotodays.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://sakamotodays.fr/]",
+      "urlFinale": "https://sakamotodays.fr/"
+    },
+    {
+      "source": "SCANBORUTO",
+      "lang": "fr",
+      "domaines": [
+        "scanboruto.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://scanboruto.fr/",
+      "urlFinale": "https://scanboruto.fr/"
+    },
+    {
+      "source": "SCANHENTAI",
+      "lang": "fr",
+      "domaines": [
+        "scan-hentai.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Ceci est habituellement une erreur temporaire qui se produit durant la résolution du nom d’hôte et qui signifie que le serveur local n’a pas reçu de réponse d’un serveur faisant "
+    },
+    {
+      "source": "SCANHENTAIMENU",
+      "lang": "fr",
+      "domaines": [
+        "x-manga.org"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://x-manga.org/manga/",
+      "urlFinale": "https://x-manga.org/manga/"
+    },
+    {
+      "source": "SCANJUJUTSUKAISEN",
+      "lang": "fr",
+      "domaines": [
+        "scanjujutsukaisen.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://scanjujutsukaisen.com/",
+      "urlFinale": "https://scanjujutsukaisen.com/"
+    },
+    {
+      "source": "SCANMANGA",
+      "lang": "fr",
+      "domaines": [
+        "scan-manga.me"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Hôte inconnu (scan-manga.me)"
+    },
+    {
+      "source": "SCANTRAD",
+      "lang": "fr",
+      "domaines": [
+        "hentai-scantrad.org",
+        "scan-trad.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "PARSER_OUTDATED",
+          "n": 0
+        }
+      },
+      "verdict": "PARSER_OUTDATED",
+      "message": "ParseException: Cannot find \"#filter-wrapper\" at https://hentai-scantrad.org/manga/",
+      "urlFinale": "https://hentai-scantrad.org/manga/"
+    },
+    {
+      "source": "SCANTRADUNION",
+      "lang": "fr",
+      "domaines": [
+        "scantrad-union.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 24
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 551
+        },
+        "pages": {
+          "code": "OK",
+          "n": 70
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/jpeg"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": "https://scantrad-union.com/manga/giant-killing/",
+      "etapeEchec": "image"
+    },
+    {
+      "source": "SCANTRADVF",
+      "lang": "fr",
+      "domaines": [
+        "scantrad-vf.me"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "PARSER_OUTDATED",
+          "n": 0
+        }
+      },
+      "verdict": "PARSER_OUTDATED",
+      "message": "ParseException: Root not found at https://qemow.com/go/3115960?subid1=scantrad-vf.me",
+      "urlFinale": "https://qemow.com/go/3115960?subid1=scantrad-vf.me"
+    },
+    {
+      "source": "SCANVF",
+      "lang": "fr",
+      "domaines": [
+        "www.scan-vf.net"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 24
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 1200
+        },
+        "pages": {
+          "code": "OK",
+          "n": 56
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/webp"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": "https://www.scan-vf.net/one_piece",
+      "etapeEchec": "image"
+    },
+    {
+      "source": "SCANVFORG",
+      "lang": "fr",
+      "domaines": [
+        "scanvf.org"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "PARSER_OUTDATED",
+          "n": 0
+        }
+      },
+      "verdict": "PARSER_OUTDATED",
+      "message": "ParseException: Cannot find \"#filter-wrapper\" at https://scanvf.org/manga",
+      "urlFinale": "https://scanvf.org/manga"
+    },
+    {
+      "source": "SEINEMANGA",
+      "lang": "fr",
+      "domaines": [
+        "www.seinemanga.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "SSLHandshakeException: java.security.cert.CertPathValidatorException: Trust anchor for certification path not found."
+    },
+    {
+      "source": "SNKSCAN",
+      "lang": "fr",
+      "domaines": [
+        "snkscan.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://snkscan.com/]",
+      "urlFinale": "https://snkscan.com/"
+    },
+    {
+      "source": "STARBOUNDSCANS",
+      "lang": "fr",
+      "domaines": [
+        "starboundscans.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Hôte inconnu (starboundscans.com)"
+    },
+    {
+      "source": "SUSHISCAN",
+      "lang": "fr",
+      "domaines": [
+        "sushiscan.net"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 24
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 59
+        },
+        "pages": {
+          "code": "OK",
+          "n": 184
+        },
+        "image": {
+          "code": "SOURCE_BLOCKED",
+          "type": null
+        }
+      },
+      "verdict": "SOURCE_BLOCKED",
+      "urlListe": "https://sushiscan.net/catalogue/black-clover/",
+      "etapeEchec": "image",
+      "message": "source blocked by Cloudflare at https://c.sushiscan.net/wp-content/uploads85/BlackCloverTome1-001.webp"
+    },
+    {
+      "source": "SUSHISCANFR",
+      "lang": "fr",
+      "domaines": [
+        "sushiscan.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 24
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 10
+        },
+        "pages": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "urlListe": "https://sushiscan.fr/catalogue/the-ruined-world-was-mistaken-for-a-game/",
+      "message": "HttpStatusException: Gateway Time-out. Status=504, URL=[https://sushiscan.fr/the-ruined-world-was-mistaken-for-a-game-chapitre-0/]"
+    },
+    {
+      "source": "TOKYOREVENGERS",
+      "lang": "fr",
+      "domaines": [
+        "tokyorevengers.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://tokyorevengers.fr/]",
+      "urlFinale": "https://tokyorevengers.fr/"
+    },
+    {
+      "source": "TOOMICSFR",
+      "lang": "fr",
+      "domaines": [
+        "toomics.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "StreamResetException: stream was reset: PROTOCOL_ERROR"
+    },
+    {
+      "source": "TOONFR",
+      "lang": "fr",
+      "domaines": [
+        "toonfr.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "CHALLENGE_REQUIRED",
+          "n": 0
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "message": "challenge at https://toonfr.com/webtoon/",
+      "urlFinale": "https://toonfr.com/webtoon/"
+    },
+    {
+      "source": "VFSCAN",
+      "lang": "fr",
+      "domaines": [
+        "www.vfscan.net"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Hôte inconnu (www.vfscan.net)"
+    },
+    {
+      "source": "VINLANDSAGA",
+      "lang": "fr",
+      "domaines": [
+        "vinlandsaga.fr"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "ORIGIN_DOWN",
+          "n": 0
+        }
+      },
+      "verdict": "ORIGIN_DOWN",
+      "message": "HttpStatusException: . Status=523, URL=[https://vinlandsaga.fr/]",
+      "urlFinale": "https://vinlandsaga.fr/"
+    },
+    {
+      "source": "WEBTOONS_FR",
+      "lang": "fr",
+      "domaines": [
+        "webtoons.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 20
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 209
+        },
+        "pages": {
+          "code": "OK",
+          "n": 241
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/jpeg"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": "https://www.webtoons.com/fr/drama/reborn-rich/list?title_no=7231",
+      "etapeEchec": "image"
+    },
+    {
+      "source": "WEEBDEX_FR",
+      "lang": "fr",
+      "domaines": [
+        "weebdex.org"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Ceci est habituellement une erreur temporaire qui se produit durant la résolution du nom d’hôte et qui signifie que le serveur local n’a pas reçu de réponse d’un serveur faisant "
+    },
+    {
+      "source": "XXXREVOLUTIONSCANTRAD",
+      "lang": "fr",
+      "domaines": [
+        "xxx.revolutionscantrad.com"
+      ],
+      "date": "2026-10-14",
+      "etapes": {
+        "latest": {
+          "code": "INTERNAL",
+          "n": 0
+        }
+      },
+      "verdict": "INTERNAL",
+      "message": "SSLHandshakeException: Chain validation failed"
+    }
+  ]
+}

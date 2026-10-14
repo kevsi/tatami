@@ -63,7 +63,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 const PORTA_CDP = Number(process.env.CDP_PORT ?? 9223);
-const CLE_CIBLES = "docs/mesures/navigateur-cibles.json";
+const CLE_CIBLES = arg("cibles", "docs/mesures/navigateur-cibles.json");
 /** Plafond de l'attente de stabilité, en secondes. Garde-fou, pas la mesure. */
 const ATTENTE_STABILITE_S = 25;
 /**

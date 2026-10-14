@@ -1,0 +1,559 @@
+{
+  "date": "2026-10-14",
+  "groupe": "audit",
+  "navigateur": "Edg/155.0.4283.45",
+  "portCdp": 9223,
+  "question": "Un vrai navigateur obtient-il du contenu sur les URLs que le client HTTP du moteur n'atteint pas ?",
+  "lecture": {
+    "MORTE": {
+      "signification": "Origine injoignable (Cloudflare 522 délai dépassé / 523 éteinte) — aucun client ne peut la lire",
+      "nombre": 7
+    },
+    "TLS": {
+      "signification": "TLS (525, handshake d'origine cassé) — pas un problème de challenge",
+      "nombre": 1
+    },
+    "UTILE": {
+      "signification": "SERVIE par le navigateur — cible réelle pour le transport",
+      "nombre": 23
+    },
+    "VIDE": {
+      "signification": "200 sans contenu exploitable — l'URL demandée est mauvaise ou l'AJAX est vide",
+      "nombre": 8
+    },
+    "PERIMEE": {
+      "signification": "404 sur CETTE URL — à elle seule elle ne dit **pas** si le site est vivant. Mesuré le 2026-10-14 : `/manga/` répond 404 sur epsilonsoft.to alors que `beta.epsilonsoft.to` (le seul hôte que le parser interroge) rend 86 liens. Le site-vivant est une **autre** mesure.",
+      "nombre": 0
+    },
+    "BLOQUE": {
+      "signification": "Aucun statut 200 et pas de code d'origine Cloudflare connu — **verdict à ne pas conclure** : réessayer ou lire la page manuellement",
+      "nombre": 4
+    }
+  },
+  "resultats": [
+    {
+      "source": "ANIMESAMA",
+      "url": "https://anime-sama.to",
+      "statuts": [
+        200
+      ],
+      "titre": "Anime-Sama - Streaming et catalogage d'animes et scans.",
+      "liensInternes": 328,
+      "octetsHtml": 1497801,
+      "ms": 6592,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "ASTRALMANGA",
+      "url": "https://astral-manga.fr/manga/",
+      "statuts": [
+        403,
+        200,
+        404
+      ],
+      "titre": "Astral Manga",
+      "liensInternes": 0,
+      "octetsHtml": 31583,
+      "ms": 21431,
+      "verdict": "VIDE"
+    },
+    {
+      "source": "BANANASCAN",
+      "url": "https://banana-scan.com",
+      "statuts": [
+        200
+      ],
+      "titre": "banana-scan.com",
+      "liensInternes": 10,
+      "octetsHtml": 196304,
+      "ms": 13891,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "BENTOSCAN",
+      "url": "https://bentoscan.com",
+      "statuts": [
+        200
+      ],
+      "titre": "bentoscan.com for sale — memorable .com domain | ED.com",
+      "liensInternes": 4,
+      "octetsHtml": 42453,
+      "ms": 6707,
+      "verdict": "VIDE"
+    },
+    {
+      "source": "BERSERKSCAN",
+      "url": "https://berserkscan.com/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "berserkscan.com | 523: Origin is unreachable",
+      "liensInternes": 2,
+      "octetsHtml": 6935,
+      "ms": 14485,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "BLUELOCKSCAN",
+      "url": "https://bluelockscan.com/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "bluelockscan.com | 523: Origin is unreachable",
+      "liensInternes": 2,
+      "octetsHtml": 6941,
+      "ms": 18960,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "EPSILONSOFT",
+      "url": "https://epsilonsoft.to/manga/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "Epsilon Soft",
+      "liensInternes": 16,
+      "octetsHtml": 61626,
+      "ms": 14913,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "FMTEAM",
+      "url": "https://fmteam.fr",
+      "statuts": [
+        200
+      ],
+      "titre": "FMTeam — Lecteur Manga",
+      "liensInternes": 31,
+      "octetsHtml": 45581,
+      "ms": 5339,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "FRMANGA",
+      "url": "https://www.frmanga.com",
+      "statuts": [],
+      "titre": "www.frmanga.com",
+      "liensInternes": 0,
+      "octetsHtml": 318733,
+      "ms": 179441,
+      "verdict": "BLOQUE"
+    },
+    {
+      "source": "HAIKYUU",
+      "url": "https://haikyuu.fr/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "haikyuu.fr | 523: Origin is unreachable",
+      "liensInternes": 2,
+      "octetsHtml": 6905,
+      "ms": 18403,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "HELLSPARADISESCAN",
+      "url": "https://hellsparadisescan.com/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "Un instant…",
+      "liensInternes": 2,
+      "octetsHtml": 6971,
+      "ms": 39807,
+      "verdict": "VIDE"
+    },
+    {
+      "source": "HENTAIZONE",
+      "url": "https://hentaizone.xyz/manga/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "Manga Archive - HentaiZone",
+      "liensInternes": 48,
+      "octetsHtml": 237772,
+      "ms": 11484,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "HHENTAIFR",
+      "url": "https://hhentai.fr",
+      "statuts": [
+        200
+      ],
+      "titre": "Histoire d'Hentai - Accueil",
+      "liensInternes": 75,
+      "octetsHtml": 273684,
+      "ms": 5833,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "HNISCANTRAD",
+      "url": "https://hni-scantrad.net",
+      "statuts": [
+        200
+      ],
+      "titre": "HNI-scantrad - Read Hajime no Ippo",
+      "liensInternes": 15,
+      "octetsHtml": 14046,
+      "ms": 5110,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "KINGDOMSCAN",
+      "url": "https://kingdomscan.com/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "kingdomscan.com | 523: Origin is unreachable",
+      "liensInternes": 2,
+      "octetsHtml": 6935,
+      "ms": 15915,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "LINEWEBTOONS_FR",
+      "url": "https://webtoons.com",
+      "statuts": [
+        200
+      ],
+      "titre": "WEBTOON - l'accueil officiel pour tout ce qui concerne les Webtoons",
+      "liensInternes": 92,
+      "octetsHtml": 196209,
+      "ms": 9357,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "LIRESCAN",
+      "url": "https://lire-scan.me",
+      "statuts": [
+        200
+      ],
+      "titre": "Redirect",
+      "liensInternes": 115,
+      "octetsHtml": 189739,
+      "ms": 17478,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "LUGNICASCANS",
+      "url": "https://lugnica-scans.com",
+      "statuts": [
+        200
+      ],
+      "titre": "Redirect",
+      "liensInternes": 0,
+      "octetsHtml": 8298,
+      "ms": 16265,
+      "verdict": "VIDE"
+    },
+    {
+      "source": "LUNARHENTAI",
+      "url": "https://gloryscans.fr",
+      "statuts": [
+        200
+      ],
+      "titre": "Redirecting...",
+      "liensInternes": 115,
+      "octetsHtml": 154154,
+      "ms": 11429,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "MANGABALL_FR",
+      "url": "https://mangaball.net",
+      "statuts": [
+        200
+      ],
+      "titre": "MangaBall - Read Free Manga, Manhwa, Manhua & Comics",
+      "liensInternes": 131,
+      "octetsHtml": 800964,
+      "ms": 7996,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "MANGAFR",
+      "url": "https://www.mangafr.org",
+      "statuts": [
+        200
+      ],
+      "titre": "",
+      "liensInternes": 1,
+      "octetsHtml": 13600,
+      "ms": 31433,
+      "verdict": "VIDE"
+    },
+    {
+      "source": "MANGAHUB",
+      "url": "https://mangahub.fr",
+      "statuts": [
+        200
+      ],
+      "titre": "Mangahub – Mangahub – Lire Manga et Webtoon en Français, Scan VF",
+      "liensInternes": 81,
+      "octetsHtml": 171628,
+      "ms": 6399,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "MANGAMANA",
+      "url": "https://www.manga-mana.com/liste-mangas",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "manga-mana.com | 525: SSL handshake failed",
+      "liensInternes": 5,
+      "octetsHtml": 7501,
+      "ms": 10573,
+      "verdict": "TLS"
+    },
+    {
+      "source": "MANGAMOINS",
+      "url": "https://mangamoins.com",
+      "statuts": [
+        200
+      ],
+      "titre": "MangaMoins",
+      "liensInternes": 17,
+      "octetsHtml": 59802,
+      "ms": 5603,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "MANGAPLUSPARSER_FR",
+      "url": "https://mangaplus.shueisha.co.jp",
+      "statuts": [
+        200
+      ],
+      "titre": "MANGA Plus by SHUEISHA",
+      "liensInternes": 0,
+      "octetsHtml": 2416,
+      "ms": 8066,
+      "verdict": "VIDE"
+    },
+    {
+      "source": "MYHEROACADEMIASCAN",
+      "url": "https://myheroacademiascan.com/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "myheroacademiascan.com | 523: Origin is unreachable",
+      "liensInternes": 2,
+      "octetsHtml": 6977,
+      "ms": 14073,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "ONISAGA_FR",
+      "url": "https://onisaga.com/browse",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "Explore The Best Manga - OniSaga",
+      "liensInternes": 50,
+      "octetsHtml": 9796860,
+      "ms": 23137,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "PANTHEONSCAN",
+      "url": "https://pantheon-scan.com",
+      "statuts": [
+        200
+      ],
+      "titre": "Accueil - pantheon-scan.com",
+      "liensInternes": 140,
+      "octetsHtml": 215055,
+      "ms": 5479,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "PANTHEONSCAN_FR",
+      "url": "https://www.pantheon-scan.fr",
+      "statuts": [],
+      "titre": "Erreur de confidentialité",
+      "liensInternes": 0,
+      "octetsHtml": 139852,
+      "ms": 5181,
+      "verdict": "BLOQUE"
+    },
+    {
+      "source": "PAPSCAN",
+      "url": "https://papscan.com",
+      "statuts": [
+        200
+      ],
+      "titre": "papscan.com is for sale — Buy now for $8,300 | GoDaddy",
+      "liensInternes": 1,
+      "octetsHtml": 240903,
+      "ms": 8066,
+      "verdict": "VIDE"
+    },
+    {
+      "source": "PORNHWASCANS",
+      "url": "https://pornhwascans.fr",
+      "statuts": [
+        200
+      ],
+      "titre": "Redirecting...",
+      "liensInternes": 19,
+      "octetsHtml": 70966,
+      "ms": 7409,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "RAIJINSCANS",
+      "url": "https://raijin-scans.fr",
+      "statuts": [
+        200
+      ],
+      "titre": "Mangas | Aniverse",
+      "liensInternes": 78,
+      "octetsHtml": 371721,
+      "ms": 5906,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "REVOLUTIONSCANTRAD",
+      "url": "https://www.revolutionscantrad.com",
+      "statuts": [],
+      "titre": "Erreur de confidentialité",
+      "liensInternes": 0,
+      "octetsHtml": 135614,
+      "ms": 5678,
+      "verdict": "BLOQUE"
+    },
+    {
+      "source": "RIMUSCANS",
+      "url": "https://rimuscan.fr",
+      "statuts": [
+        200
+      ],
+      "titre": "Rimu Scans - Lire Scan Manhwa, Webtoon & Manga VF Gratuit",
+      "liensInternes": 99,
+      "octetsHtml": 1022818,
+      "ms": 5719,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "SCANBORUTO",
+      "url": "https://scanboruto.fr/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "scanboruto.fr | 523: Origin is unreachable",
+      "liensInternes": 2,
+      "octetsHtml": 6923,
+      "ms": 15555,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "SCANHENTAIMENU",
+      "url": "https://x-manga.org/manga/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "Manga Archive – X-MANGA",
+      "liensInternes": 79,
+      "octetsHtml": 122091,
+      "ms": 11991,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "SCANJUJUTSUKAISEN",
+      "url": "https://scanjujutsukaisen.com/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "scanjujutsukaisen.com | 522: Connection timed out",
+      "liensInternes": 2,
+      "octetsHtml": 7021,
+      "ms": 31491,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "SEINEMANGA",
+      "url": "https://www.seinemanga.com",
+      "statuts": [
+        200
+      ],
+      "titre": "Redirecting...",
+      "liensInternes": 8,
+      "octetsHtml": 16611,
+      "ms": 6782,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "SUSHISCAN",
+      "url": "https://sushiscan.net",
+      "statuts": [
+        200
+      ],
+      "titre": "Sushiscan - Bibliothèque de scans, festin de lectures",
+      "liensInternes": 137,
+      "octetsHtml": 799372,
+      "ms": 5842,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "SUSHISCANFR",
+      "url": "https://sushiscan.fr",
+      "statuts": [
+        200
+      ],
+      "titre": "SushiScan - Lecture en Ligne | Scans | Mangas | Manhwa | Manhua | BD |",
+      "liensInternes": 0,
+      "octetsHtml": 15835,
+      "ms": 6888,
+      "verdict": "VIDE"
+    },
+    {
+      "source": "TOOMICSFR",
+      "url": "https://toomics.com",
+      "statuts": [
+        200
+      ],
+      "titre": "Toomics - Des webcomics à lire en illimité",
+      "liensInternes": 31,
+      "octetsHtml": 302454,
+      "ms": 8134,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "TOONFR",
+      "url": "https://toonfr.com/webtoon/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "Manga – Toonfr",
+      "liensInternes": 127,
+      "octetsHtml": 185132,
+      "ms": 13000,
+      "verdict": "UTILE"
+    },
+    {
+      "source": "XXXREVOLUTIONSCANTRAD",
+      "url": "https://xxx.revolutionscantrad.com",
+      "statuts": [],
+      "titre": "Erreur de confidentialité",
+      "liensInternes": 0,
+      "octetsHtml": 135614,
+      "ms": 5377,
+      "verdict": "BLOQUE"
+    }
+  ]
+}

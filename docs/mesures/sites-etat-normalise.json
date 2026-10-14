@@ -1,0 +1,2145 @@
+{
+  "genere_le": "2026-10-14 07:47:34",
+  "question": "Pour chaque source : le site est-il mort, ou le parseur est-il cassé ?",
+  "methode": {
+    "moteur": {
+      "outil": "scripts/sonde-sources.mjs --deep",
+      "releve": "docs\\mesures\\audit-parcours-fr-2026-10-14.json",
+      "mesure": "latest → details → chapters → pages → image"
+    },
+    "navigateur": {
+      "outil": "scripts/sonde-navigateur.mjs",
+      "releve": "docs\\mesures\\navigateur-audit-2026-10-14.json",
+      "mesure": "l'URL réellement demandée par le moteur, dans le WebView2 de l'application"
+    }
+  },
+  "regle": "Pas de mesure navigateur → a_verifier. Jamais un verdict deviné.",
+  "compte": {
+    "parseur_casse": 35,
+    "site_mort": 48,
+    "client_refuse": 5,
+    "ok": 10
+  },
+  "sites": [
+    {
+      "source": "ANIMESAMA",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INCERTAIN",
+        "message": "aucun chapitre",
+        "etapes": {
+          "latest": "OK n=24",
+          "details": "OK n=0",
+          "chapters": "OK n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://anime-sama.to",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Anime-Sama - Streaming et catalogage d'animes et scans.",
+        "liensInternes": 328,
+        "octetsHtml": 1497801
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "ANTEIKUSCAN",
+      "conclusion": "parseur_casse",
+      "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": "https://qemow.com/go/3115960?subid1=anteikuscan.fr",
+      "preuve_moteur": {
+        "verdict": "PARSER_OUTDATED",
+        "message": "ParseException: Cannot find \"#series_tags_page\" at https://qemow.com/go/3115960?subid1=anteikuscan.fr",
+        "etapes": {
+          "latest": "PARSER_OUTDATED n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "ASTRALMANGA",
+      "conclusion": "parseur_casse",
+      "raison": "https://astral-manga.fr/manga/ ne rend pas de contenu exploitable dans un vrai navigateur (Astral Manga)",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": "https://astral-manga.fr/manga/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://astral-manga.fr/manga/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://astral-manga.fr/manga/",
+        "verdict": "VIDE",
+        "statuts": [
+          403,
+          200,
+          404
+        ],
+        "titre": "Astral Manga",
+        "liensInternes": 0,
+        "octetsHtml": 31583
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "ASTRAMES",
+      "conclusion": "parseur_casse",
+      "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": "https://qemow.com/go/3115960?subid1=astrames.fr",
+      "preuve_moteur": {
+        "verdict": "PARSER_OUTDATED",
+        "message": "ParseException: Cannot find \"#series_tags_page\" at https://qemow.com/go/3115960?subid1=astrames.fr",
+        "etapes": {
+          "latest": "PARSER_OUTDATED n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "BANANASCAN",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INCERTAIN",
+        "message": "200 OK sans resultat",
+        "etapes": {
+          "latest": "OK n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://banana-scan.com",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "banana-scan.com",
+        "liensInternes": 10,
+        "octetsHtml": 196304
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "BENTOSCAN",
+      "conclusion": "site_mort",
+      "raison": "domaine parking mis en vente — « bentoscan.com for sale — memorable .com domain | ED.com » : le site n'existe plus, il a été revendu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INCERTAIN",
+        "message": "200 OK sans resultat",
+        "etapes": {
+          "latest": "OK n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://bentoscan.com",
+        "verdict": "VIDE",
+        "statuts": [
+          200
+        ],
+        "titre": "bentoscan.com for sale — memorable .com domain | ED.com",
+        "liensInternes": 4,
+        "octetsHtml": 42453
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "BERSERKSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare berserkscan.com | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://berserkscan.com/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://berserkscan.com/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://berserkscan.com/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "berserkscan.com | 523: Origin is unreachable",
+        "liensInternes": 2,
+        "octetsHtml": 6935
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "BLUELOCKSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare bluelockscan.com | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://bluelockscan.com/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://bluelockscan.com/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://bluelockscan.com/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "bluelockscan.com | 523: Origin is unreachable",
+        "liensInternes": 2,
+        "octetsHtml": 6941
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "BLUESOLO",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://www1.bluesolo.org/manga/",
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "NotFoundException: . Status=404, URL=[https://www1.bluesolo.org/manga/]",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "CENTURYBOYS20TH",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://20thcenturyboys.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://20thcenturyboys.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "CHAINSAWMANSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://chainsawman-scan.com/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://chainsawman-scan.com/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "DANDADAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://dandadan.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://dandadan.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "DEMONSLAYERSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://demonslayerscan.com/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=522, URL=[https://demonslayerscan.com/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "DRSTONE",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://drstone.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://drstone.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "EDSCANLATION",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "UnknownHostException: Hôte inconnu (edscanlation.fr)",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "ENLIGNEMANGA",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "UnknownHostException: Hôte inconnu (www.enlignemanga.com)",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "EPSILONSOFT",
+      "conclusion": "client_refuse",
+      "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
+      "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "url_demandee": "https://epsilonsoft.to/manga/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://epsilonsoft.to/manga/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://epsilonsoft.to/manga/",
+        "verdict": "UTILE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "Epsilon Soft",
+        "liensInternes": 16,
+        "octetsHtml": 61626
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "ETHERALRADIANCE",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "UnknownHostException: Hôte inconnu (www.etheralradiance.eu)",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "FIREFORCE",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://fireforce.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://fireforce.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "FMTEAM",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "JSONException: JSONObject[\"adult\"] is not a string (class java.lang.Integer : 0).",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://fmteam.fr",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "FMTeam — Lecteur Manga",
+        "liensInternes": 31,
+        "octetsHtml": 45581
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "FRMANGA",
+      "conclusion": "parseur_casse",
+      "raison": "null ne rend pas de contenu exploitable dans un vrai navigateur (www.frmanga.com)",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "ConnectException: Failed to connect to www.frmanga.com/198.251.84.92:443",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://www.frmanga.com",
+        "verdict": "BLOQUE",
+        "statuts": [],
+        "titre": "www.frmanga.com",
+        "liensInternes": 0,
+        "octetsHtml": 318733
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "FRSCAN",
+      "conclusion": "parseur_casse",
+      "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": "http://ww80.fr-scan.com/?subid1=e2fb0db9-c79f-11f1-af64-1ab4acc8f37c",
+      "preuve_moteur": {
+        "verdict": "PARSER_OUTDATED",
+        "message": "ParseException: Root not found at http://ww80.fr-scan.com/?subid1=e2fb0db9-c79f-11f1-af64-1ab4acc8f37c",
+        "etapes": {
+          "latest": "PARSER_OUTDATED n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "FRSCANSCOM",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "UnknownHostException: Hôte inconnu (frscans.com)",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "FURYOSOCIETY",
+      "conclusion": "ok",
+      "raison": "parcours complet abouti jusqu'à une image décodée",
+      "action": "rien",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "ACTIF",
+        "message": null,
+        "etapes": {
+          "latest": "OK n=24",
+          "details": "OK n=0",
+          "chapters": "OK n=36",
+          "pages": "OK n=59",
+          "image": "OK n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=59"
+    },
+    {
+      "source": "HAIKYUU",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare haikyuu.fr | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://haikyuu.fr/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://haikyuu.fr/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://haikyuu.fr/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "haikyuu.fr | 523: Origin is unreachable",
+        "liensInternes": 2,
+        "octetsHtml": 6905
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "HARMONYSCAN",
+      "conclusion": "ok",
+      "raison": "parcours complet abouti jusqu'à une image décodée",
+      "action": "rien",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "ACTIF",
+        "message": null,
+        "etapes": {
+          "latest": "OK n=12",
+          "details": "OK n=0",
+          "chapters": "OK n=8",
+          "pages": "OK n=19",
+          "image": "OK n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=19"
+    },
+    {
+      "source": "HELLSPARADISESCAN",
+      "conclusion": "parseur_casse",
+      "raison": "https://hellsparadisescan.com/ ne rend pas de contenu exploitable dans un vrai navigateur (Un instant…)",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": "https://hellsparadisescan.com/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://hellsparadisescan.com/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://hellsparadisescan.com/",
+        "verdict": "VIDE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "Un instant…",
+        "liensInternes": 2,
+        "octetsHtml": 6971
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "HENTAIORIGINES",
+      "conclusion": "ok",
+      "raison": "parcours complet abouti jusqu'à une image décodée",
+      "action": "rien",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "ACTIF",
+        "message": null,
+        "etapes": {
+          "latest": "OK n=24",
+          "details": "OK n=0",
+          "chapters": "OK n=53",
+          "pages": "OK n=15",
+          "image": "OK n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=15"
+    },
+    {
+      "source": "HENTAISCANTRADVF",
+      "conclusion": "parseur_casse",
+      "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": "https://hentai.scantrad-vf.cc/manga/",
+      "preuve_moteur": {
+        "verdict": "PARSER_OUTDATED",
+        "message": "ParseException: Root not found at https://hentai.scantrad-vf.cc/manga/",
+        "etapes": {
+          "latest": "PARSER_OUTDATED n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "HENTAIZONE",
+      "conclusion": "client_refuse",
+      "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
+      "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "url_demandee": "https://hentaizone.xyz/manga/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://hentaizone.xyz/manga/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://hentaizone.xyz/manga/",
+        "verdict": "UTILE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "Manga Archive - HentaiZone",
+        "liensInternes": 48,
+        "octetsHtml": 237772
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "HHENTAIFR",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INCERTAIN",
+        "message": "200 OK sans resultat",
+        "etapes": {
+          "latest": "OK n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://hhentai.fr",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Histoire d'Hentai - Accueil",
+        "liensInternes": 75,
+        "octetsHtml": 273684
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "HNISCANTRAD",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "JSONException: JSONObject[\"adult\"] is not a string (class java.lang.Integer : 0).",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://hni-scantrad.net",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "HNI-scantrad - Read Hajime no Ippo",
+        "liensInternes": 15,
+        "octetsHtml": 14046
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "HUNTERXHUNTERSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://hunterxhunterscan.com/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://hunterxhunterscan.com/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "INOVASCANMANGA",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://vlxx69.net/api/manga/discover?search=&sort=trending&status=all&genre=all&type=all&year=all",
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "NotFoundException: . Status=404, URL=[https://vlxx69.net/api/manga/discover?search=&sort=trending&status=all&genre=all&type=all&year=all]",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "JAPSCANSFR",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://japscan.foo/manga",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=522, URL=[https://japscan.foo/manga]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "JPMANGAS",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "UnknownHostException: Hôte inconnu (jpmangas.xyz)",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "JPSCANVF",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://lirescanvf.com/manga-list/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=521, URL=[https://lirescanvf.com/manga-list/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "KAIJUNO8",
+      "conclusion": "parseur_casse",
+      "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "PARSER_OUTDATED",
+        "message": "ParseException: Cannot find \"#All_chapters\" at https://asiafilm.org/4/ebd97cbb70c0230615625ad4eca22808",
+        "etapes": {
+          "latest": "OK n=1",
+          "details": "PARSER_OUTDATED n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "KINGDOMSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare kingdomscan.com | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://kingdomscan.com/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://kingdomscan.com/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://kingdomscan.com/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "kingdomscan.com | 523: Origin is unreachable",
+        "liensInternes": 2,
+        "octetsHtml": 6935
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "LELMANGA",
+      "conclusion": "ok",
+      "raison": "parcours complet abouti jusqu'à une image décodée",
+      "action": "rien",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "ACTIF",
+        "message": null,
+        "etapes": {
+          "latest": "OK n=20",
+          "details": "OK n=0",
+          "chapters": "OK n=129",
+          "pages": "OK n=22",
+          "image": "OK n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=22"
+    },
+    {
+      "source": "LELSCANVF",
+      "conclusion": "ok",
+      "raison": "parcours complet abouti jusqu'à une image décodée",
+      "action": "rien",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "ACTIF",
+        "message": null,
+        "etapes": {
+          "latest": "OK n=24",
+          "details": "OK n=0",
+          "chapters": "OK n=32",
+          "pages": "OK n=61",
+          "image": "OK n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=61"
+    },
+    {
+      "source": "LINEWEBTOONS_FR",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "IllegalStateException: Required value was null.",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://webtoons.com",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "WEBTOON - l'accueil officiel pour tout ce qui concerne les Webtoons",
+        "liensInternes": 92,
+        "octetsHtml": 196209
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "LIRESCAN",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INCERTAIN",
+        "message": "200 OK sans resultat",
+        "etapes": {
+          "latest": "OK n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://lire-scan.me",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Redirect",
+        "liensInternes": 115,
+        "octetsHtml": 189739
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "LUGNICASCANS",
+      "conclusion": "parseur_casse",
+      "raison": "null ne rend pas de contenu exploitable dans un vrai navigateur (Redirect)",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "SSLHandshakeException: Read error: ssl=000001F7C2247968: Failure in SSL library, usually a protocol error\nerror:10000438:SSL routines:OPENSSL_internal:TLSV1_ALERT_INTERNAL_ERROR (..\\ssl\\tls_record.cc:",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://lugnica-scans.com",
+        "verdict": "VIDE",
+        "statuts": [
+          200
+        ],
+        "titre": "Redirect",
+        "liensInternes": 0,
+        "octetsHtml": 8298
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "LUNARHENTAI",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "SSLHandshakeException: java.security.cert.CertPathValidatorException: Trust anchor for certification path not found.",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://gloryscans.fr",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Redirecting...",
+        "liensInternes": 115,
+        "octetsHtml": 154154
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "LUNARSCANS",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "UnknownHostException: Hôte inconnu (lunarscans.fr)",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "MANGABALL_FR",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "IllegalStateException: CSRF token not found",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://mangaball.net",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "MangaBall - Read Free Manga, Manhwa, Manhua & Comics",
+        "liensInternes": 131,
+        "octetsHtml": 800964
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "MANGAFIRE_FR",
+      "conclusion": "ok",
+      "raison": "parcours complet abouti jusqu'à une image décodée",
+      "action": "rien",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "ACTIF",
+        "message": null,
+        "etapes": {
+          "latest": "OK n=24",
+          "details": "OK n=0",
+          "chapters": "OK n=5",
+          "pages": "OK n=79",
+          "image": "OK n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=79"
+    },
+    {
+      "source": "MANGAFR",
+      "conclusion": "parseur_casse",
+      "raison": "null ne rend pas de contenu exploitable dans un vrai navigateur (VIDE)",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INCERTAIN",
+        "message": "200 OK sans resultat",
+        "etapes": {
+          "latest": "OK n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://www.mangafr.org",
+        "verdict": "VIDE",
+        "statuts": [
+          200
+        ],
+        "titre": "",
+        "liensInternes": 1,
+        "octetsHtml": 13600
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "MANGAHUB",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INCERTAIN",
+        "message": "chapitre sans aucune image",
+        "etapes": {
+          "latest": "OK n=24",
+          "details": "OK n=0",
+          "chapters": "OK n=77",
+          "pages": "OK n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://mangahub.fr",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Mangahub – Mangahub – Lire Manga et Webtoon en Français, Scan VF",
+        "liensInternes": 81,
+        "octetsHtml": 171628
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "OK n=0"
+    },
+    {
+      "source": "MANGAKAWAII",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://www.mangakawaii.io/manga-list/",
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "HttpStatusException: . Status=410, URL=[https://www.mangakawaii.io/manga-list/]",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "MANGAMANA",
+      "conclusion": "site_mort",
+      "raison": "chaîne TLS de l'origine cassée (manga-mana.com | 525: SSL handshake failed) — pas un problème de challenge",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://www.manga-mana.com/liste-mangas",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://www.manga-mana.com/liste-mangas",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://www.manga-mana.com/liste-mangas",
+        "verdict": "TLS",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "manga-mana.com | 525: SSL handshake failed",
+        "liensInternes": 5,
+        "octetsHtml": 7501
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "MANGAMOINS",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INCERTAIN",
+        "message": "aucun chapitre",
+        "etapes": {
+          "latest": "OK n=5",
+          "details": "OK n=0",
+          "chapters": "OK n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://mangamoins.com",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "MangaMoins",
+        "liensInternes": 17,
+        "octetsHtml": 59802
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "MANGAPLUSPARSER_FR",
+      "conclusion": "parseur_casse",
+      "raison": "null ne rend pas de contenu exploitable dans un vrai navigateur (MANGA Plus by SHUEISHA)",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "TIMEOUT_IMAGE",
+        "message": "aucune reponse",
+        "etapes": {
+          "latest": "OK n=9",
+          "details": "OK n=0",
+          "chapters": "OK n=6",
+          "pages": "OK n=53",
+          "image": "HANG n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://mangaplus.shueisha.co.jp",
+        "verdict": "VIDE",
+        "statuts": [
+          200
+        ],
+        "titre": "MANGA Plus by SHUEISHA",
+        "liensInternes": 0,
+        "octetsHtml": 2416
+      },
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=53"
+    },
+    {
+      "source": "MANGASORIGINES",
+      "conclusion": "ok",
+      "raison": "parcours complet abouti jusqu'à une image décodée",
+      "action": "rien",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "ACTIF",
+        "message": null,
+        "etapes": {
+          "latest": "OK n=16",
+          "details": "OK n=0",
+          "chapters": "OK n=212",
+          "pages": "OK n=19",
+          "image": "OK n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=19"
+    },
+    {
+      "source": "MANGASORIGINESUNOFFICIAL",
+      "conclusion": "parseur_casse",
+      "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": "https://qemow.com/go/3115960?subid1=crunchyscan.fr",
+      "preuve_moteur": {
+        "verdict": "PARSER_OUTDATED",
+        "message": "ParseException: Root not found at https://qemow.com/go/3115960?subid1=crunchyscan.fr",
+        "etapes": {
+          "latest": "PARSER_OUTDATED n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "MANGASSCANS",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "UnknownHostException: Hôte inconnu (mangas-scans.com)",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "MASHLESCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://mashlescan.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://mashlescan.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "MYHEROACADEMIASCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare myheroacademiascan.com | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://myheroacademiascan.com/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://myheroacademiascan.com/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://myheroacademiascan.com/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "myheroacademiascan.com | 523: Origin is unreachable",
+        "liensInternes": 2,
+        "octetsHtml": 6977
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "NINEMANGA_FR",
+      "conclusion": "parseur_casse",
+      "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": "https://fr.niadd.com/category/index_1",
+      "preuve_moteur": {
+        "verdict": "PARSER_OUTDATED",
+        "message": "ParseException: Cannot find \"ul.direlist\" at https://fr.niadd.com/category/index_1",
+        "etapes": {
+          "latest": "PARSER_OUTDATED n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "ONEPIECESCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://onepiecescan.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://onepiecescan.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "ONEPUNCHMANSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://onepunchmanscan.com/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://onepunchmanscan.com/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "ONISAGA_FR",
+      "conclusion": "client_refuse",
+      "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
+      "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "url_demandee": "https://onisaga.com/browse",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://onisaga.com/browse",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://onisaga.com/browse",
+        "verdict": "UTILE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "Explore The Best Manga - OniSaga",
+        "liensInternes": 50,
+        "octetsHtml": 9796860
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "OSHINOKO",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://oshinoko.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=522, URL=[https://oshinoko.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "PANTHEONSCAN",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INCERTAIN",
+        "message": "200 OK sans resultat",
+        "etapes": {
+          "latest": "OK n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://pantheon-scan.com",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Accueil - pantheon-scan.com",
+        "liensInternes": 140,
+        "octetsHtml": 215055
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "PANTHEONSCAN_FR",
+      "conclusion": "site_mort",
+      "raison": "certificat refusé par le navigateur — « Erreur de confidentialité » : aucun client TLS ne peut lire ce site",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "SSLPeerUnverifiedException: Hostname www.pantheon-scan.fr not verified:\n    certificate: sha256/BZbHVIVPSjNwwXfgDxWq2BFmDRst9BzKdMUes2jJ9hY=\n    DN: CN=cluster128.hosting.ovh.net\n    subjectAltNames: ",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://www.pantheon-scan.fr",
+        "verdict": "BLOQUE",
+        "statuts": [],
+        "titre": "Erreur de confidentialité",
+        "liensInternes": 0,
+        "octetsHtml": 139852
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "PAPSCAN",
+      "conclusion": "site_mort",
+      "raison": "domaine parking mis en vente — « papscan.com is for sale — Buy now for $8,300 | GoDaddy » : le site n'existe plus, il a été revendu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INCERTAIN",
+        "message": "200 OK sans resultat",
+        "etapes": {
+          "latest": "OK n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://papscan.com",
+        "verdict": "VIDE",
+        "statuts": [
+          200
+        ],
+        "titre": "papscan.com is for sale — Buy now for $8,300 | GoDaddy",
+        "liensInternes": 1,
+        "octetsHtml": 240903
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "PORNHWASCANS",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "SSLHandshakeException: java.security.cert.CertPathValidatorException: Trust anchor for certification path not found.",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://pornhwascans.fr",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Redirecting...",
+        "liensInternes": 19,
+        "octetsHtml": 70966
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "POSEIDONSCANS",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://poseidonscans.com/series",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://poseidonscans.com/series]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "RAIJINSCANS",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INCERTAIN",
+        "message": "200 OK sans resultat",
+        "etapes": {
+          "latest": "OK n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://raijin-scans.fr",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Mangas | Aniverse",
+        "liensInternes": 78,
+        "octetsHtml": 371721
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "READERGEN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://fr.readergen.fr/manga/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=525, URL=[https://fr.readergen.fr/manga/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "REAPERSCANS_FR",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://reaper-scans.fr/series/",
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "NotFoundException: . Status=404, URL=[https://reaper-scans.fr/series/]",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "REVOLUTIONSCANTRAD",
+      "conclusion": "site_mort",
+      "raison": "certificat refusé par le navigateur — « Erreur de confidentialité » : aucun client TLS ne peut lire ce site",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "SSLHandshakeException: Chain validation failed",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://www.revolutionscantrad.com",
+        "verdict": "BLOQUE",
+        "statuts": [],
+        "titre": "Erreur de confidentialité",
+        "liensInternes": 0,
+        "octetsHtml": 135614
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "RIMUSCANS",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INCERTAIN) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INCERTAIN",
+        "message": "200 OK sans resultat",
+        "etapes": {
+          "latest": "OK n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://rimuscan.fr",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Rimu Scans - Lire Scan Manhwa, Webtoon & Manga VF Gratuit",
+        "liensInternes": 99,
+        "octetsHtml": 1022818
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SAKAMOTODAYS",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://sakamotodays.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://sakamotodays.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SCANBORUTO",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare scanboruto.fr | 523: Origin is unreachable — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://scanboruto.fr/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://scanboruto.fr/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://scanboruto.fr/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "scanboruto.fr | 523: Origin is unreachable",
+        "liensInternes": 2,
+        "octetsHtml": 6923
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SCANHENTAI",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "UnknownHostException: Ceci est habituellement une erreur temporaire qui se produit durant la résolution du nom d’hôte et qui signifie que le serveur local n’a pas reçu de réponse d’un serveur faisant ",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SCANHENTAIMENU",
+      "conclusion": "client_refuse",
+      "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
+      "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "url_demandee": "https://x-manga.org/manga/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://x-manga.org/manga/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://x-manga.org/manga/",
+        "verdict": "UTILE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "Manga Archive – X-MANGA",
+        "liensInternes": 79,
+        "octetsHtml": 122091
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SCANJUJUTSUKAISEN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare scanjujutsukaisen.com | 522: Connection timed out — l'origine est éteinte, aucun client ne peut la lire",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://scanjujutsukaisen.com/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://scanjujutsukaisen.com/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://scanjujutsukaisen.com/",
+        "verdict": "MORTE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "scanjujutsukaisen.com | 522: Connection timed out",
+        "liensInternes": 2,
+        "octetsHtml": 7021
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SCANMANGA",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "UnknownHostException: Hôte inconnu (scan-manga.me)",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SCANTRAD",
+      "conclusion": "parseur_casse",
+      "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": "https://hentai-scantrad.org/manga/",
+      "preuve_moteur": {
+        "verdict": "PARSER_OUTDATED",
+        "message": "ParseException: Cannot find \"#filter-wrapper\" at https://hentai-scantrad.org/manga/",
+        "etapes": {
+          "latest": "PARSER_OUTDATED n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SCANTRADUNION",
+      "conclusion": "ok",
+      "raison": "parcours complet abouti jusqu'à une image décodée",
+      "action": "rien",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "ACTIF",
+        "message": null,
+        "etapes": {
+          "latest": "OK n=24",
+          "details": "OK n=0",
+          "chapters": "OK n=551",
+          "pages": "OK n=70",
+          "image": "OK n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=70"
+    },
+    {
+      "source": "SCANTRADVF",
+      "conclusion": "parseur_casse",
+      "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": "https://qemow.com/go/3115960?subid1=scantrad-vf.me",
+      "preuve_moteur": {
+        "verdict": "PARSER_OUTDATED",
+        "message": "ParseException: Root not found at https://qemow.com/go/3115960?subid1=scantrad-vf.me",
+        "etapes": {
+          "latest": "PARSER_OUTDATED n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SCANVF",
+      "conclusion": "ok",
+      "raison": "parcours complet abouti jusqu'à une image décodée",
+      "action": "rien",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "ACTIF",
+        "message": null,
+        "etapes": {
+          "latest": "OK n=24",
+          "details": "OK n=0",
+          "chapters": "OK n=1200",
+          "pages": "OK n=56",
+          "image": "OK n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=56"
+    },
+    {
+      "source": "SCANVFORG",
+      "conclusion": "parseur_casse",
+      "raison": "le parseur ne reconnaît plus la page qu'il reçoit — le site, lui, n'est pas jugé",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": "https://scanvf.org/manga",
+      "preuve_moteur": {
+        "verdict": "PARSER_OUTDATED",
+        "message": "ParseException: Cannot find \"#filter-wrapper\" at https://scanvf.org/manga",
+        "etapes": {
+          "latest": "PARSER_OUTDATED n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SEINEMANGA",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "SSLHandshakeException: java.security.cert.CertPathValidatorException: Trust anchor for certification path not found.",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://www.seinemanga.com",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Redirecting...",
+        "liensInternes": 8,
+        "octetsHtml": 16611
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SNKSCAN",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://snkscan.com/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://snkscan.com/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "STARBOUNDSCANS",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "UnknownHostException: Hôte inconnu (starboundscans.com)",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "SUSHISCAN",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert https://sushiscan.net, le moteur demande null — le parseur vise la mauvaise page",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_BLOCKED",
+        "message": "source blocked by Cloudflare at https://c.sushiscan.net/wp-content/uploads85/BlackCloverTome1-001.webp",
+        "etapes": {
+          "latest": "OK n=24",
+          "details": "OK n=0",
+          "chapters": "OK n=59",
+          "pages": "OK n=184",
+          "image": "SOURCE_BLOCKED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://sushiscan.net",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Sushiscan - Bibliothèque de scans, festin de lectures",
+        "liensInternes": 137,
+        "octetsHtml": 799372
+      },
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=184"
+    },
+    {
+      "source": "SUSHISCANFR",
+      "conclusion": "parseur_casse",
+      "raison": "null ne rend pas de contenu exploitable dans un vrai navigateur (SushiScan - Lecture en Ligne | Scans | Mangas | Manhwa | Manhua | BD |)",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "HttpStatusException: Gateway Time-out. Status=504, URL=[https://sushiscan.fr/the-ruined-world-was-mistaken-for-a-game-chapitre-0/]",
+        "etapes": {
+          "latest": "OK n=24",
+          "details": "OK n=0",
+          "chapters": "OK n=10",
+          "pages": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://sushiscan.fr",
+        "verdict": "VIDE",
+        "statuts": [
+          200
+        ],
+        "titre": "SushiScan - Lecture en Ligne | Scans | Mangas | Manhwa | Manhua | BD |",
+        "liensInternes": 0,
+        "octetsHtml": 15835
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "INTERNAL n=0"
+    },
+    {
+      "source": "TOKYOREVENGERS",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://tokyorevengers.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://tokyorevengers.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "TOOMICSFR",
+      "conclusion": "parseur_casse",
+      "raison": "le navigateur sert cette page, le moteur l'a lue et a quand même échoué (INTERNAL) — le parseur n'en extrait rien",
+      "action": "source personnalisée vers la bonne page, ou correction amont du parseur",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "StreamResetException: stream was reset: PROTOCOL_ERROR",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://toomics.com",
+        "verdict": "UTILE",
+        "statuts": [
+          200
+        ],
+        "titre": "Toomics - Des webcomics à lire en illimité",
+        "liensInternes": 31,
+        "octetsHtml": 302454
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "TOONFR",
+      "conclusion": "client_refuse",
+      "raison": "le navigateur sert cette URL, le moteur se fait refuser dessus — notre client",
+      "action": "transport webview — à vérifier jusqu'à l'image affichée",
+      "url_demandee": "https://toonfr.com/webtoon/",
+      "preuve_moteur": {
+        "verdict": "CHALLENGE_REQUIRED",
+        "message": "challenge at https://toonfr.com/webtoon/",
+        "etapes": {
+          "latest": "CHALLENGE_REQUIRED n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://toonfr.com/webtoon/",
+        "verdict": "UTILE",
+        "statuts": [
+          403,
+          200
+        ],
+        "titre": "Manga – Toonfr",
+        "liensInternes": 127,
+        "octetsHtml": 185132
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "VFSCAN",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "UnknownHostException: Hôte inconnu (www.vfscan.net)",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "VINLANDSAGA",
+      "conclusion": "site_mort",
+      "raison": "Cloudflare répond 52x : c'est lui qui dit que l'origine ne répond plus",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": "https://vinlandsaga.fr/",
+      "preuve_moteur": {
+        "verdict": "ORIGIN_DOWN",
+        "message": "HttpStatusException: . Status=523, URL=[https://vinlandsaga.fr/]",
+        "etapes": {
+          "latest": "ORIGIN_DOWN n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "WEBTOONS_FR",
+      "conclusion": "ok",
+      "raison": "parcours complet abouti jusqu'à une image décodée",
+      "action": "rien",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "ACTIF",
+        "message": null,
+        "etapes": {
+          "latest": "OK n=20",
+          "details": "OK n=0",
+          "chapters": "OK n=209",
+          "pages": "OK n=241",
+          "image": "OK n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": true,
+      "detail_parcours": "OK n=241"
+    },
+    {
+      "source": "WEEBDEX_FR",
+      "conclusion": "site_mort",
+      "raison": "le domaine a disparu",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "SOURCE_DEAD",
+        "message": "UnknownHostException: Ceci est habituellement une erreur temporaire qui se produit durant la résolution du nom d’hôte et qui signifie que le serveur local n’a pas reçu de réponse d’un serveur faisant ",
+        "etapes": {
+          "latest": "SOURCE_DEAD n=0"
+        }
+      },
+      "preuve_navigateur": null,
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    },
+    {
+      "source": "XXXREVOLUTIONSCANTRAD",
+      "conclusion": "site_mort",
+      "raison": "certificat refusé par le navigateur — « Erreur de confidentialité » : aucun client TLS ne peut lire ce site",
+      "action": "retirer du catalogue, avec la date du relevé dans le motif",
+      "url_demandee": null,
+      "preuve_moteur": {
+        "verdict": "INTERNAL",
+        "message": "SSLHandshakeException: Chain validation failed",
+        "etapes": {
+          "latest": "INTERNAL n=0"
+        }
+      },
+      "preuve_navigateur": {
+        "url": "https://xxx.revolutionscantrad.com",
+        "verdict": "BLOQUE",
+        "statuts": [],
+        "titre": "Erreur de confidentialité",
+        "liensInternes": 0,
+        "octetsHtml": 135614
+      },
+      "parcours_complet_abouti": false,
+      "detail_parcours": "aucune étape image enregistrée"
+    }
+  ]
+}

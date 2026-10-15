@@ -36,7 +36,12 @@ const jsx = modules
   .join('\n');
 
 // --- Variables CSS : `var(--x)` utilisees contre les tokens declares ---
-const css = readFileSync(join(racine, 'app', 'globals.css'), 'utf8');
+const cssBrut = readFileSync(join(racine, 'app', 'globals.css'), 'utf8');
+// Commentaires retires **en preservant la numerotation** (`[^\n]` -> espace) :
+// sinon une classe citee en commentaire compte comme definie, et la porte ne
+// voit plus la faute qu'elle pretend fermer. Mesure le 2026-10-15 : c'etait le
+// cas — `definiesClasses` etait extrait du texte brut, commentaires inclus.
+const css = cssBrut.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
 const declares = new Set(
   [...css.matchAll(/^\s*(--[a-z0-9-]+)\s*:/gm)].map((m) => m[1]),
 );
@@ -115,6 +120,20 @@ for (const c of [...utiliseesClasses].sort()) {
   if (!definiesClasses.has(c)) {
     problemes.push(`classe \`${c}\` utilisee mais jamais definie dans globals.css`);
   }
+}
+
+// Un token qui se reference lui-meme. Mesure le 2026-10-15 :
+// `--encours-texte: var(--encours-texte)` dans le theme sombre. Le CSS est
+// parfaitement valide a la compilation, donc `tsc` ne dit rien, `styles:check`
+// disait « declare », et `eslint` non plus — mais la valeur calculee est
+// `guaranteed-invalid`, donc `color: var(--encours-texte)` retombe sur la valeur
+// **heritee**. Le theme clair redefinissait le token correctement, donc le defaut
+// n'existait que sur le theme sombre, c'est-a-dire celui par defaut.
+for (const m of css.matchAll(/^\s*(--[a-z0-9-]+)\s*:\s*var\(\s*\1\s*[,)]/gm)) {
+  problemes.push(
+    `token \`${m[1]}\` se reference lui-meme : sa valeur calculee est invalide, ` +
+      `donc \`var(${m[1]})\` retombe sur l'heritee au lieu de la couleur voulue`,
+  );
 }
 
 if (problemes.length > 0) {

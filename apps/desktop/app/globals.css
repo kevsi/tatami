@@ -64,8 +64,15 @@
   --succes-fond: rgba(91, 214, 141, 0.12);
   /* Cœur de favori : rose saturé, visible sur les deux fonds. */
   --favori: #ff6b7f;
-  /* Texte « en cours de téléchargement » : un bleu lisible sur les deux. */
-  --encours-texte: var(--encours-texte);
+  /* Texte « en cours de téléchargement » : un bleu lisible sur les deux.
+     Mesuré le 2026-10-15 : ce token se définissait lui-même
+     (`--encours-texte: var(--encours-texte)`), donc sa valeur calculée était
+     `guaranteed-invalid` et `.state-telechargement { color: … }` retombe sur la
+     valeur **héritée**. Le thème clair le redéfinissait correctement, donc le
+     défaut n'existait que sur le thème sombre — celui par défaut.
+     Valeur mesurée : 7,2:1 sur `--surface` (#1a1a1a) et 6,6:1 sur `--surface-2`,
+     alors que `--accent` du thème sombre (#366ad3) ne donnerait que 3,45:1. */
+  --encours-texte: #6ea8fe;
   /* Voile posé SUR une image (cœur, pastilles) : toujours sombre, donc il
      reste le même dans les deux thèmes. */
   --voile: rgba(0, 0, 0, 0.72);

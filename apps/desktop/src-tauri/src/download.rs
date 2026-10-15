@@ -65,7 +65,7 @@ pub fn sanitize(name: &str) -> String {
     if trimmed.is_empty() {
         return "sans-titre".to_string();
     }
-    let plafonne: String = trimmed.chars().take(80).collect();
+    let plafonne = plafonner(&trimmed);
     if est_nom_reserve(&plafonne) {
         // On préfixe plutôt que de suffixe : `CON (2)` serait encore réservé,
         // alors que `_CON` ne l'est pas.
@@ -87,6 +87,31 @@ fn est_nom_reserve(nom: &str) -> bool {
             && matches!(base.as_bytes()[3], b'1'..=b'9'))
 }
 
+/// Porte le nom à **80 caractères** au maximum, **sans** que deux noms distincts
+/// ne se confondent au-delà du plafond : au-delà, un suffixe dérivé du nom
+/// complet est ajouté. C'est ce qui maintient `sanitize` injectif — au sens de
+/// « deux noms lisibles distincts ne donnent jamais le même dossier ».
+///
+/// La fonction de hachage (@tag fnv64) est volontairement portable : un
+/// `DefaultHasher` rendrait le nom de dossier dépendant du compilateur.
+fn plafonner(nom: &str) -> String {
+    const LIMITE: usize = 80;
+    const LARGEUR_SUFFIXE: usize = 8; // HEXADÉCIMAL SUR 4 OCTETS
+    const PREFIXE: usize = LIMITE - LARGEUR_SUFFIXE - 1; // le tiret
+    if nom.chars().count() <= LIMITE {
+        return nom.to_string();
+    }
+    let prefixe: String = nom.chars().take(PREFIXE).collect();
+    format!("{prefixe}-{:08x}", (fnv64(nom.as_bytes()) as u32))
+}
+fn fnv64(octets: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for &o in octets {
+        hash ^= o as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
 /// Dossier par défaut, avant tout choix de l'utilisateur :
 /// `%APPDATA%\Tatami\downloads`.
 pub fn downloads_root_par_defaut() -> PathBuf {
@@ -958,6 +983,48 @@ mod tests {
         // Un nom normal ne doit surtout pas être prefixé.
         assert_eq!(sanitize("Conan"), "Conan");
         assert_eq!(sanitize("Nulitta"), "Nulitta");
+    }
+
+    /// Deux titres qui ne diffèrent qu'**après** 80 caractères ne doivent pas
+    /// tomber dans le même dossier.
+    ///
+    /// Le plafond de longueur exists pour la limite de chemin de Windows, mais il
+    /// rendait `sanitize` **non injectif** : `sanitize` ne gardait que les 80
+    /// premiers caractères, donc deux séries au catalogue presque identiques
+    /// partageaient un dossier. Les chapitres s'y mélangeaient, le compteur de la
+    /// bibliothèque comptait une série au lieu de deux, et `meta.json` décrivait
+    /// les deux. Aucun message : c'est une fusion silencieuse de deux séries.
+    ///
+    /// Le correctif est un suffixe dérivé du nom **complet**, donc la/folders
+    /// dépend du nom entier et pas de son préfixe.
+    #[test]
+    fn deux_titres_partageant_leur_prefixe_ne_donnent_pas_le_meme_dossier() {
+        let prefixe = "A".repeat(80);
+        let a = chapter_dir(Path::new("d"), "SRC", &format!("{prefixe}{}", "B".repeat(20)));
+        let b = chapter_dir(Path::new("d"), "SRC", &format!("{prefixe}{}", "C".repeat(20)));
+        assert_ne!(
+            a, b,
+            "deux titres distincts ont obtenu le même dossier : {a:?}"
+        );
+        // Et l'inverse, qui compte autant : deux titres **identiques** doivent
+        // toujours donner le même dossier, sinon le même webtoon est cherché
+        // dans deux endroits à chaque téléchargement.
+        assert_eq!(
+            chapter_dir(Path::new("d"), "SRC", &format!("{prefixe}{}", "B".repeat(20))),
+            a
+        );
+        // Un titre court ne doit pas être changé : le suffixe ne s'ajoute que
+        // lorsqu'il faut couper, sinon tous les noms lisibles de la bibliothèque
+        // deviendraient illisibles.
+        assert_eq!(sanitize("One Piece"), "One Piece");
+        // Le plafond tient toujours : c'est la raison d'être du suffixe.
+        let long = chapter_dir(Path::new("d"), "SRC", &"Z".repeat(200));
+        let lf = long.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        assert!(
+            lf.chars().count() <= 80,
+            "le dossier a dépassé le plafond de 80 caractères : {lf:?} fait {}",
+            lf.chars().count()
+        );
     }
 
     #[test]

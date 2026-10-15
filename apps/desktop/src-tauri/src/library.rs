@@ -1620,11 +1620,11 @@ mod tests {
         let (src, _garde_src) = dossier_source(&[]);
         cbz_lisible(&src.join("sans-titre.cbz"), 1);
         cbz_lisible(&src.join("   .cbz"), 2);
-        // Et le plafond de longueur : au-delà de 80 caractères, deux noms
-        // différents retombent sur le même.
-        let prefixe = "A".repeat(80);
-        cbz_lisible(&src.join(format!("{prefixe}{}.cbz", "B".repeat(20))), 3);
-        cbz_lisible(&src.join(format!("{prefixe}{}.cbz", "C".repeat(20))), 4);
+        // Deux noms qui ne different que par un caractere interdit sont assainis
+        // de la meme facon et restent une collision : l'ajout du suffixe ne change
+        // pas la regle qui existe pour ca.
+        cbz_lisible(&src.join("A .cbz"), 3);
+        cbz_lisible(&src.join("A.cbz"), 4);
 
         let rapport = import_webtoon(src.to_string_lossy().to_string(), Some(titre.clone()))
             .await

@@ -115,6 +115,16 @@ pub fn importer_source_impl(
     // TODO S2 : ajouter un paramètre `lang: Option<String>` à la commande
     // `importer_source` et le propager ici. Sans ce paramètre, toutes les
     // sources personnalisées importées avant S2 auront `lang = "fr"` en base.
+    // NOTE SÉCURITÉ (À VÉRIFIER, tracé dans PLAN.md) : `importer_source`
+    // prend un **chemin** en texte. Rien dans la chaîne ne prouve que ce
+    // chemin vienne d'un vrai dialogue natif `tauri-plugin-dialog` : l'appel
+    // `invoke('importer_source', { path })` est possible depuis la webview.
+    // CA N'EST PAS ENCORE EXPOSÉ — la recherche dans `apps/desktop/app/` du
+    // 2026-10-15 ne trouve aucune invocation — mais la surface existe et la
+    // `Capability` fait confiance au webview. Au moment de brancher S2, exiger
+    // un *handle* de dialogue (ou restreindre le chemin aux dossiers
+    // utilisateur documentés par l'utilisateur lui-même) plutôt qu'une chaîne.
+    // Le filtrage sur l'extension `.js` et l'anti-traversal portent jusqu'ici.
     store.add_custom_source(&id, &id, "fr", &dest_str)?;
 
     // --- 7. Lecture du résultat depuis la base ---

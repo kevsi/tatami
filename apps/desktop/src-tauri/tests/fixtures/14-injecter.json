@@ -1,0 +1,7 @@
+{
+  "_source": "Réponse réelle du moteur, capturée le 2026-10-15 sur `engine/dist/tatami-engine` par une sonde NDJSON (voir le journal de la tâche). La méthode `injecter` était implémentée et appelée par le coeur Rust sans figurer dans l'`enum` du contrat.",
+  "_methode": "injecter",
+  "id": "injecter-enregistre",
+  "ok": true,
+  "result": { "ok": true, "memoire": 1, "octets": 31 }
+}

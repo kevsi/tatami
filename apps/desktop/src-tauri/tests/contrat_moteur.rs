@@ -181,7 +181,15 @@ impl std::fmt::Display for Violation {
 /// `health` rendait deux formes ; il n'en rend plus qu'une depuis le retrait de
 /// la branche par source, donc l'exemption a disparu avec elle — le schéma est
 /// désormais appliqué comme les autres.
-const RESULTATS_PAR_METHODE: &[(&str, &str)] = &[("health", "healthResult")];
+const RESULTATS_PAR_METHODE: &[(&str, &str)] = &[
+    ("health", "healthResult"),
+    ("injecter", "injectResult"),
+    ("latest", "mangaList"),
+    ("search", "mangaList"),
+    ("chapters", "chapterList"),
+    ("pages", "pageList"),
+    ("listSources", "sourceList"),
+];
 
 /// Le nom du `$defs` qui décrit le `result` d'une méthode, s'il existe.
 fn schema_de_resultat(methode: &str) -> Option<&'static str> {
@@ -202,9 +210,16 @@ fn valider(valeur: &Value, schema: &Value) -> Vec<Violation> {
 /// déclarée. Sans le second temps, la validation est structurelle seulement.
 fn valider_enveloppe(methode: &str, enveloppe: &Value, schema: &Value) -> Vec<Violation> {
     let mut out = valider(enveloppe, schema);
+    // `result` peut être un **tableau** : `latest`, `search`, `chapters`, `pages`
+    // et `listSources` rendent tous une liste. Le filtre `is_object()` les
+    // supprimait donc silencieusement — c'est-à-dire que `manga`, `chapter`,
+    // `page` et `sourceInfo` n'étaient validés par aucune fixture, alors que
+    // leurs `$defs` étaient présents dans le schéma et semblaient appliqués.
     let (Some(nom), Some(resultat)) = (
         schema_de_resultat(methode),
-        enveloppe.get("result").filter(|v| v.is_object()),
+        enveloppe
+            .get("result")
+            .filter(|v| v.is_object() || v.is_array()),
     ) else {
         return out;
     };
@@ -257,17 +272,30 @@ fn valider_dans(
         }
     }
 
-    if let Some(attendu) = schema.get("type").and_then(Value::as_str) {
-        let nom_reel = match valeur {
-            Value::Null => "null",
-            Value::Bool(_) => "boolean",
-            Value::Number(n) if n.is_i64() || n.is_u64() => "integer",
-            Value::Number(_) => "number",
-            Value::String(_) => "string",
-            Value::Array(_) => "array",
-            Value::Object(_) => "object",
-        };
-        let ok = match attendu {
+    let nom_reel = match valeur {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(n) if n.is_i64() || n.is_u64() => "integer",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    };
+    // `type` accepte une chaîne **ou** un tableau de chaînes. Le second cas a été
+    // ajouté le 2026-10-15 quand la validation a enfin atteint les données
+    // réelles : `manga.coverUrl` vaut `null` quand la source ne déclare pas de
+    // couverture, et dire `{"type":"string"}` était faux. Corriger le schéma
+    // imposait alors de savoir lire un `type` en liste — sans quoi le mot-clé
+    // aurait été **ignoré silencieusement**, c'est-à-dire que la correction
+    // aurait désactivé la règle au lieu de l'assouplir.
+    let attendus: Vec<&str> = match schema.get("type") {
+        Some(Value::String(s)) => vec![s.as_str()],
+        Some(Value::Array(listes)) => listes.iter().filter_map(Value::as_str).collect::<Vec<_>>(),
+        Some(autre) => panic!("`type` non géré par le test : {autre}"),
+        None => Vec::new(),
+    };
+    if !attendus.is_empty() {
+        let ok = attendus.iter().any(|attendu| match *attendu {
             "object" => valeur.is_object(),
             "array" => valeur.is_array(),
             "string" => valeur.is_string(),
@@ -276,11 +304,11 @@ fn valider_dans(
             "number" => valeur.is_number(),
             "null" => valeur.is_null(),
             autre => panic!("`type` non géré par le test : {autre}"),
-        };
+        });
         if !ok {
             out.push(Violation {
                 chemin: chemin.into(),
-                message: format!("type attendu `{attendu}`, reçu `{nom_reel}`"),
+                message: format!("type attendu `{attendus:?}`, reçu `{nom_reel}`"),
             });
             return; // descendre plus bas ne donnerait que des violations en cascade
         }
@@ -559,9 +587,14 @@ fn le_nombre_de_reponses_enregistrees_est_stable() {
     // traduction, dont la trace reste dans l'historique git.
     // Puis 16 jusqu'au 2026-10-10 : `14-health-source.json` est partie avec la
     // forme par source de `health` (voir fixtures/README.md).
+    // Puis 15 : cette fixture supprimée a libéré le numéro 14.
+    // Puis 16 le 2026-10-15 : `14-injecter.json`, réponse **réellement capturée**
+    // (sonde NDJSON sur `engine/dist`) le jour où l'on a constaté que `injecter`
+    // était implémentée, appelée par `challenge.rs`, et absente de l'`enum` du
+    // contrat — donc hors contrat par construction.
     assert_eq!(
-        n, 15,
-        "15 réponses enregistrées attendues (moteur de sources). Changer ce nombre est \
+        n, 16,
+        "16 réponses enregistrées attendues (moteur de sources). Changer ce nombre est \
          normal (nouvelle méthode, nouveau cas mesuré) — mais il faut le faire exprès et le \
          noter dans fixtures/README.md."
     );

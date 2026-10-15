@@ -81,6 +81,26 @@ Le `contentType` annoncé est `image/jpeg`, mais les octets substitués sont un
 **l'extension écrite vient des octets, jamais de l'en-tête**. Une fixture
 concordante ne testerait rien.
 
+## Une fixture ajoutee : `14-injecter` (2026-10-15)
+
+Methode `injecter` : transport de la fenetre de verification. Elle etait
+implementee par le moteur et **appelee par le coeur** (`challenge.rs`,
+ligne 1127) sans figurer dans l'`enum method` du contrat -- donc **hors contrat
+par construction**, puisque `request` porte `additionalProperties: false`.
+
+| Ce qu'elle prouve | |
+|---|---|
+| La forme de `result` | `{ ok: true, memoire: 1, octets: 31 }` |
+| Que le moteur **repond** | la premiere sonde n'avait rien recu parce qu'elle partait 1,5 s apres le lancement, pendant que le moteur chargeait encore les sources personnalisees |
+| Que la reponse est capturee, pas ecrite | sonde NDJSON sur `engine/dist/tatami-engine`, pas une synthese |
+
+Le numero 14 avait ete libere le 2026-10-10 par le retrait de
+`14-health-source` : il a donc ete reutilise ici.
+
+Cette fixture a fait **boucler la porte** qui compte le nombre de
+reponses -- c'est  elle qu'on doit le changement du 15 au 16, comme elle le
+demande.
+
 ## Ce que le test en retient
 
 1. Chaque réponse est **valide** contre `contract/protocol.json`.

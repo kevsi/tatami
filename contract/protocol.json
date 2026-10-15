@@ -20,6 +20,7 @@
         "fetchImage",
         "fetchCover",
         "setCookies",
+        "injecter",
         "health",
         "shutdown"
       ]
@@ -100,8 +101,44 @@
           "type": "string",
           "description": "Nom d'entrée MangaParserSource, ex. MANGADEX."
         },
-        "coverUrl": { "type": "string" },
-        "authors": { "type": "array", "items": { "type": "string" } }
+        "coverUrl": {
+          "type": ["string", "null"],
+          "description": "`null` lorsque la source ne déclare pas de couverture — forme réellement émise par le moteur, mesurée sur `tests/fixtures/04-latest.json` le 2026-10-15. Ni Rust ni l'interface ne distinguent `null` d'une clé absente."
+        },
+        "publicUrl": {
+          "type": ["string", "null"],
+          "description": "Page du webtoon sur le site, pour ouvrir la fenêtre de vérification."
+        },
+        "altTitle": { "type": ["string", "null"] },
+        "state": {
+          "type": "string",
+          "description": "`m.state?.name`, ou `\"UNKNOWN\"` quand la source ne le dit pas."
+        },
+        "rating": {
+          "type": ["number", "null"],
+          "description": "Note flottante de la source. Le récepteur doit **arrondir** avant d'afficher : mesuré le 2026-07, une division flottante du site arrivait jusqu'à l'écran (« Ch. 38.09999847… »)."
+        },
+        "contentRating": {
+          "type": "string",
+          "description": "Classification du titre, ou `\"UNKNOWN\"`. Sur le chemin **scripté** c'est toujours `UNKNOWN` : `requestedRatings` n'y est pas appliqué (constaté le 2026-10-15)."
+        },
+        "description": { "type": ["string", "null"] },
+        "authors": {
+          "type": ["array", "null"],
+          "items": { "type": "string" }
+        },
+        "tags": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "required": ["key", "title"],
+            "properties": {
+              "key": { "type": "string" },
+              "title": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        }
       },
       "additionalProperties": true
     },
@@ -110,10 +147,10 @@
       "required": ["url"],
       "properties": {
         "url": { "type": "string", "description": "Clé stable du chapitre." },
-        "title": { "type": "string" },
-        "number": { "type": "number" },
+        "title": { "type": ["string", "null"] },
+        "number": { "type": ["number", "null"] },
         "uploadDate": {
-          "type": "integer",
+          "type": ["integer", "null"],
           "description": "Epoch millis, si fourni par la source."
         },
         "premium": {
@@ -132,7 +169,7 @@
           "type": "string",
           "description": "URL de la page (pas forcément l'image directe : passer par fetchImage)."
         },
-        "previewUrl": { "type": "string" },
+        "previewUrl": { "type": ["string", "null"] },
         "largeur": {
           "type": "integer",
           "minimum": 1,
@@ -154,13 +191,13 @@
           "type": "string",
           "description": "Nom d'entrée MangaParserSource, ex. MANGADEX."
         },
-        "title": { "type": "string" },
+        "title": { "type": ["string", "null"] },
         "locale": {
-          "type": "string",
+          "type": ["string", "null"],
           "description": "ex. \"en\", si exposée par la source."
         },
         "lang": {
-          "type": "string",
+          "type": ["string", "null"],
           "description": "Langue déduite du nom (Server.kt: inferLang), ex. \"fr\", \"int\"."
         },
         "domains": {
@@ -168,6 +205,14 @@
           "minItems": 1,
           "items": { "type": "string" },
           "description": "Hôtes déclarés par le parser, sans schéma, port ni chemin. Absent si aucun hôte HTTP(S) valide n'est déclaré."
+        },
+        "custom": {
+          "type": "boolean",
+          "description": "`true` pour une source personnalisée. Le nom alors émis vaut `custom:<fichier sans .js>` : c'est l'identifiant que le moteur attend en entrée, donc ce qu'il faut descendre pour la désactiver."
+        },
+        "displayName": {
+          "type": ["string", "null"],
+          "description": "Nom lisible d'une source personnalisée. `name` porte l'identifiant `custom:…`, pas le nom que l'utilisateur connaît."
         }
       },
       "additionalProperties": true
@@ -206,6 +251,59 @@
           "type": "string",
           "description": "Type ANNONCÉ par le site. Rust ne s'y fie pas : il déduit le type des octets (image::detect) et refuse d'écrire quoi que ce soit qui ne soit pas une image."
         }
+      },
+      "additionalProperties": true
+    },
+    "injectResult": {
+      "description": "Forme de `result` pour `injecter`. Ajouté le 2026-10-15 : la méthode était implémentée par le moteur et **appelée par le coeur** (`challenge.rs`, transport de la fenêtre de vérification) sans figurer dans l'`enum` — donc hors contrat par construction, puisque `request` porte `additionalProperties: false`. Réponse réellement enregistrée : `tests/fixtures/14-injecter.json`.",
+      "type": "object",
+      "required": ["ok", "memoire", "octets"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "memoire": {
+          "type": "integer",
+          "description": "Nombre de pages mises en mémoire après l'injection."
+        },
+        "octets": {
+          "type": "integer",
+          "description": "Taille du HTML injecté."
+        }
+      },
+      "additionalProperties": false
+    },
+    "mangaList": {
+      "description": "Forme de `result` pour `latest` et `search`. Ce sont des **objets enveloppés** (`{list: [...]}`), pas des tableaux nus : c'est la forme réellement émise, mesurée sur les fixtures du 2026-10-15, et celle que type l'interface (`invoke<{ list: Manga[] }>`).",
+      "type": "object",
+      "required": ["list"],
+      "properties": {
+        "list": { "type": "array", "items": { "$ref": "#/$defs/manga" } }
+      },
+      "additionalProperties": true
+    },
+    "chapterList": {
+      "description": "Forme de `result` pour `chapters` : `{chapters: [...]}`.",
+      "type": "object",
+      "required": ["chapters"],
+      "properties": {
+        "chapters": { "type": "array", "items": { "$ref": "#/$defs/chapter" } }
+      },
+      "additionalProperties": true
+    },
+    "pageList": {
+      "description": "Forme de `result` pour `pages` : `{pages: [...]}`.",
+      "type": "object",
+      "required": ["pages"],
+      "properties": {
+        "pages": { "type": "array", "items": { "$ref": "#/$defs/page" } }
+      },
+      "additionalProperties": true
+    },
+    "sourceList": {
+      "description": "Forme de `result` pour `listSources` : `{sources: [...]}`.",
+      "type": "object",
+      "required": ["sources"],
+      "properties": {
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/sourceInfo" } }
       },
       "additionalProperties": true
     },

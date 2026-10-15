@@ -2939,7 +2939,6 @@ ewFixedThreadPool(min(8,max(processors,2))). Cancellation OkHttp reste non branc
 6. importer_source sans jeton de dialogue : confirmé non exposé côté UI, 7 tests de traversal verts. Tracabilisé dans le code + tâche pour S2.
 
 ### Journal 2026-10-15 — recherche globale d'un webtoon (mini-plan, avant code)
-
 Demande : chercher un webtoon **par titre** depuis la page catalogue, sur
 **toutes les sources actives** (choix explicite de l'utilisateur, pas seulement
 la langue affichée). Contexte mesuré avant de coder : le champ de recherche du
@@ -3008,4 +3007,58 @@ traite au plus `MAX_WORKERS` (2..8) requêtes en parallèle. Mini-plan :
   mécanique (validation, sélection des sources, annulation, contrat IPC), pas
   le comportement réseau. C'est le smoke test à jouer avant de déclarer la
   fonctionnalité validée.
+
+### Journal 2026-10-15 — audit UX de l'app (mini-plan, avant mesure)
+
+Demande : améliorer l'expérience utilisateur et l'interface de **toute** l'app.
+Réponse de l'humain : **audit mesuré d'abord**, priorité à l'**UX
+fonctionnelle** (bouton qui ne fait rien, erreur mal affichée, état
+incompréhensible), le style visuel ensuite. Méthode : skill `ux-audit` —
+inventaire par script, parcours de l'app **réelle** dans la WebView (CDP,
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=9223` + `connectOverCDP`), rapport de
+findings avec preuve par finding. Mini-plan :
+
+1. Inventaire (script `.mesures/ux-audit/inventaire.mjs`) : écrans,
+   composants et composants inutilisés, tokens définis vs utilisés, couleurs
+   hors système, composants dupliqués, couverture des états vide/chargement/
+   erreur.
+2. Parcours (script `.mesures/ux-audit/parcours.cjs`) : accueil → catalogue →
+   langue → source → recherche → fiche → chapitre → lecteur → téléchargements
+   → réglages → diagnostic. Capture de chaque état, lecture console, mesure
+   contraste/focus dans la même passe. Aucune action destructive (pas de
+   téléchargement, pas de modification de favoris ou de réglages).
+3. Rapport `docs/audit-ux-2026-10-15.md` : findings par flux, transverses,
+   « harness », « probablement sain », priorités **proposées** (décision humaine). Les corrections ne commencent qu'après validation.
+
+**Audit livré le 2026-10-15 (lecture seule, aucun code produit touché).**
+Rapport : `docs/audit-ux-2026-10-15.md`. Outils : `.mesures/ux-audit/`
+(`inventaire.mjs`, `parcours.cjs`, 14 captures, `parcours.json`).
+
+Findings retenus, chacun avec sa preuve :
+- **F1** clé React manquante : la bande du lecteur (`page.tsx:5679`) retourne un
+  fragment `<>` **sans key** (L5730), le `key={p.token}` etant pose sur l'`<img>`
+  interne — 1 erreur console mesuree a l'ouverture du lecteur.
+- **F2** contraste : « Voir le chapitre signale », accent #366ad3 sur #1a1a1a =
+  **3,45:1** a 12,5 px (seuil AA 4,5). Seul echec de contraste de la passe.
+- **F3** source vide muette : BENTOSCAN rend 0 manga **sans erreur ni message**
+  (mesure : mangas=0, erreur=null ; moteur repondu en ~2 s).
+- **F4** deux champs de recherche cohabitent sur le catalogue (filtre de sources
+  + recherche globale de `e316a4d`).
+- **F6** 40–100 cles dupliquees sur la fiche « One Piece » : `key={c.url}`
+  (L6051) alors que SCANVF rend des URL de chapitres en double.
+- **F13** fenetres de verification Cloudflare qui s'ouvrent et restent (declencheur
+  non identifie au demarrage — le premier tick du planificateur est immediat).
+- **Positifs mesures** : lecteur fonctionnel (image 720×4096, compteur 1/17,
+  scroll 0->85, Echap sort), 0 anneau de focus manquant sur 12 arrets, filtre du
+  catalogue + etat vide corrects, bibliotheque (7 webtoons, 86 Mo) et reglages
+  complets.
+
+Pieges d'instrument ecartes et divulgues dans le rapport (« Harness ») : le
+bulbe rouge « N Issues × » est injecte par le navigateur (absent du code, son
+compte suit les erreurs console) ; le binaire debug exige `next dev`
+(`devUrl` dans `tauri.conf.json`). Erreurs de mes propres sondes corrigees puis
+rejouees (selecteur `.manga` = squelette, `input.search` = recherche globale,
+`pages[0]` = page Cloudflare, `scrollTop` sur `.reader` au lieu de `.webtoon`,
+compte d'`<img>` sans alt gonfle par des commentaires).
+   humaine). Les corrections ne commenquent qu'après validation.
 

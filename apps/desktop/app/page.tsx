@@ -95,6 +95,22 @@ type Page = {
 };
 /** Page d'un `.cbz` déjà téléchargé : servie par Rust, sans moteur ni réseau. */
 type LocalPage = { index: number; token: string; name: string; width: number; height: number };
+/** Résumé d'une passe de recherche globale (`recherche_globale`).
+ *
+ *  Les noms de champs sont ceux que Rust sérialise — snake_case, dérivé de
+ *  `Resume` dans `src-tauri/src/recherche.rs`. `invoke<Type>` est une
+ *  affirmation que rien ne vérifie (mesuré le 2026-10-09 sur `Progression`) :
+ *  `pnpm ipc:check` est la seule porte, et elle compare aux paires déclarées. */
+type ResumeRecherche = {
+  id: string;
+  sources_interrogees: number;
+  sources_avec_resultats: number;
+  sources_en_echec: number;
+  partielle: boolean;
+};
+/** Charge utile d'un `recherche://resultat` : les fiches d'**une** source.
+ *  `id` est la passe : un lot d'une passe remplacée doit être ignoré. */
+type RechercheLot = { id: string; source: string; list: Manga[] };
 /** Référence stable : `reader?.pages ?? []` créerait un nouveau tableau à chaque
  *  rendu, donc les `useMemo` de la bande recalculeraient sans cesse. */
 const EMPTY_PAGES: Page[] = [];
@@ -457,6 +473,10 @@ const PAGE = 24;
 // qu'une tranche a la fois (le reste est derriere « Afficher plus »).
 const CHAPTER_PAGE = 100;
 const CHAPTER_STEP = 200;
+/** Résultats de recherche globale rendus d'un coup. Une passe peut remonter
+ *  des centaines de fiches (1370 sources × 5) : on en rend une tranche, le
+ *  reste est derrière « Voir plus de résultats ». */
+const RECHERCHE_PAGE = 48;
 const PAGE_KEY = 'tatami.pageSize';
 const SOURCES_KEY = 'tatami.enabledSources';
 /** Deuxième clé de la liste blanche : l'UNIVERS des noms déjà présentés.
@@ -1104,6 +1124,20 @@ export default function Home() {
   const [lang, setLang] = useState('all');
   const [nameFilter, setNameFilter] = useState('');
   const [shownSources, setShownSources] = useState(48);
+  // ─── Recherche globale (2026-10-15) ───
+  // Un titre cherché sur TOUTES les sources actives, depuis le catalogue.
+  // Distincte de `nameFilter` (filtre les **sources** par nom) et de
+  // `mangaQuery` (cherche **dans** la source ouverte) : les trois cohabitent,
+  // et c'est justement leur confusion qui rendait un webtoon introuvable.
+  const [rechQuery, setRechQuery] = useState('');
+  const [rechBusy, setRechBusy] = useState(false);
+  const [rechResultats, setRechResultats] = useState<Manga[]>([]);
+  const [rechResume, setRechResume] = useState<ResumeRecherche | null>(null);
+  const [rechAffiches, setRechAffiches] = useState(RECHERCHE_PAGE);
+  // Miroir de la passe courante, pour l'écouteur d'événements abonné UNE fois
+  // au montage : sans ce ref, l'écouteur capturerait une valeur périmée (même
+  // motif que `tCourant` plus bas).
+  const rechIdRef = useRef<string | null>(null);
   const [selected, setSelected] = useState<Source | null>(null);
   const [latest, setLatest] = useState<Manga[]>([]);
   const [latestOffset, setLatestOffset] = useState(0);
@@ -1736,6 +1770,17 @@ export default function Home() {
         return suivant;
       });
     });
+    // Résultats de la recherche globale, **par source qui répond** : la grille
+    // se remplit dès la première réponse, sans attendre la fin de la passe
+    // (jusqu'à 1370 requêtes). `rechIdRef`, pas un état : cet effet est abonné
+    // une seule fois (tableau `[]`), donc un `rechId` capturé serait celui du
+    // montage — chaque recherche suivante serait ignorée.
+    const unlistenRecherche = listen<RechercheLot>('recherche://resultat', (event) => {
+      const lot = event.payload;
+      if (!lot || lot.id !== rechIdRef.current || !Array.isArray(lot.list)) return;
+      if (lot.list.length === 0) return;
+      setRechResultats((prec) => [...prec, ...lot.list]);
+    });
     return () => {
       unlisten.then((off) => off()).catch(() => {});
       unlistenVerif.then((off) => off()).catch(() => {});
@@ -1743,6 +1788,7 @@ export default function Home() {
       unlistenPage.then((off) => off()).catch(() => {});
       unlistenResolu.then((off) => off()).catch(() => {});
       unlistenMaj.then((off) => off()).catch(() => {});
+      unlistenRecherche.then((off) => off()).catch(() => {});
     };
     // Montage uniquement : rejouer cet effet à chaque changement de
     // `refreshDownloads` réabonnerait l'écouteur d'événements.
@@ -2952,6 +2998,78 @@ function nomSource(s: Source): string {
     } finally {
       setLoadingState(false);
     }
+  }
+
+  /** Lance une recherche globale. L'`id` de passe est généré **ici** et
+   *  renvoyé tel quel par Rust : c'est ce qui permet à l'écouteur d'ignorer
+   *  les fiches d'une passe que l'utilisateur a remplacée. Sans cet `id`, une
+   *  seconde recherche mélangerait les résultats de la première — un mélange
+   *  silencieux, puisque rien ne les distinguerait à l'écran. */
+  async function lancerRechercheGlobale() {
+    if (rechBusy) return;
+    const id = `rech-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    rechIdRef.current = id;
+    setRechResultats([]);
+    setRechResume(null);
+    setRechAffiches(RECHERCHE_PAGE);
+    setError(null);
+    setRechBusy(true);
+    try {
+      const resume = await invoke<ResumeRecherche>('recherche_globale', {
+        id,
+        query: rechQuery,
+        // La classification part exactement comme `latest` l'envoie : la
+        // divergence `search` / `latest` sur ce réglage avait déjà coûté une
+        // régression (cf. `recherche.rs`). `''` = aucune, jamais un implicite.
+        contentRating: rating === 'ALL' ? '' : rating,
+      });
+      // Une passe remplacée pendant l'attente ne doit rien écrire : son
+      // résumé appartiendrait à la recherche que l'utilisateur vient de
+      // lancer, pas à celle dont il regarde les résultats.
+      if (rechIdRef.current !== id) return;
+      setRechResume(resume);
+    } catch (e) {
+      if (rechIdRef.current !== id) return;
+      setRechResume(null);
+      setError(t('catalogue.recherche.erreur', { raison: String(e) }));
+    } finally {
+      if (rechIdRef.current === id) setRechBusy(false);
+    }
+  }
+
+  /** Efface les résultats affichés.
+   *
+   *  Le ref est remis à zéro **avant** l'état : les lots d'une passe encore en
+   *  vol tombent alors dans le vide, au lieu de remplir une grille que
+   *  l'utilisateur vient d'effacer. La passe, elle, continue jusqu'à son
+   *  prochain lot — Rust l'annulera de toute façon à la prochaine recherche
+   *  (`PasseEnCours`). */
+  function effacerRecherche() {
+    rechIdRef.current = null;
+    setRechResultats([]);
+    setRechResume(null);
+    setRechBusy(false);
+    setRechQuery('');
+  }
+
+  /** Nom affiché d'une source dont on n'a que le nom (résultats de recherche :
+   *  la fiche porte `source`, pas l'objet). Même règle que `nomSource` — une
+   *  source scriptée s'affiche par son `displayName`, jamais par `custom:…`. */
+  function nomSourceParNom(nom: string): string {
+    return sources.find((s) => s.name === nom)?.displayName ?? nom;
+  }
+
+  /** Ouvre la fiche d'un résultat de recherche globale.
+   *
+   *  `setSelected` est posé **avant** `loadChapters` : le téléchargement depuis
+   *  la fiche lit `selected.name` (`fetchOneChapter`, gardé par
+   *  `if (!openManga || !selected) return`). Un résultat ouvert sans source
+   *  sélectionnée ferait donc échouer le téléchargement en silence — un bouton
+   *  qui ne fait rien, sans le moindre message. */
+  function ouvrirResultat(m: Manga) {
+    const src = sources.find((s) => s.name === m.source);
+    if (src) setSelected(src);
+    void loadChapters(m);
   }
 
   function toggleChapter(url: string) {
@@ -6777,6 +6895,11 @@ if (reader) {
     );
   }
 
+  // Une recherche globale en cours, avec des résultats, ou terminée avec un
+  // résumé : dans les trois cas le catalogue montre les résultats, pas les
+  // tuiles de langue.
+  const rechActif = rechBusy || rechResultats.length > 0 || rechResume !== null;
+
   // ---------- Vue : catalogue ----------
   return (
     <main>
@@ -6798,6 +6921,138 @@ if (reader) {
             : ''}
         </span>
       </header>
+
+      {/* Recherche globale — AU-DESSUS du filtre de sources, parce que c'est
+          l'action que le mot « catalogue » suggère : y chercher un webtoon. Le
+          filtre par nom reste en dessous pour parcourir les 1370 sources.
+          Longueur minimale de 2 caractères, alignée sur `LONGUEUR_MIN` côté
+          Rust : la porte réelle est là, ceci n'est qu'une affordance. */}
+      <div className="row-actions recherche-globale">
+        <input
+          className="search"
+          type="search"
+          aria-label={t('catalogue.recherche.label')}
+          placeholder={t('catalogue.recherche.label')}
+          value={rechQuery}
+          onChange={(e) => setRechQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && rechQuery.trim().length >= 2) {
+              void lancerRechercheGlobale();
+            }
+          }}
+        />
+        <button
+          className="btn"
+          onClick={() => void lancerRechercheGlobale()}
+          disabled={rechBusy || rechQuery.trim().length < 2}
+        >
+          {rechBusy ? (
+            <span className="loader-inline">
+              <span className="roue" aria-hidden="true" />
+              {t('catalogue.recherche.attente')}
+            </span>
+          ) : (
+            t('catalogue.recherche.lancer')
+          )}
+        </button>
+        {rechActif && (
+          <button className="btn btn-ghost" onClick={effacerRecherche}>
+            {t('catalogue.recherche.effacer')}
+          </button>
+        )}
+      </div>
+
+      {rechActif ? (
+        <section className="recherche-resultats">
+          <p className="count">
+            {t('catalogue.recherche.pour', { q: rechQuery })}
+            {' · '}
+            {rechResultats.length === 1
+              ? t('catalogue.recherche.resultats1', { n: rechResultats.length })
+              : t('catalogue.recherche.resultats', { n: rechResultats.length })}
+          </p>
+
+          {rechResultats.length === 0 && (
+            <p className="muted">
+              {rechBusy ? (
+                <span className="loader-inline">
+                  <span className="roue" aria-hidden="true" />
+                  {t('catalogue.recherche.attente')}
+                </span>
+              ) : (
+                t('catalogue.recherche.vide')
+              )}
+            </p>
+          )}
+
+          {rechResultats.length > 0 && (
+            <>
+              <div className="manga-grid">
+                {rechResultats.slice(0, rechAffiches).map((m) => {
+                  const key = mangaKey(m);
+                  return (
+                    <div key={key} className="manga" data-manga-key={key}>
+                      {/* Même structure que la grille du catalogue
+                          (`.manga` > `.manga-open` > `.cover` + `.label`) : la
+                          géométrie vient du même CSS, donc elle ne peut pas
+                          diverger — cf. la leçon du squelette en §14. */}
+                      <button className="manga-open" onClick={() => ouvrirResultat(m)}>
+                        <span className="cover">
+                          {m.coverToken ? (
+                            <img
+                              className="thumb"
+                              src={coverSrc(m.coverToken)}
+                              alt=""
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span className="thumb thumb-empty" aria-hidden="true">
+                              {(m.title.trim()[0] ?? '?').toUpperCase()}
+                            </span>
+                          )}
+                        </span>
+                        <span className="label">{m.title}</span>
+                        {/* Le nom de la source est OBLIGATOIRE ici : un même
+                            webtoon existe sur plusieurs sources, et sans lui
+                            l'utilisateur ne saurait pas sur laquelle il va
+                            tomber. */}
+                        <span className="recent-line">{nomSourceParNom(m.source)}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {rechAffiches < rechResultats.length && (
+                <button
+                  className="btn btn-more"
+                  onClick={() => setRechAffiches((n) => n + RECHERCHE_PAGE)}
+                >
+                  {t('catalogue.recherche.voir.plus')}
+                </button>
+              )}
+            </>
+          )}
+
+          {rechResume && (
+            <p className="muted note">
+              {rechResume.sources_interrogees === 1
+                ? t('catalogue.recherche.interrogees1', {
+                    n: rechResume.sources_interrogees,
+                  })
+                : t('catalogue.recherche.interrogees', {
+                    n: rechResume.sources_interrogees,
+                  })}
+              {' · '}
+              {rechResume.sources_en_echec === 1
+                ? t('catalogue.recherche.echec1', { n: rechResume.sources_en_echec })
+                : t('catalogue.recherche.echec', { n: rechResume.sources_en_echec })}
+              {rechResume.partielle ? ` · ${t('catalogue.recherche.partielle')}` : ''}
+            </p>
+          )}
+        </section>
+      ) : (
+        <>
 
       <input
         className="search"
@@ -7035,6 +7290,8 @@ if (reader) {
               )}
             </>
           )}
+        </>
+      )}
         </>
       )}
     </main>

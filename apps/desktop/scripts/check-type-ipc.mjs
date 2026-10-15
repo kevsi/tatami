@@ -52,6 +52,7 @@ const PAIRES = [
   ['ImportRapport', 'ImportRapport', 'library.rs'],
   ['PlanReglages', 'ReglagesVue', 'scheduler.rs'],
   ['Progress', 'Progress', 'download.rs'],
+  ['ResumeRecherche', 'Resume', 'recherche.rs'],
 ];
 
 /** Champs d'un `type X = { … }` de `page.tsx`, dans l'ordre. */

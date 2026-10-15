@@ -45,6 +45,7 @@ pub mod journal;
 pub mod library;
 pub mod moteur;
 pub mod pagecache;
+pub mod recherche;
 pub mod scheduler;
 pub mod shelf;
 pub mod store;

@@ -20,8 +20,8 @@ use tauri::Manager;
 // chemin de `generate_handler!` ne se résout pas.
 use tatami_desktop::pagecache::PageRef;
 use tatami_desktop::{
-    challenge, commands, custom_source, download, journal, library, moteur, pagecache, scheduler,
-    shelf, store, tray,
+    challenge, commands, custom_source, download, journal, library, moteur, pagecache, recherche,
+    scheduler, shelf, store, tray,
 };
 
 fn not_found() -> tauri::http::Response<Vec<u8>> {
@@ -182,6 +182,10 @@ fn main() {
         .manage(sup.clone())
         .manage(Arc::new(store))
         .manage(cache.clone())
+        // Recherche globale : l'état d'annulation doit survivre d'un appel de
+        // commande à l'autre — une commande Tauri est sans état, donc la passe
+        // en cours vit ici (cf. `recherche::PasseEnCours`).
+        .manage(Arc::new(recherche::PasseEnCours::default()))
         .register_asynchronous_uri_scheme_protocol("tatami", move |ctx, request, responder| {
             // La poignée de l'application, lue sur le contexte du gestionnaire
             // de protocole (`UriSchemeContext::app_handle`, vérifié dans la
@@ -240,6 +244,7 @@ fn main() {
             commands::scripts_refuses,
             commands::latest,
             commands::filter_options,
+            recherche::recherche_globale,
             commands::est_base_en_memoire,
             download::download_chapter,
             download::missing_chapters,

@@ -2937,3 +2937,75 @@ ewFixedThreadPool(min(8,max(processors,2))). Cancellation OkHttp reste non branc
 4. SessionCache jamais purgée : 7 compteurs d'insertions + 	ailleTotale + ligne stderr tous les 1000. Politique d'éviction **non choisie** — volontaire.
 5. .map() sans key : vérifié ; React ne signale rien (eslint jsx-key à 0) et la sandbox {Array.from} utilise déjà key={i}. Rien à faire.
 6. importer_source sans jeton de dialogue : confirmé non exposé côté UI, 7 tests de traversal verts. Tracabilisé dans le code + tâche pour S2.
+
+### Journal 2026-10-15 — recherche globale d'un webtoon (mini-plan, avant code)
+
+Demande : chercher un webtoon **par titre** depuis la page catalogue, sur
+**toutes les sources actives** (choix explicite de l'utilisateur, pas seulement
+la langue affichée). Contexte mesuré avant de coder : le champ de recherche du
+catalogue filtre les **sources** par nom (`nameFilter`), et la recherche par
+titre existe déjà mais **à l'intérieur** d'une source ouverte
+(`searchInSource`). Le moteur expose `search` (Server.kt:1440), `listSources`
+est caché côté moteur (`sourcesNatives`, construit une fois), et le moteur
+traite au plus `MAX_WORKERS` (2..8) requêtes en parallèle. Mini-plan :
+
+1. **Rust `src/recherche.rs`** — commande `recherche_globale(id, query)` :
+   `listSources` → retrait des sources désactivées (SQLite) → fan-out `search`
+   par lots de `CONCURRENCE`, délai par requête, durée maximale de passe ;
+   événement `recherche://resultat` émis **par source qui répond** (affichage
+   progressif), résumé rendu en fin de passe. Fonctions pures testées :
+   validation de la requête, sources à interroger, annulation d'une passe au
+   profit de la suivante.
+2. **Front `app/page.tsx`** — bloc recherche sur le catalogue (champ + bouton),
+   écoute de l'événement filtrée par `id` de passe, grille de résultats
+   réutilisant `.manga-grid`, nom de la source sous chaque carte, clic →
+   `loadChapters` existant. Jetons de couverture posés par Rust
+   (`ajouter_jetons_couverture`), sinon vignettes vides.
+3. **i18n FR/EN + portes §8 + commit.**
+
+**Livré le 2026-10-15 (même journée).** Ce qui a été fait, et prouvé :
+
+- **Rust** — `src/recherche.rs` (nouveau) : `recherche_globale(id, query,
+  contentRating)`. `listSources` (cache moteur, `Server.kt:784`) → retrait des
+  sources désactivées (`store.disabled_sources()`) → fan-out `search` par lots
+  de 8 (`MAX_WORKERS` moteur = 2..8), 20 s de délai par requête, passe plafonnée
+  à 120 s (`partielle` au résumé si coupée), un événement
+  `recherche://resultat` **par source qui répond**, jeton de couverture posé
+  par Rust. `request`, pas `request_avec_transport` ni `request_with_retry` :
+  1370 fenêtres de vérification ou 3× le trafic vers les hôtes morts seraient
+  l'inverse de la politesse. Annulation : `PasseEnCours` (une nouvelle passe
+  annule la précédente, vérifiée entre les lots). `contentRating` part
+  exactement comme `latest` le construit — la divergence `search`/`latest` sur
+  ce réglage avait déjà coûté une régression. Câblage : `lib.rs`,
+  `main.rs` (manage + handler), `commands.rs` (`LOCAL_TIMEOUT` et
+  `requested_rating` passés `pub(crate)`, même règle qu'`into_result`).
+- **Front** — bloc recherche au-dessus du filtre de sources (le filtre, lui,
+  continue de filtrer les **sources** par nom) ; les résultats remplacent le
+  parcours (tuiles de langue, grille de sources) le temps de la recherche ;
+  cartes réutilisant `.manga` > `.manga-open` > `.cover` + `.label`, **nom de
+  la source sous chaque carte** (`displayName` si présente) ; clic →
+  `loadChapters` existant, précédé d'un `setSelected` — sans lui le
+  téléchargement depuis la fiche bute sur `if (!openManga || !selected) return`
+  et ne fait rien, en silence. L'`id` de passe, généré par le front, filtre les
+  lots périmés dans l'écouteur (abonné une fois, `rechIdRef`).
+- **Preuves** — 12 tests unitaires Rust purs, **RED prouvé** en cassant
+  l'implémentation (6 tests nommés en échec : filtre désactivées, rognage,
+  annulation), puis restore + `mtime` rafraîchi (leçon `Move-Item`) → 12/12.
+  Portes : `cargo clippy --all-targets -- -D warnings` exit 0 ; `cargo test`
+  **238 passés / 0 échec** ; front `typecheck` 0, `lint` 0 erreur (4 warnings
+  exhaustive-deps connus), `i18n:check` 398 clés FR = 398 EN sans clé morte
+  (15 clés × 2 ajoutées, toutes utilisées), `hooks/chemins/pages/perso/ipc/moteur`
+  exit 0 — `ipc:check` avec la paire `ResumeRecherche ↔ Resume (recherche.rs)`
+  ajoutée à `scripts/check-type-ipc.mjs` — `pnpm test` 128/128, `pnpm build`
+  exit 0.
+- **Dette vue, hors périmètre** — `cargo fmt --check` échoue sur
+  `src/download.rs:1000` et `:1010`. Prouvé préexistant : le fichier est intact
+  dans git (`git status` le ignore) et `rustfmt --check` échoue déjà sur son
+  état HEAD. Non corrigé : reformater un fichier que la tâche ne touche pas
+  aurait mis du bruit dans le diff. `recherche.rs`, lui, est formaté.
+- **Non fait, à ne pas prétendre** — aucun essai **en direct** de la recherche
+  globale (moteur lancé, vraie passe sur 1370 sources). Les portes prouvent la
+  mécanique (validation, sélection des sources, annulation, contrat IPC), pas
+  le comportement réseau. C'est le smoke test à jouer avant de déclarer la
+  fonctionnalité validée.
+

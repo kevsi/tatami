@@ -235,6 +235,29 @@ const FR = {
   "catalogue.desactiver": "Désactiver la source {nom}",
   "catalogue.reactiver": "Réactiver la source {nom}",
 
+  // --- Recherche globale (2026-10-15) ---
+  // Un titre cherché sur TOUTES les sources actives, depuis le catalogue.
+  // Le résumé est composé de fragments qui se tiennent **chacun** seuls : une
+  // clé unique « {n} sources · {m} en échec » mentirait sur le pluriel de
+  // l'une des deux langues (mesuré le 2026-10-06 : « 1 sources »), et `·`
+  // entre deux fragments nickel est agrammatical dans l'autre. D'où une clé
+  // singulière et une plurielle par fragment, choisies dans le code.
+  "catalogue.recherche.label": "Rechercher un webtoon dans toutes les sources",
+  "catalogue.recherche.lancer": "Rechercher",
+  "catalogue.recherche.attente": "Recherche en cours…",
+  "catalogue.recherche.effacer": "Effacer la recherche",
+  "catalogue.recherche.vide": "Aucune source active n’a renvoyé de résultat.",
+  "catalogue.recherche.pour": "Résultats pour « {q} »",
+  "catalogue.recherche.erreur": "Recherche impossible : {raison}",
+  "catalogue.recherche.voir.plus": "Voir plus de résultats",
+  "catalogue.recherche.resultats1": "{n} résultat",
+  "catalogue.recherche.resultats": "{n} résultats",
+  "catalogue.recherche.interrogees1": "{n} source interrogée",
+  "catalogue.recherche.interrogees": "{n} sources interrogées",
+  "catalogue.recherche.echec1": "{n} source en échec",
+  "catalogue.recherche.echec": "{n} sources en échec",
+  "catalogue.recherche.partielle": "recherche partielle",
+
   // --- Sources personnalisées (S2) ---
   // Panneau dans les réglages : importer, lister, supprimer des scripts .js.
   "sources.perso.titre": "Sources personnalisées",
@@ -761,6 +784,28 @@ const EN: Record<Cle, string> = {
   "catalogue.ouvrir": "Open source {nom}",
   "catalogue.desactiver": "Disable source {nom}",
   "catalogue.reactiver": "Enable source {nom}",
+
+  // --- Global search (2026-10-15) ---
+  // A title searched across ALL active sources, from the catalogue. The summary
+  // is made of fragments that each stand alone: a single "{n} sources · {m}
+  // failed" key would lie about the plural of one of the two languages
+  // (measured on 2026-10-06: "1 sources"). Hence one singular and one plural
+  // key per fragment, chosen in code.
+  "catalogue.recherche.label": "Search a webtoon across all sources",
+  "catalogue.recherche.lancer": "Search",
+  "catalogue.recherche.attente": "Searching…",
+  "catalogue.recherche.effacer": "Clear search",
+  "catalogue.recherche.vide": "No active source returned a result.",
+  "catalogue.recherche.pour": "Results for “{q}”",
+  "catalogue.recherche.erreur": "Search failed: {raison}",
+  "catalogue.recherche.voir.plus": "Show more results",
+  "catalogue.recherche.resultats1": "{n} result",
+  "catalogue.recherche.resultats": "{n} results",
+  "catalogue.recherche.interrogees1": "{n} source searched",
+  "catalogue.recherche.interrogees": "{n} sources searched",
+  "catalogue.recherche.echec1": "{n} source failed",
+  "catalogue.recherche.echec": "{n} sources failed",
+  "catalogue.recherche.partielle": "partial search",
 
   // --- Custom sources (S2) ---
   "sources.perso.titre": "Custom sources",

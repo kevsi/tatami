@@ -31,7 +31,11 @@ pub(crate) const DEEP_TIMEOUT: Duration = Duration::from_secs(60);
 /// chaque parser (`newParserInstance`) pour en lire le domaine. Un budget de 10 s
 /// y était donc franchi en permanence, la commande échouait, et le catalogue
 /// s'affichait vide.
-const LOCAL_TIMEOUT: Duration = Duration::from_secs(60);
+///
+/// `pub(crate)` : la recherche globale (`recherche.rs`) interroge le même
+/// `listSources` et doit porter le MÊME budget. Deux délais pour la même requête
+/// divergeraaient au premier réglage.
+pub(crate) const LOCAL_TIMEOUT: Duration = Duration::from_secs(60);
 
 fn list_timeout(seconds: Option<u32>) -> Duration {
     let asked = Duration::from_secs(seconds.unwrap_or(60).clamp(10, 180) as u64);
@@ -147,7 +151,11 @@ pub async fn scripts_refuses(sup: State<'_, Arc<Supervisor>>) -> Result<Vec<Stri
 /// ou blanche ne doit surtout pas être confondue avec `SAFE` : mesuré, le
 /// réglage « Toutes » envoyait `SAFE` et les sources adultes renvoyaient zéro
 /// résultat alors que l'utilisateur avait explicitement demandé l'inverse.
-fn requested_rating(content_rating: Option<&str>) -> Option<String> {
+/// `pub(crate)` : la recherche globale porte exactement la même règle
+/// (`recherche.rs`). La divergence `search` / `latest` sur ce réglage avait
+/// déjà coûté une régression — deux implémentations de la même décision
+/// finissent toujours par diverger.
+pub(crate) fn requested_rating(content_rating: Option<&str>) -> Option<String> {
     content_rating
         .map(str::trim)
         .filter(|r| !r.is_empty())

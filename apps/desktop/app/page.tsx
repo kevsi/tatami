@@ -1321,6 +1321,16 @@ export default function Home() {
   });
   const stripRef = useRef<HTMLDivElement>(null);
   const stripImages = useRef<(HTMLImageElement | null)[]>([]);
+  /**
+   * L'observateur **courant**, pour que le `ref` de chaque image puisse
+   * s'y inscrire.
+   *
+   * Observer depuis le seul effet ne suffit pas : en bande virtualisée, les
+   * images montées au défilement arrivent **après** lui, donc elles n'étaient
+   * jamais observées et le compteur de pages se figeait dès qu'on sortait de la
+   * fenêtre initiale. Mesuré le 2026-10-15.
+   */
+  const observateurBande = useRef<IntersectionObserver | null>(null);
   /** Index des pages que la source ne sert pas, dans le chapitre ouvert.
    *
    *  Ce n'est pas rare, et ce n'est pas notre défaut : mesuré le 2026-10-09 sur
@@ -4288,8 +4298,15 @@ useEffect(() => {
     // visible, un seuil bas ne fait qu'élargir le lot de candidats.
     { root, threshold: 0 },
   );
+  observateurBande.current = observer;
   for (const el of stripImages.current) if (el) observer.observe(el);
-  return () => observer.disconnect();
+  return () => {
+    observer.disconnect();
+    // Le `ref` ne doit plus inscrire dans un observateur mort : sans cette remise
+    // à `null`, une image montée entre le nettoyage et le prochain effet serait
+    // observée par un objet déconnecté, donc jamais signalée.
+    if (observateurBande.current === observer) observateurBande.current = null;
+  };
   // L'observateur dépend du chapitre, du mode et du nombre de pages — pas de
   // l'objet `reader` complet, qui est recréé à chaque changement de page et
   // rejouerait l'observation sans raison.
@@ -5605,7 +5622,13 @@ if (reader) {
                     <img
                       key={p.token}
                       ref={(el) => {
+                        // Inscrire **et** désinscrire ici. C'est le seul endroit
+                        // qui voit les pages montées au défilement : l'effet
+                        // d'observation ne se rejoue pas pour elles.
+                        const ancien = stripImages.current[i];
+                        if (ancien && ancien !== el) observateurBande.current?.unobserve(ancien);
                         stripImages.current[i] = el;
+                        if (el) observateurBande.current?.observe(el);
                       }}
                       src={admis.includes(i) ? pageSrc(p.token, reprisePages) : undefined}
                       alt={t('lecteur.page.une', { n: i + 1 })}

@@ -418,8 +418,6 @@ button:disabled {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-  border-color: var(--accent);
-}
 
 .source-search {
   display: flex;
@@ -458,7 +456,6 @@ button:disabled {
 
 .chip[aria-pressed='true'] {
   background: var(--accent-dim);
-  border-color: var(--accent);
   color: var(--accent-dim-texte);
 }
 
@@ -502,7 +499,6 @@ button:disabled {
 
 .btn-primary {
   background: var(--accent);
-  border-color: var(--accent);
   color: var(--accent-ink);
 }
 
@@ -572,7 +568,6 @@ button:disabled {
 
 .lang-tile:hover {
   background: var(--surface-2);
-  border-color: var(--accent);
 }
 
 .lang-tile b {
@@ -669,7 +664,6 @@ button:disabled {
 
 .slot-switch[aria-checked='true'] {
   background: var(--accent);
-  border-color: var(--accent);
 }
 
 .slot-knob {
@@ -897,7 +891,6 @@ button:disabled {
 /* Bouton de signet actif dans la barre du lecteur. */
 .seg-btn.on {
   color: var(--accent);
-  border-color: var(--accent);
 }
 
 .card .name {
@@ -1034,11 +1027,9 @@ button:disabled {
 }
 
 .fav-toggle.on {
-  border-color: var(--accent);
 }
 
 .manga:hover {
-  border-color: var(--accent);
   background: var(--surface-2);
 }
 
@@ -1111,7 +1102,6 @@ button:disabled {
 }
 
 .manga.picked {
-  border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
 }
 
@@ -1134,7 +1124,6 @@ button:disabled {
 
 .manga.picked .pick {
   background: var(--accent);
-  border-color: var(--accent);
 }
 
 /* ---------------- Barre de sélection ---------------- */
@@ -1265,7 +1254,6 @@ button:disabled {
 
 .chapter-cell.on {
   background: var(--accent-dim);
-  border-color: var(--accent);
 }
 /* Le chapitre qu'on est en train de lire.
    Mesuré le 2026-10-09 : aucun marqueur n'existait, donc relire la liste ne
@@ -1278,7 +1266,6 @@ button:disabled {
    `aria-current` porte l'information pour un lecteur d'écran ; ce bloc ne
    sert qu'à l'œil. */
 .chapter-cell.courant {
-  border-color: var(--accent);
   border-width: 2px;
   padding: 8px 11px;
   }
@@ -1443,7 +1430,6 @@ button:disabled {
 
 .pick-bar input[type='number']:focus {
   outline: none;
-  border-color: var(--accent);
 }
 
 /* Même raison que le bloc `.search:focus` plus haut : sans ce complément, ce
@@ -1985,7 +1971,6 @@ button:disabled {
 
 .state-telechargement {
   color: var(--encours-texte);
-  border-color: var(--accent);
 }
 
 .queue .btn {

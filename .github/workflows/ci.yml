@@ -123,6 +123,25 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri
 
+      # --- Sécurité (ajout 2026-10-15 : item 2 des 6 restants) --------------
+      #
+      # `cargo audit` et gitleaks ne sont pas des portes de correction : ce
+      # sont des conditions de **sortie du risque**. Une dépendance Rust avec
+      # un advisory, ou un secret commis par erreur, ne casse pas le build ;
+      # ils cassent la confiance. D'où leur présence comme étapes séparées
+      # — un échec de dépendance se lit distinctement d'un échec de
+      # compilation.
+      #
+      - name: Secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rust — dépendances vulnérables (cargo audit)
+        uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Dépendances npm
         run: pnpm install --frozen-lockfile
 

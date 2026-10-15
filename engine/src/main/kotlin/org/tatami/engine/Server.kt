@@ -321,6 +321,24 @@ private fun mangaForDetails(
  * Rust (cf. `lib.rs`) : une garantie de sécurité doit être **vérifiable**.
  * `RequestedRatingsTest` la couvre sur ses trois branches.
  */
+/**
+ * Des options de filtre **sans aucune classification annoncée**.
+ *
+ * C'est la forme que prend un script de source personnalisée : il n'a pas de
+ * `getFilterOptions`, donc il ne déclare rien. C'est exactement le cas que la
+ * règle native traite déjà — « la source n'annonce AUCUNE classification » —
+ * et le nom le dit pour qu'on ne croie pas à un oubli.
+ */
+@OptIn(org.koitharu.kotatsu.parsers.InternalParsersApi::class)
+private fun optionsSansClassification(): MangaListFilterOptions = MangaListFilterOptions(
+    availableTags = emptySet(),
+    availableStates = emptySet(),
+    availableContentRating = emptySet(),
+    availableContentTypes = emptySet(),
+    availableDemographics = emptySet(),
+    availableLocales = emptySet(),
+)
+
 internal fun requestedRatings(
     p: JSONObject,
     options: MangaListFilterOptions,
@@ -906,6 +924,32 @@ internal suspend fun dispatchCustom(
                 return JSONObject().put("list", JSONArray())
             }
             val page = offset / limit + 1
+            // **Le réglage de classification passe ici aussi**, et le résultat
+            // est ce qu'il peut être — c'est-à-dire pas un filtre.
+            //
+            // Mesuré le 2026-10-15 : ce chemin n'appelait pas
+            // `requestedRatings`, donc une source personnalisée servait son
+            // contenu en incognito sans que rien ne le dise, pendant que la règle
+            // était instrumentée sur 82 sources natives.
+            //
+            // Deux effets réels, malgré l'absence de filtrage possible :
+            //   1. une classification **inconnue** est désormais refusée, comme
+            //      partout ailleurs (avant : acceptée en silence) ;
+            //   2. une classification demandée mais non annoncée est **écrite sur
+            //      stderr**, donc mesurable au lieu d'être un silence.
+            //
+            // Pourquoi aucun filtrage : `ScriptedParser.getList(page, query)`
+            // n'accepte pas de filtre — le contrat d'un script (ADR 0010) ne le
+            // prévoit pas — et le script renvoie des mangas **sans**
+            // `contentRating`, que le moteur force ensuite à `UNKNOWN`. Il n'y a
+            // donc rien à filtrer, et prétendre le contraire serait une fiction.
+            //
+            // Ce qui reste ouvert est une **décision**, pas un oubli : un script
+            // peut servir de l'adulte alors que l'incognito est actif. Bloquer
+            // rendrait les sources perso inutilisables en navigation prudente ;
+            // ne pas bloquer laisse passer. La politique appliquée est la
+            // seconde, rendue visible.
+            requestedRatings(p, optionsSansClassification(), sourceName)
             val arr = parser.getList(page, query)
             // Le script ne connaît pas l'identifiant de contrat qu'il reçoit à la
             // recherche. Or c'est l'interface qui le renvoie ensuite à `details`,

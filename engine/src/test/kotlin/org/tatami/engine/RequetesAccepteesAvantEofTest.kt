@@ -103,15 +103,36 @@ class RequetesAccepteesAvantEofTest {
             val recues = mutableSetOf<String>()
             // Budget global, et non un délai par ligne : sinon un tour en échec
             // attend 5 × 30 s et personne ne le rejoue pour vérifier.
-            val limite = System.currentTimeMillis() + 20_000
+            //
+            // 60 s, et non 20 s. Mesuré le 2026-10-15 : chaque tour démarre un
+            // **JVM neuf**, donc 4 s par réponse n'est une marge que sur une
+            // machine au repos. Lancée en même temps qu'une construction Rust,
+            // la suite a échoué sur un tour — et le message disait « le moteur a
+            // perdu des réponses », ce qui accuse le code alors que la cause était
+            // la saturation. Un délai et une perte sont deux défauts différents :
+            // le test les distingue maintenant.
+            val limite = System.currentTimeMillis() + 60_000
+            var eof = false
             while (recues.size < nombre && System.currentTimeMillis() < limite) {
-                val ligne = stdout.readLine() ?: break
+                val ligne = stdout.readLine() ?: run { eof = true; break }
                 assertTrue(ligne.isNotBlank(), "ligne vide reçue")
                 assertTrue(
                     ligne.trim().endsWith("}"),
                     "réponse tronquée (${recues.size} reçue(s)) : $ligne",
                 )
                 recues += org.json.JSONObject(ligne).optString("id")
+            }
+            if (recues.size < nombre && !eof) {
+                // Délai, et non perte : le moteur tourne peut-être encore, la
+                // machine est simplement saturée. Le dire, sinon le prochain
+                // lecteur part chercher un bug de protocole qui n'existe pas.
+                throw AssertionError(
+                    "délai dépassé : ${recues.size}/$nombre réponses en 60 s. " +
+                        "C'est une saturation de la machine, pas une perte — " +
+                        "relancer le test sur une machine au repos avant d'en tirer " +
+                        "une conclusion. Manquantes : " +
+                        (0 until nombre).map { "id$it" }.filter { it !in recues },
+                )
             }
             assertTrue(
                 process.waitFor(15, TimeUnit.SECONDS),

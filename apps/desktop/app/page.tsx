@@ -4380,7 +4380,7 @@ useEffect(() => {
       <main>
         <AppBar tab={tab} onTab={goTab} />{renderSuperpositions()}
         <button className="crumb" onClick={() => setTab('catalog')}>
-          {'←'} Catalogues
+          {'←'} {t('nav.catalogues')}
         </button>
         <header className="page-head">
           <h1>{t('nav.parametres')}</h1>
@@ -4895,7 +4895,10 @@ useEffect(() => {
                         : t('sources.tout.activer')}
             </button>
             <span className="muted">
-              {visibleSources.length} / {sources.length} catalogues
+              {t('catalogue.compte.titres', {
+                visibles: visibleSources.length,
+                total: sources.length,
+              })}
             </span>
           </div>
           <div className="chip-wrap">
@@ -4916,7 +4919,7 @@ useEffect(() => {
             })}
           </div>
           {sources.length > 200 && (
-            <p className="muted">200 premiers catalogues sur {sources.length}. Utilise la recherche pour les autres.</p>
+            <p className="muted">{t('catalogue.tronque', { n: sources.length })}</p>
           )}
         </section>
 
@@ -5180,7 +5183,12 @@ useEffect(() => {
                 const p = progressParSource.get(q.source);
                 return p && p.total > 0 ? (
                   <p key={q.key} className="muted">
-                    {q.title} — {p.chapter} : page {p.page}/{p.total}
+                    {t('recherche.progression', {
+                      titre: q.title,
+                      chapitre: p.chapter,
+                      page: p.page,
+                      total: p.total,
+                    })}
                   </p>
                 ) : null;
               })}
@@ -5373,7 +5381,7 @@ if (reader) {
         {renderChargement()}
         <header className="reader-bar">
           <button className="btn btn-ghost" onClick={closeReader}>
-            {'←'} Chapitres
+            {'←'} {t('nav.chapitres')}
           </button>
           <span className="reader-title">
             {reader.mangaTitre || openManga?.title} · {chapterLabel(chapter)}
@@ -5506,7 +5514,7 @@ if (reader) {
               }}
             >
               <label className="page-jump-label" htmlFor="reader-page">
-                Page
+                {t('lecteur.page.intitre')}
               </label>
               <input
                 id="reader-page"
@@ -5749,7 +5757,7 @@ if (reader) {
         {isFavorite(fiche) && (
           <div className="cat-pick">
             <label className="field" htmlFor="fiche-categorie">
-              Catégorie
+              {t('fiche.categorie')}
               <select
                 id="fiche-categorie"
                 value={favoriDe(fiche)?.category_id ?? ''}
@@ -5836,10 +5844,10 @@ if (reader) {
               aria-label={t('libelle.selection.nb', { n: pickCount })}
             />
             <button className="btn btn-ghost" onClick={() => pickChapters('last')}>
-              N derniers
+              {t('chapitre.pick.derniers', { n: pickCount })}
             </button>
             <button className="btn btn-ghost" onClick={() => pickChapters('first')}>
-              N premiers
+              {t('chapitre.pick.premiers', { n: pickCount })}
             </button>
             <button className="btn btn-ghost" onClick={() => pickChapters('all')}>
               {t('libelle.tout')}
@@ -6009,7 +6017,9 @@ if (reader) {
             className="btn btn-more"
             onClick={() => setChapterLimit((n) => n + CHAPTER_STEP)}
           >
-            Afficher plus ({filteredChapters.length - chapterLimit} restants)
+            {t('chapitre.afficher.plus', {
+              n: filteredChapters.length - chapterLimit,
+            })}
           </button>
         )}
       </main>
@@ -6022,7 +6032,7 @@ if (reader) {
       <main>
         <AppBar tab={tab} onTab={goTab} />{renderSuperpositions()}
         <button className="crumb" onClick={backToCatalog}>
-          {'←'} Catalogues
+          {'←'} {t('nav.catalogues')}
         </button>
         <header className="page-head">
           <h1>{nomSource(selected)}</h1>
@@ -6060,11 +6070,13 @@ if (reader) {
             ))}
             {activeTags.length > 0 && (
               <button className="chip chip-clear" onClick={clearTags}>
-                Effacer ({activeTags.length})
+                {t('filtre.effacer', { n: activeTags.length })}
               </button>
             )}
             {tagsTotal > tags.length && (
-              <span className="muted chips-note">{tagsTotal} genres au total</span>
+              <span className="muted chips-note">
+                {t('filtre.genres.total', { n: tagsTotal })}
+              </span>
             )}
           </div>
         )}
@@ -6278,7 +6290,7 @@ if (reader) {
                           className="card-count"
                           title={t('telechargements.chapitres.nouveaux', { n: cardTotal[key] })}
                         >
-                          {cardTotal[key]} ch.
+                          {t('carte.chapitres', { n: cardTotal[key] })}
                         </span>
                       )}
                     </span>
@@ -6323,8 +6335,7 @@ if (reader) {
 
         {onePageOnly && (
           <p className="muted note">
-            {selected ? nomSource(selected) : ''} ne renvoie qu&apos;une seule page : son catalogue est plus
-            court qu&apos;il n&apos;y paraît (limite du site, pas de l&apos;application).
+            {t('recherche.une.page', { source: selected ? nomSource(selected) : '' })}
           </p>
         )}
 
@@ -6337,10 +6348,10 @@ if (reader) {
             {loading ? (
               <span className="loader-inline">
                 <span className="roue" aria-hidden="true" />
-                Chargement…
+                {t('recherche.chargement')}
               </span>
             ) : (
-              <>Voir plus ({latest.length} chargés)</>
+              <>{t('recherche.voir.plus', { n: latest.length })}</>
             )}
           </button>
         )}
@@ -7019,7 +7030,7 @@ if (reader) {
 
               {filtered.length > shownSources && (
                 <button className="btn btn-more" onClick={() => setShownSources((n) => n + 48)}>
-                  Voir plus ({filtered.length - shownSources} restantes)
+                  {t('sources.voir.plus', { n: filtered.length - shownSources })}
                 </button>
               )}
             </>

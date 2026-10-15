@@ -1,102 +1,181 @@
-// Porte : aucune chaîne française en dur dans le JSX rendu.
+// Porte : aucun texte français en dur dans ce qui est **rendu**.
 //
-// Le défaut mesuré le 2026-10-09 (audit) : 14 occurrences signalées, dont
-// plusieurs étaient des faux positifs (chaînes citées dans des commentaires ou
-// du code). Vérifié après nettoyage : **3 vraies**, toutes des `aria-label`
-// (`Aller à la page`, `Sélection rapide des chapitres`, `Filtrer les chapitres
-// par numéro ou titre`). Toutes sont lues par un lecteur d'écran dans les DEUX
-// langues, donc un `aria-label` non traduit est invisible pour qui navigue au
-// clavier.
+// ## Pourquoi ce script est réécrit en AST
 //
-// `check-i18n.mjs` ne peut PAS couvrir ça : son propre en-tée explique qu'une
-// recherche de français en dur crierait sur les commentaires et les messages
-// d'erreur. Cette porte est donc volontairement étroite — elle ne regarde que
-// ce qui est **rendu** : attributs (`aria-label`, `title`, `placeholder`,
-// `alt`) et contenu texte d'une balise.
+// La version précédente lisait le fichier **ligne par ligne**, avec trois
+// conditions cumulées sur le texte d'une balise : `> … <` **sur la même ligne**,
+// avec une lettre accentuée, et **sans expression**. Les trois sont fausses en
+// pratique sur du JSX, où le texte est presque toujours seul sur sa ligne et
+// contient une expression.
 //
-// Elle ne cherche pas les fautes de frappe dans un nom correct, ni une chaîne
-// sans accent : `pages` ou `Terminé` (déjà traduit ailleurs) ne comptent pas.
-// Une porte trop large s'apprend à ignorer.
+// Mesuré le 2026-10-15 : la porte annonçait « aucun libellé en dur » **avec au
+// moins vingt libellés français réellement affichés**, dont `Voir plus ({n}
+// chargés)`, `Sur les chapitres filtrés` / `Choisir`, `Retirer des favoris` /
+// `Ajouter aux favoris`, `{tagsTotal} genres au total`, `← Catalogues`. Aucun
+// n'était visible parce qu'un littéral en dur **dans une expression** n'est ni sur
+// la ligne de la balise, ni dépourvu de `{}`.
+//
+// Le même problème, aggravé, existait côté attributs : `title={isFavorite(m) ?
+// 'Retirer des favoris' : 'Ajouter aux favoris'}` est sur une seule ligne, mais
+// sans accent, donc invisible aussi.
+//
+// La lesson est celle du §14 : une porte doit être **cassée pour prouvee qu'elle
+// mord**. Le test de la porte, en bas de fichier, la casse.
+//
+// ## Ce que la porte refuse
+//
+// 1. Un `JsxText` non vide : le texte littéral entre deux balises.
+// 2. Un attribut rendu à l'utilisateur (`aria-label`, `title`, `placeholder`,
+//    `alt`) dont la valeur est un **littéral**, jamais un appel à `t(…)`.
+//
+// ## Ce qu'elle ne refuse pas
+//
+// La détection du français est **l'absence dans le dictionnaire**, pas la
+// présence d'un accent : `Choisir` et `Terminé` n'ont pas le même alphabet, et
+// une porte qui exige un accent laisse passer la moitié des fautes. Les
+// commentaires ne sont pas visités du tout — un arbre syntaxique ne les contient
+// pas, ce qui supprime d'un coup toute la classe des faux positifs.
+//
+// `i18n.ts` est exclu : c'est le dictionnaire, donc sa valeur est **par
+// définition** du texte displayed ailleurs.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const ici = dirname(fileURLToPath(import.meta.url));
 const racine = join(ici, '..');
+const appDir = join(racine, 'app');
 
-const modules = readdirSync(join(racine, 'app')).filter(
-  (f) => f.endsWith('.ts') || f.endsWith('.tsx'),
+/** Attributs dont la valeur est lue par un lecteur d'écran ou affichée. */
+const ATTRIBUTS_RENDUS = new Set(['aria-label', 'title', 'placeholder', 'alt']);
+
+/** Le dictionnaire, pour savoir ce qui est **déjà** traduit. */
+function valeursDuDictionnaire(nom) {
+  const fichier = join(appDir, 'i18n.ts');
+  const source = ts.createSourceFile(
+    'i18n.ts',
+    readFileSync(fichier, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  let trouve = null;
+  const visiter = (n) => {
+    // `const FR = {…} as const` : l'initialiseur est un `AsExpression` dont
+    // l'expression est l'objet littéral. Mesuré le 2026-10-15 : ne chercher que
+    // l'objet littéral faisait échouer la porte sur un dictionnaire parfaitement
+    // valide — c'est-à-dire qu'elle criait pour la mauvaise raison.
+    if (ts.isVariableDeclaration(n) && n.name.getText(source) === nom && n.initializer) {
+      let e = n.initializer;
+      while (ts.isAsExpression(e) || ts.isSatisfiesExpression(e)) e = e.expression;
+      if (ts.isObjectLiteralExpression(e)) trouve = e;
+    }
+    ts.forEachChild(n, visiter);
+  };
+  visiter(source);
+  if (!trouve) throw new Error(`${nom} introuvable dans app/i18n.ts`);
+  const valeurs = new Set();
+  for (const p of trouve.properties) {
+    if (!ts.isPropertyAssignment(p)) continue;
+    const v = p.initializer;
+    if (ts.isStringLiteral(v)) valeurs.add(v.text);
+  }
+  return valeurs;
+}
+
+// Le dictionnaire est lu **seulement** pour vérifier qu'il reste parsable : une
+// porte qui ne le lit pas ne peut pas dire qu'un `JsxText` est une faute. Lire
+// pour l'utiliser comme liste blanche était un trou (voir `suspect`).
+valeursDuDictionnaire('FR');
+valeursDuDictionnaire('EN');
+
+/**
+ * Un littéral est suspect dès qu'il contient des lettres.
+ *
+ * ## Pourquoi le dictionnaire ne sert plus de criterion
+ *
+ * La première version de cette règle disait « le littéral n'est pas dans le
+ * dictionnaire ». Mesuré le 2026-10-15 : c'était un trou. `{'←'} Chapitres`
+ * affichait `Chapitres` en dur alors que la clé `nav.chapitres` venait d'être
+ * ajoutée — donc sa **valeur** était dans le dictionnaire, et la porte le laissait
+ * passer. L'écran continuait de dire « Chapitres » en anglais. Un littéral qui
+ * ressemble à une traduction n'est **pas** une traduction : seul l'appel à `t()`
+ * en est une.
+ *
+ * ## Pourquoi il n'y a pas de faux positif
+ *
+ * Un `JsxText` ne peut pas appeler `t()` : du texte entre deux balises est
+ * traduit par construction impossible autrement. Un attribut, lui, est vérifié
+ * structurellement — le code ne descend dans un littéral que si l'initialiseur
+ * n'est pas un appel, donc `aria-label={t('…')}` n'est jamais descendu.
+ *
+ * Restent écartés, parce que ce ne sont pas des libellés : `·`, `←`, `{`,
+ * `1/2`, `100%`, `OK`, `×`.
+ */
+function suspect(valeur) {
+  const v = valeur.trim();
+  if (v.length === 0) return false;
+  if (!/[a-zà-ÿ]/i.test(v)) return false;   // symbole ou nombre
+  if (v.replace(/\s+/g, '').length <= 2) return false; // « OK », « × », « N »
+  return true;
+}
+
+const modules = readdirSync(appDir).filter(
+  (f) => (f.endsWith('.ts') || f.endsWith('.tsx')) && f !== 'i18n.ts' &&
+    !f.endsWith('.test.ts'),
 );
-
-// Accent français : ce qui distingue un libellé traduit d'un identifiant.
-// Ne sert plus qu'au texte d'une balise (voir l'en-tête).
-const FRANCAIS = /[àâçéèêëîïôùûü]/i;
-// Une lettre quelconque, accentuée ou non.
-const LETTRE = /[a-zà-ÿ]/i;
 
 const problemes = [];
 
 for (const f of modules) {
-  const lignes = readFileSync(join(racine, 'app', f), 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
-    // Commentaires de ligne retirés : une chaîne citée en prose n'est pas
-    // affichée.
-    //
-    //    `[ \t]*` et non `\s*` : `\s` matche `\n`, donc un `\s*` en tête d'un
-    //    commentaire de ligne avalait le saut de ligne PRÉCÉDENT et décalait
-    //    tout le fichier. Mesuré le 2026-10-10 : **47 lignes** de décalage, la
-    //    porte nommait `page.tsx:4395` pour une chaîne située en `4436`. Une
-    //    porte qui accuse la mauvaise ligne est une porte qu'on finit par
-    //    ignorer (même leçon que `check-hooks.mjs`, §14).
-    .replace(/^[ \t]*\/\/[^\n]*/gm, (m) => ' '.repeat(m.length))
-    .split(/\r?\n/);
+  const chemin = join(appDir, f);
+  const texte = readFileSync(chemin, 'utf8');
+  const source = ts.createSourceFile(f, texte, ts.ScriptTarget.Latest, true,
+    f.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
 
-  for (let i = 0; i < lignes.length; i++) {
-    const l = lignes[i];
-    // 1. Attributs rendus à l'utilisateur.
-    //
-    //    Trois formes de valeur littérale : `'…'`, `"…"`, et `` `…` `` — le
-    //    gabarit peut porter une interpolation (`Couleur de ${c.name}`), qui
-    //    est du français en dur AVEC une partie variable. Elle est signalée
-    //    elle aussi : la moitié fixe n'est pas traduite.
-    //
-    //    Le `\{?` avant la citation est indispensable : en JSX, un littéral
-    //    passé en attribut s'écrit `aria-label={`Couleur de ${c.name}`}`. Sans
-    //    lui, la porte ne voyait que `attr="…"` et `attr='…'` — c'est-à-dire
-    //    qu'elle ratait précisément les valeurs construites avec une
-    //    interpolation. Mesuré le 2026-10-10 : `aria-label={`Couleur de
-    //    ${c.name}`}` (page.tsx:4102) passait.
-    for (const m of l.matchAll(
-      /\b(?:aria-label|title|placeholder|alt)\s*=\s*\{?\s*(?:'([^']*)'|"([^"]*)"|`([^`]*)`)/g,
-    )) {
-      const v = m[1] || m[2] || m[3] || '';
-      // Une valeur sans aucune lettre n'est pas un libellé : `alt=""`,
-      // `aria-label="3"`, `title="…"`.
-      if (LETTRE.test(v)) {
-        const fixe = v.includes('{');
-        problemes.push(
-          `${f}:${i + 1} — attribut affiché en dur${fixe ? ' (avec interpolation)' : ''} : « ${v} »`,
-        );
+  const ligne = (n) => source.getLineAndCharacterOfPosition(n.getStart(source)).line + 1;
+
+  const visiter = (n) => {
+    // 1. Texte littéral entre deux balises.
+    if (ts.isJsxText(n)) {
+      const v = n.text.replace(/\s+/g, ' ').trim();
+      if (suspect(v)) {
+        problemes.push(`${f}:${ligne(n)} — texte affiché en dur : « ${v} »`);
       }
     }
-    // 2. Contenu texte d'une balise, sans expression ni imbrication.
-    for (const m of l.matchAll(/>\s*([^<>{}]*[àâçéèêëîïôùûü][^<>{}]*?)\s*</gi)) {
-      const v = m[1].trim();
-      // `</` ouvrirait une balise fermante : ce n'est pas du texte.
-      if (v.length > 1 && !/^<\//.test(v)) {
-        problemes.push(`${f}:${i + 1} — texte affiché en français : « ${v} »`);
+
+    // 2. Attribut rendu à l'utilisateur, valeur littérale.
+    if (ts.isJsxAttribute(n) && ATTRIBUTS_RENDUS.has(n.name.getText(source))) {
+      const init = n.initializer;
+      let valeur = null;
+      if (init && ts.isStringLiteral(init)) valeur = init.text;
+      else if (init && ts.isJsxExpression(init) && init.expression) {
+        const e = init.expression;
+        // Un gabarit sans expression reste du texte en dur ; un gabarit **avec**
+        // `${…}` est signalé aussi : la moitié fixe n'est pas traduite.
+        if (ts.isStringLiteral(e)) valeur = e.text;
+        else if (ts.isTemplateExpression(e)) {
+          valeur = e.getText(source).slice(1, -1).replace(/\$\{[^}]*\}/g, '{}');
+        }
+      }
+      if (valeur && suspect(valeur)) {
+        problemes.push(`${f}:${ligne(n)} — attribut « ${n.name.getText(source)} » en dur : « ${valeur} »`);
       }
     }
-  }
+
+    ts.forEachChild(n, visiter);
+  };
+  visiter(source);
 }
 
 if (problemes.length > 0) {
-  console.error('libelles: du texte est affiché en dur.');
-  console.error('Ces chaînes ne sont pas traduites, et un `aria-label` non traduit');
-  console.error('est invisible pour qui navigue au clavier.');
-  console.error('Un attribut doit venir de `t(…)` : sa valeur est lue dans les deux langues.');
+  console.error(`ECHEC libelles : ${problemes.length} texte(s) affiché(s) en dur.`);
+  console.error('Un attribut doit venir de `t(…)` : sa valeur est lue dans les deux langues,');
+  console.error('et un `aria-label` non traduit est invisible pour qui navigue au clavier.');
   for (const p of problemes) console.error('  ' + p);
   process.exit(1);
 }
-console.log(`libelles: aucun libellé en dur sur ${modules.length} modules de app/.`);
+console.log(
+  `libelles: aucun libellé en dur dans ${modules.length} modules de app/ (analyse AST, commentaires exclus).`,
+);

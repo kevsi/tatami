@@ -555,6 +555,32 @@ const FR = {
   "catalogue.source": "{n} sources",
   "bandeau.base_en_memoire":
     "La base de données est en mémoire : les favoris et l'historique ne seront pas conservés.",
+
+  // --- Libellés que `check-francais-dur.mjs` a fait apparaître le 2026-10-15 ---
+  //
+  // Cette porte existait déjà mais ne pouvait rien voir : elle lisait le fichier
+  // ligne par ligne, donc un littéral en dur **dans une expression** JSX lui
+  // échappait. Les vingt chaînes ci-dessous étaient affichées en français, en
+  // dur, dans les deux langues. Elles sont ici parce que la porte a été réécrite
+  // en AST (`scripts/check-francais-dur.mjs`), pas parce qu'un audit les a aimées.
+  "nav.chapitres": "Chapitres",
+  "fiche.categorie": "Catégorie",
+  "lecteur.page.intitre": "Page",
+  "chapitre.pick.derniers": "{n} derniers",
+  "chapitre.pick.premiers": "{n} premiers",
+  "chapitre.afficher.plus": "Afficher plus ({n} restants)",
+  "filtre.effacer": "Effacer ({n})",
+  "filtre.genres.total": "{n} genres au total",
+  "carte.chapitres": "{n} ch.",
+  "catalogue.compte.titres": "{visibles} / {total} catalogues",
+  "catalogue.tronque":
+    "200 premiers catalogues sur {n}. Utilise la recherche pour les autres.",
+  "recherche.progression": "{titre} - {chapitre} : page {page}/{total}",
+  "recherche.une.page":
+    "{source} ne renvoie qu'une seule page : son catalogue est plus court qu'il n'y paraît (limite du site, pas de l'application).",
+  "recherche.chargement": "Chargement…",
+  "recherche.voir.plus": "Voir plus ({n} chargés)",
+  "sources.voir.plus": "Voir plus ({n} restantes)",
 } as const;
 
 type Cle = keyof typeof FR;
@@ -1034,6 +1060,25 @@ const EN: Record<Cle, string> = {
   "catalogue.source": "{n} sources",
   "bandeau.base_en_memoire":
     "The database is in memory: favourites and history will not be persisted.",
+
+  // Contreparties des seize clés ajoutées au dictionnaire FR le 2026-10-15.
+  "nav.chapitres": "Chapters",
+  "fiche.categorie": "Category",
+  "lecteur.page.intitre": "Page",
+  "chapitre.pick.derniers": "Last {n}",
+  "chapitre.pick.premiers": "First {n}",
+  "chapitre.afficher.plus": "Show more ({n} remaining)",
+  "filtre.effacer": "Clear ({n})",
+  "filtre.genres.total": "{n} genres in total",
+  "carte.chapitres": "{n} ch.",
+  "catalogue.compte.titres": "{visibles} / {total} catalogues",
+  "catalogue.tronque": "First 200 catalogues out of {n}. Use the search for the others.",
+  "recherche.progression": "{titre} - {chapitre}: page {page}/{total}",
+  "recherche.une.page":
+    "{source} returns a single page only: its catalogue is shorter than it looks (a limit of the site, not of the app).",
+  "recherche.chargement": "Loading…",
+  "recherche.voir.plus": "Show more ({n} loaded)",
+  "sources.voir.plus": "Show more ({n} remaining)",
 };
 
 const DICTIONNAIRES: Record<Lang, Record<Cle, string>> = { fr: FR, en: EN };

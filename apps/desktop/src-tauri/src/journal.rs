@@ -143,14 +143,21 @@ fn separer_ponctuation(jeton: &str) -> (&str, &str) {
 /// réellement ouverts. Le préfixe `\\?\` est la forme longue Windows : valide,
 /// et illisible.
 fn chemin_windows(valeur: &str) -> Option<&str> {
-    let caracteres: Vec<char> = valeur.chars().collect();
-    (0..caracteres.len().saturating_sub(2))
-        .find(|&i| {
-            caracteres[i].is_ascii_alphabetic()
-                && caracteres[i + 1] == ':'
-                && caracteres[i + 2] == '\\'
-        })
-        .map(|i| &valeur[i..])
+    // `char_indices()` et non un `Vec<char>` indexé : ce dernier donne des index de
+    // **caractère**, qui ne sont pas des index d'**octet** dès que la chaîne
+    // contient du non-ASCII. Mesuré le 2026-10-15 : `"«C:\Users\x"` paniquait de
+    // `start byte index 1 is not a char boundary`, et un accent **en amont** du
+    // chemin suffisait aussi. Comme ce jeton est redacté par l'interface et par
+    // le stderr du moteur, c'est-à-dire du français et des messages d'erreur, le
+    // rapport de diagnostic — l'outil qu'on ouvre quand ça casse — mourait sur le
+    // premier accent. On garde `windows(3)` plutôt qu'un index : c'est la même
+    // condition, avec le décalage d'octets correct.
+    valeur
+        .char_indices()
+        .collect::<Vec<_>>()
+        .windows(3)
+        .find(|w| w[0].1.is_ascii_alphabetic() && w[1].1 == ':' && w[2].1 == '\\')
+        .map(|w| &valeur[w[0].0..])
 }
 
 /// Remplace la **valeur** d'un jeton si elle est trop bavarde, ou `None` pour le
@@ -584,6 +591,30 @@ mod tests {
             ligne.contains("Tatami"),
             "le dernier segment doit rester : {ligne}"
         );
+    }
+
+    /// Un accent **avant** le chemin ne doit pas paniquer, et le chemin doit
+    /// toujours être repéré.
+    ///
+    /// Mesuré le 2026-10-15 : `chemin_windows` indexait une `Vec<char>` avec un
+    /// index d'octet. Tout caractère multi-octet en amont décalait la
+    /// correspondance — `"«C:\Users\x"` panicked de `start byte index 1 is not a
+    /// char boundary`. Ce test est écrit sur la **forme que la fonction reçoit**,
+    /// pas sur une forme ASCII unobtenue : c'est exactement ce qui manquait.
+    #[test]
+    fn un_accent_avant_le_chemin_ne_casse_pas_la_redaction() {
+        for avant in ["", "«", "é", "reprise après échec — "] {
+            let chemin = format!("{avant}C:\\Users\\alexanders\\Documents\\Tatami");
+            let ligne = rediger(&chemin);
+            assert!(
+                !ligne.contains("alexanders"),
+                "le nom d'utilisateur fuit (avant = {avant:?}) : {ligne}"
+            );
+            assert!(
+                ligne.contains("Tatami"),
+                "le dernier segment doit rester (avant = {avant:?}) : {ligne}"
+            );
+        }
     }
 
     /// Une empreinte instable ne sert à rien : on ne peut plus relier deux

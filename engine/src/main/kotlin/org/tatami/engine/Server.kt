@@ -451,10 +451,58 @@ internal fun fetch_octets(
 /** Préfixe des identifiants de sources personnalisées dans le contrat. */
 const val CUSTOM_PREFIX = "custom:"
 
+/**
+ * Le catalogue des sources **natives**, dans l'ordre de l'enum.
+ *
+ * Fonction **pure** du JAR de parseurs épinglé : `domain`,
+ * `configKeyDomain.presetValues` et le nom ne changent pas pendant la vie du
+ * moteur. C'est ce qui autorise [EngineContext.sourcesNatives] à être mis en
+ * cache sans invalidation.
+ */
+internal fun construireCatalogueNatif(context: EngineContext): List<JSONObject> =
+    MangaParserSource.entries.map { src ->
+        val parser = context.newParserInstance(src)
+        val sourceInfo = JSONObject()
+            .put("name", src.name)
+            .put("lang", inferLang(src.name, ""))
+            .put("custom", false)
+        val domaines = domainesNatifs(
+            parser.domain,
+            parser.configKeyDomain.presetValues.asList(),
+        )
+        if (domaines.isNotEmpty()) sourceInfo.put("domains", JSONArray(domaines))
+        sourceInfo
+    }
+
 fun serve() {
     val context = EngineContext()
     val pool = ParserPool(context)
     val cache = SessionCache()
+
+    // **Aucun préchauffage ici**, et c'est un résultat mesuré, pas une absence.
+    //
+    // Trois variantes essayées le 2026-10-15, sur le moteur réel, en NDJSON :
+    //
+    //   | variante                          | `hello` | 1er `listSources` |
+    //   |------------------------------------|---------|------------------|
+    //   | sans rien (référence)              |    77 ms|        2 170 ms  |
+    //   | catalogue construit dans `serve()` | 9 524 ms|           50 ms  |
+    //   | catalogue sur un fil daemon        | 5 455 ms|           50 ms  |
+    //
+    // Le coût dominant est le **chargement des classes**, pas le constructeur du
+    // parseur — donc il est d'autant plus cher qu'il est déclenché tôt, quand la
+    // JVM est la plus froide. Le déplacer ne fait que changer *quand* on paie :
+    // sur un fil daemon, il vole encore assez de CPU pour que `hello` passe de
+    // 77 ms à 5,5 s.
+    //
+    // Reste donc la seule variante qui n'aggrave rien : construire **au premier
+    // appel**, puis servir le cache. La première ouverture coûte ce qu'elle
+    // coûtait, les suivantes ne reconstruisent plus 1 384 parseurs.
+    //
+    // L'autre levier — ne pas instancier de parser du tout pour lire
+    // `domain` et `configKeyDomain` — demanderait une API de la librairie de
+    // parseurs qui n'a pas été vérifiée. Conformément à la règle du projet, on ne
+    // l'invente pas : `À VÉRIFIER`.
 
     // Sources personnalisées (ADR 0010) : dossier $APPDATA/Tatami/sources/ ou
     // dossier courant en dev. Le loader est démarré en daemon thread et surveille
@@ -649,20 +697,11 @@ internal suspend fun dispatch(
     // ---- Routage vers les sources personnalisées (ADR 0010) ----
     "listSources" -> {
         val arr = JSONArray()
-        MangaParserSource.entries.forEach { src ->
-            val parser = context.newParserInstance(src)
-            val lang = inferLang(src.name, "")
-            val sourceInfo = JSONObject()
-                .put("name", src.name)
-                .put("lang", lang)
-                .put("custom", false)
-            val domaines = domainesNatifs(
-                parser.domain,
-                parser.configKeyDomain.presetValues.asList(),
-            )
-            if (domaines.isNotEmpty()) sourceInfo.put("domains", JSONArray(domaines))
-            arr.put(sourceInfo)
+        // Natives : catalogue figé, construit une fois (cf. `EngineContext.sourcesNatives`).
+        val natives = context.sourcesNatives ?: construireCatalogueNatif(context).also {
+            context.sourcesNatives = it
         }
+        natives.forEach { arr.put(it) }
         scriptLoader.sources().forEach { (cle, parser) ->
             // La clé du registre EST le nom de fichier sans `.js`
             // (identiteDe) : c'est elle que la base connaît, donc celle

@@ -67,6 +67,38 @@ class EngineContext : MangaLoaderContext() {
 
     override val cookieJar: CookieJar = InMemoryCookieJar()
 
+    /**
+     * Catalogue des sources **natives**, construit une seule fois.
+     *
+     * ## Pourquoi ce cache existe
+     *
+     * `listSources` instanciait un parseur pour chacune des 1 384 sources, à
+     * chaque appel, alors qu'il n'en lit que deux données **statiques** :
+     * `domain` et `configKeyDomain.presetValues`, toutes deux fonctions du JAR
+     * épinglé. `ParserPool` conserve déjà des instances vivantes — ce chemin
+     * l'ignorait purement et simplement.
+     *
+     * ## Ce que la mesure dit, et ce qu'elle ne dit pas
+     *
+     * L'audit annonçait « 7,6 s à chaque appel ». Mesuré le 2026-10-15 sur le
+     * moteur réel, en NDJSON : le **premier** `listSources` coûte 2 170 ms, les
+     * suivants 101 à 169 ms. La différence n'est donc pas le constructeur du
+     * parseur, c'est le **chargement des classes** — un coût unique. Le défaut
+     * réel n'était donc pas « 7,6 s par appel » mais « 2,2 s au premier écran
+     * catalogue », ce qui est un autre défaut et une autre correction.
+     *
+     * C'est donc le **premier** appel qui reste coûteux, et le cache est ce qui
+     * le rend unique. Voir le tableau des trois variantes mesurées dans
+     * `Server.kt` : préchauffer au démarrage coûte plus qu'il ne fait gagner.
+     *
+     * Le champ est `null` tant que le catalogue n'a pas été construit. Il n'est
+     * jamais invalidé : la liste des sources natives ne change pas pendant la
+     * vie du moteur, les sources **personnalisées** étant traitées séparément et
+     * reconstruites à chaque appel.
+     */
+    @Volatile
+    internal var sourcesNatives: List<org.json.JSONObject>? = null
+
     private val userAgentOverrides = ConcurrentHashMap<String, String>()
     private val browserIdentities = ConcurrentHashMap<String, BrowserIdentity>()
 

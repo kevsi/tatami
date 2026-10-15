@@ -36,7 +36,13 @@ private const val DEFAULT_TIMEOUT_MS = 120_000L
 // bloquer l'arrêt jusque-là, juste ne pas tronquer une réponse en cours d'écriture.
 private const val DELAI_VIDE_EOF_MS = 5_000L
 
-private class ParamException(message: String) : IllegalArgumentException(message)
+// `internal` et non `private` : le chemin réseau du fetcha d'image doit etre
+// eprouve par un test, et `private` le rendait invisible depuis `src/test`.
+// C'est une visibilite de **module**, donc l'API publique du moteur reste
+// identique — rien n'est expose a l'appelant. Le defaut que cela couvre
+// (mesure le 2026-10-15) : le chemin natif n'avait aucun filtre SSRF et son URL
+// vient du HTML du site.
+internal class ParamException(message: String) : IllegalArgumentException(message)
 
 // Cache jetable de session (AGENTS.md §4 : pas d'état persistant côté moteur).
 // Permet details/chapters/pages/fetchImage par URL sans reconstruire les objets :
@@ -391,13 +397,36 @@ internal fun requestedRatings(
  * réellement annoncé. Commun à `fetchImage` et `fetchCover` : c'est le même
  * chemin réseau, la seule différence est l'origine de l'URL.
  */
-private fun fetch_octets(
+internal fun fetch_octets(
     context: EngineContext,
     url: String,
     referer: String,
 ): Pair<ByteArray, String> = LIMITES_IMAGES.autourDe {
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
         throw ParamException("not an http(s) url: $url")
+    }
+    // Deux gardes que le chemin **natif** n'avait pas, et le chemin scripté si.
+    //
+    // 1. HTTPS obligatoire. Mesuré le 2026-10-15 : `http://` était accepté, donc
+    //    une source pouvait faire transiter des octets en clair.
+    // 2. Adresse littérale bornée. Ici l'URL **vient du HTML du site**
+    //    (`coverUrl`, `getPageUrl`) : une source hostile ou compromise
+    //    contrôle donc cette chaîne, et le moteur la téléchargeait sans la
+    //    relire. `fetchCover` reprenait `coverUrl` sans aucun filtre — la
+    //    garantie que le test `FetchImageReseauLocalTest` pretend couvrir ne
+    //    s'appliquait qu'au chemin scripté.
+    if (!url.startsWith("https://")) {
+        throw ParamException("seul https:// est accepte")
+    }
+    val uri = runCatching { url.toHttpUrl() }.getOrElse {
+        throw ParamException("URL illisible (${it.javaClass.simpleName})")
+    }
+    val hote = uri.host.lowercase()
+    if (hote == "localhost" || hote.endsWith(".localhost") || hote.endsWith(".local")) {
+        throw ParamException("hote local")
+    }
+    if (adresseLitteraleEstPublique(hote) == false) {
+        throw ParamException("reseau prive, boucle locale ou lien local")
     }
     val request = Request.Builder()
         .url(url)
@@ -846,25 +875,19 @@ private fun validerUrlImage(url: String, quoi: String): String {
     if (hote == "localhost" || hote.endsWith(".localhost") || hote.endsWith(".local")) {
         refuser("hote local")
     }
-    // Une IPv4 littérale : on la borne. Un nom public n'est pas borne, donc
-    // un nom qui resolve vers une IP privee passe — c'est assume : on ne couvre
-    // que ce qu'on peut prouver sans resoudre le nom, et faire un `getaddrinfo`
-    // ici ouvrirait la porte a un DNS rebinding, c'est-a-dire un detournement
-    // de regle. Le prefixe `https://` reste obligatoire dans tous les cas.
-    val ipv4 = Regex("^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$").find(hote)
-    if (ipv4 != null) {
-        val octets = ipv4.destructured.toList().map { it.toInt() }
-        if (octets.any { it > 255 }) refuser("adresse IPv4 invalide")
-        val (a, b, _, _) = octets
-        val privee = a == 10 ||
-            (a == 172 && b in 16..31) ||
-            (a == 192 && b == 168) ||
-            (a == 127) ||
-            (a == 169 && b == 254) ||
-            (a == 0)
-        if (privee) refuser("reseau prive, boucle locale ou lien local")
+    // Une adresse litterale est bornee — y compris sous ses formes exotiques
+    // (decimale `2852039166`, hexadecimale `0x7f000001`, octale, abregee) et en
+    // IPv6 litterale. Le validateur est celui de `HttpBridge`, donc les deux
+    // disent la meme chose : c'etait le defaut mesure le 2026-10-15, le
+    // validateur faible etant celui du chemin des images.
+    //
+    // Un nom public n'est pas borne ici, et c'est assume : resoudre le nom
+    // ouvrirait la porte a un DNS rebinding. La resolution appartient au `Dns` de
+    // `HttpBridge`, qui refuse des qu'une seule adresse retournee n'est pas
+    // publique. Le prefixe `https://` reste obligatoire dans tous les cas.
+    if (adresseLitteraleEstPublique(hote) == false) {
+        refuser("reseau prive, boucle locale ou lien local")
     }
-    if (hote.startsWith("[")) refuser("adresse IPv6 litterale non geree")
     return url
 }
 

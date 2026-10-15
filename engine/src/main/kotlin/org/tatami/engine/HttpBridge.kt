@@ -133,6 +133,39 @@ private object AdresseReseauPublique {
     }
 }
 
+/**
+ * Si `hote` est une **adresse littérale**, dit si elle est publique. `null` sinon.
+ *
+ * ## Pourquoi cette fonction a été extraite
+ *
+ * Le dépôt avait **deux** validateurs d'adresse, et ils ne disaient pas la même
+ * chose. `Server.validerUrlImage` testait l'IPv4 avec une expression régulière
+ * qui ne reconnaît que la forme pointée `a.b.c.d` ; `HttpBridge` knew already how
+ * to parse the exotics — decimal `2852039166`, hex, octal, abridged.
+ *
+ * Mesuré le 2026-10-15 : `java.net.URI.create("https://2852039166/x").host` vaut
+ * `2852039166`, la expression régulière **ne matche pas** donc aucune plage
+ * privée n'est testée, et `InetAddress.getByName("2852039166")` vaut
+ * `169.254.169.254` — l'adresse des métadonnées d'instance. OkHttp 5.1 accepte
+ * l'URL telle quelle. Le chemin des images downloadées par un script passes donc
+ * par un validateur qui, lui, ne prouve rien.
+ *
+ * ## Pourquoi un nom n'est pas résolu ici
+ *
+ * Résoudre ici rouvrirait la porte du DNS rebinding : la vérification et la
+ * connexion seraient deux `getaddrinfo` séparés, avec le temps de changer la
+ * réponse entre les deux. La résolution appartient au `Dns` de `HttpBridge`, qui
+ * refuse dès qu'**une seule** adresse renvoyée n'est pas publique.
+ */
+fun adresseLitteraleEstPublique(hote: String): Boolean? {
+    val adresse = when {
+        hote.startsWith("[") && hote.endsWith("]") ->
+            runCatching { InetAddress.getByName(hote.substring(1, hote.length - 1)) }.getOrNull()
+        else -> AdresseReseauPublique.adresseIpv4Numerique(hote)
+    } ?: return null
+    return AdresseReseauPublique.estPublique(adresse)
+}
+
 private class SocketReseauPublic(private val delegate: Socket) : Socket() {
     override fun connect(endpoint: SocketAddress, timeout: Int) {
         val adresseSocket = endpoint as? InetSocketAddress

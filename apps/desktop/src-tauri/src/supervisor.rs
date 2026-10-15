@@ -489,6 +489,15 @@ impl Supervisor {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            // **Nécessaire, pas prudent.** Mesuré le 2026-10-15 : `spawn_once`
+            // fait `engine_proc.lock().await.take()` puis attend le fils dans une
+            // variable locale (ligne 624), donc `engine_proc` vaut `None` pendant
+            // toute la session et `kill_child` — qui ne voit que cette map —
+            // ne tuait jamais rien. Sans ce drapeau, le `Child` de tokio est
+            // simplement lâché à l'arrêt du runtime et le **JVM continue de
+            // tourner, orphelin**, avec ses 256 Mo. Cinq fermetures dans la
+            // journée, cinq JVM dormants sur une machine de 12 Go.
+            .kill_on_drop(true)
             .spawn()
             .map_err(|e| format!("spawn: {e}"))?;
         let pid = child.id();
@@ -786,6 +795,15 @@ impl Supervisor {
         }
     }
 
+    /// Tuer le moteur si on tient encore son `Child`.
+    ///
+    /// **Ce n'est presque jamais le cas, et c'est mesuré.** `spawn_once` prend le
+    /// `Child` dans `engine_proc` puis le garde dans une variable locale pendant
+    /// tout le `wait()` (ligne 624) : la map est donc à `None` dès le premier
+    /// démarrage. La fuite qui en découlait est désormais couverte par
+    /// `kill_on_drop(true)` au spawn — c'est ce qui tue le fils quand le runtime
+    /// s'arrête. Cette fonction reste pour le cas où `spawn_once` n'a pas encore
+    /// pris le `Child`, et pour ne pas laisser croire qu'elle suffit.
     async fn kill_child(&self) {
         if let Some(mut child) = self.engine_proc.lock().await.take() {
             let _ = child.kill().await;

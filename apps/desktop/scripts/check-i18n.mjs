@@ -191,7 +191,23 @@ for (const cle of fr) {
   // commence à la ligne 1. `FR_VALEURS` restait donc vide et la règle
   // n'était jamais appliquée, sans jamais crier non plus. Une porte qui ne
   // peut pas crier est indistinguishable d'une porte verte.
-  const ligne = new RegExp(`^\\s*'${echappee}':\\s*'([^']*)'`, 'm').exec(i18n);
+  //
+  // Apostrophe **ou** guillemet double, comme `cles` plus haut. Mesuré le
+  // 2026-10-15 : le dictionnaire compte **730** lignes en guillemets doubles et
+  // **0** en guillemets simples. `FR_VALEURS` restait donc vide, donc
+  // `appelsSansValeurs` ne pouvait rien retourner, donc la règle 3 — celle qui
+  // existe pour attraper « l'écran affiche littéralement {n}/{total} chapitre » —
+  // ne pouvait pas crier.
+  //
+  // C'est le **deuxième** exemplaire du même piège dans ce fichier : le premier,
+  // sur `bornes()`/`cles`, était déjà corrigé et le dit en commentaire ligne 88.
+  // Les deux motifs voisins doivent être corrigés **ensemble**, sinon l'un reste
+  // le trou de l'autre. Le test de la porte est là-dessus : `la_regle_des_
+  // placeholders_crie`, plus bas.
+  const ligne = new RegExp(
+    `^\\s*['"]${echappee}['"]\\s*:\\s*['"]([^'"]*)['"]`,
+    'm',
+  ).exec(i18n);
   if (!ligne) continue;
   const trouves = [...ligne[1].matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
   if (trouves.length) FR_VALEURS.set(cle, trouves);
@@ -202,8 +218,12 @@ for (const cle of fr) {
 // moteur fait un backtracking et l'assertion passe quand même. C'est
 // exactement ce qui est arrivé au premier essai : la porte déclarait verte un
 // `t('clé', { n })` légitime tout en laissant passer `t('clé')`.
+// Même correction que `FR_VALEURS` ci-dessus : `Q` et non une apostrophe nue,
+// sinon une moitié de la règle est morte pendant que l'autre mord.
 const appelsSansValeurs = [
-  ...pageSansCommentaires.matchAll(new RegExp(`\\bt\\(\\s*'(${K})'\\s*(?:\\)|,(?!\\s*\\{))`, 'g')),
+  ...pageSansCommentaires.matchAll(
+    new RegExp(`\\bt\\(\\s*${Q}(${K})${Q}\\s*(?:\\)|,(?!\\s*\\{))`, 'g'),
+  ),
 ]
   .map((m) => m[1])
   .filter((cle) => FR_VALEURS.has(cle));

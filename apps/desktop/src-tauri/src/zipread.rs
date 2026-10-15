@@ -257,6 +257,12 @@ pub fn lire_entrees(chemin: &Path) -> Result<Vec<Entree>, ErreurZip> {
             break;
         }
         let nom = String::from_utf8_lossy(&repertoire[debut_nom..debut_nom + len_nom]).to_string();
+        // La position suivante est calculée **avant** le refus de nom, parce que le
+        // `continue` doit aussi avancer : il ne le faisait pas, donc le même
+        // en-tête était relu, refusé, relu… et la boucle ne rendait jamais la main.
+        // Mesuré le 2026-10-15 : un seul `.cbz` dont le répertoire central porte un
+        // nom remontant suffisait à figer la lecture (et donc l'import).
+        let pos_suivant = debut_nom + len_nom + len_extra + len_commentaire;
         // Refus ou normalisation : voir `assainir_nom`, qui porte la règle et
         // sa raison. En bref : la norme ZIP impose des slashs, mais
         // `Compress-Archive` écrit des antislashs — mesuré le 2026-10-05, avec
@@ -264,6 +270,7 @@ pub fn lire_entrees(chemin: &Path) -> Result<Vec<Entree>, ErreurZip> {
         // ne protégeait rien : cela faisait qu'une archive produite par l'outil du
         // projet lui-même n'installait rien, silencieusement.
         let Some(nom_sur) = assainir_nom(&nom) else {
+            pos = pos_suivant;
             continue;
         };
         let offset_local = lire_u32(&repertoire, pos + 42) as u64;
@@ -282,7 +289,7 @@ pub fn lire_entrees(chemin: &Path) -> Result<Vec<Entree>, ErreurZip> {
             taille_reelle,
             offset_local,
         });
-        pos = debut_nom + len_nom + len_extra + len_commentaire;
+        pos = pos_suivant;
     }
     if entrees.is_empty() {
         return Err(ErreurZip::PasUnZip);
@@ -609,7 +616,103 @@ mod tests {
         out
     }
 
-    /// Le chemin `DEFLATE` de [`lire_entree`] doit rendre les octets **d’origine**.
+    /// Assemble une archive `STORED` à **deux** entrées.
+    ///
+    /// `archive_zip` ne sait écrire qu'**une** entrée, donc le cas qui porte le
+    /// défaut n'était pas représentable : une entrée **refusée** suivie d'une
+    /// entrée valide. C'est exactement la forme qui figeait [`lire_entrees`] —
+    /// le `continue` du refus n'écrivait pas `pos`, donc le même en-tête était
+    /// relu sans fin. Mesuré le 2026-10-15.
+    fn archive_deux_entrees(nom_refuse: &str, nom_sain: &str) -> Vec<u8> {
+        let mut corps: Vec<u8> = Vec::new();
+        let mut central: Vec<u8> = Vec::new();
+        // Les deux entrées sont vides : ce qui est testé est la lecture du
+        // répertoire central, pas le contenu.
+        for nom in [nom_refuse, nom_sain] {
+            let n = nom.as_bytes();
+            let offset_local = corps.len() as u32;
+            // --- en-tête local ---
+            corps.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+            corps.extend_from_slice(&20u16.to_le_bytes()); // version
+            corps.extend_from_slice(&0u16.to_le_bytes()); // drapeaux
+            corps.extend_from_slice(&0u16.to_le_bytes()); // STORED
+            corps.extend_from_slice(&0u16.to_le_bytes()); // heure
+            corps.extend_from_slice(&0u16.to_le_bytes()); // date
+            corps.extend_from_slice(&0u32.to_le_bytes()); // crc
+            corps.extend_from_slice(&0u32.to_le_bytes()); // taille compressée
+            corps.extend_from_slice(&0u32.to_le_bytes()); // taille réelle
+            corps.extend_from_slice(&(n.len() as u16).to_le_bytes());
+            corps.extend_from_slice(&0u16.to_le_bytes()); // extra
+            corps.extend_from_slice(n);
+            // --- entrée du répertoire central ---
+            central.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+            central.extend_from_slice(&20u16.to_le_bytes()); // version émetteur
+            central.extend_from_slice(&20u16.to_le_bytes()); // version nécessaire
+            central.extend_from_slice(&0u16.to_le_bytes()); // drapeaux
+            central.extend_from_slice(&0u16.to_le_bytes()); // STORED
+            central.extend_from_slice(&0u16.to_le_bytes()); // heure
+            central.extend_from_slice(&0u16.to_le_bytes()); // date
+            central.extend_from_slice(&0u32.to_le_bytes()); // crc
+            central.extend_from_slice(&0u32.to_le_bytes()); // taille compressée
+            central.extend_from_slice(&0u32.to_le_bytes()); // taille réelle
+            central.extend_from_slice(&(n.len() as u16).to_le_bytes());
+            central.extend_from_slice(&0u16.to_le_bytes()); // extra
+            central.extend_from_slice(&0u16.to_le_bytes()); // commentaire
+            central.extend_from_slice(&0u16.to_le_bytes()); // disque
+            central.extend_from_slice(&0u16.to_le_bytes()); // attributs internes
+            central.extend_from_slice(&0u32.to_le_bytes()); // attributs externes
+            central.extend_from_slice(&offset_local.to_le_bytes());
+            central.extend_from_slice(n);
+        }
+        let taille_repertoire = central.len() as u32;
+        let offset_repertoire = corps.len() as u32;
+        corps.extend_from_slice(&central);
+        // --- fin de répertoire central ---
+        corps.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+        corps.extend_from_slice(&0u16.to_le_bytes());
+        corps.extend_from_slice(&0u16.to_le_bytes());
+        corps.extend_from_slice(&2u16.to_le_bytes()); // entrées sur ce disque
+        corps.extend_from_slice(&2u16.to_le_bytes()); // entrées au total
+        corps.extend_from_slice(&taille_repertoire.to_le_bytes());
+        corps.extend_from_slice(&offset_repertoire.to_le_bytes());
+        corps.extend_from_slice(&0u16.to_le_bytes()); // commentaire
+        corps
+    }
+
+    /// Une entrée refusée ne doit pas empêcher de lire la suivante.
+    ///
+    /// **Le délai n'est pas décoratif.** Avant la correction, cette assertion
+    /// n'était pas fausse : elle était **infinie**, donc le job de tests entier
+    /// expirait sans nommer la cause. Le fil porteur porte donc un garde-fou,
+    /// pour qu'un retour de la boucle infinie soit un test rouge qui dit *quoi*.
+    #[test]
+    fn une_entree_refusee_ne_bloque_pas_la_suivante() {
+        use std::sync::mpsc;
+
+        let p = dossier_unique("refus").join("hostile.cbz");
+        std::fs::write(&p, archive_deux_entrees("../evil.jpg", "001.jpg")).unwrap();
+
+        let (tx, rx) = mpsc::channel();
+        let chemin = p.clone();
+        std::thread::spawn(move || {
+            let lu = lire_entrees(&chemin)
+                .map(|entrees| entrees.iter().map(|e| e.nom.clone()).collect::<Vec<_>>())
+                .map_err(|e| e.to_string());
+            let _ = tx.send(lu);
+        });
+
+        let lu = rx.recv_timeout(std::time::Duration::from_secs(10)).expect(
+            "lire_entrees ne rend pas la main quand une entrée est refusée : \
+             la position du répertoire central n'avance pas",
+        );
+
+        assert_eq!(
+            lu.expect("l'archive doit rester lisible"),
+            vec!["001.jpg".to_string()]
+        );
+    }
+
+    /// Le chemin `DEFLATE` de [`lire_entree`] doit rendre les octets **d'origine**.
     ///
     /// Deux choses cassent facilement et silencieusement : le CRC porte sur les
     /// octets **décompressés** (pas ceux lus), et la taille décompressée doit

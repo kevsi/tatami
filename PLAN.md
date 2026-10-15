@@ -2924,3 +2924,16 @@ la liste ». Un sélecteur ne se valide pas sur un nombre > 0.
    journal » ne prouve pas « le transport n'a pas démarré » — c'est un appel
    direct via `invoke` qui l'a montré. Corollaire général : **« aucune trace »
    n'est pas « rien ne s'est passé »**, c'est « rien n'a été écrit ».
+
+---
+
+## Journal 2026-10-15 — 6 points restants (tous traités)
+
+1. sanitize plafonné à 80 → hash FNV-1a sur le nom complet (commit ix(download)).
+2. CI : cargo audit (rustsec/audit-check) + gitleaks (gitleaks/gitleaks-action).
+3. Pool JVM 
+ewCachedThreadPool → 
+ewFixedThreadPool(min(8,max(processors,2))). Cancellation OkHttp reste non branchée (@todo 3.5).
+4. SessionCache jamais purgée : 7 compteurs d'insertions + 	ailleTotale + ligne stderr tous les 1000. Politique d'éviction **non choisie** — volontaire.
+5. .map() sans key : vérifié ; React ne signale rien (eslint jsx-key à 0) et la sandbox {Array.from} utilise déjà key={i}. Rien à faire.
+6. importer_source sans jeton de dialogue : confirmé non exposé côté UI, 7 tests de traversal verts. Tracabilisé dans le code + tâche pour S2.

@@ -628,7 +628,17 @@ fun serve() {
     scriptLoader.arreter()
 }
 
-private suspend fun dispatch(
+/**
+ * `internal` et non `private` : le **routage** est la partie à risque, pas
+ * seulement la construction des cookies.
+ *
+ * Mesuré le 2026-10-15 : les tests de `SetCookiesSourceCustomTest` appelaient
+ * `appliquerCookies` et `validerSourcePourCookies` **directement**, et ils
+ * passaient avec l'ancien routage rétabli — donc ils ne couvraient pas le
+ * défaut. Un test qui n'epreuve pas le chemin réel prouve la fonction, pas le
+ * produit. La visibilité reste bornée au module.
+ */
+internal suspend fun dispatch(
     context: EngineContext,
     pool: ParserPool,
     cache: SessionCache,
@@ -685,7 +695,135 @@ private suspend fun dispatch(
             dispatchNatif(context, pool, cache, method, p)
         }
     }
+
+    // `setCookies` n'a pas de branche « custom » : les cookies sont stockés par
+    // **domaine**, pas par source, donc le parser n'intervient pas. Il faut
+    // seulement valider que la source existe — sinon un nom fantôme
+    // `custom:inexistant` deposerait des cookies sans que rien ne le relie à une
+    // source réelle. La validation est faite ici, une seule fois.
+    //
+    // Mesuré le 2026-10-15 : sans cette branche, une source perso derrière
+    // Cloudflare ne pouvait jamais recevoir son `cf_clearance`, et l'erreur
+    // `unknown source` — vraie de la `MangaParserSource`, fausse de la source.
+    "setCookies" -> {
+        validerSourcePourCookies(scriptLoader, p.optString("source", ""))
+        appliquerCookies(context, p)
+    }
+
     else -> dispatchNatif(context, pool, cache, method, p)
+}
+
+/**
+ * Vérifie qu'une source existe, par son nom, avant d'y rattacher quoi que ce soit.
+ *
+ * `internal` et non `private` : c'est la partie à risque de `setCookies` — un nom
+ * fantôme ne doit rien déposer dans le magasin de cookies — et elle doit être
+ * éprouvable sans passer par le protocole NDJSON. La visibilité reste bornée au
+ * module : rien n'est exposé à l'appelant.
+ */
+internal fun validerSourcePourCookies(loader: ScriptedSourceLoader, sourceName: String) {
+    if (sourceName.startsWith(CUSTOM_PREFIX)) {
+        val id = sourceName.removePrefix(CUSTOM_PREFIX)
+        if (!loader.sources().containsKey(id)) {
+            throw ParamException("unknown custom source: $id")
+        }
+    } else {
+        parseSource(sourceName) // valide le nom contre la librairie
+    }
+}
+
+/**
+ * Applique les cookies d'une fenêtre de vérification, **quelle que soit la source**.
+ *
+ * ## Pourquoi cette fonction existe
+ *
+ * `setCookies` était traité dans `dispatchNatif` seulement, dont la première
+ * ligne est `parseSource(sourceName)` → `MangaParserSource.valueOf("custom:x")` →
+ * `ParamException("unknown source")`. Mesuré le 2026-10-15 : une source
+ * personnalisée derrière un challenge Cloudflare ne pouvait donc **jamais**
+ * recevoir son `cf_clearance`, et le cycle de vérification se répétait
+ * indéfiniment. L'erreur disait « unknown source », ce qui est vrai de la
+ * **`MangaParserSource`** mais trompeur : la source existe, elle n'est juste pas
+ * une source de la librairie.
+ *
+ * ## Pourquoi elle ne valide plus le nom
+ *
+ * Elle ne connaît pas le nom de la source : les cookies sont stockés par
+ * **domaine**, qui est ce que la fenêtre de vérification a réellement résolu.
+ * La validation du nom est faite en amont, dans `dispatch`, qui refuse une
+ * source personnalisée inconnue — donc rien n'entre dans le magasin pour une
+ * source fantôme. Cette fonction ne fait que la partie réseau.
+ */
+internal fun appliquerCookies(context: EngineContext, p: JSONObject): JSONObject {
+    val sourceName = p.optString("source", "")
+    val cookies = p.optJSONArray("cookies") ?: JSONArray()
+    val maintenant = System.currentTimeMillis()
+    val built = (0 until cookies.length()).map { i ->
+        val c = cookies.getJSONObject(i)
+        val b = Cookie.Builder()
+            .name(c.reqString("name"))
+            .value(c.reqString("value"))
+            // Le domaine arrive sans point initial : okhttp matche alors
+            // l'hôte exact **et** ses sous-domaines (verifie dans le
+            // bytecode d'okhttp 5.1.0 : `domainMatch` compare l'hôte au
+            // suffixe `".$domaine"`). Un domaine **avec** son point
+            // initial ne matche RIEN — il faudrait « ..exemple.com » en
+            // suffixe. `trimStart` est donc une garantie, pas un
+            // embellissement.
+            .domain(c.reqString("domain").trimStart('.'))
+            .path(c.optString("path", "/"))
+            // Expiration réelle lue dans la webview. Absente = cookie de
+            // session : une journée par défaut, faute de pouvoir
+            // représenter une session côté moteur (il vit après la
+            // fermeture de la fenêtre). Jusqu'au 2026-10-10 on forçait
+            // maintenant + 365 j, ce qui gardait en circulation un
+            // cookie que le site avait déjà fait périmer.
+            .expiresAt(
+                if (c.has("expiresAt")) {
+                    c.getLong("expiresAt")
+                } else {
+                    maintenant + TimeUnit.DAYS.toMillis(1)
+                },
+            )
+        if (c.optBoolean("secure")) b.secure()
+        if (c.optBoolean("httpOnly")) b.httpOnly()
+        b.build()
+    }
+    val host = built.firstOrNull { it.name == "cf_clearance" }?.domain
+        ?: built.firstOrNull()?.domain.orEmpty()
+    (context.cookieJar as InMemoryCookieJar).putCookies(host, built)
+    // Même domaine de cookie pour l'horodatage et le registre de rejeu :
+    // un `cf_clearance` de example.com couvre aussi www.example.com.
+    if (host.isNotEmpty()) RejeuRefuse.resolutionReussie(host)
+    if (p.has("userAgent")) context.definirUserAgentChallenge(host, p.getString("userAgent"))
+    if (
+        built.any { it.name == "cf_clearance" } &&
+        p.has("browserProfile") &&
+        !p.isNull("browserProfile")
+    ) {
+        val browserProfile = p.optJSONObject("browserProfile")
+            ?: throw ParamException("browserProfile must be an object")
+        context.definirIdentiteNavigateurChallenge(host, BrowserIdentity.fromJson(browserProfile))
+    }
+    if (challengeDebug) {
+        // Ce qui entre vraiment dans le magasin, une ligne par cookie :
+        // nom, domaine, chemin, expiration, drapeaux, **longueur** de la
+        // valeur — jamais la valeur (règle projet).
+        built.forEach { c ->
+            System.err.println(
+                "[challenge-debug] cookie injecte source=$sourceName nom=${c.name} " +
+                    "domaine=${c.domain} chemin=${c.path} expiresAt=${c.expiresAt} " +
+                    "secure=${c.secure} httpOnly=${c.httpOnly} " +
+                    "longueurValeur=${c.value.length}",
+            )
+        }
+        System.err.println(
+            "[challenge-debug] cf_clearance present=${
+                built.any { it.name == "cf_clearance" }
+            } ua=${if (p.has("userAgent")) p.getString("userAgent") else "-"}",
+        )
+    }
+    return JSONObject().put("ok", true)
 }
 
 /**
@@ -1298,78 +1436,7 @@ private suspend fun dispatchNatif(
             .put("memoire", WebViewMemoire.taille())
     }
 
-    "setCookies" -> {
-        val sourceName = p.reqString("source")
-        parseSource(sourceName) // valide le nom
-        val cookies = p.optJSONArray("cookies") ?: JSONArray()
-        val maintenant = System.currentTimeMillis()
-        val built = (0 until cookies.length()).map { i ->
-            val c = cookies.getJSONObject(i)
-            val b = Cookie.Builder()
-                .name(c.reqString("name"))
-                .value(c.reqString("value"))
-                // Le domaine arrive sans point initial : okhttp matche alors
-                // l'hôte exact **et** ses sous-domaines (verifie dans le
-                // bytecode d'okhttp 5.1.0 : `domainMatch` compare l'hôte au
-                // suffixe `".$domaine"`). Un domaine **avec** son point
-                // initial ne matche RIEN — il faudrait « ..exemple.com » en
-                // suffixe. `trimStart` est donc une garantie, pas un
-                // embellissement.
-                .domain(c.reqString("domain").trimStart('.'))
-                .path(c.optString("path", "/"))
-                // Expiration réelle lue dans la webview. Absente = cookie de
-                // session : une journée par défaut, faute de pouvoir
-                // représenter une session côté moteur (il vit après la
-                // fermeture de la fenêtre). Jusqu'au 2026-10-10 on forçait
-                // maintenant + 365 j, ce qui gardait en circulation un
-                // cookie que le site avait déjà fait périmer.
-                .expiresAt(
-                    if (c.has("expiresAt")) {
-                        c.getLong("expiresAt")
-                    } else {
-                        maintenant + TimeUnit.DAYS.toMillis(1)
-                    },
-                )
-            if (c.optBoolean("secure")) b.secure()
-            if (c.optBoolean("httpOnly")) b.httpOnly()
-            b.build()
-        }
-        val host = built.firstOrNull { it.name == "cf_clearance" }?.domain
-            ?: built.firstOrNull()?.domain.orEmpty()
-        (context.cookieJar as InMemoryCookieJar).putCookies(host, built)
-        // Même domaine de cookie pour l'horodatage et le registre de rejeu :
-        // un `cf_clearance` de example.com couvre aussi www.example.com.
-        if (host.isNotEmpty()) RejeuRefuse.resolutionReussie(host)
-        if (p.has("userAgent")) context.definirUserAgentChallenge(host, p.getString("userAgent"))
-        if (
-            built.any { it.name == "cf_clearance" } &&
-            p.has("browserProfile") &&
-            !p.isNull("browserProfile")
-        ) {
-            val browserProfile = p.optJSONObject("browserProfile")
-                ?: throw ParamException("browserProfile must be an object")
-            context.definirIdentiteNavigateurChallenge(host, BrowserIdentity.fromJson(browserProfile))
-        }
-        if (challengeDebug) {
-            // Ce qui entre vraiment dans le magasin, une ligne par cookie :
-            // nom, domaine, chemin, expiration, drapeaux, **longueur** de la
-            // valeur — jamais la valeur (règle projet).
-            built.forEach { c ->
-                System.err.println(
-                    "[challenge-debug] cookie injecte source=$sourceName nom=${c.name} " +
-                        "domaine=${c.domain} chemin=${c.path} expiresAt=${c.expiresAt} " +
-                        "secure=${c.secure} httpOnly=${c.httpOnly} " +
-                        "longueurValeur=${c.value.length}",
-                )
-            }
-            System.err.println(
-                "[challenge-debug] cf_clearance present=${
-                    built.any { it.name == "cf_clearance" }
-                } ua=${if (p.has("userAgent")) p.getString("userAgent") else "-"}",
-            )
-        }
-        JSONObject().put("ok", true)
-    }
+    "setCookies" -> appliquerCookies(context, p)
 
     // `health` ne rend que la forme globale. La forme par source
     // (`source` + `reachable`) a été retirée le 2026-10-10 : elle répondait

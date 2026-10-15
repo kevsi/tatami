@@ -15,7 +15,11 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-const META: &str = "meta.json";
+// `pub(crate)` : `download::chapter_file_for` lit ce fichier pour retrouver le
+// nom **réellement écrit** d'un chapitre. Recalculer le nom à la lecture
+// retombait sur le premier homonyme — donc le lecteur ouvrait le mauvais
+// chapitre (mesuré le 2026-10-15). Rien n'est exposé hors du crate.
+pub(crate) const META: &str = "meta.json";
 const META_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -1489,7 +1493,7 @@ mod tests {
             let chemin = dest.join(&c.file);
             assert!(chemin.is_file(), "chapitre listé mais absent : {}", c.file);
             let par_lecteur =
-                crate::download::chapter_file_for(SOURCE_IMPORT, &titre, &c.title, "");
+                crate::download::chapter_file_for(SOURCE_IMPORT, &titre, &c.title, "").await;
             // **Canonisation obligatoire** : `importe.dir` vient d'un
             // `canonicalize` et porte donc le préfixe `\\?\`, alors que le
             // lecteur recalcule un chemin ordinaire. Les deux chaînes sont
@@ -1588,7 +1592,8 @@ mod tests {
         // (`pages_de` → `entries_to_pages`) est déjà couvert par les tests de
         // la tâche 2.3.
         for chapitre in ["Chapitre 1", "Chapitre 2"] {
-            let fichier = crate::download::chapter_file_for(SOURCE_IMPORT, &titre, chapitre, "");
+            let fichier =
+                crate::download::chapter_file_for(SOURCE_IMPORT, &titre, chapitre, "").await;
             assert!(
                 fichier.is_file(),
                 "le lecteur ne retrouve pas « {chapitre} » : {}",

@@ -401,14 +401,24 @@ fn resoudre_nom(base: String, attribues: &mut Vec<String>) -> String {
     candidat
 }
 
-/// Chemin du `.cbz` d'un chapitre, calculé **exactement** comme le fait
-/// `download_chapter`.
+/// Chemin du `.cbz` d'un chapitre, **tel que l'écriture l'a réellement nommé**.
 ///
-/// C'est délibéré : plutôt que de redemander le chemin à l'interface (qui
-/// pourrait mentir ou diverger), on le recalcule avec la même fonction. Si les
-/// deux règles changeaient un jour, la lecture locale cesserait de trouver les
-/// fichiers — un décalage silencieux.
-pub fn chapter_file_for(
+/// ## Pourquoi le `meta.json` fait foi
+///
+/// L'écriture désambiguïse les noms homonymes : deux chapitres de même titre
+/// deviennent `Ch. 1.cbz` puis `Ch. 1 (2).cbz` (`resoudre_nom`). Cette version
+/// recalculait le nom avec `chapter_file_name` seul, donc **tombaient toujours
+/// sur le premier** : le lecteur affichait les pages du chapitre 1 en croyant
+/// ouvrir le chapitre 2. Silencieux, et invisible pour l'utilisateur.
+///
+/// La correspondance n'est donc pas recalculée, elle est **lue** :
+/// `library::note_chapter` écrit dans `meta.json` le fichier réellement produit
+/// pour chaque `chapter_url`. C'est la seule source qui dise la vérité, et elle
+/// est déjà là.
+///
+/// Le repli sur le nom de base reste nécessaire — l'import écrit le fichier sans
+/// passer par `note_chapter`, et un dossier sans `meta.json` est valide.
+pub async fn chapter_file_for(
     source: &str,
     manga_title: &str,
     chapter_title: &str,
@@ -416,7 +426,46 @@ pub fn chapter_file_for(
 ) -> PathBuf {
     let root = downloads_root();
     let dir = chapter_dir(&root, source, manga_title);
+    if !chapter_url.is_empty() {
+        if let Some(nom) = fichier_note(&dir, chapter_url).await {
+            return dir.join(nom);
+        }
+    }
     dir.join(chapter_file_name(chapter_title, chapter_url))
+}
+
+/// Le nom de fichier que le `meta.json` associe à cette URL de chapitre.
+async fn fichier_note(dir: &Path, chapter_url: &str) -> Option<String> {
+    let brut = tokio::fs::read_to_string(dir.join(super::library::META))
+        .await
+        .ok()?;
+    let entree: super::library::MangaEntry = serde_json::from_str(&brut).ok()?;
+    entree
+        .chapters
+        .into_iter()
+        .find(|c| c.url == chapter_url)
+        .map(|c| c.file)
+        .filter(|f| !f.is_empty())
+}
+
+/// Le chemin du chapitre **déjà téléchargé**, s'il existe vraiment.
+///
+/// Le nom vient du `meta.json` — donc de l'écriture — et il n'est renvoyé que
+/// si le fichier est **présent sur le disque**. Sans cette seconde condition, un
+/// `meta.json` qui mentionne un fichier supprimé à la main ferait échouer le
+/// téléchargement au lieu de le refaire : l'exigence « ne jamais retélécharger
+/// ce qui est là » ne doit pas devenir « ne jamais retélécharger ce qui manque ».
+async fn chapitre_deja_present(dir: &Path, chapter_url: &str) -> Option<String> {
+    if chapter_url.is_empty() {
+        return None;
+    }
+    let nom = fichier_note(dir, chapter_url).await?;
+    let chemin = dir.join(&nom);
+    if chemin.is_file() {
+        Some(chemin.to_string_lossy().to_string())
+    } else {
+        None
+    }
 }
 
 /// Liste les pages d'un chapitre **déjà téléchargé**, sans moteur ni réseau.
@@ -433,7 +482,7 @@ pub async fn local_chapter_pages(
     chapter_title: String,
     chapter_url: String,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let fichier = chapter_file_for(&source, &manga_title, &chapter_title, &chapter_url);
+    let fichier = chapter_file_for(&source, &manga_title, &chapter_title, &chapter_url).await;
     if !fichier.is_file() {
         return Ok(Vec::new());
     }
@@ -583,6 +632,22 @@ pub async fn download_chapter(
     total_chapters: Option<usize>,
 ) -> Result<String, String> {
     let _verrou = VerrouTelechargement::prendre(&state.actifs, &source)?;
+
+    // **Idempotence avant tout réseau.** Mesuré le 2026-10-15 : `resoudre_nom`
+    // reçoit les noms **déjà présents** sur le disque, donc un chapitre déjà
+    // téléchargé recevait `Ch. 1 (2).cbz`. Ensuite `note_chapter` voyait l'URL
+    // déjà connue et n'ajoutait rien : le doublon restait sur le disque,
+    // non noté, donc compté par `loose_files` — la bibliothèque annonçait « 2/1
+    // chapitres ». Deux clics sur « Télécharger » suffisaient.
+    //
+    // Le garde est ici, **avant** le moteur, donc avant tout octet téléchargé :
+    // il rend le téléchargement idempotent plutôt que de compter sur
+    // l'interface pour ne pas redemander.
+    let dir = chapter_dir(&downloads_root(), &source, &manga_title);
+    if let Some(deja) = chapitre_deja_present(&dir, &chapter_url).await {
+        return Ok(deja);
+    }
+
     run_download(
         &app,
         &sup,
@@ -995,6 +1060,163 @@ mod tests {
     /// Le dossier est effacé à la sortie du test — voir `DossierDeTest`.
     fn dossier_de_test(tag: &str) -> super::DossierDeTest {
         super::DossierDeTest::new(tag)
+    }
+
+    /// Deux chapitres de **même titre** : le second ne doit pas s'ouvrir sur le
+    /// fichier du premier.
+    ///
+    /// C'est le défaut mesuré le 2026-10-15. L'écriture désambiguïse les noms
+    /// (`resoudre_nom` : `Ch. 1.cbz` puis `Ch. 1 (2).cbz`) et `note_chapter`
+    /// écrit la correspondance dans `meta.json`. La lecture, elle, recalculait le
+    /// nom avec `chapter_file_name` seul : elle retombait **toujours** sur le
+    /// premier. Le lecteur affichait donc les pages du chapitre 1 en croyant
+    /// ouvrir le chapitre 2 — sans le moindre message.
+    ///
+    /// Le test écrit les deux fichiers avec un contenu **distinct** (1 page contre
+    /// 2) : sans cela, il ne vérifierait qu'un nom de fichier et raterait
+    /// exactement le défaut — deux fichiers de même contenu ne se distinguent pas.
+    #[tokio::test]
+    async fn deux_chapitres_de_meme_titre_ouvrent_deux_fichiers_differents() {
+        use crate::cbz::CbzWriter;
+        use crate::image::ImageKind;
+
+        let source = "SRC-HOMONYMES";
+        let titre = "Serie a homonymes";
+        let dir = super::chapter_dir(&downloads_root(), source, titre);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dossier de chapitre");
+
+        let ecrire = |nom: &str, pages: usize| {
+            let mut w = CbzWriter::create(&dir.join(nom)).expect("archive");
+            for i in 0..pages {
+                w.add_image_kind(i + 1, ImageKind::Jpeg, &[7u8; 64])
+                    .expect("page");
+            }
+            w.finish_vec().expect("archive complete");
+        };
+        ecrire("Ch. 1.cbz", 1);
+        ecrire("Ch. 1 (2).cbz", 2);
+
+        // Le `meta.json` que `note_chapter` aurait écrit.
+        let meta = serde_json::json!({
+            "version": 1,
+            "title": titre,
+            "source": source,
+            "url": "/m/1",
+            "total_chapters": 2,
+            "chapters": [
+                {"url": "c/original", "title": "Ch. 1", "file": "Ch. 1.cbz"},
+                {"url": "c/corrige",  "title": "Ch. 1", "file": "Ch. 1 (2).cbz"}
+            ]
+        });
+        std::fs::write(
+            dir.join(crate::library::META),
+            serde_json::to_string_pretty(&meta).unwrap(),
+        )
+        .expect("meta.json");
+
+        // Les deux chapitres portent le MÊME titre : c'est la condition du défaut.
+        let premier = chapter_file_for(source, titre, "Ch. 1", "c/original").await;
+        let second = chapter_file_for(source, titre, "Ch. 1", "c/corrige").await;
+
+        assert_ne!(
+            premier, second,
+            "les deux chapitres de même titre retombent sur le même fichier : \
+             le lecteur affiche les pages du premier en croyant ouvrir le second"
+        );
+        assert_eq!(premier.file_name().unwrap(), "Ch. 1.cbz");
+        assert_eq!(second.file_name().unwrap(), "Ch. 1 (2).cbz");
+
+        // Et le contenu suit bien : 1 page contre 2. Un test qui ne compare que
+        // des noms ne voit pas un fichier écrasé.
+        let p1 = crate::zipread::pages_de(&premier)
+            .expect("premier lisible")
+            .len();
+        let p2 = crate::zipread::pages_de(&second)
+            .expect("second lisible")
+            .len();
+        assert_eq!(
+            (p1, p2),
+            (1, 2),
+            "les pages doivent être celles du bon chapitre"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Le repli sans `meta.json` doit rester exact — l'import écrit le fichier
+    /// sans passer par `note_chapter`, et un dossier sans meta est valide.
+    ///
+    /// Sans ce contrôle, « toujours lire le meta » donnerait un chapitre
+    /// introuvable sur toute installation antérieure.
+    #[tokio::test]
+    async fn sans_meta_json_le_nom_de_base_reste_valide() {
+        let source = "SRC-SANS-META";
+        let titre = "Serie sans meta";
+        let dir = super::chapter_dir(&downloads_root(), source, titre);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dossier de chapitre");
+        std::fs::write(dir.join("Ch. 9.cbz"), b"x").expect("fichier");
+
+        let fichier = chapter_file_for(source, titre, "Ch. 9", "").await;
+        assert!(
+            fichier.is_file(),
+            "le repli doit retrouver le fichier : {}",
+            fichier.display()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Un chapitre déjà téléchargé ne doit pas produire de doublon.
+    ///
+    /// Le défaut mesuré le 2026-10-15 : `resoudre_nom` partait des noms présents
+    /// sur le disque, donc un second clic créait `Ch. 1 (2).cbz` ; ensuite
+    /// `note_chapter`, qui déduplique par URL, n'ajoutait rien — le fichier
+    /// restait non noté mais comptait dans `loose_files`, et la bibliothèque
+    /// affichait « 2/1 chapitres ».
+    ///
+    /// On éprouve donc le garde lui-même, qui est la partie à risque : il doit
+    /// nommer le fichier existant, et **refuser** de nommer quoi que ce soit
+    /// quand le fichier a disparu.
+    #[tokio::test]
+    async fn un_chapitre_deja_telecharge_ne_produit_pas_de_doublon() {
+        // Le garde est **transporté** jusqu'à la fin du test. Mesuré le
+        // 2026-10-15 : `DossierDeTest::new(..).chemin()` liait le `PathBuf` et
+        // lâchait le garde dans la même expression, donc `Drop` effaçait le
+        // dossier avant le premier `write` — l'erreur venait du harnais, pas du
+        // comportement étudié.
+        let garde = super::DossierDeTest::new("doublon");
+        let dir = garde.chemin();
+        let meta = serde_json::json!({
+            "version": 1, "title": "T", "source": "S", "url": "/m/1", "total_chapters": 1,
+            "chapters": [{"url": "c/1", "title": "Ch. 1", "file": "Ch. 1.cbz"}]
+        });
+        std::fs::write(
+            dir.join(crate::library::META),
+            serde_json::to_string(&meta).unwrap(),
+        )
+        .unwrap();
+
+        // Pas encore de fichier : le garde ne doit rien inventer, sinon un
+        // `meta.json` became stale interdirait à jamais de retélécharger.
+        assert_eq!(
+            chapitre_deja_present(&dir, "c/1").await,
+            None,
+            "un fichier absent ne compte pas comme téléchargé"
+        );
+
+        std::fs::write(dir.join("Ch. 1.cbz"), b"x").unwrap();
+        assert_eq!(
+            chapitre_deja_present(&dir, "c/1").await.as_deref(),
+            Some(dir.join("Ch. 1.cbz").to_string_lossy().as_ref()),
+            "un chapitre présent doit être nommé tel quel, pas receives un suffixe"
+        );
+
+        // URL inconnue : le garde est muet, l'appelant télécharge.
+        assert_eq!(chapitre_deja_present(&dir, "c/2").await, None);
+        // Et le chapitre sans URL — l'import — n'est jamais « déjà présent ».
+        assert_eq!(chapitre_deja_present(&dir, "").await, None);
     }
 
     #[test]

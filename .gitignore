@@ -51,3 +51,34 @@ downloads/
 target-*/
 
 .playwright-mcp/
+
+# --- Artefacts d'agent (mesures du 2026-10-15) ---
+#
+# 23 fichiers non suivis attendaient a la racine du depot : rapports de session
+# d'un agent, notes de revue, plans. Aucun n'a de valeur pour le code, et un
+# `.gitignore` qui ne les couvre pas oblige a repenser a chaque `git status`.
+# Un seul est **volontairement** suivi : `.agents/tasks/verification-s1.md`.
+# D'ou l'exception finale.
+.agents/*
+!.agents/tasks/
+.agents/tasks/*
+!.agents/tasks/verification-s1.md
+
+# Rapports ecrits a la racine par les sessions. `.gitignore` les couvre, mais le
+# motif etait deja ecrit sans retour a la ligne final, ce qui faisait fusionner
+# la ligne suivante avec le commentaire (AGENTS.md §14).
+SESSION_SUMMARY.md
+VERIFICATION_REPORT.md
+
+# Dossier litteral `%USERPROFILE%` : un `temp_dir()` non expanse cree
+# l'arborescence **dans le depot**. Residu du 2026-10-04 ; les tests ne le
+# recreent plus (verifie le 2026-10-15), mais le reste de litterature peut.
+/%USERPROFILE%/
+
+# Journaux et rapports de sonde a la racine.
+/*.log
+/mesures*.json
+
+# Sessions Kotlin du compilateur (Gradle) : `engine/.kotlin/sessions/`.
+# Apparu dans `git status` le 2026-10-15 apres les builds de mesure.
+engine/.kotlin/

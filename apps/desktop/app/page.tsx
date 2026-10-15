@@ -421,11 +421,25 @@ type Progress = {
  *  (`pnpm ipc:check`), et le test Rust `les_champs_de_history_entry_sont_snake_case`.
  */
 type Progression = {
+  // Les douze champs de `HistoryEntry` (`store.rs`), pas seulement ceux que
+  // l'écran de reprise consomme. Déclarer une **vue** sous le nom de la charge
+  // utile fait qu'un champ ajouté côté cœur reste invisible ici : `pnpm
+  // ipc:check` le signalait dans les deux sens, et il avait raison — lire moins
+  // de champs que le cœur n'en envoie n'est pas un défaut, mais **dire** que le
+  // type est la charge utile alors qu'il en omet sept, c'est une affirmation
+  // fausse que rien ne vérifiait.
+  source: string;
+  manga_url: string;
+  title: string;
+  cover_url: string | null;
+  cover_token: string | null;
+  content_rating: string | null;
   chapter_url: string | null;
   chapter_title: string | null;
   chapter_index: number;
   page_index: number;
   page_count: number;
+  read_at: number;
 };
 
 /** La reprise est-elle assez complète pour être proposée ?

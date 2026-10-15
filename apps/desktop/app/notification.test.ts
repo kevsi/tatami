@@ -56,10 +56,8 @@ describe('texteNotification', () => {
     // Produire `NaN` dans le corps.
     const sale = [
       entree('SRC', '/m/1', 2),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      null as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      undefined as any,
+      null as unknown as { source: string; manga_url: string; total: number },
+      undefined as unknown as { source: string; manga_url: string; total: number },
       { source: 'SRC', manga_url: '/m/3' } as unknown as { source: string; manga_url: string; total: number },
     ];
     const r = texteNotification(t, sale);

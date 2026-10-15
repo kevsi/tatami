@@ -5,8 +5,9 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
+import org.openjdk.nashorn.api.scripting.ClassFilter
+import org.openjdk.nashorn.api.scripting.NashornScriptEngineFactory
 import javax.script.Invocable
-import javax.script.ScriptEngineManager
 import javax.script.ScriptException
 
 /**
@@ -108,9 +109,54 @@ class ScriptedParser(
     // -------------------------------------------------------------------------
 
     private fun creerMoteur(): Invocable {
-        val manager = ScriptEngineManager()
-        val nashorn = manager.getEngineByName("nashorn")
-            ?: throw ScriptedSourceException("Nashorn non disponible sur cette JVM")
+        // Une **factory**, pas `ScriptEngineManager` : c'est la factory qui porte
+        // l'option `ClassFilter`, qui est un **paramètre** de `getScriptEngine`
+        // (vérifié sur le JAR 15.6), donc inaccessible depuis un moteur déjà
+        // construit.
+        val factory = NashornScriptEngineFactory()
+        val nashorn = factory.getScriptEngine(
+            // `--no-java` passe ici, **dans les arguments de création** : mesuré le
+            // 2026-10-15, `nashorn.put("--no-java", true)` après coup ne servait à
+            // rien — Nashorn lit l'option une seule fois, à la construction, donc
+            // `Java.type` restait joignable et le test rouge le disait.
+            //
+            // Ces arguments sont **ajoutés** aux valeurs par défaut de Nashorn
+            // (`-strict`, `-scripting`, `--no-syntax-extensions`, `es6`), donc
+            // `--strict` reste actif — c'est lui qui refuse `globalThis` plus bas.
+            arrayOf("--no-java"),
+            null,
+            // Deuxième barrière : même si `--no-java` était relâché par une
+            // version de Nashorn, un `ClassFilter` n'expose que le paquet du
+            // moteur. Il est un **paramètre** de `getScriptEngine`, pas une
+            // propriété de la factory (vérifié sur le JAR 15.6).
+            ClassFilter { nom -> nom.startsWith("org.tatami.engine.") },
+        )
+
+        // `--no-java` : `Java.type`, `JavaImporter` et `Packages.*` deviennent
+        // inaccessibles. C'est la barrière principale. Mesuré le 2026-10-15 :
+        // sans elle, `Java.type("java.lang.Runtime").getRuntime().exec(...)`
+        // s'exécutait avec les droits de l'utilisateur, au **démarrage** du
+        // moteur (`serve()` évalue tous les `.js` du dossier de sources), donc
+        // avant la première requête — et toute la politique SSRF de `HttpBridge`,
+        // qui est le meilleur morceau de sécurité du dépôt, devenait contournable
+        // depuis l'intérieur du processus.
+        //
+        // Portée volontairement étroite : seul le script **fourni par
+        // l'utilisateur** est confiné. Le JS de `EngineContext.evaluateJs` vient
+        // des parseurs épinglés, donc d'un artefact vérifié ; lui retirer
+        // l'interop casserait de la recomposition d'images pour rien.
+        // Nashorn ajoute `-scripting` **quelle que soit** la factory (vérifié sur
+        // le JAR 15.6 : `getScriptEngine()` force `--strict`, `-scripting`,
+        // `--no-syntax-extensions` et `es6`). Cinq globaux survivent donc à
+        // `--no-java` : `load` et `loadWithNewGlobal` évaluent un fichier du
+        // disque, et `print`/`exit`/`quit` écrivent sur la **sortie standard** —
+        // c'est-à-dire dans le flux NDJSON du protocole, ce qui suffit à corrompre
+        // une réponse sans jamais approcher Java. Ils sont retirés explicitement.
+        for (nom in listOf("load", "loadWithNewGlobal", "exit", "quit", "print")) {
+            // `delete <nom>` et non `delete globalThis.<nom>` : Nashorn force
+            // `--strict`, qui refuse `globalThis` (mesuré 2026-10-15).
+            nashorn.eval("delete $nom")
+        }
 
         // Injecter le bridge HTTP avant d'évaluer le script.
         nashorn.put("http", httpBridge)

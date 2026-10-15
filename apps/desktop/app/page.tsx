@@ -1042,6 +1042,59 @@ function challengeUrl(raw: string): string | null {
  * vérification) était invisible. Extraites pour être testées.
  */
 
+/**
+ * Dialogue **modal** : `showModal()`, et non l'attribut `open`.
+ *
+ * ## Pourquoi l'attribut ne suffisait pas
+ *
+ * Un `<dialog open>` est non modal : le navigateur ne déclenche `cancel` que
+ * sur un dialogue modal, donc le `onCancel` des deux dialogues de
+ * confirmation **ne s'exécutait jamais** — `Échap` ne fermait rien. Il n'y a
+ * pas non plus de piège de focus, ni d'inertisation du fond : un clic passe
+ * derrière la boîte.
+ *
+ * Le CSS était déjà écrit pour le cas modal — `.confirm::backdrop` existe, et
+ * `::backdrop` **ne s'affiche que sur un dialogue modal**. Avec l'attribut
+ * `open`, ce voile n'était donc jamais rendu : c'est bien le code qui s'écartait
+ * du style, pas l'inverse.
+ *
+ * `preventDefault()` sur `cancel` est nécessaire : sinon le navigateur ferme le
+ * dialogue tout seul, et React garde l'état — la boîte disparaît mais le fond
+ * reste inerte et la commande « fermer » n'a plus de gestionnaire.
+ */
+function DialogueModal({
+  labelledBy,
+  className,
+  onClose,
+  children,
+}: {
+  labelledBy: string;
+  className?: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDialogElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    // `showModal()` lève `InvalidStateError` si le dialogue est déjà ouvert :
+    // deux rendus serrés passeraient par là.
+    if (el && !el.open) el.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className={className}
+      aria-labelledby={labelledBy}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
+      {children}
+    </dialog>
+  );
+}
+
 export default function Home() {
   // `lang` et `setLang` sont déjà pris par le FILTRE de langue des
   // catalogues : ceux de l'i18n sont donc aliassés.
@@ -5001,11 +5054,10 @@ useEffect(() => {
         </section>
 
         {chapitresVisibles && (
-          <dialog
+          <DialogueModal
             className="confirm"
-            open
-            aria-labelledby="chapitres-titre"
-            onCancel={() => setChapitresVisibles(null)}
+            labelledBy="chapitres-titre"
+            onClose={() => setChapitresVisibles(null)}
           >
             <h2 id="chapitres-titre">{chapitresVisibles.title}</h2>
             {chapitresVisibles.chapters.length === 0 ? (
@@ -5032,7 +5084,7 @@ useEffect(() => {
                 {t('telechargements.verification.fermer')}
               </button>
             </div>
-          </dialog>
+          </DialogueModal>
         )}
 
         {savedQueue && savedQueue.items.length > 0 && !queueRunning && (
@@ -5255,11 +5307,10 @@ useEffect(() => {
         )}
 
         {deleteTarget && (
-          <dialog
+          <DialogueModal
             className="confirm"
-            open
-            aria-labelledby="confirm-titre"
-            onCancel={() => setDeleteTarget(null)}
+            labelledBy="confirm-titre"
+            onClose={() => setDeleteTarget(null)}
           >
             <h3 id="confirm-titre">
               {t('telechargements.supprimer.titre', { nom: deleteTarget.title })}
@@ -5285,7 +5336,7 @@ useEffect(() => {
                 {t('telechargements.annuler')}
               </button>
             </div>
-          </dialog>
+          </DialogueModal>
         )}
       </main>
     );

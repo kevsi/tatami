@@ -1,0 +1,123 @@
+{
+  "date": "2026-10-12",
+  "releves": [
+    {
+      "source": "ANIMESAMA",
+      "lang": "?",
+      "domaines": [],
+      "date": "2026-10-12",
+      "etapes": {
+        "latest": {
+          "code": "SOURCE_DEAD",
+          "n": 0
+        }
+      },
+      "verdict": "SOURCE_DEAD",
+      "message": "UnknownHostException: Hôte inconnu (anime-sama.eu)"
+    },
+    {
+      "source": "MANGADEX",
+      "lang": "?",
+      "domaines": [],
+      "date": "2026-10-12",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 20
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 13
+        },
+        "pages": {
+          "code": "OK",
+          "n": 38
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/png"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": "https://mangadex.org/title/af6667a4-ae4c-4baa-9283-a01f56d7f489"
+    },
+    {
+      "source": "NINEMANGA_FR",
+      "lang": "?",
+      "domaines": [],
+      "date": "2026-10-12",
+      "etapes": {
+        "latest": {
+          "code": "PARSER_OUTDATED",
+          "n": 0
+        }
+      },
+      "verdict": "PARSER_OUTDATED",
+      "message": "ParseException: Cannot find \"ul.direlist\" at https://fr.niadd.com/category/index_1",
+      "urlFinale": "https://fr.niadd.com/category/index_1"
+    },
+    {
+      "source": "REMANGA",
+      "lang": "?",
+      "domaines": [],
+      "date": "2026-10-12",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 20
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 5
+        },
+        "pages": {
+          "code": "OK",
+          "n": 11
+        },
+        "image": {
+          "code": "CHALLENGE_REQUIRED",
+          "type": null
+        }
+      },
+      "verdict": "CHALLENGE_REQUIRED",
+      "urlListe": "https://remanga.org/manga/rmthe-retired-war-hero-just-wants-a-normal-high-school-life/main",
+      "message": "challenge at https://img.reimg.org/images/255884/b2b32ff4643ac455a2ebec7cdd452f19/a6576247f9a00ee2b7e4652c7b968383.webp"
+    },
+    {
+      "source": "SODSAIME",
+      "lang": "?",
+      "domaines": [],
+      "date": "2026-10-12",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 24
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 102
+        },
+        "pages": {
+          "code": "OK",
+          "n": 52
+        },
+        "image": {
+          "code": "HANG",
+          "type": null
+        }
+      },
+      "verdict": "HANG",
+      "urlListe": "https://www.xn--l3c0azab5a2gta.com/manga/ueno-kun-wa-kaihatsu-zumi/",
+      "message": "aucune reponse"
+    }
+  ]
+}

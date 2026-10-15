@@ -52,6 +52,31 @@ internal class ParamException(message: String) : IllegalArgumentException(messag
 // (chaque etape refuse une entree inconnue), donc un test doit pouvoir le
 // partager entre plusieurs appels.
 internal class SessionCache {
+    // Instrumentation (item 4, 2026-10-15) : la cache n'est **jamais
+    // purgée**. Les compteurs ci-dessous donnent le débit effectif au fur et
+    // à mesure, et une ligne part sur stderr tous les 1000 insertions, pour
+    // que le magnifique puisse mesurer la croissance **avant** de choisir la
+    // stratégie d'éviction. La politique elle-même (LRU, expiration par
+    // source, taille max) est la suite de ce travail et n'est pas tranchée
+    // ici - la troncature bon marché qui choisirait mal masquerait le
+    // symptôme sans en éliminer la cause.
+    private val insertions = java.util.concurrent.atomic.AtomicInteger(0)
+    private val SEUIL_LOG = 1000
+    internal val tailleTotale: Int
+        get() = manga.size + chapters.size + pages.size +
+            customManga.size + customDetails.size + customChapters.size + customPages.size
+
+    private fun tracerSiSeuil() {
+        val n = insertions.get()
+        if (n.mod(SEUIL_LOG) != 0) return
+        System.err.println(
+            "[session-cache] insertion=$n vue totale=" + tailleTotale +
+                " manga=${manga.size} chapters=${chapters.size} pages=${pages.size} " +
+                "customManga=${customManga.size} customDetails=${customDetails.size} " +
+                "customChapters=${customChapters.size} customPages=${customPages.size}",
+        )
+    }
+
     private val manga = ConcurrentHashMap<String, Manga>()
     private val chapters = ConcurrentHashMap<String, MangaChapter>()
     private val pages = ConcurrentHashMap<String, MangaPage>()
@@ -66,18 +91,24 @@ internal class SessionCache {
 
     fun putManga(source: String, m: Manga) {
         manga[key(source, m.url)] = m
+        insertions.incrementAndGet()
+        tracerSiSeuil()
     }
 
     fun getManga(source: String, url: String): Manga? = manga[key(source, url)]
 
     fun putChapters(source: String, list: List<MangaChapter>) {
         list.forEach { chapters[key(source, it.url)] = it }
+        insertions.addAndGet(list.size)
+        tracerSiSeuil()
     }
 
     fun getChapter(source: String, url: String): MangaChapter? = chapters[key(source, url)]
 
     fun putPages(source: String, list: List<MangaPage>) {
         list.forEach { pages[key(source, it.url)] = it }
+        insertions.addAndGet(list.size)
+        tracerSiSeuil()
     }
 
     fun getPage(source: String, url: String): MangaPage? = pages[key(source, url)]
@@ -85,16 +116,24 @@ internal class SessionCache {
     // --- Custom sources ---
     fun putCustomManga(source: String, url: String, m: JSONObject) {
         customManga[key(source, url)] = m
+        insertions.incrementAndGet()
+        tracerSiSeuil()
     }
     fun putCustomDetails(source: String, url: String, d: JSONObject) {
         customDetails[key(source, url)] = d
+        insertions.incrementAndGet()
+        tracerSiSeuil()
     }
     fun getCustomDetails(source: String, url: String): JSONObject? = customDetails[key(source, url)]
     fun putCustomChapter(source: String, url: String, c: JSONObject) {
         customChapters[key(source, url)] = c
+        insertions.incrementAndGet()
+        tracerSiSeuil()
     }
     fun putCustomPage(source: String, url: String, pg: JSONObject) {
         customPages[key(source, url)] = pg
+        insertions.incrementAndGet()
+        tracerSiSeuil()
     }
 }
 

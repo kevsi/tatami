@@ -1,8 +1,25 @@
-# Tatami — vérifications (tâche 5.3)
+# Tatami — vérifications
 #
-# Cette CI exécute **exactement** la liste de commandes figée dans AGENTS.md §8,
-# avec les mêmes dossiers. Rien de plus, rien de moins : une commande qui n'est
-# pas dans §8 n'a pas sa place ici, une commande de §8 ne doit pas être omise.
+# Cette CI exécute **toute** la liste de vérifications du dépôt : les quatre
+# commandes de base de l'interface, ses **tests unitaires**, ses **douze portes**,
+# puis Rust et le moteur.
+#
+# ## Ce qui manquait avant le 2026-10-15
+#
+# Sur les quinze scripts de `apps/desktop/package.json`, la CI en exécutait trois :
+# `typecheck`, `lint` et `i18n:check`. Donc **les 128 tests unitaires du front et
+# onze des douze portes n'étaient jamais exécutés** automatiquement. Ce n'est pas
+# une question de rigueur : c'est la cause directe de deux portes mortes. La
+# mesure : `francais:check` annonçait « aucun libellé en dur » avec vingt
+# libellés français réellement affichés, et une règle d'`i18n:check` ne pouvait
+# structurellement pas crier parce que son motif cherchait des guillemets simples
+# dans un dictionnaire écrit en guillemets doubles. Une porte qu'on ne lance
+# jamais ne peut pas crier ; une porte qui ne peut pas crier donne une confiance
+# fausse sur tout le reste.
+#
+# La liste ci-dessous est donc **vérifiable** : le récapitulatif nomme ce qui a
+# tourné, et une porte qui n'aurait rien trouvé depuis des mois est traitée comme
+# un défaut, pas comme une bonne nouvelle.
 #
 # ## Pourquoi `windows-latest` et pas `ubuntu-latest`
 #
@@ -125,9 +142,36 @@ jobs:
         working-directory: apps/desktop
         run: pnpm lint
 
-      - name: Interface — i18n
+      - name: Interface — tests unitaires
         working-directory: apps/desktop
-        run: pnpm i18n:check
+        run: pnpm test
+
+      # Les douze portes `check-*.mjs`.
+      #
+      # Elles n'étaient **pas** dans la CI : mesuré le 2026-10-15, sur les quinze
+      # scripts de `apps/desktop/package.json`, la CI en exécutait trois
+      # (`typecheck`, `lint`, `i18n:check`) — donc **les 128 tests unitaires du
+      # front et onze portes n'étaient jamais exécutés automatiquement**. C'est ce
+      # qui a laissé vivre deux portes mortes (`francais:check` et une règle
+      # d'`i18n:check`) : une porte qu'on ne lance jamais ne peut pas crier, et une
+      # porte qui ne peut pas crier donne une confiance fausse.
+      #
+      # Chaque porte est nommée dans le journal : un `run: pnpm <toutes>` ne dit
+      # pas laquelle a échoué.
+      - name: Interface — portes
+        working-directory: apps/desktop
+        run: |
+          $portes = @(
+            'i18n:check', 'hooks:check', 'chemins:check', 'libelles:check',
+            'francais:check', 'styles:check', 'pages:check', 'perso:check',
+            'lecteur:check', 'arrondi:check', 'ipc:check', 'moteur:check'
+          )
+          foreach ($p in $portes) {
+            Write-Host "--- pnpm $p"
+            & pnpm $p
+            if ($LASTEXITCODE -ne 0) { throw "porte en echec : $p" }
+          }
+          Write-Host "$($portes.Count) portes executees, toutes vertes."
 
       - name: Interface — build
         working-directory: apps/desktop
@@ -195,7 +239,22 @@ jobs:
 
       - name: Récapitulatif
         run: |
-          Write-Host "AGENTS.md §8 — 9 commandes, 9 exécutées :"
-          Write-Host "  apps\desktop        : pnpm typecheck | pnpm lint | pnpm i18n:check | pnpm build"
+          Write-Host "Vérifications de l'interface et du dépôt :"
+          Write-Host "  apps\desktop        : pnpm typecheck | pnpm lint | pnpm test | 12 portes | pnpm build"
           Write-Host "  apps\desktop\src-tauri : cargo fmt --check | cargo clippy --all-targets -D warnings | cargo test"
           Write-Host "  engine              : gradle test --no-build-cache"
+
+      # Une porte qui n'a pas trouvé de faute depuis des mois n'est pas une porte :
+      # c'est un motif qui peut s'être cassé. Mesuré le 2026-10-15, deux portes
+      # n'avaient jamais rien trouvé parce qu'elles ne pouvaient rien voir. On
+      # exige donc un **compte** de vérifications, pas seulement un code de sortie.
+      # Même leçon que le garde Gradle ci-dessus : une porte verte qui n'a rien
+      # exécuté est indiscernable d'une porte verte qui a tout vérifié.
+      - name: Les tests du moteur et du front ont-ils vraiment tourné ?
+        run: |
+          $x = Get-ChildItem engine/build/test-results/test/*.xml
+          if (-not $x) { Write-Error "moteur : aucun resultat de test"; exit 1 }
+          $t = 0
+          foreach ($i in $x) { [xml]$d = Get-Content $i.FullName; $t += [int]$d.testsuite.tests }
+          Write-Host "moteur : $($t) tests"
+          if ($t -lt 100) { Write-Error "seulement $t tests moteur : la couverture a chute"; exit 1 }

@@ -132,7 +132,10 @@ s: !!document.querySelector('script[src*=\"/cdn-cgi/challenge-platform/\"]')})";
         })
         .ok()?;
     let brut = tokio::time::timeout(PAGE_DELAI, rx).await.ok()?.ok()?;
-    let lu: serde_json::Value = serde_json::from_str(&brut).ok()?;
+    // Même décodage que `evaluer_javascript` : la webview rend une double
+    // enveloppe. Un seul `from_str` donnait une chaîne, donc un titre vide, donc
+    // une page de vérification prise pour une page résolue.
+    let lu = resoudre_rendu(&brut)?;
     Some(PageFenetre {
         interstitiel: reste_interstitiel(
             lu.get("t").and_then(|v| v.as_str()).unwrap_or(""),
@@ -1426,8 +1429,42 @@ mod tests {
         assert!(reste_interstitiel("hentaizone.xyz", true, false));
     }
 
-    /// La page de verification d'Astral, telle que mesuree le 2026-10-14 : elle
-    /// doit etre refusee avant injection.
+    /// Le décodage à un seul niveau, tel qu'écrit dans `lire_page` avant correction.
+    /// Il doit renvoyer un titre vide sur la forme réelle : c'est le défaut.
+    ///
+    /// (Une mention d'Astral precedait ce test et documentait un cas qui n'existe
+    /// plus dans ce fichier : le refus de la page de vérification est couvert par
+    /// `une_page_de_verification_n_est_jamais_injectee` et
+    /// `un_catalogue_sain_n_est_jamais_refuse`. Deux commentaires de suite pour
+    /// deux tests différents, c'est un commentaire qui ne décrit plus rien.)
+    #[test]
+    fn le_decodage_a_un_seul_niveau_perd_le_titre() {
+        let rendu = r#""{\"t\":\"Un instant...\",\"f\":false,\"s\":true}""#;
+        let un_niveau = serde_json::from_str::<serde_json::Value>(rendu).unwrap();
+        assert_eq!(
+            un_niveau.get("t").and_then(|v| v.as_str()),
+            None,
+            "un décodage à un niveau ne donne pas d'objet : le titre est perdu"
+        );
+    }
+
+    /// Le défaut trouvé le 2026-10-14 : `lire_page` décodait la réponse en un seul
+    /// niveau, alors que la webview la rend en double enveloppe. Le titre devenait
+    /// `""`, et une page vide passait pour résolue. Ce test rejoue la forme exacte
+    /// rendue par la webview sur Astral.
+    #[test]
+    fn lire_page_lit_la_double_enveloppe_de_la_webview() {
+        // Forme réellement rendue : une chaîne JSON contenant le JSON de l'état.
+        let rendu = r#""{\"t\":\"Un instant...\",\"f\":false,\"s\":true}""#;
+        let lu = resoudre_rendu(rendu).expect("la double enveloppe doit se décoder");
+        assert_eq!(lu.get("t").and_then(|v| v.as_str()), Some("Un instant..."));
+        assert!(reste_interstitiel(
+            lu.get("t").and_then(|v| v.as_str()).unwrap_or(""),
+            lu.get("f").and_then(|v| v.as_bool()).unwrap_or(false),
+            lu.get("s").and_then(|v| v.as_bool()).unwrap_or(false),
+        ));
+    }
+
     /// Le code d'erreur doit rester stable : l'interface le reconnaît. Un renommage
     /// silencieux ferait retomber le front sur le texte brut.
     #[test]

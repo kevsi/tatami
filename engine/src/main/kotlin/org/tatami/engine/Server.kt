@@ -535,9 +535,34 @@ fun serve() {
     // Une requête = un thread : une source lente ou morte ne doit pas figer les
     // autres (le contrat route déjà les réponses par id). Écriture stdout
     // sérialisée : stdout reste le canal du protocole.
-    val workers = Executors.newCachedThreadPool { r ->
+    // **Un nombre fini de workers, et non plus une usine d'un thread par
+    // requête.**
+    //
+    // Mesuré le 2026-10-15 : `Executors.newCachedThreadPool` crée un thread à
+    // **chaque** requête tant qu'aucun thread n'est disponible ; sans borne
+    // supérieure, un flux de requêtes (surtout celles-mêmes lentes)
+    // saturait la mémoire avant même que `withTimeout` ait le temps de
+    // rendre la main. 6 ou 8 workers suffisent ici : les requêtes sont
+    // légères et à durée courte (µs à s), et ce moteur est single-client
+    // (un seul superviseur Rust).
+    //
+    // Le `withTimeout` (ligne 589) reste **non débordable**: une requête
+    // qui dépasse son délai fait rentrer `TIMEOUT` au client, mais l'`execute()`
+    // OkHttp qui tourne en dessous continue jusqu'à son terme sur son thread.
+    // `runBlocking` voit la cancellation à la suspension point, et le thread
+    // revient au pool une fois le thread OkHttp terminé. Avec une usine
+    // bornee, le pire cas est **bounded** (MAX_WORKERS threads bloqués, pas
+    // un nombre sans borne), ce qui rend le défaut observable et limitable
+    // au lieu de fatal. Cette partie est un vrai travail restant : raccorder
+    // la cancellation à `Call.cancel()`, qui exige de passer le `Job` jusqu'à
+    // `fetch_octets`. Bonne tâche isolée, et marquée ici pour ne pas être
+    // tentée de nouveau sans y repenser.
+    // @todo(3.5) : raccorder cancellation -> OkHttp Call.cancel().
+    val MAX_WORKERS = (Runtime.getRuntime().availableProcessors()).coerceIn(2, 8)
+    val workers = Executors.newFixedThreadPool (MAX_WORKERS) { r ->
         Thread(r, "tatami-worker").apply { isDaemon = true }
     }
+    System.err.println("tatami-engine workers=$MAX_WORKERS")
     val stdout = System.out
     // Compteur des requêtes en vol : `shutdownNow()` interromp les threads, et
     // une réponse est parfois déjà partie (voir plus bas). Sans ce compteur, on

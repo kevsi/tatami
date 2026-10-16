@@ -39,6 +39,13 @@
      gris ne suffirait pas. Mesuré le 2026-10-05 : 2,98:1 avec `--text` en thème
      clair, 10,7:1 avec ce bleu. */
   --accent-dim-texte: #ffffff;
+  /* De l'accent **comme petit texte**. Distinct de `--accent`, qui porte des
+     fonds et doit donc rester assez sombre pour poser du texte blanc dessus :
+     les deux exigences sont opposées. Mesuré le 2026-10-15 (audit
+     `docs/audit-ux-2026-10-15.md`, F2) : `#366ad3` donnait 3,15:1 sur
+     `--surface-2` (le survol de l'encart), sous le seuil AA de 4,5:1 pour
+     12,5 px. Ici 4,85:1 sur les trois surfaces sombres. */
+  --accent-texte: #5b8ceb;
   --danger: #f13e3e;
   --danger-ink: #ffffff;
 
@@ -158,6 +165,10 @@
   --accent-ink: #ffffff;
   --accent-hover: #244d9e;
   --accent-dim-texte: #163a7a;
+  /* Même exigence que le thème sombre, résolue dans l'autre sens : sur fond
+     clair il faut un accent **foncé**. `#2f5fc0` donne 5,43:1 sur les trois
+     surfaces claires, donc la valeur de `--accent` convient ici. */
+  --accent-texte: #2f5fc0;
   --danger: #c92a2a;
   --danger-ink: #ffffff;
 
@@ -2548,7 +2559,9 @@ button:disabled {
 .maj-detail summary {
   cursor: pointer;
   font-size: 12.5px;
-  color: var(--accent);
+  /* `--accent-texte`, pas `--accent` : à 12,5 px c'est du texte, pas un fond.
+     Mesuré le 2026-10-15 : 3,45:1 sur `--surface` (audit F2). */
+  color: var(--accent-texte);
   user-select: none;
 }
 

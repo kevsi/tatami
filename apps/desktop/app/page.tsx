@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { bandeVirtualisableEst, decalageAncrage, fenetreBande, hauteurRendueMesuree, hauteursBande, largeurImagePx, offsetsBande, pasDeDefilement } from '../lib/bande-hauteurs';
@@ -5727,7 +5727,14 @@ if (reader) {
                   );
                 }
                 return (
-                  <>
+                  // La clé est sur le **Fragment**, pas sur l'<img> à
+                  // l'intérieur : c'est l'élément du tableau que React doit
+                  // suivre. Mesuré le 2026-10-15 — 1 erreur console
+                  // « Each child in a list should have a unique key prop » à
+                  // l'ouverture du lecteur (audit `docs/audit-ux-2026-10-15.md`,
+                  // F1), et sans clé l'identité d'une page est perdue quand la
+                  // fenêtre virtuelle se déplace.
+                  <Fragment key={p.token}>
                     {/* Placeholder tant que la page n'est pas décodée.
                         Même position, même largeur et même hauteur que
                         l'image : sinon la page arrive en décalant la bande, ce
@@ -5807,7 +5814,7 @@ if (reader) {
                     }}
                     onDoubleClick={() => changeZoom(zoom >= ZOOM_MAX ? 100 : ZOOM_MAX)}
                   />
-                  </>
+                  </Fragment>
                 );
               })}
             </div>

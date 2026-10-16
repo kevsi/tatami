@@ -51,6 +51,17 @@ const declares = new Set(
 const utiliseesVar = new Set(
   [...jsx.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((m) => m[1]),
 );
+// **Le meme controle sur globals.css lui-meme.** Mesure le 2026-10-15 : les
+// usages n'etaient releves que dans le JSX, alors que la feuille de style en
+// compte elle aussi — dont tous ceux du commit `fbef430`
+// (`color: var(--accent-texte)`). Un `--accent-textee` mal orthographie y serait
+// tombe sur la valeur heritee, sans erreur, sans console, sans test : exactement
+// le defaut que cette porte existe pour fermer, mais dans un fichier qu'elle ne
+// lisait pas. Un token declare `--x: var(--y)` est un usage de `--y`, donc il
+// compte aussi.
+for (const m of css.matchAll(/var\((--[a-z0-9-]+)\)/g)) {
+  utiliseesVar.add(m[1]);
+}
 // Les variables definies dans un `style={{ ... }}` inline sont elles aussi
 // legales : on les cherche dans le JSX.
 const definiesInline = new Set(

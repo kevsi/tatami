@@ -1917,3 +1917,19 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   taille ne dit rien de l'état. Corollaire : quand deux réponses se ressemblent,
   chercher ce qui les **distingue** — ici, le nombre de cibles CDP : 0 iframe
   contre 1.
+
+- **Le moteur résout en DNS-over-HTTPS : le résolveur du système ne dit pas la
+  vérité.** Mesuré le 2026-10-16 : `mangasoriginesunofficial.com` répond
+  « le nom DNS n'existe pas » en trois essais consécutifs depuis le résolveur de
+  Windows, et `curl` comme Node obtiennent `http=000` — et pourtant la sonde du
+  moteur
+  (`scripts/sonde-sources.mjs --sources MANGASORIGINES`) le lit parfaitement
+  (`OK`). Le moteur passe par `DoHManager` (`cloudflare-dns.com`). Deux
+  conséquences : (a) toute sonde construite sur `curl`/`fetch` **annonce à tort**
+  des sites injoignables que l'application lit très bien — une première version de
+  `verifier-egress.mjs` faisait exactement ça ; (b) pour la **joignabilité**, la
+  source de vérité est `sonde-sources.mjs`, qui interroge notre propre pile, et
+  pas le résolveur. Corollaire de méthode : un nom de domaine ne s'invente pas à
+  partir du nom d'une source — j'ai écrit `www.mangasorigines.fr` pour une source
+  qui s'appelle MANGASORIGINES et qui vit ailleurs ; les URL se **relisent** dans
+  le relevé (`docs/mesures/cloudflare-depuis-cette-machine-2026-10-16.json`).

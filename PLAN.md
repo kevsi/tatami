@@ -3436,9 +3436,29 @@ adresse**.
 
 **Ce qui reste à faire, et qui n'est pas du code.** Le test qui tranche, d'une
 minute : un partage de connexion mobile (ou tout autre réseau résidentiel), puis
-la même sonde. Si le site s'ouvre là-bas, **Tatami n'a rien à changer** et la
-totalité des 35 sources redevient accessible sans une ligne de code. C'est le
-seftest que je ne peux pas mener d'ici.
+`node scripts/verifier-egress.mjs`. Cette sonde sort un **verdict** et un **code
+de sortie** (`0` lisible, `2` contexte, `3` indeterminé) :
+
+```
+sortie  : 154.72.113.241  AS36924 GVA Cote d'Ivoire SAS   (Cotonou, BJ)
+DEFI_CLOUDFLARE  http=403  5 710 o  hentaizone.xyz/manga/
+DEFI_CLOUDFLARE  http=403  5 605 o  toonfr.com/webtoon/
+DEFI_CLOUDFLARE  http=403  5 604 o  astral-manga.fr/manga/
+DEFI_CLOUDFLARE  http=403  5 647 o  manga-mana.com/liste-mangas
+DEFI_CLOUDFLARE  http=403  5 600 o  onisaga.com/browse
+VERDICT : ce chemin reseau est contexte. Changer de reseau, pas de code.   (code 2)
+```
+
+Les URL sont reprises **telles quelles** du relevé
+`cloudflare-depuis-cette-machine-2026-10-16.json`. Une première version de la
+sonde annonçait `INJOIGNABLE` sur un site que l'application lit très bien : elle
+utilisait le résolveur du système alors que le moteur résout en **DNS-over-HTTPS**
+(`DoHManager`). `mangasoriginesunofficial.com` ne résout pas ici et le moteur le
+lit (`OK`) — donc, pour la **joignabilité**, l'instrument de référence reste
+`scripts/sonde-sources.mjs`, qui interroge notre propre pile.
+
+Si le site s'ouvre sur un autre réseau, **Tatami n'a rien à changer** et la
+totalité des 35 sources redevient accessible sans une ligne de code.
 
 **Ce que l'on écarte, avec sa raison.** Une impasse par usurpation
 d'empreinte (TLS/JA3, `navigator.webdriver`, clients HTTP modifiés) est déjà

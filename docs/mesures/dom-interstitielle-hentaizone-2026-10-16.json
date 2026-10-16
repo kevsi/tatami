@@ -1,0 +1,25 @@
+{
+  "href": "https://hentaizone.xyz/manga/",
+  "titre": "Un instant…",
+  "readyState": "complete",
+  "longueurHtml": 28783,
+  "noeudsChallenges": {
+    "script[src*=\"/cdn-cgi/challenge-platform/\"]": {
+      "display": "none",
+      "visibility": "visible",
+      "opacity": "1",
+      "largeur": 0,
+      "hauteur": 0,
+      "visible": false,
+      "texte": ""
+    }
+  },
+  "balisesCorps": {
+    "div": 2,
+    "script": 1
+  },
+  "iframes": [],
+  "scriptsChallenge": [
+    "https://hentaizone.xyz/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1?ray=a4b61acb2de173b1"
+  ]
+}

@@ -1,0 +1,536 @@
+{
+  "fenetre": "attachee hors ecran, focus=true",
+  "resultats": [
+    {
+      "source": "TOONFR",
+      "cartesFinales": 0,
+      "serie": [
+        {
+          "t": 3,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/?__cf_chl_rt_tk=XWqBV0sfDSdjuan1YMIKcSXaJj9d4xKcJUKI3Vskl1c-179",
+              "titre": "Just a moment...",
+              "html": 6101,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "interactive",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 6,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 9,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 12,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 15,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 18,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 21,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 24,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 27,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 30,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 33,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 36,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 39,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 42,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 45,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 48,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 51,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 54,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 57,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 60,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 64,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 67,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 70,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 73,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 76,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28722,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        }
+      ]
+    }
+  ]
+}

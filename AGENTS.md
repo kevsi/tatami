@@ -1880,3 +1880,40 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   correction qui remplace une valeur vide doit laisser la **valeur connue** intacte
   — le test inverse (`une_couverture_connue_ne_deroule_pas_sur_un_vide`) est ce
   qui empêche le correctif d'être un effacement.
+
+- **Une fenêtre hors écran n'est pas une fenêtre focalisée : Windows refuse de
+  l'activer.** Mesuré le 2026-10-16 : fenêtre Tauri réelle, 1024×768,
+  `.focused(true)`, positionnée à (−20000, −20000). Résultat —
+  `fenetre.is_focused()` = `false` **3 fois sur 3**, pendant que
+  `document.hasFocus()` dans la page rendait `true` **26 fois sur 26**. Les deux
+  instruments ne mesurent pas la même chose : le second suit le focus du contrôle
+  enfant WebView2 et peut être périmé ; le premier est une interrogation Win32,
+  et Windows **n'active pas** une fenêtre entièrement hors écran, donc
+  `.focused(true)` ne demande littéralement rien. Corollaires : (a) « hors écran »
+  donne bien une fenêtre **attachée avec une vraie viewport** (mesuré
+  `1024x768`), mais **jamais le focus** — or c'est le focus qu'attend
+  l'implémentation de référence avant de charger la cible ; (b) devant deux
+  instruments qui se contredisent, demander lequel interroge l'OS — le test de
+  la page peut être rassurant et faux ; (c) une expérience qui ne reproduit pas
+  la condition à tester ne prouve **ni** que ça marche **ni** que ça ne marche
+  pas. Ici j'allais écrire « l'attachement n'aide pas » : l'inférence était sans
+  fondement, et elle n'a pas été écrite.
+
+- **Le journal du cœur est sur `stdout`, celui du moteur sur `stderr`.** Mesuré le
+  2026-10-16 : j'ai cherché une ligne `tracing::info!` dans `app.err.log` —
+  **0 octet** — et conclu « rien n'a été journalisé ». `app.out.log` faisait
+  46 ko et contenait la ligne, horodatée, avec sa valeur. Corollaire : le
+  lanceur (`00-lancer-app.ps1`) redirige les deux, alors que la séparation
+  stdout/stderr est une propriété du **composant**, pas du processus — et une
+  recherche dans le mauvais flux répond « rien », ce qui se lit comme « pas
+  exécuté ».
+
+- **Deux pages de tailles presque égales ne sont pas la même page.** Mesuré le
+  2026-10-16 : hentaizone et TOONFR servaient toutes deux ~28,7 ko, et j'en ai
+  conclu « le même gabarit Cloudflare, donc le même état ». Faux : la liste des
+  cibles CDP montre sur TOONFR un **iframe Turnstile vivant**
+  (`challenges.cloudflare.com/.../turnstile/…` et deux `blob:`), là où hentaizone
+  n'en a **aucun**. Un gabarit commun rend les tailles convergentes, donc une
+  taille ne dit rien de l'état. Corollaire : quand deux réponses se ressemblent,
+  chercher ce qui les **distingue** — ici, le nombre de cibles CDP : 0 iframe
+  contre 1.

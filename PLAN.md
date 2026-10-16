@@ -3326,3 +3326,89 @@ rejouees (selecteur `.manga` = squelette, `input.search` = recherche globale,
 compte d'`<img>` sans alt gonfle par des commentaires).
    humaine). Les corrections ne commenquent qu'après validation.
 
+### Expérience A du 2026-10-16 — la fenêtre de transport « attachée » : expérience **invalide**
+
+Question posée après la comparaison avec l'implémentation de référence
+(`Kotatsu-Redo/app/src/main/kotlin/org/koitharu/kotatsu/`) : notre fenêtre de
+transport est créée `.visible(false)`, donc **sans surface**, alors que la
+référence écrit que « Turnstile treats a non-focused or detached WebView
+differently » (`CloudFlareActivity.kt:84`) et attend `hasWindowFocus()` avant
+de charger la cible (`:211`). Est-ce la cause ?
+
+**Comparaison faite avant toute écriture.** Sur l'identité du client, Tatami est
+**en avance** : `challenge.rs` lit `navigator.userAgent` **et** les Client Hints
+haute entropie, et les renvoie au moteur, qui reconstruit `sec-ch-ua*` et
+`Sec-Fetch-*` (`ChallengeHeaders.kt`). La référence ne lit que l'UA et se
+contente de *bloquer* trois en-têtes (`CloudFlareInterceptClient.kt:30`). La
+leçon de la référence — « une clearance n'est honorée que pour l'agent exact qui
+l'a obtenue » — est donc déjà appliquée chez nous.
+
+Trois écarts réels, dont un seul se prête à une expérience :
+1. `.visible(false)` (`challenge.rs:982`) ;
+2. navigation immédiate, sans attendre viewport ni focus (`:991`) ;
+3. `reste_interstitiel` (`:106`) ne teste ni la géométrie des nœuds de défi
+   (comme `CloudFlareDetection.kt`) ni `readyState`.
+
+**Une tâche retirée du périmètre par la mesure.** Le détecteur façon référence
+(écart 3) ne sert à rien ici : l'interstitielle de hentaizone **n'a aucun
+widget** dans le DOM — `{"div":2,"script":1}`, **0 iframe**, `readyState:
+complete`, titre encore « Un instant… », `script` du challenge en `display:none`
+0×0 (`.mesures/session-2026-10-16/17-dom-interstitielle.json`). Il n'y a pas de
+« widget qui tourne » à détecter, et le test par titre dit déjà la bonne chose.
+
+**Ce qui a été essayé, et pourquoi le résultat ne prouve rien.** Fenêtre de
+transport créée réelle, 1024×768, `.focused(true)`, sans décoration ni barre des
+tâches, positionnée hors écran (−20000, −20000), plus une attente de focus
+bornée à 1,5 s **journalisée**. `fmt=0`, `clippy=0`, `cargo test` 262/0 avant et
+après. Mesuré sur TOONFR et sur hentaizone :
+
+| relevé | valeur |
+|---|---|
+| viewport de la fenêtre hors écran | `1024x768` — **viewport réelle** |
+| `fenetre.is_focused()` (Rust, Win32) | `focus=false`, **3 fois sur 3** |
+| `document.hasFocus()` (page WebView2) | `focus=true`, 26 relevés sur 26 |
+| défi sur 76 s | interstitielle figée, 0 lien manga |
+
+Les deux instruments **se contredisent**, et c'est Rust qui a raison : Windows
+**refuse d'activer une fenêtre entièrement hors écran**, donc `.focused(true)` ne
+demande rien ; `document.hasFocus()` suit le focus du contrôle enfant WebView2 et
+peut être périmé. L'expérience a donc testé « attachée, hors écran, jamais au
+premier plan », **pas** la recette de la référence, qui exige le focus.
+**L'inférence « l'attachement n'aide pas » est donc sans fondement** et n'est
+pas écrite.
+
+**Deux faits réutilisables, eux, sont prouvés :**
+- une fenêtre Tauri positionnée hors écran **reste attachée et garde une vraie
+  viewport** (1024×768) — la technique marche, seule l'activation échoue ;
+- **aujourd'hui, aucune source ne passe par le transport avec succès** : les 35
+  sources derrière Cloudflare sont bloquées ou mortes, donc la case « site
+  résoluble » de la matrice est vide. TOONFR, résolu seul en ~10 s le
+  2026-10-13, ne se résout plus.
+
+**Une conclusion de la même séance à corriger.** Une similarité de taille
+(28 722 o sur TOONFR, 28 783 o sur hentaizone) avait été lue comme « les deux
+sites servent la même page ». Faux : la liste des cibles CDP montre sur TOONFR
+un **iframe Turnstile vivant** (`challenges.cloudflare.com/.../turnstile/…` et
+deux `blob:`), là où hentaizone n'en a aucun. Même gabarit Cloudflare, états
+opposés.
+
+**Changement retiré de l'arbre.** Un comportement sans bénéfice mesuré, qui
+coûte 1,5 s par requête de transport et vole le focus à l'utilisateur, n'a rien
+à faire dans le code. `challenge.rs` remis à l'état commité.
+
+**Décision humaine requise.** La recette ne peut être éprouvée qu'avec une
+fenêtre **réellement visible et au premier plan** — précisément ce qui a été
+refusé le 2026-10-14 (« ne rien changer, l'utilisateur n'a rien à décider
+ici »). Trois voies, aucune ne découle d'une mesure :
+1. fenêtre de transport visible pendant le challenge, puis fermée (30 à 60 s
+   d'intrusion, une seule fois par source défaillante) ;
+2. fenêtre translucide à 1 % d'opacité, comme le `HIDDEN_RENDER_ALPHA` de la
+   référence — mais Tauri v2 n'expose pas l'opacité par fenêtre, il faudrait
+   passer par l'API Win32 ;
+3. ne rien tester, et garder l'écart comme dette documentée.
+
+Reste que, pour hentaizone, aucune de ces voies ne changera quoi que ce soit :
+quatre clients (curl, Edge hors application, WebView2, source custom) rendent la
+même page, et le test qui déciderait vraiment — **un autre réseau** — ne peut
+pas être mené d'ici.
+

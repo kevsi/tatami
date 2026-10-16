@@ -1,0 +1,53 @@
+{
+  "fenetre": "attachee hors ecran, focus=true",
+  "resultats": [
+    {
+      "source": "MANGASORIGINES",
+      "cartesFinales": 16,
+      "serie": [
+        {
+          "t": 3,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28743,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 0,
+            "squelettes": 6,
+            "alerte": null
+          }
+        },
+        {
+          "t": 6,
+          "transport": [
+            {
+              "url": "https://toonfr.com/webtoon/",
+              "titre": "Un instant…",
+              "html": 28743,
+              "liensManga": 0,
+              "focus": true,
+              "screen": "1366x768",
+              "viewport": "1024x768",
+              "readyState": "complete",
+              "cookies": 458
+            }
+          ],
+          "grille": {
+            "cartes": 16,
+            "squelettes": 0,
+            "alerte": null
+          }
+        }
+      ]
+    }
+  ]
+}

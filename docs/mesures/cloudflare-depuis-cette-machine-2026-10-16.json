@@ -1,0 +1,257 @@
+{
+  "mesure": "2026-10-16T08:19:59.425Z",
+  "resume": {
+    "BLOQUE_CLOUDFLARE": 14,
+    "ORIGINE_ETEINTE": 18,
+    "403_SANS_MARQUEUR": 1,
+    "MORTE": 1,
+    "SANS_CONTENU": 1
+  },
+  "resultats": [
+    {
+      "source": "ASTRALMANGA",
+      "url": "https://astral-manga.fr/manga/",
+      "http": 403,
+      "octets": 5583,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "BERSERKSCAN",
+      "url": "https://berserkscan.com/",
+      "http": 403,
+      "octets": 5565,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "BLUELOCKSCAN",
+      "url": "https://bluelockscan.com/",
+      "http": 403,
+      "octets": 5588,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "CENTURYBOYS20TH",
+      "url": "https://20thcenturyboys.fr/",
+      "http": 523,
+      "octets": 7238,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "CHAINSAWMANSCAN",
+      "url": "https://chainsawman-scan.com/",
+      "http": 523,
+      "octets": 7250,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "DANDADAN",
+      "url": "https://dandadan.fr/",
+      "http": 523,
+      "octets": 7196,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "DEMONSLAYERSCAN",
+      "url": "https://demonslayerscan.com/",
+      "http": 523,
+      "octets": 7244,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "DRSTONE",
+      "url": "https://drstone.fr/",
+      "http": 523,
+      "octets": 7190,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "EPSILONSOFT",
+      "url": "https://epsilonsoft.to/manga/",
+      "http": 403,
+      "octets": 5405,
+      "verdict": "403_SANS_MARQUEUR"
+    },
+    {
+      "source": "FIREFORCE",
+      "url": "https://fireforce.fr/",
+      "http": 523,
+      "octets": 7202,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "HAIKYUU",
+      "url": "https://haikyuu.fr/",
+      "http": 403,
+      "octets": 5560,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "HELLSPARADISESCAN",
+      "url": "https://hellsparadisescan.com/",
+      "http": 403,
+      "octets": 5593,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "HENTAIZONE",
+      "url": "https://hentaizone.xyz/manga/",
+      "http": 403,
+      "octets": 5710,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "HUNTERXHUNTERSCAN",
+      "url": "https://hunterxhunterscan.com/",
+      "http": 522,
+      "octets": 7306,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "JAPSCANSFR",
+      "url": "https://japscan.foo/manga",
+      "http": 404,
+      "octets": 22809,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "JPSCANVF",
+      "url": "https://lirescanvf.com/manga-list/",
+      "http": 521,
+      "octets": 7013,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "KINGDOMSCAN",
+      "url": "https://kingdomscan.com/",
+      "http": 403,
+      "octets": 5565,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "MANGAMANA",
+      "url": "https://www.manga-mana.com/liste-mangas",
+      "http": 403,
+      "octets": 5647,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "MASHLESCAN",
+      "url": "https://mashlescan.fr/",
+      "http": 522,
+      "octets": 7258,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "MYHEROACADEMIASCAN",
+      "url": "https://myheroacademiascan.com/",
+      "http": 403,
+      "octets": 5594,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "ONEPIECESCAN",
+      "url": "https://onepiecescan.fr/",
+      "http": 522,
+      "octets": 7270,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "ONEPUNCHMANSCAN",
+      "url": "https://onepunchmanscan.com/",
+      "http": 523,
+      "octets": 7244,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "ONISAGA_FR",
+      "url": "https://onisaga.com/browse",
+      "http": 403,
+      "octets": 5579,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "OSHINOKO",
+      "url": "https://oshinoko.fr/",
+      "http": 522,
+      "octets": 7246,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "POSEIDONSCANS",
+      "url": "https://poseidonscans.com/series",
+      "http": 523,
+      "octets": 7232,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "READERGEN",
+      "url": "https://fr.readergen.fr/manga/",
+      "http": 525,
+      "octets": 7769,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "SAKAMOTODAYS",
+      "url": "https://sakamotodays.fr/",
+      "http": 523,
+      "octets": 7220,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "SCANBORUTO",
+      "url": "https://scanboruto.fr/",
+      "http": 403,
+      "octets": 5563,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "SCANHENTAIMENU",
+      "url": "https://x-manga.org/manga/",
+      "http": 403,
+      "octets": 5686,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "SCANJUJUTSUKAISEN",
+      "url": "https://scanjujutsukaisen.com/",
+      "http": 403,
+      "octets": 5593,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "SNKSCAN",
+      "url": "https://snkscan.com/",
+      "http": 523,
+      "octets": 7196,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "SUSHISCAN",
+      "url": "https://sushiscan.net",
+      "http": 200,
+      "octets": 798981,
+      "verdict": "SANS_CONTENU"
+    },
+    {
+      "source": "TOKYOREVENGERS",
+      "url": "https://tokyorevengers.fr/",
+      "http": 523,
+      "octets": 7232,
+      "verdict": "ORIGINE_ETEINTE"
+    },
+    {
+      "source": "TOONFR",
+      "url": "https://toonfr.com/webtoon/",
+      "http": 403,
+      "octets": 5584,
+      "verdict": "BLOQUE_CLOUDFLARE"
+    },
+    {
+      "source": "VINLANDSAGA",
+      "url": "https://vinlandsaga.fr/",
+      "http": 523,
+      "octets": 7214,
+      "verdict": "ORIGINE_ETEINTE"
+    }
+  ]
+}

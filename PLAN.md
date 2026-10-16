@@ -3246,6 +3246,54 @@ catalogue, avec la date du relevé dans le motif ») **n'a pas été appliquée*
 désactivation se fait dans l'application, elle est visible par l'utilisateur, et
 elle se réverse en un clic. Reste à décider, donc **pas fait**.
 
+### Question humaine du 2026-10-16 — « une méthode Cloudflare à la place des sources custom »
+
+Réponse mesurée : **non, pas pour hentaizone**, et l'ordre des couches l'explique.
+Quatre clients, un seul résultat, sur `hentaizone.xyz/manga/` :
+
+| client | réponse |
+|---|---|
+| `curl` sans agent utilisateur | `403`, 5 433 o, *Just a moment...* |
+| `curl` avec agent navigateur | `403`, 5 668 o, *Just a moment...* |
+| Edge réel, profil neuf, hors application | « Un instant… », 28 860 o, 0 lien |
+| WebView2 du transport de l'application | « Un instant… », 28 881 o, 0 lien |
+
+Le même octet : **la source custom, OkHttp, la webview et le navigateur complet
+sont tous en aval du même refus.** Le juge est la réputation de l'adresse IP, et
+la capture montre un widget Turnstile **en boucle sur « Vérification… »** — il ne
+demande même pas de clic, il ne se résout pas. Donc ni « leFenêtre de
+transport cachée », ni une éventuelle lecture par cookies déjà_TRACE : le
+transport a un bocal de **495 cookies** (dont une clearance des sessions
+antérieures) et se fait malgré tout refuser.
+
+**Ce que vaut une méthode Cloudflare, sur toute la population.** Les 35 sources
+que le moteur classe derrière Cloudflare, mesurées **depuis cette machine**
+(`docs/mesures/cloudflare-depuis-cette-machine-2026-10-16.json`) :
+
+| verdict | n | portée d'une méthode applicative |
+|---|---|---|
+| origine éteinte (521/522/523/525) | **18** | aucune : le serveur est mort |
+| bloqué Cloudflare (403 + marqueur) | **14** | aucune : refus au niveau IP |
+| 403 sans marqueur (protection du site) | 1 | aucune |
+| 404 | 1 | aucune |
+| **200 + 799 ko de catalogue** | **1** | **seule cible possible : SUSHISCAN** |
+
+Donc une méthode Cloudflare viserait, au mieux, **une source sur 1384** — et
+seulement parce qu'elle répond déjà en 200. Le reste est hors de portée du code.
+
+**Ce qui reste à faire, et qui n'est pas du code.** La seule variable que je ne
+peux pas tester d'ici est **l'adresse de sortie** : un partage de connexion
+mobile ou un autre réseau dirait en une minute si hentaizone s'ouvre ailleurs. Si
+oui, le blocage est la réputation de l'IP d'ici, et l'application n'a rien à
+changer. Si non aussi, il ne reste que le clic humain dans la fenêtre de
+vérification — celle que l'application propose déjà.
+
+**Prochaine piste, la seule vivante : SUSHISCAN.** Elle sert 799 ko en `200`
+aujourd'hui. Elle est connue pour deux défauts mesurés le 2026-10-14 : elle ignore
+la pagination (`?page=2` rend la page 1 à l'identique) et son catalogue est sous
+`/wp-content/uploads/` où la première image est le logo du site. C'est un travail
+de parseur, pas de Cloudflare — donc mesurable et réversible.
+
 **Audit livré le 2026-10-15 (lecture seule, aucun code produit touché).**
 Rapport : `docs/audit-ux-2026-10-15.md`. Outils : `.mesures/ux-audit/`
 (`inventaire.mjs`, `parcours.cjs`, 14 captures, `parcours.json`).

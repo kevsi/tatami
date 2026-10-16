@@ -1933,3 +1933,18 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   partir du nom d'une source — j'ai écrit `www.mangasorigines.fr` pour une source
   qui s'appelle MANGASORIGINES et qui vit ailleurs ; les URL se **relisent** dans
   le relevé (`docs/mesures/cloudflare-depuis-cette-machine-2026-10-16.json`).
+
+- **Une vérification manuelle ne débloque pas le moteur — seulement le
+  navigateur.** Mesuré deux fois le 2026-10-16, après un clic humain : 8 cookies
+  lus et appliqués à 11 h 07, 11 cookies à 12 h 16 — et dans les deux cas le
+  rejeu par le moteur répond **`CHALLENGE_UNREPLAYABLE`**. Donc « résous la
+  vérification, la source est débloquée » est **faux** : la pile
+  OkHttp/Conscrypt se fait refuser même porteuse de la clearance, avec le bon
+  agent utilisateur et les Client Hints reconstruits. Ce que le clic apporte de
+  réel, c'est une clearance dans le **profil WebView2 partagé**, et c'est la
+  **webview de transport** qui exploitera ensuite la vraie page (mesuré : 53
+  lectures, 149–184 ko, après le clic de 11 h 06). Corollaires : (a) un
+  `CHALLENGE_UNREPLAYABLE` **après** une vérification manuelle n'est pas un bug à
+  traquer, c'est le comportement mesuré ; (b) quand on demande un clic, il faut
+  dire ce qu'il apporte et ce qu'il n'apportera pas ; (c) la piste qui fonctionne
+  est « laisser le navigateur lire », pas « faire rejouer le moteur ».

@@ -15,7 +15,6 @@
 :root {
   /* Surfaces */
   --bg: #000000;
-  --bg-elev: #16151d;
   --surface: #1a1a1a;
   --surface-2: #222222;
   --surface-3: #333333;
@@ -27,6 +26,26 @@
   --text: #ffffff;
   --text-2: #dddddd;
   --text-3: #999999;
+  /* Echelle typographique. **Les valeurs ne changent pas selon le theme** :
+     la typo n'a pas de raison de varier, donc un seul jeu de valeurs
+     ecrit deux fois — comme `--reader-bg`, qui est volontairement
+     identique dans les deux themes.
+     Mesure le 2026-10-16 : 87 declarations, **17 valeurs** distinctes
+     (dont 12.5px et 13.5px), donc aucune echelle — de l'improvisation.
+     Les 27 regles en demi-pixels sont arrondies au pixel entier, ecart
+     maximal 0,5 px ; le reste est renomme sans changer de valeur. */
+  --t-micro: 10px; /* micro-legende (2 regles) */
+  --t-xs: 11px; /* legende la plus discrete */
+  --t-sm: 12px; /* legendes, dates, compteurs — le plus employe apres base */
+  --t-base: 13px; /* texte courant, boutons, champs, onglets */
+  --t-md: 14px; /* texte secondaire, titres de panneau */
+  --t-lg: 15px; /* titre de ligne (telechargements, import) */
+  --t-xl: 17px; /* titre de dialogue */
+  --t-xxl: 18px; /* grand titre de bloc */
+  --t-statine: 24px; /* chiffre de statistique */
+  --t-tuile: 26px; /* code de langue sur la tuile */
+  --t-titre: 32px; /* titre de page */
+  --t-glyphe: 34px; /* glyphe de vignette vide */
 
   /* Accents */
   --accent: #366ad3;
@@ -120,7 +139,6 @@
   --s5: 30px;
 
   --shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
-  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.4);
 
   /* Vitesse du chargeur du lecteur : un seul bouton pour la régler partout. */
   --vitesse-chargeur: 1200ms;
@@ -140,7 +158,6 @@
 :root[data-apparence='clair'] {
   /* Surfaces : le texte est le foncé, l'ancien texte devient le fond. */
   --bg: #f4f4f6;
-  --bg-elev: #ffffff;
   --surface: #ffffff;
   --surface-2: #f7f7f9;
   --surface-3: #e9eaee;
@@ -156,6 +173,26 @@
   --text: #16181d;
   --text-2: #3f434c;
   --text-3: #6a6f7a;
+  /* Echelle typographique. **Les valeurs ne changent pas selon le theme** :
+     la typo n'a pas de raison de varier, donc un seul jeu de valeurs
+     ecrit deux fois — comme `--reader-bg`, qui est volontairement
+     identique dans les deux themes.
+     Mesure le 2026-10-16 : 87 declarations, **17 valeurs** distinctes
+     (dont 12.5px et 13.5px), donc aucune echelle — de l'improvisation.
+     Les 27 regles en demi-pixels sont arrondies au pixel entier, ecart
+     maximal 0,5 px ; le reste est renomme sans changer de valeur. */
+  --t-micro: 10px; /* micro-legende (2 regles) */
+  --t-xs: 11px; /* legende la plus discrete */
+  --t-sm: 12px; /* legendes, dates, compteurs — le plus employe apres base */
+  --t-base: 13px; /* texte courant, boutons, champs, onglets */
+  --t-md: 14px; /* texte secondaire, titres de panneau */
+  --t-lg: 15px; /* titre de ligne (telechargements, import) */
+  --t-xl: 17px; /* titre de dialogue */
+  --t-xxl: 18px; /* grand titre de bloc */
+  --t-statine: 24px; /* chiffre de statistique */
+  --t-tuile: 26px; /* code de langue sur la tuile */
+  --t-titre: 32px; /* titre de page */
+  --t-glyphe: 34px; /* glyphe de vignette vide */
 
   /* Accents : l'accent doit rester assez foncé pour porter du texte blanc.
      Mesuré : #2f5fc0 sur blanc donne 6,3:1, l'ancien #366ad3 n'en donnait que
@@ -198,7 +235,6 @@
   /* Les ombres deviennent douces : sur fond blanc, une ombre noire à 60 %
      donne l'impression d'un contour sale. */
   --shadow: 0 16px 40px rgba(22, 24, 29, 0.14);
-  --shadow-sm: 0 2px 10px rgba(22, 24, 29, 0.1);
 }
 
 * {
@@ -214,7 +250,7 @@ body {
   /* Roboto d'abord comme sur le site ; Segoe UI en repli, l'app reste
      utilisable hors ligne sans télécharger une police. */
   font-family: Roboto, 'Segoe UI', system-ui, -apple-system, sans-serif;
-  font-size: 14px;
+  font-size: var(--t-md);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
@@ -271,7 +307,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  font-size: 17px;
+  font-size: var(--t-xl);
   font-weight: 600;
   letter-spacing: -0.2px;
 }
@@ -292,7 +328,7 @@ button:disabled {
 .tab {
   border-radius: var(--r-pill);
   padding: 7px 18px;
-  font-size: 13px;
+  font-size: var(--t-base);
   font-weight: 600;
   color: var(--text-2);
   transition: color 0.12s ease, background 0.12s ease;
@@ -321,7 +357,7 @@ button:disabled {
 }
 
 .page-head h1 {
-  font-size: 32px;
+  font-size: var(--t-titre);
   font-weight: 600;
   line-height: 1.2;
   margin: 0;
@@ -329,7 +365,7 @@ button:disabled {
 
 .page-head .sub {
   color: var(--text-3);
-  font-size: 13px;
+  font-size: var(--t-base);
 }
 
 .band {
@@ -341,7 +377,7 @@ button:disabled {
   background: var(--surface-2);
   border-left: 3px solid var(--accent);
   border-radius: var(--r-sm);
-  font-size: 14px;
+  font-size: var(--t-md);
   font-weight: 600;
   color: var(--text);
 }
@@ -351,7 +387,7 @@ button:disabled {
 }
 
 .band .muted {
-  font-size: 12px;
+  font-size: var(--t-sm);
   font-weight: 400;
 }
 
@@ -360,7 +396,7 @@ button:disabled {
   align-items: center;
   gap: 6px;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: var(--t-base);
   font-weight: 600;
   margin-bottom: var(--s3);
   padding: 6px 16px;
@@ -387,7 +423,7 @@ button:disabled {
   border-radius: var(--r-pill);
   padding: 8px 16px;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--t-base);
   font-weight: 600;
 }
 
@@ -455,7 +491,7 @@ button:disabled {
   color: var(--text-2);
   border-radius: var(--r-pill);
   padding: 5px 14px;
-  font-size: 12.5px;
+  font-size: var(--t-sm);
   font-weight: 600;
   transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
@@ -477,7 +513,7 @@ button:disabled {
 
 .chips-note {
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--t-sm);
   padding-left: var(--s1);
 }
 
@@ -485,7 +521,7 @@ button:disabled {
 .btn {
   border-radius: var(--r-pill);
   padding: 9px 20px;
-  font-size: 13px;
+  font-size: var(--t-base);
   font-weight: 600;
   border: 1px solid var(--line);
   background: var(--surface-3);
@@ -524,7 +560,7 @@ button:disabled {
   border-color: transparent;
   color: var(--text-2);
   padding: 6px 12px;
-  font-size: 12.5px;
+  font-size: var(--t-sm);
 }
 
 .btn-ghost:hover:not(:disabled) {
@@ -582,18 +618,18 @@ button:disabled {
 }
 
 .lang-tile b {
-  font-size: 26px;
+  font-size: var(--t-tuile);
   font-weight: 600;
   line-height: 1.1;
 }
 
 .lang-nom {
-  font-size: 13.5px;
+  font-size: var(--t-base);
   color: var(--text-2);
 }
 
 .lang-tile .muted {
-  font-size: 12px;
+  font-size: var(--t-sm);
 }
 
 /* Tuile « Sources personnalisées » (S2.3), dans la grille des langues.
@@ -614,7 +650,7 @@ button:disabled {
 }
 
 .import-card > b {
-  font-size: 15px;
+  font-size: var(--t-lg);
   font-weight: 600;
   line-height: 1.2;
 }
@@ -747,7 +783,7 @@ button:disabled {
    voit pas, parce qu'il prend un sélecteur composé pour une définition. */
 .recherche-libelle {
   display: block;
-  font-size: 13px;
+  font-size: var(--t-base);
   color: var(--text-2);
   margin-bottom: var(--s2);
 }
@@ -781,7 +817,7 @@ button:disabled {
 
 .empty-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--t-md);
   margin-bottom: 4px;
 }
 
@@ -830,7 +866,7 @@ button:disabled {
   width: 34px;
   height: 34px;
   border-radius: 6px;
-  font-size: 15px;
+  font-size: var(--t-lg);
 }
 
 .bm-text {
@@ -842,14 +878,14 @@ button:disabled {
 }
 
 .bm-text b {
-  font-size: 13.5px;
+  font-size: var(--t-base);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .bm-text .muted {
-  font-size: 12px;
+  font-size: var(--t-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -918,7 +954,7 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   color: var(--text);
-  font-size: 13.5px;
+  font-size: var(--t-base);
   padding: 6px 10px;
 }
 
@@ -956,7 +992,7 @@ button:disabled {
 
 .card .name {
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: var(--t-base);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -965,7 +1001,7 @@ button:disabled {
 .badge {
   margin-left: auto;
   flex: none;
-  font-size: 10px;
+  font-size: var(--t-micro);
   font-weight: 700;
   letter-spacing: 0.6px;
   text-transform: uppercase;
@@ -1038,7 +1074,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   border-radius: var(--r-sm);
-  font-size: 15px;
+  font-size: var(--t-lg);
   line-height: 1;
   color: var(--text-3);
   background: var(--voile);
@@ -1072,7 +1108,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   border-radius: var(--r-sm);
-  font-size: 15px;
+  font-size: var(--t-lg);
   color: var(--favori);
   background: var(--voile);
   backdrop-filter: blur(4px);
@@ -1113,7 +1149,7 @@ button:disabled {
   right: 0;
   bottom: 0;
   padding: 3px 8px;
-  font-size: 10.5px;
+  font-size: var(--t-micro);
   font-weight: 700;
   /* Posé SUR une couverture : le texte reste clair sur un fond sombre, dans
      les deux thèmes. */
@@ -1134,7 +1170,7 @@ button:disabled {
   max-height: calc(2 * 1.4em + var(--s2));
   margin-top: auto;
   padding: var(--s2) 12px 0;
-  font-size: 13px;
+  font-size: var(--t-base);
   font-weight: 600;
   line-height: 1.4;
   color: var(--text);
@@ -1151,7 +1187,7 @@ button:disabled {
 }
 
 .recent-line {
-  font-size: 11.5px;
+  font-size: var(--t-xs);
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1176,7 +1212,7 @@ button:disabled {
   border: 1px solid var(--line);
   background: var(--voile);
   color: var(--sur-voile);
-  font-size: 14px;
+  font-size: var(--t-md);
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -1210,7 +1246,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  font-size: 12.5px;
+  font-size: var(--t-sm);
   color: var(--text-2);
   cursor: pointer;
   white-space: nowrap;
@@ -1253,7 +1289,7 @@ button:disabled {
 
 .sheet-desc {
   margin: 0 0 var(--s3);
-  font-size: 14px;
+  font-size: var(--t-md);
   line-height: 1.6;
   color: var(--text-2);
 }
@@ -1277,14 +1313,14 @@ button:disabled {
 }
 
 .info-row dt {
-  font-size: 12.5px;
+  font-size: var(--t-sm);
   font-weight: 600;
   color: var(--text-3);
 }
 
 .info-row dd {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--t-base);
   color: var(--text);
   overflow-wrap: anywhere;
 }
@@ -1343,7 +1379,7 @@ button:disabled {
 .chapter-ici {
   display: block;
   margin-top: 2px;
-  font-size: 11.5px;
+  font-size: var(--t-xs);
   color: var(--accent-ink, var(--text));
   }
 
@@ -1362,7 +1398,7 @@ button:disabled {
     border-radius: var(--r-sm);
     background: var(--accent-dim);
     color: var(--accent-dim-texte);
-    font-size: 11px;
+    font-size: var(--t-xs);
     font-weight: 700;
   }
 
@@ -1396,7 +1432,7 @@ button:disabled {
 }
 
 .chapter-num {
-  font-size: 13.5px;
+  font-size: var(--t-base);
   font-weight: 600;
   color: var(--text);
   overflow: hidden;
@@ -1405,7 +1441,7 @@ button:disabled {
 }
 
 .chapter-sub {
-  font-size: 12px;
+  font-size: var(--t-sm);
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1472,7 +1508,7 @@ button:disabled {
 }
 
 .pick-bar .pick-label {
-  font-size: 12.5px;
+  font-size: var(--t-sm);
   color: var(--text-3);
 }
 
@@ -1484,7 +1520,7 @@ button:disabled {
   border-radius: var(--r-pill);
   padding: 6px 10px;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--t-base);
   font-weight: 600;
   text-align: center;
 }
@@ -1534,7 +1570,7 @@ button:disabled {
 }
 
 .reader-title {
-  font-size: 14px;
+  font-size: var(--t-md);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1594,7 +1630,7 @@ button:disabled {
 .seg-btn {
   border-radius: var(--r-pill);
   padding: 5px 14px;
-  font-size: 12.5px;
+  font-size: var(--t-sm);
   font-weight: 600;
   color: var(--text-2);
 }
@@ -1625,7 +1661,7 @@ button:disabled {
 
 .page-jump-label {
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--t-sm);
 }
 
 .page-jump input {
@@ -1639,7 +1675,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  font-size: 12px;
+  font-size: var(--t-sm);
 }
 
 .zoom input {
@@ -1834,13 +1870,13 @@ button:disabled {
 }
 
 .dl-stat b {
-  font-size: 24px;
+  font-size: var(--t-statine);
   font-weight: 600;
   line-height: 1.1;
 }
 
 .dl-stat span {
-  font-size: 12px;
+  font-size: var(--t-sm);
   color: var(--text-3);
 }
 
@@ -1932,7 +1968,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 34px;
+  font-size: var(--t-glyphe);
   font-weight: 600;
   color: var(--text-3);
   background: var(--surface-3);
@@ -1948,7 +1984,7 @@ button:disabled {
 
 .dl-title {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--t-lg);
   font-weight: 600;
   line-height: 1.35;
   display: -webkit-box;
@@ -1959,7 +1995,7 @@ button:disabled {
 }
 
 .dl-meta {
-  font-size: 12.5px;
+  font-size: var(--t-sm);
 }
 
 .dl-body .progress {
@@ -1980,7 +2016,7 @@ button:disabled {
 
 .dl-actions .btn {
   padding: 6px 14px;
-  font-size: 12px;
+  font-size: var(--t-sm);
 }
 
 .confirm {
@@ -2002,13 +2038,13 @@ button:disabled {
 
 .confirm h3 {
   margin: 0 0 var(--s2);
-  font-size: 17px;
+  font-size: var(--t-xl);
   font-weight: 600;
 }
 
 .confirm p {
   margin: 0 0 var(--s4);
-  font-size: 13.5px;
+  font-size: var(--t-base);
   color: var(--text-2);
 }
 
@@ -2057,7 +2093,7 @@ button:disabled {
 }
 
 .queue-title {
-  font-size: 13.5px;
+  font-size: var(--t-base);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2073,7 +2109,7 @@ button:disabled {
 }
 
 .queue-detail {
-  font-size: 12px;
+  font-size: var(--t-sm);
   color: var(--text-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2106,7 +2142,7 @@ button:disabled {
 }
 
 .panel h2 {
-  font-size: 13px;
+  font-size: var(--t-base);
   font-weight: 600;
   letter-spacing: 0.8px;
   text-transform: uppercase;
@@ -2119,14 +2155,14 @@ button:disabled {
   align-items: center;
   gap: var(--s3);
   margin-bottom: var(--s2);
-  font-size: 13.5px;
+  font-size: var(--t-base);
 }
 
 .switch-row {
   display: flex;
   align-items: center;
   gap: var(--s3);
-  font-size: 13.5px;
+  font-size: var(--t-base);
   cursor: pointer;
 }
 
@@ -2139,7 +2175,7 @@ button:disabled {
 
 .switch-row .muted {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--t-sm);
   text-align: right;
 }
 
@@ -2148,7 +2184,7 @@ button:disabled {
 }
 
 .note {
-  font-size: 13px;
+  font-size: var(--t-base);
   border-left: 2px solid var(--line);
   padding-left: var(--s3);
   margin: 0 0 var(--s3);
@@ -2163,7 +2199,7 @@ button:disabled {
  * manquait, donc il n'y avait rien à inventer.
  */
 .note-ok {
-  font-size: 13px;
+  font-size: var(--t-base);
   border-left: 2px solid var(--succes-bordure);
   background: var(--succes-fond);
   color: var(--succes-texte);
@@ -2173,7 +2209,7 @@ button:disabled {
 
 .count {
   color: var(--text-3);
-  font-size: 13px;
+  font-size: var(--t-base);
   margin: 0 0 var(--s3);
 }
 
@@ -2181,7 +2217,7 @@ button:disabled {
   border-radius: var(--r-sm);
   padding: 11px 16px;
   margin-bottom: var(--s3);
-  font-size: 13.5px;
+  font-size: var(--t-base);
 }
 
 .error {
@@ -2227,7 +2263,7 @@ button:disabled {
   gap: var(--s3);
   padding: 11px var(--s3) 11px var(--s4);
   border-radius: var(--r-sm);
-  font-size: 13.5px;
+  font-size: var(--t-base);
   line-height: 1.4;
   /* Fond opaque : le toast passe au-dessus du contenu et du lecteur. Une
      teinte translucide laissait la page se lire à travers le message. */
@@ -2253,7 +2289,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   padding: 0;
-  font-size: 17px;
+  font-size: var(--t-xl);
   line-height: 1;
   color: inherit;
   background: none;
@@ -2308,7 +2344,7 @@ button:disabled {
   justify-content: space-between;
   gap: var(--s4);
   padding: var(--s3) var(--s5);
-  font-size: 14px;
+  font-size: var(--t-md);
   line-height: 1.4;
   color: var(--danger-texte);
   background: var(--danger-fond);
@@ -2334,7 +2370,7 @@ button:disabled {
   border-radius: var(--r-sm);
   background: transparent;
   color: inherit;
-  font-size: 18px;
+  font-size: var(--t-xxl);
   line-height: 1;
   cursor: pointer;
   transition: background 0.15s;
@@ -2380,7 +2416,7 @@ button:disabled {
 
 .alert p {
   margin: 0 0 var(--s3);
-  font-size: 14px;
+  font-size: var(--t-md);
   color: var(--danger-texte);
 }
 
@@ -2407,7 +2443,7 @@ button:disabled {
 .progress span {
   display: block;
   padding: 9px 14px;
-  font-size: 12.5px;
+  font-size: var(--t-sm);
   color: var(--text-2);
 }
 
@@ -2439,7 +2475,7 @@ button:disabled {
   width: 84px;
   margin-left: auto;
   padding: 4px 8px;
-  font-size: 13px;
+  font-size: var(--t-base);
   font-variant-numeric: tabular-nums;
   color: var(--text);
   background: var(--surface-2);
@@ -2487,7 +2523,7 @@ button:disabled {
   border: 1px solid var(--danger-bordure);
   border-radius: 5px;
   background: var(--danger-fond);
-  font-size: 12px;
+  font-size: var(--t-sm);
 }
 
 .code-list code {
@@ -2535,7 +2571,7 @@ button:disabled {
   border-left: 2px solid var(--danger-bordure);
   background: var(--surface-2);
   border-radius: 0 var(--r-sm) var(--r-sm) 0;
-  font-size: 12.5px;
+  font-size: var(--t-sm);
 }
 
 .refus-list code {
@@ -2555,7 +2591,7 @@ button:disabled {
    sélectionnable d'un trait, lisible, et ne jamais déborder. */
 .import-dir code {
   overflow-wrap: anywhere;
-  font-size: 11.5px;
+  font-size: var(--t-xs);
 }
 
 /* ---------------- Flux « mises à jour » (3.2) ----------------
@@ -2599,7 +2635,7 @@ button:disabled {
 }
 
 .maj-titre {
-  font-size: 14.5px;
+  font-size: var(--t-md);
   font-weight: 600;
   color: var(--text);
 }
@@ -2612,7 +2648,7 @@ button:disabled {
 
 .maj-detail summary {
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: var(--t-sm);
   /* `--accent-texte`, pas `--accent` : à 12,5 px c'est du texte, pas un fond.
      Mesuré le 2026-10-15 : 3,45:1 sur `--surface` (audit F2). */
   color: var(--accent-texte);
@@ -2631,27 +2667,27 @@ button:disabled {
   justify-content: space-between;
   gap: var(--s3);
   padding: 5px 0;
-  font-size: 13px;
+  font-size: var(--t-base);
   color: var(--text-2);
   border-bottom: 1px solid var(--line-soft);
 }
 
 .maj-chapitres time {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--t-sm);
   white-space: nowrap;
 }
 
 .maj-tout-vu {
   margin-left: auto;
   padding: 3px 10px;
-  font-size: 12px;
+  font-size: var(--t-sm);
 }
 
 .etat-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--t-base);
 }
 
 .etat-table th {
@@ -2676,7 +2712,7 @@ button:disabled {
 
 /* Le message d'erreur peut être long : il ne doit pas élargir la colonne. */
 .etat-table td:first-child .muted {
-  font-size: 12px;
+  font-size: var(--t-sm);
   overflow-wrap: anywhere;
 }
 
@@ -2689,7 +2725,7 @@ button:disabled {
   border: 1px solid var(--line-soft);
   border-radius: 5px;
   padding: 3px 9px;
-  font-size: 12px;
+  font-size: var(--t-sm);
   color: var(--text-2);
 }
 
@@ -2759,7 +2795,7 @@ button:disabled {
 
 .chargement-txt {
   color: var(--text-2);
-  font-size: 13px;
+  font-size: var(--t-base);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2879,7 +2915,7 @@ button:disabled {
  */
 .reader-compteur {
   flex: none;
-  font-size: 12px;
+  font-size: var(--t-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-2);
@@ -2893,7 +2929,7 @@ button:disabled {
    pousserait la mention a l'extremite opposee de la barre. */
 .reader-offline {
   flex: none;
-  font-size: 10px;
+  font-size: var(--t-micro);
   font-weight: 700;
   letter-spacing: 0.6px;
   text-transform: uppercase;
@@ -2999,7 +3035,7 @@ button:disabled {
 .custom-row-name {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: var(--t-base);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3010,7 +3046,7 @@ button:disabled {
    colonne `custom_sources.lang` du panneau Réglages : celle-ci est écrite en dur
    à "fr" par la commande d'import (TODO S2) et n'est donc pas affichée. */
 .custom-row-lang {
-  font-size: 11px;
+  font-size: var(--t-xs);
   font-weight: 700;
   letter-spacing: 0.6px;
   text-transform: uppercase;
@@ -3029,7 +3065,7 @@ button:disabled {
 .custom-row-refus {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--t-sm);
   padding: 3px 8px;
   border-radius: var(--r-sm);
   background: var(--danger-fond);

@@ -111,6 +111,21 @@ for (const m of jsx.matchAll(/querySelector(?:All)?\(\s*['"`]\.([a-z][a-z0-9-]*)
   utiliseesClasses.add(m[1]);
 }
 
+// Les classes definies, comme **mentionnees** dans le CSS.
+//
+// Volontairement laxiste, et la raison est mesuree le 2026-10-16 : exiger qu'une
+// classe soit le *sujet* d'une regle — donc refuser `.manga .cover` comme
+// definition de `.cover` — nommait 10 classes, dont `.manga .cover`,
+// `.page-head .sub` et `.card .name`, qui sont deliberement stylées **en
+// contexte**. Neuf faux positifs pour un cas reel, et une porte qui crie trop
+// s'apprend a etre ignoree.
+//
+// Angle mort assume : une classe qui n'existe que comme selecteur descendant
+// passe pour definie. Le cas reel est `.label`, utilise dans la ligne favori de
+// l'accueil alors que le CSS ne definit que `.manga .label` et
+// `.squelette-carte .label` — donc ce `<span>` ne recoit aucune regle. Le
+// trouver demande de connaitre le **parent** dans le JSX, donc une lecture du
+// DOM, pas une porte de texte.
 const definiesClasses = new Set(
   [...css.matchAll(/\.([a-z][a-z0-9-]*)/g)].map((m) => m[1]),
 );

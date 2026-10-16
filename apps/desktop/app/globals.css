@@ -683,7 +683,10 @@ button:disabled {
   left: 1px;
   width: 12px;
   height: 12px;
-  background: var(--text-1);
+  /* `--text-1` n'a jamais existe : la valeur retombait sur `initial`, donc
+     `transparent` — le bouton de l'interrupteur n'avait **aucune** tête
+     visible (mesuré le 2026-10-15 par `styles:check` élargi). */
+  background: var(--text);
   border-radius: 999px;
   transition: translate 0.12s ease;
 }
@@ -718,7 +721,9 @@ button:disabled {
   margin-top: var(--s1);
   overflow-wrap: anywhere;
   font-family: var(--mono, monospace);
-  color: var(--text-dim);
+  /* `--text-dim` n'a jamais existé : `color` hérite, donc le chemin de dossier
+     s'affichait en texte **plain**, pas en second plan. */
+  color: var(--text-3);
   user-select: all;
 }
 
@@ -869,7 +874,7 @@ button:disabled {
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  color: var(--text-1);
+  color: var(--text);
   font-size: 13.5px;
   padding: 6px 10px;
 }
@@ -896,7 +901,9 @@ button:disabled {
 }
 
 .cat-swatch.on {
-  border-color: var(--text-1);
+  /* `--text-1` n'a jamais existé non plus : `border-color` hérite, donc la
+     bordure prenait la couleur du texte parent par hasard. */
+  border-color: var(--text);
 }
 
 /* Bouton de signet actif dans la barre du lecteur. */
@@ -2295,7 +2302,11 @@ button:disabled {
 }
 
 .bandeau-fermer:focus-visible {
-  outline: 2px solid var(--focus);
+  /* `--focus` n'a jamais existé. Une déclaration invalide est « IACVT » : elle
+     ne retombe pas sur une valeur héritée mais sur `initial`, donc **aucun**
+     anneau — sur le seul bouton de fermeture du bandeau de vérification. Même
+     forme que `.search:focus-visible`, donc même token. */
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 

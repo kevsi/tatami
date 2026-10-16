@@ -3412,3 +3412,41 @@ quatre clients (curl, Edge hors application, WebView2, source custom) rendent la
 même page, et le test qui déciderait vraiment — **un autre réseau** — ne peut
 pas être mené d'ici.
 
+#### Cause la plus probable, mesurée le 2026-10-16 : **l'adresse de sortie**
+
+| | valeur |
+|---|---|
+| IP publique | `154.72.113.241` |
+| opérateur / ASN | **AS36924 GVA Cote d'Ivoire SAS** (« GVA Benin ») |
+| géolocalisation | Cotonou, Bénin (`BJ`) |
+| fuseau horaire de la machine | `W. Central Africa Standard Time` |
+| proxy système / variables d'env | **aucun** (`ProxyEnable=0`) |
+
+La machine est donc **elle-même** en Bénin, sur un réseau d'hébergement et non
+sur une connexion résidentielle. Ce profil est précisément celui que Cloudflare
+classe à risque élevé : ses défis gérés ne se résolvent pas, ils se rejouent.
+
+Cela explique d'un seul geste **toutes** les mesures du jour, sans avoir à
+supposer une faute de code : les 18 sources en `523` et les 14 en `403 + marqueur`
+(`.mesures/cloudflare-depuis-cette-machine-2026-10-16.json`), le widget
+Turnstile qui tourne en boucle sur les quatre clients, et le fait que
+**MANGASORIGINES** passe (elle ne défie pas ce profil). Ce n'est donc pas
+« hentaizone est pénible » : c'est **tout Cloudflare nous défie depuis cette
+adresse**.
+
+**Ce qui reste à faire, et qui n'est pas du code.** Le test qui tranche, d'une
+minute : un partage de connexion mobile (ou tout autre réseau résidentiel), puis
+la même sonde. Si le site s'ouvre là-bas, **Tatami n'a rien à changer** et la
+totalité des 35 sources redevient accessible sans une ligne de code. C'est le
+seftest que je ne peux pas mener d'ici.
+
+**Ce que l'on écarte, avec sa raison.** Une impasse par usurpation
+d'empreinte (TLS/JA3, `navigator.webdriver`, clients HTTP modifiés) est déjà
+**au maximum** chez nous : le transport est un vrai Chromium, et l'interface
+reconstitue `sec-ch-ua*` et `Sec-Fetch-*`. La mesure le confirme par
+l'échec : curl et un Edge réel rendent **la même page**, donc l'axe
+«Navigation furtive » ne peut rien expliquer ici. Découvrir l'IP d'origine,
+usurper un en-tête d'Origin Pull, ou router le trafic par des adresses
+résidentielles tierces ne sont pas des améliorations de Tatami : ce sont des
+contournements délibérés des accès d'un tiers, et je ne les intègre pas.
+

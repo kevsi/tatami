@@ -3199,6 +3199,53 @@ chose qui fait perdre une journée.**
 `scripts/sonde-navigateur.mjs --groupe morte` est prête) et **la décision
 d'architecture sur le transport caché**, ci-dessous.
 
+### Décision humaine du 2026-10-16 — le transport caché reste tel quel
+
+Question posée avec les chiffres du jour (« 0 résolution en 2 × 60 s, et la
+fenêtre reste ouverte après l'échec »), trois options chiffrées proposées.
+**Réponse : ne rien changer pour l'instant.**
+
+Ce qui est donc **accepté, à knowing** et non pas résolu :
+- 60 s d'attente avant que le bandeau « Résoudre » soit actionnable (le correctif
+  F3 de la journée donne une explication à 8 s, mais l'action reste à 60 s) ;
+- la fenêtre de transport reste ouverte après l'échec : deux webviews, donc deux
+  processus, pour 12 Go de machine.
+
+Ce qui reste vrai dans tous les cas : **le critère du spike (un chapitre affiché
+sur une source Cloudflare) est hors d'atteinte d'une mesure automatique**,
+parce que résoudre un défi Turnstile demande un clic humain. Si quelqu'un veut le
+prouver un jour, c'est en ouvrant l'application et en résolvant le défi à la main.
+
+Pistes non retenues aujourd'hui, à réactiver si le sujet revient : raccourcir le
+délai du transport (60 → 15 s), ou rendre la fenêtre cachée visible au bout de
+10 s pour que l'utilisateur agisse sans quitter l'application.
+
+### Item 6 — les 8 sources « mortes » re-mesurées (2026-10-16)
+
+`node scripts/sonde-navigateur.mjs --groupe morte` — relevé dans
+`docs/mesures/navigateur-2026-10-16.json`. **Les 8 sont toujours `MORTE`** :
+
+| source | état | délai |
+|---|---|---|
+| BERSERKSCAN | 522 Connection timed out | 30 s |
+| BLUELOCKSCAN | 523 Origin is unreachable | 17 s |
+| HAIKYUU | 522 Connection timed out | 30 s |
+| HELLSPARADISESCAN | 523 Origin is unreachable | 11 s |
+| KINGDOMSCAN | 523 Origin is unreachable | 16 s |
+| MYHEROACADEMIASCAN | 523 Origin is unreachable | 16 s |
+| SCANBORUTO | 523 Origin is unreachable | 16 s |
+| SCANJUJUTSUKAISEN | 522 Connection timed out | 30 s |
+
+Toutes rendent `statuts=[403,200]` puis une page d'erreur d'environ 7 ko. Un
+522/523 est l'**origine** qui ne répond plus derrière Cloudflare : le verdict ne
+dépend donc **ni** de l'agent utilisateur **ni** du transport — c'est le serveur
+qui est éteint, ce que le navigateur réel confirme.
+
+La règle écrite dans ce plan (« une source toujours MORTE est retirée du
+catalogue, avec la date du relevé dans le motif ») **n'a pas été appliquée** : la
+désactivation se fait dans l'application, elle est visible par l'utilisateur, et
+elle se réverse en un clic. Reste à décider, donc **pas fait**.
+
 **Audit livré le 2026-10-15 (lecture seule, aucun code produit touché).**
 Rapport : `docs/audit-ux-2026-10-15.md`. Outils : `.mesures/ux-audit/`
 (`inventaire.mjs`, `parcours.cjs`, 14 captures, `parcours.json`).

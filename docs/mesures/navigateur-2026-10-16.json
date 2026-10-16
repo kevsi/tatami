@@ -1,0 +1,131 @@
+{
+  "date": "2026-10-16",
+  "groupe": "morte",
+  "navigateur": "Edg/155.0.4283.45",
+  "portCdp": 9223,
+  "question": "Un vrai navigateur obtient-il du contenu sur les URLs que le client HTTP du moteur n'atteint pas ?",
+  "lecture": {
+    "MORTE": {
+      "signification": "Origine injoignable (Cloudflare 522 délai dépassé / 523 éteinte) — aucun client ne peut la lire",
+      "nombre": 8
+    },
+    "TLS": {
+      "signification": "TLS (525, handshake d'origine cassé) — pas un problème de challenge",
+      "nombre": 0
+    },
+    "UTILE": {
+      "signification": "SERVIE par le navigateur — cible réelle pour le transport",
+      "nombre": 0
+    },
+    "VIDE": {
+      "signification": "200 sans contenu exploitable — l'URL demandée est mauvaise ou l'AJAX est vide",
+      "nombre": 0
+    },
+    "PERIMEE": {
+      "signification": "404 sur CETTE URL — à elle seule elle ne dit **pas** si le site est vivant. Mesuré le 2026-10-14 : `/manga/` répond 404 sur epsilonsoft.to alors que `beta.epsilonsoft.to` (le seul hôte que le parser interroge) rend 86 liens. Le site-vivant est une **autre** mesure.",
+      "nombre": 0
+    },
+    "BLOQUE": {
+      "signification": "Aucun statut 200 et pas de code d'origine Cloudflare connu — **verdict à ne pas conclure** : réessayer ou lire la page manuellement",
+      "nombre": 0
+    }
+  },
+  "resultats": [
+    {
+      "source": "BERSERKSCAN",
+      "url": "https://berserkscan.com/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "berserkscan.com | 522: Connection timed out",
+      "octetsHtml": 6983,
+      "ms": 29729,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "BLUELOCKSCAN",
+      "url": "https://bluelockscan.com/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "bluelockscan.com | 523: Origin is unreachable",
+      "octetsHtml": 6939,
+      "ms": 17125,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "HAIKYUU",
+      "url": "https://haikyuu.fr/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "haikyuu.fr | 522: Connection timed out",
+      "octetsHtml": 6953,
+      "ms": 30006,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "HELLSPARADISESCAN",
+      "url": "https://hellsparadisescan.com/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "hellsparadisescan.com | 523: Origin is unreachable",
+      "octetsHtml": 6969,
+      "ms": 10932,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "KINGDOMSCAN",
+      "url": "https://kingdomscan.com/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "kingdomscan.com | 523: Origin is unreachable",
+      "octetsHtml": 6933,
+      "ms": 15618,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "MYHEROACADEMIASCAN",
+      "url": "https://myheroacademiascan.com/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "myheroacademiascan.com | 523: Origin is unreachable",
+      "octetsHtml": 6975,
+      "ms": 15622,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "SCANBORUTO",
+      "url": "https://scanboruto.fr/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "scanboruto.fr | 523: Origin is unreachable",
+      "octetsHtml": 6921,
+      "ms": 16083,
+      "verdict": "MORTE"
+    },
+    {
+      "source": "SCANJUJUTSUKAISEN",
+      "url": "https://scanjujutsukaisen.com/",
+      "statuts": [
+        403,
+        200
+      ],
+      "titre": "scanjujutsukaisen.com | 522: Connection timed out",
+      "octetsHtml": 7019,
+      "ms": 30276,
+      "verdict": "MORTE"
+    }
+  ]
+}

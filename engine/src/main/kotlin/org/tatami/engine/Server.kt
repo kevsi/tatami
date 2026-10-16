@@ -695,10 +695,11 @@ fun serve() {
                         blocage,
                     )
                 } else if (nonRejouable != null) {
+                    val detail = detailCauseChallengeNonRejouable(e)
                     err(
                         id,
                         "CHALLENGE_UNREPLAYABLE",
-                        "challenge at $nonRejouable (non rejouable)",
+                        "challenge at $nonRejouable (non rejouable; $detail)",
                         nonRejouable,
                     )
                 } else if (challenge != null) {

@@ -61,6 +61,26 @@ internal fun challengeNonRejouableDe(t: Throwable): String? =
         ?: MOTIF_CHALLENGE_NON_REJOUABLE.find(t.message ?: "")?.groupValues?.get(1)
 
 /**
+ * Détail supprimé de `challengeNonRejouableDe` : la chaîne de causes, le code
+ * HTTP éventuel et le type. Sert au levier de diagnostic qui cerne **pourquoi**
+ * Cloudflare refuse le rejeu, sans exposer de secret. Renvoyé en clair dans le
+ * message parce que le front ne reçoit que `code`+`message` (pas `cause`).
+ */
+internal fun detailCauseChallengeNonRejouable(t: Throwable): String = buildString {
+    append("type=${t::class.simpleName}")
+    var cur: Throwable? = t
+    var n = 0
+    while (cur != null && n++ < 5) {
+        val msg = cur.message?.take(160)
+        if (!msg.isNullOrBlank()) append(" > ${cur::class.simpleName}:$msg")
+        if (cur === cur.cause) break
+        cur = cur.cause
+    }
+    val http = retrouverDansLesCauses<org.jsoup.HttpStatusException>(t)
+    if (http != null) append(" | http=${http.statusCode}")
+}
+
+/**
  * Cloudflare **refuse** la requête sans proposer de vérification
  * (`CloudFlareHelper.PROTECTION_BLOCKED`).
  *

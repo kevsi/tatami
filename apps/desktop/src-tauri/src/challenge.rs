@@ -1388,6 +1388,7 @@ async fn appliquer_cookies(
         .await
         .map_err(|e| format!("setCookies : {e}"))?;
 
+    let _ = sup.oublier_transports_de(&format!("https://{host}/")).await;
     let _ = window.close();
     Ok(payload.len())
 }

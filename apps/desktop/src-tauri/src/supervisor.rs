@@ -830,6 +830,32 @@ impl Supervisor {
         }
     }
 
+    /// Oublie les tentatives de transport **du même hôte** que cette URL.
+    ///
+    /// Appelé après une vérification réussie : c'est elle qui change ce qui
+    /// manquait, donc interdire un second essai jusqu'à la borne ferait que
+    /// l'utilisateur a résolu pour rien. Mesuré le 2026-10-16 : transport déjà
+    /// tenté et échoué, puis `CHALLENGE_UNREPLAYABLE` sur le rejeu — le chemin qui
+    /// fonctionne étant le navigateur, il doit pouvoir repartir.
+    pub async fn oublier_transports_de(&self, url: &str) -> usize {
+        let Some(hote) = url
+            .split_once("://")
+            .and_then(|(_, reste)| reste.split('/').next())
+        else {
+            return 0;
+        };
+        let hote = hote.split(':').next().unwrap_or(hote).to_string();
+        let mut memo = self.transports_tentes.lock().await;
+        let avant = memo.len();
+        memo.retain(|u, _| {
+            u.split_once("://")
+                .and_then(|(_, reste)| reste.split('/').next())
+                .map(|h| h.split(':').next().unwrap_or(h) != hote)
+                .unwrap_or(true)
+        });
+        avant - memo.len()
+    }
+
     async fn fail_pending(&self, reason: &str) {
         // `pending` puis `child` : conforme à l'invariant documenté dans
         // `request` (jamais `child` tenu en prenant `pending`).

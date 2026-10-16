@@ -1000,8 +1000,16 @@ mod tests {
     #[test]
     fn deux_titres_partageant_leur_prefixe_ne_donnent_pas_le_meme_dossier() {
         let prefixe = "A".repeat(80);
-        let a = chapter_dir(Path::new("d"), "SRC", &format!("{prefixe}{}", "B".repeat(20)));
-        let b = chapter_dir(Path::new("d"), "SRC", &format!("{prefixe}{}", "C".repeat(20)));
+        let a = chapter_dir(
+            Path::new("d"),
+            "SRC",
+            &format!("{prefixe}{}", "B".repeat(20)),
+        );
+        let b = chapter_dir(
+            Path::new("d"),
+            "SRC",
+            &format!("{prefixe}{}", "C".repeat(20)),
+        );
         assert_ne!(
             a, b,
             "deux titres distincts ont obtenu le même dossier : {a:?}"
@@ -1010,7 +1018,11 @@ mod tests {
         // toujours donner le même dossier, sinon le même webtoon est cherché
         // dans deux endroits à chaque téléchargement.
         assert_eq!(
-            chapter_dir(Path::new("d"), "SRC", &format!("{prefixe}{}", "B".repeat(20))),
+            chapter_dir(
+                Path::new("d"),
+                "SRC",
+                &format!("{prefixe}{}", "B".repeat(20))
+            ),
             a
         );
         // Un titre court ne doit pas être changé : le suffixe ne s'ajoute que

@@ -17,6 +17,7 @@ import { lireListeSources } from '../lib/prefs-tolérantes';
 import { memeSignet } from '../lib/signet-cle';
 import { supprimerPuisRafraichirCatalogue } from '../lib/source-perso-suppression';
 import { chapitresSansDoublons } from '../lib/chapitres-doublons';
+import { attenteDepasseLeSeuil } from '../lib/chargement-long';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   isPermissionGranted,
@@ -2591,6 +2592,7 @@ export default function Home() {
     setError(null);
     setChallenge(null);
     setLoadingState(true);
+    setChargementT0(Date.now());
     if (offset === 0) {
       setLatest([]);
       setLatestOffset(0);
@@ -2747,6 +2749,10 @@ export default function Home() {
       }
     } finally {
       setLoadingState(false);
+      // `latest` et `chapters` remettent `t0` : le message « ça met du temps »
+      // ne doit pas survivre au chargement qui l'a déclenché.
+      setChargementT0(0);
+      setAttenteMs(0);
     }
   }
 
@@ -2805,6 +2811,29 @@ function nomSource(s: Source): string {
   const [busy, setBusy] = useState(false);
   const setLoadingState = (v: boolean) => setBusy(v);
   const loading = busy;
+
+  // **Depuis combien de temps l'écran attend.** Mesuré le 2026-10-16 : sur une
+  // source derrière Cloudflare, la grille est restée 60 s sur ses 6 squelettes,
+  // sans bandeau ni notification, pendant qu'une fenêtre de vérification
+  // s'ouvrait (audit F3 et F13). Un chargement qui dure n'explique rien : il
+  // faut donc dire, après quelques secondes, ce que l'utilisateur peut faire.
+  //
+  // L'écart vient d'une **horloge**, pas d'un compteur de rendus : compter les
+  // rendus mesurerait React, pas le temps vécu. Voir `lib/chargement-long.ts`.
+  const [chargementT0, setChargementT0] = useState(0);
+  const [attenteMs, setAttenteMs] = useState(0);
+  const grilleEnAttente = loading && latest.length === 0;
+
+  useEffect(() => {
+    if (!grilleEnAttente || chargementT0 === 0) {
+      return;
+    }
+    // Pas de mise à jour synchrone dans l'effet : le premier tic arrive après
+    // 1 s, ce qui est indétectable pour un seuil de 8 s, et cela évite le
+    // `set-state-in-effect` que `eslint` signale.
+    const id = setInterval(() => setAttenteMs(Date.now() - chargementT0), 1000);
+    return () => clearInterval(id);
+  }, [grilleEnAttente, chargementT0]);
 
   // Charge en arrière-plan les derniers chapitres des cartes affichées.
   // `recentInFlight` empêche les doublons quand l'effet se redéclenche avant
@@ -6377,6 +6406,7 @@ if (reader) {
            * colonnes sur un écran étroit, donc 6 cartes — pas 8, qui forçaient
            * une ligne supplémentaire à remplir puis à disparaître.
            */
+          <>
           <div className="manga-grid" aria-busy="true" aria-label={t('catalogue.chargement')}>
             {Array.from({ length: 6 }).map((_, i) => (
               <div className="manga squelette-carte" key={i} aria-hidden="true">
@@ -6389,6 +6419,18 @@ if (reader) {
               </div>
             ))}
           </div>
+          {/* Un chargement qui dure doit dire ce qu'il attend, et ce que
+              l'utilisateur peut faire. Sans ceci, la grille reste vide sans
+              explication pendant qu'une fenêtre de vérification Cloudflare est
+              ouverte à côté — mesuré le 2026-10-16 : 60 s, 0 bandeau, 0
+              notification. Le seuil est mesuré, pas choisi au jugé : voir
+              `lib/chargement-long.ts`. */}
+          {attenteDepasseLeSeuil(attenteMs) && (
+            <p className="muted note" role="status">
+              {t('source.chargement.long')}
+            </p>
+          )}
+          </>
         ) : (
           <div className="manga-grid">
             {latestTrie.map((m) => {

@@ -421,6 +421,7 @@ const FR = {
   "source.chapitres.vide": "Clique un webtoon pour voir ses chapitres.",
   "source.chapitres.recents": "Chapitres récents",
   "source.vide": "Aucun résultat sur cette source.",
+  "source.chargement.long": "Cette source met du temps à répondre. Si une fenêtre de vérification s’est ouverte, résolvez-la pour continuer.",
   "telechargements.dossier": "Dossier de téléchargement",
   "telechargements.dossier.note":
     "Les chapitres sont écrits dans ce dossier, un .cbz par chapitre. Changer de dossier ne déplace rien : les téléchargements déjà faits restent dans l’ancien, et la bibliothèque n’affichera plus que ceux du nouveau.",
@@ -954,6 +955,7 @@ const EN: Record<Cle, string> = {
   "source.chapitres.vide": "Click a webtoon to see its chapters.",
   "source.chapitres.recents": "Recent chapters",
   "source.vide": "No result on this source.",
+  "source.chargement.long": "This source is slow to answer. If a verification window opened, solve it to continue.",
   "telechargements.dossier": "Downloads folder",
   "telechargements.dossier.note":
     "Chapters are written to this folder, one .cbz per chapter. Changing it moves nothing: existing downloads stay where they are, and the library will only show the ones in the new folder.",

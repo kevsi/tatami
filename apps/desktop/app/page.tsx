@@ -16,6 +16,7 @@ import { admettreLaCible, admettreUne } from '../lib/quota-pages';
 import { lireListeSources } from '../lib/prefs-tolérantes';
 import { memeSignet } from '../lib/signet-cle';
 import { supprimerPuisRafraichirCatalogue } from '../lib/source-perso-suppression';
+import { chapitresSansDoublons } from '../lib/chapitres-doublons';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   isPermissionGranted,
@@ -2529,19 +2530,30 @@ export default function Home() {
     // tuile ne menait nulle part.
   const enTiles = lang === 'all' && nameFilter.trim().length === 0;
 
+  // **Dédoublonnage avant filtre.** Mesuré le 2026-10-15 sur la fiche « One
+  // Piece » (SCANVF) : la source rend des URL de chapitre en double, donc la
+  // liste montrait des doublons et React levait 40 à 100 fois « Encountered two
+  // children with the same key » (audit `docs/audit-ux-2026-10-15.md`, F6). La
+  // clé React n'était qu'un symptôme : deux lignes de même URL sont
+  // indiscernables pour l'utilisateur, puisque la case, le téléchargement et le
+  // chapitre en cours sont tous indexés sur l'URL. La déduplication est donc
+  // faite sur la liste **entière**, pas seulement sur le résultat filtré — sinon
+  // un champ de recherche vide laissait repasser tous les doublons.
+  const chapitresUniques = useMemo(() => chapitresSansDoublons(chapters), [chapters]);
+
   // Tâche 0.15 : filtre de la grille de chapitres. Un terme numérique compare
   // aussi les numéros, « 1180 » trouve donc le chapitre 1180 même quand son
   // titre ne contient que des lettres.
   const filteredChapters = useMemo(() => {
     const q = chapterQuery.trim().toLowerCase();
-    if (!q) return chapters;
+    if (!q) return chapitresUniques;
     const n = Number(q);
-    return chapters.filter(
+    return chapitresUniques.filter(
       (c) =>
         chapterLabel(c).toLowerCase().includes(q) ||
         (c.number != null && Number.isFinite(n) && Math.round(n) === Math.round(c.number)),
     );
-  }, [chapters, chapterQuery]);
+  }, [chapitresUniques, chapterQuery]);
 
   // Changer de vue repart du haut. Mesuré le 2026-07 : le défilement de la vue
   // précédente était conservé — scrollY 787 sur la grille des mangas, 432 après

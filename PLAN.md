@@ -3126,6 +3126,79 @@ voie est la passe de mesures.
 F1, F3, F13, l'item 3, l'item 5 et l'item 6 : instance fraîche + `pnpm dev` (port
 3001) + CDP 9223. Aucune de ces vérifications ne peut être faite par une porte.
 
+### Journal 2026-10-16 — passe de mesures (F1, F3, F13, items 3 et 5)
+
+Instance fraîche, moteur reconstruit, CDP 9223. Tout ce qui suit est **mesuré**
+dans l'application réelle ; les sondes sont dans `.mesures/session-2026-10-16/`
+(non commitées) et leurs sorties JSON avec les chiffres.
+
+**F1 — corrigé et prouvé.** Lecteur ouvert sur `MANGASORIGINES` (contrôle
+positif demandé par l'humain) : 6 pages montées, **5 images décodées**
+(735×1219, 800×11003, 800×11594, 800×11443), 0 indisponible, compteur `1 / 27`,
+bande 77 761 px. **Erreurs console de l'application : `[]`** — donc
+`Each child in a list should have a unique "key" prop` a disparu.
+
+**Contrôle positif (pourquoi il compte).** Source → série (« Reborn Rich », 100
+cellules de chapitres) → chapitre → lecteur : **la chaîne est saine**. Donc ce
+qui bloque l'item 3 n'est pas le lecteur, c'est Cloudflare — sans ce contrôle, on
+aurait conclu « le lecteur est cassé ».
+
+**Item 5 — la recherche globale jouée en direct, pour la première fois.**
+`reborn rich` sur les 1384 sources : **11 → 20 → 25 → 40 → 45 résultats** entre
+6 s et 125 s. L'affichage progressif par source qui répond fonctionne donc tel
+que câblé. Deux `404` dans la console pendant la passe, non diagnostiqués (le
+journal montre des `fetchCover` réussis de 25 à 79 ko autour) : à reprendre si
+les vignettes manquantes se voient.
+
+**F13 — l'hypothèse de l'audit est infirmée.** 90 s de démarrage sans aucune
+interaction : **1 seule cible**, alors que le journal montre le tick immédiat du
+planificateur (`passe=1 verifies=3 duree_ms=17454`). La fenêtre apparaît **à
+l'ouverture d'une source par l'utilisateur** : une cible de plus exactement après
+le clic, et le journal `transport: … échec : challenge non résolu en 60 s` dans le
+même temps. Les fenêtres vues pendant l'audit venaient donc des clics **du
+parcours de mesure lui-même**. Le finding d'audit, reformulé : rien ne relie dans
+l'application la fenêtre qui s'ouvre à la source qu'on vient d'ouvrir.
+
+**Item 3 — la cause est désignée, et elle est architecturale.** Sur
+`READCOMICSONLINE` comme sur `HENTAIZONE` : `challenge non résolu en 60 s`. La
+lecture de la fenêtre de transport tranche entre les deux hypothèses :
+
+  titre « Un instant… » · HTML 29 ko · **0 lien manga** · **0 iframe**
+  hentaizone.xyz : **495 cookies** (donc une `cf_clearance` existe)
+
+Donc la page n'est pas résolue, et `reste_interstitiel` a **raison** de le dire.
+La cause n'est pas le garde-fou : la fenêtre de transport est créée
+`visible(false)` (`challenge.rs:982`), donc **personne ne peut interagir** avec un
+défi qui est précisément une page d'interaction. La CSP fautive est **celle du
+site** (`default-src 'none' … challenges.cloudflare.com`, relevée en direct), pas
+la nôtre. Le critère du spike — un chapitre affiché de bout en bout sur une source
+Cloudflare — **reste donc non atteint, et ne peut pas l'être par une mesure
+automatique** : résoudre Turnstile demande un clic humain dans la fenêtre.
+
+**Deux défauts trouvés en mesurant, qui ne sont pas Cloudflare.**
+
+1. **La fenêtre de transport reste ouverte après l'échec.** Trois cibles après
+   deux sources : l'application plus **deux** webviews Cloudflare, chacune un
+   processus. Sur 12 Go (AGENTS.md §3), c'est une fuite mesurée.
+2. **60 s avant que l'utilisateur puisse agir.** Le bandeau (`.alert`, bouton
+   « Résoudre ») n'apparaît qu'après l'abandon du transport. Pendant 60 s, l'écran
+   ne disait rien — c'est ce que le correctif F3 de la journée corrige à 8 s.
+
+**Trois erreurs de mes propres sondes, consignées parce qu'elles sont le genre de
+chose qui fait perdre une journée.**
+
+- `.bandeau` ne trouve rien : le bandeau s'appelle **`.alert`**. J'ai conclu
+  « l'utilisateur n'a aucune action possible » alors que le texte de vérification
+  était à l'écran, et j'ai relancé la sonde **deux fois** avant de relire le JSX.
+- `scrollTop: 0` après une molette : le pointeur n'était pas au-dessus de la
+  bande. Un compteur qui ne bouge pas est ici un défaut de sonde, pas de molette.
+- Le compteur de la recherche renvoie `null` alors que la passe a renvoyé 45
+  résultats : sélecteur périmé, pas résultat vide.
+
+**Ce qui reste : item 6** (les 8 sources « mortes » à re-mesurer — la sonde
+`scripts/sonde-navigateur.mjs --groupe morte` est prête) et **la décision
+d'architecture sur le transport caché**, ci-dessous.
+
 **Audit livré le 2026-10-15 (lecture seule, aucun code produit touché).**
 Rapport : `docs/audit-ux-2026-10-15.md`. Outils : `.mesures/ux-audit/`
 (`inventaire.mjs`, `parcours.cjs`, 14 captures, `parcours.json`).

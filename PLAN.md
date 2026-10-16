@@ -3423,16 +3423,37 @@ pas être mené d'ici.
 | proxy système / variables d'env | **aucun** (`ProxyEnable=0`) |
 
 La machine est donc **elle-même** en Bénin, sur un réseau d'hébergement et non
-sur une connexion résidentielle. Ce profil est précisément celui que Cloudflare
-classe à risque élevé : ses défis gérés ne se résolvent pas, ils se rejouent.
+sur une connexion résidentielle. Ce profil est celui que Cloudflare classe à
+risque élevé.
 
-Cela explique d'un seul geste **toutes** les mesures du jour, sans avoir à
-supposer une faute de code : les 18 sources en `523` et les 14 en `403 + marqueur`
+Cela explique d'un seul geste la majorité des mesures du jour : les 18 sources
+en `523` et les 14 en `403 + marqueur`
 (`.mesures/cloudflare-depuis-cette-machine-2026-10-16.json`), le widget
-Turnstile qui tourne en boucle sur les quatre clients, et le fait que
-**MANGASORIGINES** passe (elle ne défie pas ce profil). Ce n'est donc pas
-« hentaizone est pénible » : c'est **tout Cloudflare nous défie depuis cette
-adresse**.
+Turnstile qui tourne en boucle sur les quatre clients, et le fait que les
+sources **sans** protection agressive passent.
+
+**Correction du 2026-10-16, mesurée le jour même.** J'ai d'abord écrit « tout
+Cloudflare nous défie depuis cette adresse ». C'est faux, et la preuve est dans
+les en-têtes de réponse : **MANGASORIGINES est elle aussi derrière Cloudflare**,
+servie par la **même bordure** (`cf-ray` terminé par `JNB`, Johannesburg), depuis
+la même IP — et elle ne sert **aucun défi** (`cf-mitigated` absent, contre
+`cf-mitigated: challenge` sur hentaizone). La formulation exacte est donc :
+
+> les zones **agressives** nous défient ; les zones **permissives** nous laissent
+> passer. Ce n'est pas Cloudflare qui nous bloque, c'est la configuration de
+> chaque site.
+
+**Et notre client n'est pas en cause — mesure complémentaire.** Un `curl` naïf
+reçoit de `mangas-origines.fr` un **403 sans défi**, alors que notre moteur lit
+la source sans difficulté (`latest` 16, `details` OK, `chapters` 174). Donc le
+client Tatami passe là où une requête naïve est refusée : l'axe « navigateur
+furtif / empreinte » n'a rien à corriger, il est déjà bon.
+
+Le domaine exact de la source, relu chez le producteur
+(`sonde-sources.mjs --out`) : **`mangas-origines.fr`**. Trois domaines avaient
+été devinés à partir du nom de la source avant d'être lus
+(`mangasorigines.fr`, `www.mangasorigines.fr`, `mangasoriginesunofficial.com` :
+aucun n'est le bon).
 
 **Ce qui reste à faire, et qui n'est pas du code.** Le test qui tranche, d'une
 minute : un partage de connexion mobile (ou tout autre réseau résidentiel), puis

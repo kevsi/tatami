@@ -6945,13 +6945,25 @@ if (reader) {
           l'action que le mot « catalogue » suggère : y chercher un webtoon. Le
           filtre par nom reste en dessous pour parcourir les 1370 sources.
           Longueur minimale de 2 caractères, alignée sur `LONGUEUR_MIN` côté
-          Rust : la porte réelle est là, ceci n'est qu'une affordance. */}
-      <div className="row-actions recherche-globale">
+          Rust : la porte réelle est là, ceci n'est qu'une affordance.
+
+          **Étiquette visible, obligatoire ici.** Les deux champs sont des
+          `type="search"` côte à côte, et un placeholder disparaît dès la
+          première frappe : l'ambiguïté revient (audit du 2026-10-15, F4). Le
+          libellé reste donc dans le DOM au lieu d'être une simple
+          `aria-label`. Le nom accessible vient de l'association, donc
+          l'`aria-label` est retiré — deux noms pour un champ est le même
+          défaut que deux champs pour un nom. */}
+      <section className="recherche-globale">
+        <label className="recherche-libelle" htmlFor="recherche-globale-champ">
+          {t('catalogue.recherche.libelle')}
+        </label>
+        <div className="row-actions">
         <input
+          id="recherche-globale-champ"
           className="search"
           type="search"
-          aria-label={t('catalogue.recherche.label')}
-          placeholder={t('catalogue.recherche.label')}
+          placeholder={t('catalogue.recherche.placeholder')}
           value={rechQuery}
           onChange={(e) => setRechQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -6979,7 +6991,8 @@ if (reader) {
             {t('catalogue.recherche.effacer')}
           </button>
         )}
-      </div>
+        </div>
+      </section>
 
       {rechActif ? (
         <section className="recherche-resultats">

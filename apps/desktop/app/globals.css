@@ -713,6 +713,49 @@ button:disabled {
   margin-bottom: var(--s3);
 }
 
+/* Recherche globale : sa **propre zone**, avec une étiquette visible.
+   Mesuré le 2026-10-15 (audit `docs/audit-ux-2026-10-15.md`, F4) : ses classes
+   n'avaient jamais été définies, donc le champ global tombait dans la même
+   rangée que le filtre de sources — deux `type="search"` indiscernables, le
+   placeholder disparaissant à la première frappe. D'où l'étiquette *dans* le
+   DOM et non en `aria-label` : elle doit survivre à la frappe.
+
+   `border-left` accentué comme les encarts de mises à jour (`.maj-item`) : le
+   même repère visuel pour « un bloc qu'on peut déplier », pas une décoration. */
+.recherche-globale {
+  border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  padding: var(--s3) var(--s4);
+  margin-bottom: var(--s4);
+}
+
+.recherche-globale .row-actions {
+  margin-bottom: 0;
+}
+
+/* Le champ occupe la largeur restante : sans cela il prend sa largeur de
+   contenu et le bouton « Rechercher » reste collé au libellé. */
+.recherche-globale .search {
+  flex: 1 1 240px;
+}
+
+/* Étiquette : nom propre, pas `.label`. Mesuré le 2026-10-15 : `.label` n'existe
+   dans globals.css que comme **sélecteur descendant** (`.manga .label`), donc un
+   `className="label"` isolé ne reçoit aucune règle — et `styles:check` ne le
+   voit pas, parce qu'il prend un sélecteur composé pour une définition. */
+.recherche-libelle {
+  display: block;
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: var(--s2);
+}
+
+.recherche-resultats {
+  margin-bottom: var(--s4);
+}
+
 /* Chemin de dossier : il peut être très long (`C:\Users\...\Documents\Manga`) et
    ne doit pas pousser la mise en page de la ligne. Il se coupe donc n'importe où
    (`anywhere`) plutôt que de déborder, et reste sélectionnable pour être copié. */

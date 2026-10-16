@@ -242,7 +242,8 @@ const FR = {
   // l'une des deux langues (mesuré le 2026-10-06 : « 1 sources »), et `·`
   // entre deux fragments nickel est agrammatical dans l'autre. D'où une clé
   // singulière et une plurielle par fragment, choisies dans le code.
-  "catalogue.recherche.label": "Rechercher un webtoon dans toutes les sources",
+  "catalogue.recherche.libelle": "Rechercher un webtoon dans toutes les sources",
+  "catalogue.recherche.placeholder": "Titre du webtoon…",
   "catalogue.recherche.lancer": "Rechercher",
   "catalogue.recherche.attente": "Recherche en cours…",
   "catalogue.recherche.effacer": "Effacer la recherche",
@@ -791,7 +792,8 @@ const EN: Record<Cle, string> = {
   // failed" key would lie about the plural of one of the two languages
   // (measured on 2026-10-06: "1 sources"). Hence one singular and one plural
   // key per fragment, chosen in code.
-  "catalogue.recherche.label": "Search a webtoon across all sources",
+  "catalogue.recherche.libelle": "Search a webtoon across all sources",
+  "catalogue.recherche.placeholder": "Webtoon title…",
   "catalogue.recherche.lancer": "Search",
   "catalogue.recherche.attente": "Searching…",
   "catalogue.recherche.effacer": "Clear search",

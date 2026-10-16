@@ -3030,6 +3030,102 @@ findings avec preuve par finding. Mini-plan :
 3. Rapport `docs/audit-ux-2026-10-15.md` : findings par flux, transverses,
    « harness », « probablement sain », priorités **proposées** (décision humaine). Les corrections ne commencent qu'après validation.
 
+### Journal 2026-10-16 — corrections de l'audit UX, items 1 à 7
+
+Décision humaine du 2026-10-16 : traiter les 7 points ouverts listés au-dessus.
+Ordre d'exécution : **1 → 2 → 7 → 4 → 3 → 5 → 6**, parce que 3 dépend de 4 et
+que 5/6 sont des mesures longues.
+
+**Item 1 — travail non commité (fait).** `Erreurs.kt` + `Server.kt` rendaient
+la cause d'un `CHALLENGE_UNREPLAYABLE` sans test. `DetailCauseTest` ajouté (6
+tests), porte prouvée rouge (`take(160)` → `take(1600)` fait tomber
+`un message enorme est tronque`, les 5 autres restant verts).
+`gradle test --rerun-tasks` : **214 tests, 0 échec**, 40 classes, XML frais.
+
+**Une correction que le travail non commité rendait nécessaire.** Le détail
+ajoute des mots que `describeError` teste, et `TIMEOUT|timeout` passait **avant**
+`estRejeuRefuse` : un `SocketTimeoutException: timeout` dans la chaîne classait
+un refus définitif en « délai », l'écran promettant un réessai impossible. Rouge
+prouvé (`erreur.delai:HENTAIZONE`), puis ordre corrigé — `is_transient` côté Rust
+disait déjà « jamais transitoire », les deux côtés doivent dire la même chose.
+
+**Item 2 — findings de l'audit (4 corrigés, 2 en attente de mesure).**
+
+- **F1 (clé React)** — `fenetre.map` retournait `<>` sans clé ; le `key` était sur
+  l'`<img>` interne. Clé posée sur le `Fragment`. **Non vérifié en app réelle** :
+  la preuve de l'audit est l'absence de l'erreur console, donc elle appartient à
+  la passe de mesures.
+- **F2 (contraste 3,45:1)** — nouveau token `--accent-texte`, **deux valeurs**
+  (`#5b8ceb` sombre = 4,85:1 ; `#2f5fc0` clair = 5,43:1), sur le modèle de
+  `--danger-texte`. Le pire cas réel est `--surface-2` (#222), c'est-à-dire
+  l'encart **au survol**, pas le fond mesuré par l'audit. Le script de mesure
+  retrouve exactement les 3,45:1 du rapport : il calcule comme la passe qui a
+  produit le chiffre.
+- **F4 (deux recherches)** — la cause n'était **pas** un choix d'affichage :
+  `recherche-globale` et `recherche-resultats` sont utilisées depuis `e316a4d`
+  et n'ont **jamais** été définies dans `globals.css`. `styles:check` était donc
+  **rouge depuis ce commit**, et le journal n'en liste que 9 portes sur 14. Zone
+  propre + étiquette **visible** (pas `aria-label` : un placeholder disparaît à la
+  première frappe). Décision humaine : séparer visuellement, garder les deux.
+- **F6 (clés dupliquées)** — `chapitresSansDoublons` retire les chapitres de même
+  `url`, **avant** le filtre de recherche (sinon un champ vide laissait repasser
+  les doublons). Clé robuste = masque l'avertissement React en laissant les
+  doublons à l'écran ; or deux lignes de même URL sont indiscernables pour
+  l'utilisateur (case, téléchargement et chapitre en cours sont indexés sur l'URL).
+  Porte prouvée rouge : garder le dernier passage fait tomber `le premier passage
+  d une URL reste visible`.
+- **F3 (source vide muette) — non corrigé, mesuré contradictoirement.** La condition
+  d'état vide existe et est correcte (`latest.length === 0 && !loading && !error`,
+  `page.tsx:6469`), et le chemin succès met `loading` à faux. Donc « aucun
+  message » vient soit de la mesure de l'audit, soit d'un état que je n'ai pas
+  observé. **À trancher en passe de mesures**, pas à corriger à l'aveugle.
+- **F13 (fenêtres Cloudflare) — décision humaine : mesurer d'abord.** Regroupé
+  avec les items 5 et 6, qui demandent la même instance.
+
+**Item 7 — dette `cargo fmt` (fait).** Deux blocs de `download.rs`, tous deux dans
+un test. `cargo fmt` + vérification que rien d'autre n'a bougé. Gates : `fmt` 0,
+`clippy --all-targets -D warnings` 0, `cargo test` **262 verts** (238 + 1 + 23).
+`cargo test` échouait « Accès refusé » tant que l'app tourne : l'instance du
+2026-10-15 20:54 (PID 5600) a été fermée sur accord humain.
+
+**Item 4 — déjà décidé, il y a un commit.** La question « rattacher le transport
+au cœur ? » a été tranchée le **2026-10-14** dans `4fd6df5`
+(`feat(desktop): le transport part du coeur, plus de l'interface`) :
+`request_avec_transport` est câblé sur `latest`, `details`, `chapters`, `pages`.
+Les quatre prennent `AppHandle`. Donc **pas de décision à prendre** — il fallait
+lire `commands.rs` avant de poser la question (l'affirmation du journal du
+2026-10-14, « branché seulement sur `latest` », était périmée dès ce commit).
+
+**Item 3 — ce qui reste est une mesure, pas du code.** La cause désignée est dans
+le message de `4fd6df5` : le transport capturait **6 201 octets** là où un appel
+direct en rend **158 285** — il n'attendait pas le chargement. Le code actuel n'a
+plus ce défaut de forme : il fait un `fetch` dans la webview
+(`window.__tatamiCorps`) au lieu de capturer `outerHTML`. Le critère du spike —
+**un chapitre affiché de bout en bout** — reste donc non atteint, et sa seule
+voie est la passe de mesures.
+
+**Trois angles morts de portes, trouvés en route (non corrigés, hors périmètre).**
+
+1. `styles:check` ne lisait que les `var(--x)` du **JSX**. Élargi au CSS : il a
+   nommé **trois tokens jamais déclarés**, utilisés 5 fois — `--text-1`
+   (`.slot-knob` → `background` retombe sur `transparent`, donc **l'interrupteur
+   n'a pas de tête visible**), `--text-dim` (`.path` → hérite, chemin en texte
+   plain), `--focus` (`.bandeau-fermer:focus-visible` → déclaration invalide,
+   donc **aucun** anneau de focus). Corrigés vers les tokens existants.
+   Troisième token inventé en deux jours : la porte rend la règle mécanique.
+2. La comparaison des **classes** prend un sélecteur composé pour une définition :
+   `.label` n'existe que comme `.manga .label`, donc le `<span className="label">`
+   de la ligne favori ne reçoit **aucune** règle — et la porte le déclare défini.
+   Corriger cette comparaison ferait crier cette dette **visible**, donc c'est un
+   travail de rendu, pas un nettoyage de porte.
+3. **Le journal n'annonce que 9 portes sur 14.** `libelles:check`, `styles:check`,
+   `francais:check`, `lecteur:check`, `arrondi:check` ne sont pas dans la liste
+   d'`AGENTS.md` §8 — et l'une d'elles était rouge depuis `e316a4d`.
+
+**Ce qui reste ouvert, et dans quel ordre.** Une seule **passe de mesures** couvre
+F1, F3, F13, l'item 3, l'item 5 et l'item 6 : instance fraîche + `pnpm dev` (port
+3001) + CDP 9223. Aucune de ces vérifications ne peut être faite par une porte.
+
 **Audit livré le 2026-10-15 (lecture seule, aucun code produit touché).**
 Rapport : `docs/audit-ux-2026-10-15.md`. Outils : `.mesures/ux-audit/`
 (`inventaire.mjs`, `parcours.cjs`, 14 captures, `parcours.json`).

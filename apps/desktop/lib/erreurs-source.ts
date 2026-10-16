@@ -79,14 +79,21 @@ export function describeError(
   t: Traduire,
 ): string {
   const s = raw.replace(/\s+/g, " ").trim();
-  if (/TIMEOUT|timeout/i.test(s)) {
-    return t("erreur.delai", { source: sourceName });
-  }
+  // Le rejeu refusé passe **avant** `TIMEOUT`, et pas seulement avant
+  // `CHALLENGE_REQUIRED`. Depuis le 2026-10-15 le moteur rend la chaîne de
+  // causes dans le message, donc un `SocketTimeoutException: timeout` y figure
+  // pour un refus que rien ne peut résoudre : classé « délai », l'écran
+  // promettait un réessai et l'utilisateur l'attendait indéfiniment.
+  // Côté Rust, `is_transient` classe déjà `CHALLENGE_UNREPLAYABLE` comme jamais
+  // transitoire — les deux côtés doivent dire la même chose.
   if (estRejeuRefuse(s)) {
     // Le message ne promet aucun réessai : il n'y en a pas d'utile. Le message
     // « pas encore gérée » de `erreur.verification` conviendrait ici et serait
     // un mensonge — il promet une action que rien ne peut réussir.
     return t("erreur.verification.non.rejouable", { source: sourceName });
+  }
+  if (/TIMEOUT|timeout/i.test(s)) {
+    return t("erreur.delai", { source: sourceName });
   }
   if (/SOURCE_BLOCKED/i.test(s)) {
     // Un blocage n'est pas un captcha : il n'y a **rien à résoudre**. Ce test

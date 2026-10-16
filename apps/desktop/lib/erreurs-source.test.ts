@@ -46,6 +46,23 @@ test("une verification ordinaire garde son message", () => {
   assert.equal(message, "erreur.verification:TOONFR");
 });
 
+test("un rejeu refuse reste un rejeu refuse meme si sa cause dit timeout", () => {
+  // Le moteur rend maintenant la chaine de causes dans le message (2026-10-15,
+  // `detailCauseChallengeNonRejouable`) : or `TIMEOUT` etait teste AVANT le
+  // rejeu refuse. Un `SocketTimeoutException: timeout` dans la chaine faisait
+  // donc passer un refus definitif pour un simple delai — et le message
+  // promettait un reessai que rien ne peut reussir. C'est le meme piege que
+  // « une correction peut etre plus fausse que le defaut » : le diagnostic
+  // ajoute un mot qui attrape une regle plus large.
+  const message = describeError(
+    "CHALLENGE_UNREPLAYABLE: challenge at https://x.fr (non rejouable; " +
+      "type=IOException > SocketTimeoutException: timeout) | http=403",
+    "HENTAIZONE",
+    t,
+  );
+  assert.equal(message, "erreur.verification.non.rejouable:HENTAIZONE");
+});
+
 test("le message du rejeu refuse ne promet aucun reessai", () => {
   // `erreur.verification` dit « pas encore geree » : c'est un mensonge ici,
   // parce que rien ne peut reussir. La distinction doit rester dans les cles.

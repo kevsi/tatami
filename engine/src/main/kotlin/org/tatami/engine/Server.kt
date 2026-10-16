@@ -1510,14 +1510,15 @@ private suspend fun dispatchNatif(
                 .takeIf { it.startsWith("http://") || it.startsWith("https://") }
                 ?: throw ParamException("no cover known for $sourceName / $mangaUrl")
         }
-        val referer = cached?.publicUrl?.takeIf { it.startsWith("http") }
-            ?: p.optString("referer", "")
-                .takeIf { it.startsWith("http") }
-            ?: coverUrl.substringBeforeLast('/', "https://" + coverUrl.substringAfter("//").substringBefore('/'))
         // Dans `avec` pour la même raison que `fetchImage` : le parser fournit ses
         // en-têtes (certains sites refusent une couverture sans Referer) et
-        // débrouille la réponse.
-        val (bytes, contentType) = pool.avec(parseSource(sourceName)) {
+        // débrouille la réponse. Le referer est calculé **dedans**, parce que
+        // seule la source connaît son domaine — même règle que pour une page de
+        // chapitre, mesurée le 2026-10-16.
+        val (bytes, contentType) = pool.avec(parseSource(sourceName)) { parser ->
+            val referer = cached?.publicUrl?.takeIf { it.startsWith("http") }
+                ?: p.optString("referer", "").takeIf { it.startsWith("http") }
+                ?: refererImage(parser.domain, coverUrl)
             fetch_octets(context, coverUrl, referer)
         }
         JSONObject()
@@ -1549,8 +1550,13 @@ private suspend fun dispatchNatif(
         // l'écran — alors que le même appel dans `avec` donnait `FF D8 FF E0`.
         // Le test du moteur passait parce qu'il enveloppait tout le parcours ;
         // l'application, elle, ne l'enveloppait qu'autour de `getPageUrl`.
-        val (bytes, contentType) = pool.avec(parseSource(sourceName)) {
-            fetch_octets(context, imageUrl, imageUrl)
+        val (bytes, contentType) = pool.avec(parseSource(sourceName)) { parser ->
+            // **Le referer est celui de la source, pas celui de l'image.** Le
+            // chemin natif envoyait l'URL de l'image elle-même ; mesuré le
+            // 2026-10-16, un CDN qui sert les chapitres depuis un autre domaine
+            // répond alors 403 sur chaque page — la liste s'affiche et rien n'est
+            // lisible. Voir `refererImage`.
+            fetch_octets(context, imageUrl, refererImage(parser.domain, imageUrl))
         }
         JSONObject()
             .put("data", Base64.getEncoder().encodeToString(bytes))

@@ -7,7 +7,7 @@
 //! - Chien de garde : toute sortie (crash ou EOF) => backoff puis relance.
 //! - stdout = protocole uniquement ; stderr du moteur redirigé en logs.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -121,6 +121,30 @@ pub fn erreur_de(resultat: &Result<Value, String>) -> Option<String> {
     }
 }
 
+/// Durée pendant laquelle une tentative de transport **memorise** son URL.
+///
+/// Borne la rafale, pas le second essai : voir le commentaire du champ
+/// `transports_tentes` pour la mesure qui a fait passer la règle de « pour la
+/// session » à « dix minutes ».
+const TRANSPORT_MEMOISE_TTL: Duration = Duration::from_secs(600);
+
+/// L'URL a-t-elle été tentée **récemment** (dans la borne) ?
+///
+/// Fonction **pure**, horloge injectée : la règle « une tentative par URL » est
+/// testable sans démarrer de sidecar ni de webview, ce qui est impossible dès
+/// qu'elle lit une horloge globale.
+fn transport_tente_recemment(
+    memo: &HashMap<String, std::time::Instant>,
+    url: &str,
+    maintenant: std::time::Instant,
+) -> bool {
+    memo.get(url).is_some_and(|instant| {
+        maintenant
+            .checked_duration_since(*instant)
+            .is_some_and(|ecoule| ecoule < TRANSPORT_MEMOISE_TTL)
+    })
+}
+
 pub fn transport_a_tenter(message: &str, url: Option<&str>, deja_tente: bool) -> bool {
     if deja_tente {
         return false;
@@ -232,7 +256,8 @@ pub struct Supervisor {
     /// User-agent du moteur, appris au `hello`. La fenêtre de résolution
     /// anti-bot s'en sert pour que la clearance soit émise pour le même agent.
     user_agent: Arc<Mutex<String>>,
-    /// URLs déjà passées par le transport webview, **pendant cette session**.
+    /// URLs déjà passées par le transport webview, avec **l'instant** de la
+    /// tentative.
     ///
     /// ## Pourquoi une mémoire, et pas seulement une borne par appel
     ///
@@ -240,13 +265,26 @@ pub struct Supervisor {
     /// `details`, puis `chapters`, puis `pages`, et chacune reçoit le même refus
     /// sur une URL **différente**. Sans mémoire, chaque commande ouvrirait une
     /// webview — sur une machine de 12 Go avec un JVM déjà chargé. La règle est
-    /// donc **une tentative par URL** : la première fois on essaie, la deuxième
-    /// on sait et on ne réessaie pas.
+    /// donc **une tentative par URL**, mais **bornée dans le temps**.
     ///
     /// Ce n'est pas une anticipation mais une mesure : le 2026-10-14, un
     /// parcours HENTAIZONE a fait sept `chapters` refusés d'affilée, chacun sur
     /// sa propre URL de série.
-    transports_tentes: Mutex<HashSet<String>>,
+    ///
+    /// ## Pourquoi une borne dans le temps, et non « pour la session »
+    ///
+    /// Mesuré le 2026-10-16 : une règle à vie de session devient « **un succès
+    /// par URL et pour toujours** ». Le transport réussit pour une fiche à 11 h
+    /// 12 (la webview rend 161 ko), puis l'utilisateur y revient à 11 h 19 : le
+    /// moteur répond `CHALLENGE_REQUIRED`, l'URL est **déjà** dans la mémoire, le
+    /// transport n'est pas tenté, et l'interface affiche le refus brut. Or ce
+    /// qui avait fait réussir — le profil réchauffé, le cache mémoire — avait
+    /// expiré entre-temps. La règle protégeait la rafale et interdisait le
+    /// second essai, qui est précisément ce qu'il faut après une expiration.
+    ///
+    /// `TRANSPORT_MEMOISE_TTL` (10 min) garde la protection mesurée : une rafale
+    /// de refus sur la même URL n'ouvre toujours **qu'une** webview.
+    transports_tentes: Mutex<HashMap<String, std::time::Instant>>,
     /// Derniers avertissements du moteur sur les **scripts personalized**.
     ///
     /// Le moteur écrit sur stderr, jamais sur stdout (cf. contrat) : sans ce
@@ -300,7 +338,7 @@ impl Supervisor {
             child: Arc::new(Mutex::new(None)),
             engine_proc: Arc::new(Mutex::new(None)),
             user_agent: Arc::new(Mutex::new(String::new())),
-            transports_tentes: Mutex::new(HashSet::new()),
+            transports_tentes: Mutex::new(HashMap::new()),
             avertissements: Arc::new(Mutex::new(Vec::new())),
             domaines_sources: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -756,15 +794,25 @@ impl Supervisor {
             return premier;
         };
         let url = extraire_url_challenge(&erreur);
+        let maintenant = std::time::Instant::now();
         let deja_tente = match &url {
-            Some(u) => self.transports_tentes.lock().await.contains(u),
+            Some(u) => {
+                let memo = self.transports_tentes.lock().await;
+                transport_tente_recemment(&memo, u, maintenant)
+            }
             None => true,
         };
         if !transport_a_tenter(&erreur, url.as_deref(), deja_tente) {
             return premier;
         }
         let url = url.expect("transport_a_tenter garantit l'URL");
-        self.transports_tentes.lock().await.insert(url.clone());
+        let mut memo = self.transports_tentes.lock().await;
+        // On borne la mémoire en même temps qu'on écrit : une table qui ne fait
+        // que grossir garde des URL d'il y a des heures, alors qu'une seule
+        // information compte — « y a-t-il une tentative récente ? ».
+        memo.retain(|_, instant| maintenant.duration_since(*instant) < TRANSPORT_MEMOISE_TTL);
+        memo.insert(url.clone(), maintenant);
+        drop(memo);
         match crate::challenge::lire_par_transport(app, self, source, &url).await {
             Ok(octets) => {
                 tracing::info!(
@@ -930,6 +978,67 @@ mod tests {
 
     /// Un rejeu déjà refusé ne rouvre **jamais** une webview : l'utilisateur a
     /// fait ce qu'il pouvait et le site refuse quand même.
+    #[test]
+    fn une_url_intramessurable_bloque_une_seconde_tente() {
+        let mut memo = HashMap::new();
+        let t0 = std::time::Instant::now();
+        memo.insert("https://hentaizone.xyz/manga/".to_string(), t0);
+        assert!(transport_tente_recemment(
+            &memo,
+            "https://hentaizone.xyz/manga/",
+            t0 + Duration::from_secs(30)
+        ));
+    }
+
+    /// **La correction du 2026-10-16.** Une règle valable « pour la session »
+    /// interdisait aussi le second essai apres une expiration : mesure, la fiche
+    /// s'affichait a 11 h 12 puis renvoyait `CHALLENGE_REQUIRED` a 11 h 19, sans
+    /// transport tente. Passee la borne, la tentative redevient possible.
+    #[test]
+    fn une_url_older_que_la_borne_peut_reessayer() {
+        let mut memo = HashMap::new();
+        let t0 = std::time::Instant::now();
+        memo.insert("https://hentaizone.xyz/manga/".to_string(), t0);
+        assert!(!transport_tente_recemment(
+            &memo,
+            "https://hentaizone.xyz/manga/",
+            t0 + TRANSPORT_MEMOISE_TTL + Duration::from_secs(1)
+        ));
+    }
+
+    /// La regle complete : memoire fraiche -> refus, memoire expiree -> passage.
+    #[test]
+    fn la_borne_decide_de_la_seconde_tente() {
+        let message = "CHALLENGE_REQUIRED: challenge at https://hentaizone.xyz/manga/";
+        let url = "https://hentaizone.xyz/manga/";
+        let mut memo = HashMap::new();
+        let t0 = std::time::Instant::now();
+        memo.insert(url.to_string(), t0);
+        let t1 = t0 + Duration::from_secs(30);
+        assert!(!transport_a_tenter(
+            message,
+            Some(url),
+            transport_tente_recemment(&memo, url, t1)
+        ));
+        let t2 = t0 + TRANSPORT_MEMOISE_TTL + Duration::from_secs(1);
+        assert!(transport_a_tenter(
+            message,
+            Some(url),
+            transport_tente_recemment(&memo, url, t2)
+        ));
+    }
+
+    /// Une URL jamais tentee reste tentable, quelle que soit l'heure.
+    #[test]
+    fn une_url_inconnue_est_toujours_tentable() {
+        let memo = HashMap::new();
+        assert!(!transport_tente_recemment(
+            &memo,
+            "https://hentaizone.xyz/manga/",
+            std::time::Instant::now()
+        ));
+    }
+
     #[test]
     fn un_rejeu_refuse_ne_tente_jamais_le_transport() {
         let message =

@@ -3328,6 +3328,11 @@ compte d'`<img>` sans alt gonfle par des commentaires).
 
 ### Expérience A du 2026-10-16 — la fenêtre de transport « attachée » : expérience **invalide**
 
+> **Tableau de synthèse : `docs/cloudflare-options.md`** — les 22 pistes
+> envisagées depuis le début, avec pour chacune la mesure qui la tranche et son
+> verdict. À lire avant de proposer une nouvelle piste : la moitié y est déjà
+> réfutée par une mesure.
+
 Question posée après la comparaison avec l'implémentation de référence
 (`Kotatsu-Redo/app/src/main/kotlin/org/koitharu/kotatsu/`) : notre fenêtre de
 transport est créée `.visible(false)`, donc **sans surface**, alors que la

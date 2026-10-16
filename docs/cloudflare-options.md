@@ -59,17 +59,53 @@
 
 ---
 
+## CE QUI MARCHE — mesuré le 2026-10-16 à 12 h 15 (HENTAIZONE)
+
+La source qui a résisté **toute la journée** devient lisible, et l'utilisateur
+charge des webtoons. Rien n'a été codé pour cela : le binaire est celui du dépôt,
+sans le drapeau CDP, et **aucune fenêtre de vérification n'a été ouverte** dans
+cette instance.
+
+| mesure | valeur |
+|---|---|
+| lectures de transport réussies | **53** |
+| fenêtres de vérification ouvertes | **0** |
+| catalogue | `latest source=HENTAIZONE offset=96` — pagination qui marche |
+| chapitres | 149 177 à 184 330 octets |
+| pages | 169 166 octets |
+| ce que la webview lit | 158 757 à 169 899 octets — **du contenu, pas un interstitiel** (28 7xx) |
+| requêtes OkHttp brutes sur le même hôte | **60 × `403`** et **35 × `200`**, bocal à cookies **vide** |
+
+Deux lectures, et elles ne se contredisent pas :
+
+1. **La webview de transport est devenue la voie qui marche.** Elle lit la vraie
+   page, le moteur l'injecte (`webview html injecte … totalMemoire=N`), et
+   l'interface affiche. C'est 53 fois, pas un accident.
+2. **Le chemin OkHttp du moteur, lui, échoue toujours** — 60 `403` contre 35 `200`,
+   bocal vide. Donc la clearance n'est **pas** honorée pour les requêtes
+   directes du moteur : le transport n'est pas un filet de sécurité, il est
+   devenu **porteur**. Toute source qui exige le transport dépend de lui
+   entièrement.
+
+**Ce qui n'est pas attribué, et qui ne doit pas l'être.** Le journal ne dit pas
+*pourquoi* la webview est passée de 28 ko à 161 ko. L'hypothèse la plus solide
+est un **profil partagé WebView2 réchauffé** par la résolution manuelle de
+l'instance précédente (11:06–11:07 : fenêtre ouverte, 8 cookies lus et appliqués,
+puis `CHALLENGE_UNREPLAYABLE`). C'est exactement l'idée de la référence — recréer
+en conservant le profil du navigateur (`MAX_AUTO_RECREATE_COUNT`) — atteinte ici
+par accident. **À prouver ou à renverser, et le test est d'un redémarrage** :
+relancer l'application et regarder si la webview relit 161 ko ou retombe à 28 ko.
+Tant que ce test n'est pas fait, on ne sait pas si ce que nous avons est
+**durable** ou **emprunté**.
+
 ## Ce qui reste vrai, en une phrase
 
 **Notre client n'est pas en cause** — il passe là où un `curl` naïf est
-refusé, et les zones permissives nous laissent passer sans défi. Ce qui bloque,
-c'est que **les zones agressives** servent un défi à une IP d'hébergement, et
-que ce défi **ne se résout pas** depuis cette IP.
-
-Donc la seule action qui pourrait tout débloquer est **un autre réseau**, et elle
-se teste en une commande. Les trois voies d'application (fenêtre visible,
-révélation sur place, détection d'inefficacité) ne servent qu'à rendre le cas
-« le défi est soluble » moins pénible — elles ne débloquent pas hentaizone.
+refusé, et les zones permissives nous laissent passer sans défi. Ce qui bloquait
+n'était pas notre client : c'était que **la webview de transport rendait
+l'interstitielle au lieu de la page** (28 ko), et elle rend la page maintenant
+(161 ko). Le reste des hypothèses — drapeau CDP, attachement de la fenêtre,
+méthode « Cloudflare » — a été mesuré et n'était pas la cause.
 
 ## Les trois fautes de mesure à ne pas refaire
 

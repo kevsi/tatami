@@ -3326,6 +3326,55 @@ rejouees (selecteur `.manga` = squelette, `input.search` = recherche globale,
 compte d'`<img>` sans alt gonfle par des commentaires).
    humaine). Les corrections ne commenquent qu'après validation.
 
+### RÉSULTAT du 2026-10-16 à 12 h 15 — **HENTAIZONE devient lisible**
+
+La source qui a résisté toute la journée passe, et l'utilisateur charge des
+webtoons. **Aucun code n'a été écrit pour cela** : le binaire est celui du dépôt,
+sans le drapeau CDP, et **aucune fenêtre de vérification n'a été ouverte** dans
+cette instance.
+
+| mesure | valeur |
+|---|---|
+| lectures de transport réussies | **53** |
+| fenêtres de vérification ouvertes | **0** |
+| catalogue | `latest source=HENTAIZONE offset=96` — pagination qui marche |
+| chapitres | 149 177 à 184 330 octets |
+| pages | 169 166 octets |
+| ce que la webview lit | 158 757 à 169 899 octets — **du contenu**, plus l'interstitielle de 28 7xx |
+| requêtes OkHttp brutes sur le même hôte | **60 × `403`** et **35 × `200`**, bocal à cookies **vide** |
+
+**Le fil, minute par minute.** Instance précédente (11:04 → 11:07) : `latest` →
+`CHALLENGE_REQUIRED`, transport `challenge non résolu en 60 s`, puis ouverture de
+la fenêtre de vérification par l'utilisateur, 8 cookies lus et appliqués avec
+l'agent de la fenêtre, et le rejeu répond **`CHALLENGE_UNREPLAYABLE`**. Instance
+suivante (11:12 → 11:15, celle-ci) : `403 cf-mitigated=challenge` par OkHttp,
+puis **la webview rend 161 328 octets**, le moteur injecte la page
+(`webview html injecte … totalMemoire=1`), la requête suivante répond `200`, et
+53 lectures plus tard l'interface affiche les webtoons.
+
+**Deux lectures qui ne se contredisent pas.**
+1. **La webview de transport est devenue la voie qui marche.** Elle rend la page
+   réelle, le moteur l'injecte, l'interface affiche. 53 fois, pas un accident.
+2. **Le chemin OkHttp du moteur, lui, échoue toujours** — 60 `403` contre 35
+   `200`, bocal vide. La clearance n'est **pas** honorée pour les requêtes
+   directes : le transport n'est pas un filet de sécurité, il est **porteur**.
+   Toute source qui l'exige dépend de lui entièrement.
+
+**Ce qui n'est pas attribué, et qui ne doit pas l'être.** Le journal ne dit pas
+*pourquoi* la webview est passée de 28 ko à 161 ko. L'hypothèse la plus solide
+est un **profil WebView2 partagé réchauffé** par la résolution manuelle de
+l'instance précédente — c'est-à-dire l'idée de la référence (« recréer en
+conservant le profil du navigateur », `MAX_AUTO_RECREATE_COUNT`), atteinte ici
+par accident. **Le test qui tranche tient en un redémarrage** : relancer
+l'application et regarder si la webview relit 161 ko ou retombe à 28 ko. Tant
+qu'il n'est pas fait, on ne sait pas si ce que nous avons est **durable** ou
+**emprunté** — et c'est la question à trancher avant d'écrire quoi que ce soit.
+
+Détail d'outillage : la fenêtre de transport, ouverte puis réutilisée, et le
+journal `challenge-debug` (noms de domaine, jamais les valeurs de cookies) sont
+ce qui a permis de voir la bascule. Le second est activé par
+`TATAMI_CHALLENGE_DEBUG=1`.
+
 ### Expérience A du 2026-10-16 — la fenêtre de transport « attachée » : expérience **invalide**
 
 > **Tableau de synthèse : `docs/cloudflare-options.md`** — les 22 pistes

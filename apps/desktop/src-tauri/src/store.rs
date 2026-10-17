@@ -249,6 +249,24 @@ impl Store {
         // l'accueil n'a plus aucun contexte de liste, donc sans cette colonne
         // l'incognito ne pouvait plus rien masquer.
         Self::ensure_column(&tx, "favorites", "content_rating", "TEXT")?;
+        // Backfill incognito : les webtoons dont le titre ou la source contient un
+        // mot-cle adulte et dont la classification est encore inconnue sont marques
+        // ADULT, pour que l'incognito et le filtre de contenu les masquent.
+        // Idempotent : ne touche que les lignes encore NULL.
+        tx.execute_batch(
+            "UPDATE history SET content_rating = 'ADULT' \
+             WHERE content_rating IS NULL \
+               AND (LOWER(title) LIKE '%harem%' OR LOWER(title) LIKE '%branlette%' \
+                    OR LOWER(title) LIKE '%hentai%' OR LOWER(title) LIKE '%ecchi%' \
+                    OR LOWER(title) LIKE '%nsfw%' OR LOWER(title) LIKE '%xxx%' \
+                    OR LOWER(source) LIKE '%hentai%' OR LOWER(source) LIKE '%adult%'); \
+             UPDATE favorites SET content_rating = 'ADULT' \
+             WHERE content_rating IS NULL \
+               AND (LOWER(title) LIKE '%harem%' OR LOWER(title) LIKE '%branlette%' \
+                    OR LOWER(title) LIKE '%hentai%' OR LOWER(title) LIKE '%ecchi%' \
+                    OR LOWER(title) LIKE '%nsfw%' OR LOWER(title) LIKE '%xxx%' \
+                    OR LOWER(source) LIKE '%hentai%' OR LOWER(source) LIKE '%adult%');",
+        ).map_err(|e| format!("backfill incognito : {e}"))?;
         // v4 : activation/désactivation des sources. Sans cela, les 1370
         // catalogues sont proposals à equalité et l'utilisateur ne peut pas
         // écarter ceux qui l'intéressent pas. Seules les sources DÉSACTIVÉES

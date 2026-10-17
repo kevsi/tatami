@@ -1924,7 +1924,7 @@ button:disabled {
   background: var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: var(--r-sm);
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
 }
 
 /* --- Carte entière cliquable ------------------------------------------------
@@ -1982,6 +1982,7 @@ button:disabled {
 .dl-card:hover {
   border-color: var(--line);
   background: var(--surface-2);
+  transform: translateY(-1px);
 }
 
 .dl-card .thumb {
@@ -2641,11 +2642,13 @@ button:disabled {
   background: var(--surface);
   padding: 10px 14px;
   margin-bottom: var(--s2);
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
 }
 
 .maj-item:hover {
   background: var(--surface-2);
+  transform: translateY(-1px);
+  border-color: var(--line-strong);
 }
 
 .maj-item.vue {

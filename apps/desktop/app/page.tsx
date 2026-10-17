@@ -4658,6 +4658,18 @@ useEffect(() => {
     } else if (e.key === 'End') {
       e.preventDefault();
       scrollToPage(last);
+    } else if (e.key === 'n' || e.key === 'N') {
+      const cible = e.target as HTMLElement | null;
+      if (cible && (cible.tagName === 'INPUT' || cible.tagName === 'TEXTAREA' || cible.tagName === 'SELECT')) return;
+      e.preventDefault();
+      const idxSuivant = chapters.findIndex((c) => c.url === reader!.chapter.url);
+      if (idxSuivant >= 0 && idxSuivant < chapters.length - 1) void openReader(chapters[idxSuivant + 1]);
+    } else if (e.key === 'p' || e.key === 'P') {
+      const cible = e.target as HTMLElement | null;
+      if (cible && (cible.tagName === 'INPUT' || cible.tagName === 'TEXTAREA' || cible.tagName === 'SELECT')) return;
+      e.preventDefault();
+      const idxPrecedent = chapters.findIndex((c) => c.url === reader!.chapter.url);
+      if (idxPrecedent > 0) void openReader(chapters[idxPrecedent - 1]);
     }
   };
   window.addEventListener('keydown', onKey);
@@ -5783,6 +5795,7 @@ if (reader) {
               <select
                 className="chapter-select"
                 aria-label={t('lecteur.chapitre')}
+                title={t('lecteur.chapitre.raccourci')}
                 value={chapter.url}
                 disabled={readerLoading}
                 onChange={(e) => {

@@ -2023,3 +2023,37 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   tout drapeau à valeur laissé sans valeur, en **nommant les drapeaux valides**.
   Avant de passer un filtre à un outil, lire sa liste de drapeaux — pas un grep
   de ceux qu'on cherche.
+
+- **Une file de travail « réservée par départ » ne l'est pas : la marche suivante
+  la voit libre.** Mesuré le 2026-10-17 : la marche des « derniers chapitres »
+  demandait **2 fois** chaque carte (58 appels pour 28 séries). Ce n'est pas le
+  total qui l'a dit, c'est la **distribution des appels par série** — `2x26 3x2` —
+  alors que `58/28` se lit comme « un peu de bruit ». La cause : `cartesAFaire`
+  écartait bien ce qui est *déjà en vol*, mais la file s'égraine sur plusieurs
+  secondes (la politesse par source impose un écart), donc une seconde marche
+  démarrée entre-temps voyait les cartes non encore parties comme « libres ».
+  Réserver la file **entière** au démarrage
+  (`for (const { key } of todo) recentInFlight.current.add(key)`), libérée par le
+  `finally` de chaque requête, a rendu `1x28`. Corollaire : une réservation en
+  masse n'est sûre que si rien ne peut lever avant la libération — vérifié :
+  `attendreTourAutomatique` n'appelle que `Date.now`, `Map.get/set` et
+  `setTimeout`.
+
+- **Borner un travail de fond déplace le défaut : il faut un réveil, et il doit
+  comparer un ENSEMBLE, pas un évènement.** Mesuré le 2026-10-17 sur
+  `custom:rimuscan` (232 cartes, ~21-28 dans la fenêtre) : ne demander la ligne
+  que des cartes **visibles** fait passer l'ouverture de **233 requêtes en
+  111,8 s** (tout le catalogue, mesuré sur le code d'avant, même écran) à **28 en
+  ~20 s**, puis le silence — le moteur n'a que 4 travailleurs, donc les occuper en
+  permanence faisait attendre toute requête demandée par l'utilisateur. Ce qui
+  remplace « le reste de la liste » est un tour d'horloge de **1 s** qui compare
+  la **signature de l'ensemble visible** (prédicat écrit une seule fois,
+  `clesVisibles()`, partagé par la marche et la surveillance) : un `setState` par
+  évènement de défilement ferait rendre un écran de ~4 000 lignes des dizaines de
+  fois par seconde. Mesuré : défilement de 2 400 px → **43 appels, 1 par série**,
+  puis silence. Corollaire de méthode : une comparaison avant/après qui passe par
+  un cache à TTL doit **vider ce cache avant chaque relevé** (sinon les deux
+  côtés sont servis par le même cache, et les nombres se ressemblent), et le
+  retour au code d'avant se prouve par `git stash push -- <fichier>` suivi d'un
+  `pop` et d'une **empreinte SHA-256** comparée à une copie d'octets — pas par la
+  mémoire.

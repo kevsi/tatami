@@ -18,6 +18,18 @@
 // casse sur `chapters` est **inutilisable**, et `latest` seul ne le voit pas.
 // « Marche vraiment » = l'image est décodable.
 //
+// ## Un PARSER_OUTDATED n'est pas forcément une source réparable
+//
+// Le moteur dit le **fait** : « la page n'a pas répondu au parseur ». Il ne dit
+// pas la **cause**, et les deux causes opposées se ressemblent : un domaine
+// racheté qui répond `200` avec une page de parking, et un site vivant dont les
+// sélecteurs ont changé. Mesuré le 2026-10-16 sur les 10 `PARSER_OUTDATED` du
+// relevé FR : **8 étaient des cadavres** et 2 des sites vivants. La sonde relit
+// donc l'`urlFinale` que le moteur a servie et en retient l'hôte, le titre et la
+// taille (voir `mesurerIdentite` et `classeIdentite`, où les seuils sont ceux de
+// la mesure). Une page qui **n'a pas pu être lue** ne donne lieu à aucune
+// conclusion : on ne classe que ce qu'on a vu.
+//
 // ## Pourquoi Node
 //
 // Le protocole est du NDJSON : une ligne JSON par requête, une réponse par ligne.
@@ -192,6 +204,128 @@ function hote(url) {
   }
 }
 
+/**
+ * Le fait qui manquait : **ce que la page est**, quand le parseur échoue.
+ *
+ * Un `PARSER_OUTDATED` veut dire « la page n'a pas répondu au parseur », rien de
+ * plus. Le lire comme « le site a changé, donc c'est réparable » a coûté une
+ * session entière : sur les **10** `PARSER_OUTDATED` du relevé FR du 2026-10-16,
+ * **8 étaient des cadavres** (domaine racheté, parking, interstitiel) et 2 des
+ * sites vivants. Un `404` se distingue tout seul, mais un **parking** répond
+ * `200` avec du HTML : il faut donc regarder la page.
+ *
+ * Cette mesure ne demande rien au moteur : elle relit `urlFinale` (l'URL que le
+ * moteur a servie) et en retient l'hôte, le titre et la taille. Les valeurs
+ * ci-dessous sont celles du 2026-10-16 (`curl.exe`), et elles disent le fait :
+ *
+ * | source              | hôte final             | titre                | octets  |
+ * |---------------------|------------------------|----------------------|---------|
+ * | ANTEIKUSCAN         | clladss.com            | (aucun)              |  12 047 |
+ * | ASTRAMES            | clladss.com            | (aucun)              |   9 143 |
+ * | MANGASORIGINESUNO   | filter.explorads.com   | (aucun)              |     167 |
+ * | SCANTRADVF          | clladss.com            | (aucun)              |  11 803 |
+ * | FRSCAN              | ww80.fr-scan.com       | « fr-scan.com »      |  39 773 |
+ * | HENTAISCANTRADVF    | hentai.scantrad-vf.cc  | « scantrad-vf.cc »   |  39 310 |
+ * | SCANVFORG           | scanvf.org             | « Loading... »       |     477 |
+ * | NINEMANGA_FR        | fr.niadd.com           | « Répertoire … »     | 325 619 |
+ * | SCANTRAD            | hentai-scantrad.org    | « Manga Archive … »  | 170 646 |
+ *
+ * Le réseau de parking **tourne**, mesuré en une journée : ASTRAMES rendait
+ * `clladss.com` le 16 et `29870506-20567-32251.squitoiages.com` (199 octets) le
+ * 17, MANGASORIGINESUNOFFICIAL `filter.explorads.com` puis `clladss.com`. C'est
+ * pourquoi la règle compare au **domaine déclaré de la source** et non à une
+ * liste de parkings connus : une telle liste serait périmée le lendemain.
+ *
+ * Trois faits suffisent donc à trancher, et aucun ne demande de deviner : un
+ * titre qui **est** le domaine nu, un hôte qui sort du domaine déclaré, et une
+ * page de moins d'1 ko.
+ *
+ * Réserves assumées, et elles sont dans le code : le moteur résout en
+ * DNS-over-HTTPS et Node non, donc un échec ici n'est **pas** une preuve
+ * d'injoignabilité — la mesure ne conclut **que** si elle a lu quelque chose ;
+ * et une page servie à Node peut être un challenge Cloudflare que la WebView du
+ * moteur passerait, d'où une règle explicite qui l'annonce (`verification`) au
+ * lieu de la prendre pour un cadavre.
+ *
+ * Un échec mesuré, pour ne pas le confondre avec un site mort : le
+ * 2026-10-17, `hentai.scantrad-vf.cc/manga/` a rendu à Node
+ * `ECONNRESET … before secure TLS connection was established` pendant que
+ * `curl.exe` lisait la même page (200, 39 312 octets). C'est **notre pile** qui
+ * est refusée — un filtre par empreinte TLS, pas un site éteint. D'où la
+ * dernière règle ci-dessous : une mesure ratée est **dite** dans le motif, elle
+ * n'est pas tue.
+ */
+const TAILLE_PAGE_MIN = 1024;
+
+async function mesurerIdentite(urlFinale) {
+  const ctrl = new AbortController();
+  const chrono = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const reponse = await fetch(urlFinale, {
+      redirect: "follow",
+      signal: ctrl.signal,
+      headers: { "User-Agent": "Tatami/0.1 (sonde d'identite)" },
+    });
+    const corps = await reponse.text();
+    const t = /<title[^>]*>([\s\S]{0,120}?)<\/title>/i.exec(corps);
+    return {
+      statut: reponse.status,
+      hote: hote(reponse.url),
+      octets: corps.length,
+      titre: t ? t[1].replace(/\s+/g, " ").trim() : null,
+    };
+  } catch (e) {
+    // On n'a rien lu : on ne conclut rien (`classeIdentite` rendra null).
+    return { erreur: String(e.message ?? e).slice(0, 120) };
+  } finally {
+    clearTimeout(chrono);
+  }
+}
+
+/**
+ * La décision que l'identité permet, dans le vocabulaire d'états déjà utilisé.
+ *
+ * Rend `null` quand rien n'a été mesuré : une absence de mesure n'est pas une
+ * absence de site, et l'appelant retombe alors sur le classement par verdict.
+ */
+function classeIdentite(identite, domaines) {
+  if (!identite || identite.erreur) return null;
+  const titre = (identite.titre ?? "").toLowerCase();
+  const declares = (domaines ?? []).map((d) => d.toLowerCase().replace(/^www\d*\./, ""));
+
+  if (/just a moment|attention required|checking your browser|cloudflare/.test(titre)) {
+    return {
+      etat: "verification",
+      motif: `page de verification Cloudflare (titre « ${identite.titre} »)`,
+    };
+  }
+  const h = identite.hote ?? "";
+  if (h && declares.length > 0 && !declares.some((d) => h === d || h.endsWith(`.${d}`))) {
+    return {
+      etat: "hors_service",
+      motif: `la source redirige hors de son domaine : ${identite.hote} (declare : ${declares.join(", ")})`,
+    };
+  }
+  if (titre && declares.some((d) => titre === d || titre === `www.${d}`)) {
+    return {
+      etat: "hors_service",
+      motif: `la page s'intitule « ${identite.titre} », soit le domaine nu : domaine en parking`,
+    };
+  }
+  if (identite.octets < TAILLE_PAGE_MIN) {
+    return {
+      etat: "hors_service",
+      motif: `page de ${identite.octets} octets (statut ${identite.statut}) : interstitiel, pas un site`,
+    };
+  }
+  return {
+    etat: "parseur_perime",
+    motif:
+      `site vivant (${identite.octets} octets, titre « ${identite.titre} ») : le parseur est perime, ` +
+      `donc la source est recuperable`,
+  };
+}
+
 const DELAI_LISTE = Number(arg("--delai-liste", 90000));
 const DELAI_ETAPE = Number(arg("--delai-etape", 30000));
 const PROFOND = aOption("--deep");
@@ -232,19 +366,29 @@ async function principal() {
   await premier.appel("hello", {}, DELAI_LISTE);
 
   let catalogue;
+  // `listSources` est demandé **toujours**, y compris pour une liste explicite :
+  // le domaine déclaré d'une source est ce qui permet de reconnaître une
+  // redirection hors du domaine (`classeIdentite`), et une liste `--sources` le
+  // perdait en silence. Mesuré le 2026-10-17 : `--sources ANTEIKUSCAN` rendait
+  // `domaines: []`, donc la règle ne pouvait pas mordre là où elle sert.
+  const brutCatalogue = verdict(await premier.appel("listSources", {}, DELAI_LISTE));
+  if (!brutCatalogue.ok) {
+    premier.arreter();
+    throw new Error(
+      `listSources a echoue : ${brutCatalogue.code} ${brutCatalogue.message}`,
+    );
+  }
+  const toutes = brutCatalogue.result.sources ?? [];
   if (aOption("--sources")) {
     const noms = arg("--sources")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    catalogue = noms.map((name) => ({ name, lang: "?", domains: [] }));
+    catalogue = noms.map(
+      (name) => toutes.find((s) => s.name === name) ?? { name, lang: "?", domains: [] },
+    );
   } else {
-    const r = verdict(await premier.appel("listSources", {}, DELAI_LISTE));
-    if (!r.ok) {
-      premier.arreter();
-      throw new Error(`listSources a echoue : ${r.code} ${r.message}`);
-    }
-    catalogue = r.result.sources ?? [];
+    catalogue = toutes;
   }
   premier.arreter();
 
@@ -423,6 +567,19 @@ async function principal() {
         } finally {
           m.arreter();
         }
+        // Ce que la page **est**, quand un `PARSER_OUTDATED` est prononcé : ce
+        // verdict recouvre aussi bien un domaine en parking qu'un site vivant
+        // dont les sélecteurs ont changé, et les deux ne se soignent pas pareil
+        // (voir `mesurerIdentite`). On ne mesure que là où le classement s'en
+        // sert, et une mesure qui échoue ne conclut rien.
+        if (releve.verdict === "PARSER_OUTDATED") {
+          if (!releve.urlFinale && releve.message) {
+            releve.urlFinale = releve.message.match(/https?:\/\/[^\s,\]]+/)?.[0];
+          }
+          if (releve.urlFinale) {
+            releve.identite = await mesurerIdentite(releve.urlFinale);
+          }
+        }
         releves.push(releve);
         const etiquette = {
           ACTIF: "OK",
@@ -520,8 +677,19 @@ function classerTous(releves) {
       etat = "images_bloquees";
       motif = "catalogue lisible, CDN d'images protege";
     } else if (v === "PARSER_OUTDATED") {
-      etat = "parseur_perime";
-      motif = "le site a change de page";
+      // Le verdict du moteur dit le fait — « la page n'a pas répondu au
+      // parseur » — et non la cause. Un domaine en parking répond `200` avec du
+      // HTML, donc il tombe ici comme un site simplement redessiné : c'est
+      // `classeIdentite` qui a lu la page et qui tranche. Sans mesure, on ne
+      // conclut pas — mais on le **dit**, sinon un échec de mesure ressemble à
+      // un classement.
+      const classe = classeIdentite(r.identite, r.domaines);
+      etat = classe?.etat ?? "parseur_perime";
+      motif =
+        classe?.motif ??
+        (r.identite?.erreur
+          ? `le site a change de page (identite non mesurable depuis Node : ${r.identite.erreur})`
+          : "le site a change de page");
     } else if (v === "SOURCE_DEAD") {
       etat = "hors_service";
       motif =

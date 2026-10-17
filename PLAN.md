@@ -3667,3 +3667,66 @@ finale) est déjà en `AGENTS.md §14`, qui porte maintenant les deux déclenche
 **Reste à faire.** `manga-scantrad.io` (Cloudflare → dépend du transport), puis
 apprendre à `scripts/sonde-sources.mjs` le verdict « domaine mort / parké ».
 
+### Journal 2026-10-17 — la sonde dit *pourquoi* un `PARSER_OUTDATED` l'est
+
+**Contexte.** Le « Reste à faire » de l'entrée précédente. Un `PARSER_OUTDATED`
+dit le **fait** (« la page n'a pas répondu au parseur ») et pas la **cause** — et
+les deux causes opposées se ressemblent : un domaine racheté répond `200` avec
+une page de parking, un site vivant a simplement redessiné ses pages. Lire le
+verdict comme « réparable » avait donc envoyé écrire un parseur pour un cadavre.
+
+**Le tri des 10 `PARSER_OUTDATED`, mesuré** (`curl` le 16, `fetch` Node le 17) :
+
+| source | hôte final | titre | octets | ce que c'est |
+|---|---|---|---|---|
+| ANTEIKUSCAN | `clladss.com` | — | 9 043 | détourné |
+| ASTRAMES | `…squitoiages.com` | — | 199 | détourné |
+| FRSCAN | `ww80.fr-scan.com` | `fr-scan.com` | 39 688 | parking |
+| HENTAISCANTRADVF | (hôte de la source) | `scantrad-vf.cc` | 39 310 | parking |
+| KAIJUNO8 | `asiafilm.org` | — | 6 742 | détourné |
+| MANGASORIGINESUNO | `clladss.com` | — | 69 061 | détourné |
+| SCANTRADVF | `clladss.com` | — | 9 066 | détourné |
+| SCANVFORG | `scanvf.org` | `Loading...` | 477 | interstitiel |
+| **NINEMANGA_FR** | `fr.niadd.com` | `Répertoire …` | 325 619 | **site vivant** |
+| **SCANTRAD** | `hentai-scantrad.org` | `Manga Archive …` | 170 646 | **site vivant** |
+
+**Ce qui a été fait.** `scripts/sonde-sources.mjs` : sur `PARSER_OUTDATED`, la
+sonde relit l'`urlFinale` que le moteur a servie et en retient l'hôte, le titre et
+la taille (`mesurerIdentite`) ; une règle **pure**, documentée avec ses seuils
+(`classeIdentite`), choisit l'état — redirection hors du domaine déclaré, titre
+égal au domaine nu, ou page de moins d'1 ko → `hors_service` ; site vivant →
+`parseur_perime` avec un motif qui dit « recuperable ». Et `--sources` garde
+désormais le **domaine déclaré** de chaque source (il rendait `domaines: []`,
+donc la règle ne pouvait pas mordre là où elle sert).
+
+**Preuves.**
+- `node scripts/sonde-sources.mjs --sources ANTEIKUSCAN,…,SCANVFORG --classer` →
+  **7 `hors_service`** motivés, **2 `parseur_perime` « site vivant … donc la
+  source est recuperable »** (NINEMANGA_FR et SCANTRAD, les deux récupérables du
+  tri) et **1 non mesuré, dit comme tel** (HENTAISCANTRADVF).
+- Régression : `--sources custom:hentai-scantrad` → `OK*`, inchangé ; `--depuis`
+  et `--classer` inchangés ; `node --check` vert.
+
+**Deux faits mesurés au passage, chacun changeant une décision.**
+1. Le réseau de parking **tourne** : ASTRAMES rendait `clladss.com` le 16 et
+   `…squitoiages.com` le 17, MANGASORIGINESUNO `filter.explorads.com` puis
+   `clladss.com`. D'où la règle, qui compare au **domaine déclaré** et non à une
+   liste de parkings connus : une telle liste serait périmée le lendemain.
+2. Node reçoit `ECONNRESET` **avant** la poignée de main TLS sur
+   `hentai.scantrad-vf.cc` pendant que `curl.exe` lit la même page (39 312
+   octets) : c'est l'empreinte TLS de la pile Node qui est refusée, pas un site
+   éteint. La mesure d'identité est donc **best-effort**, et son échec est écrit
+   dans le motif au lieu d'être muet. Leçon ajoutée à `AGENTS.md §14`, qui portait
+   déjà le DNS-over-HTTPS.
+
+**`manga-scantrad.io`, mesuré.** `403`, `Cf-Mitigated: challenge`,
+`Server: cloudflare`, `Turnstile` sur `/` et `/manga/` : l'étiquette
+« Cloudflare » du plan n'était qu'une note humaine (`docs/mesures/notes.md`) —
+elle est maintenant fondée. Cette source relève du transport, qui est gelé, et
+non du parseur.
+
+**Ce qui reste.** Un balayage FR complet remplacerait `contract/sources-etat.json`
+et écraserait les motifs rédigés à la main : la mise à jour se fera à la main sur
+les entrées concernées, pas par `--classer`. Et le pin des parseurs
+(`b3c0000` → `master`) reste à décider.
+

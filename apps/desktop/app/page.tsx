@@ -18,6 +18,7 @@ import { memeSignet } from '../lib/signet-cle';
 import { supprimerPuisRafraichirCatalogue } from '../lib/source-perso-suppression';
 import { chapitresSansDoublons } from '../lib/chapitres-doublons';
 import { attenteDepasseLeSeuil } from '../lib/chargement-long';
+import { cartesAFaire, entreesFraiches, type EntreeRecent } from '../lib/cartes-recentes';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   isPermissionGranted,
@@ -813,9 +814,18 @@ function depuis(t: ReturnType<typeof useI18n>['t'], ms: number): string {
 }
 
 /* Tâche 0.16 : derniers chapitres dans la carte du catalogue.
-   Coût assumé : UNE requête `chapters` par carte affichée. Le cache local
+   Coût assumé : UNE requête `chapters` par carte **visible**. Le cache local
    évite de répéter ces requêtes à chaque visite (30 min), et la concurrence
-   est bornée pour ne pas marteler la source. */
+   est bornée pour ne pas marteler la source.
+
+   **Bornée aux cartes visibles le 2026-10-17, sur mesure.** La marche couvrait
+   tout le catalogue chargé (223 cartes pour `custom:rimuscan`) à 4 requêtes
+   concurrentes, alors que le moteur n'a que 4 travailleurs : les quatre
+   restaient occupés en permanence et toute requête demandée par l'utilisateur
+   attendait derrière. Mesuré : 423 appels `chapters` en 13 min sans fin, et
+   25 couvertures lancées à la même seconde passant de 0,5 s à 34,3 s pour la
+   25ᵉ alors que le travail réel par image vaut ~1,3 s. La décision de qui
+   interroger vit dans `lib/cartes-recentes.ts`, où elle est testée. */
 const RECENT_KEY = 'tatami.recent';
 const RECENT_TTL = 30 * 60 * 1000;
 const RECENT_CONCURRENCY = 4;
@@ -888,8 +898,6 @@ async function attendreTourAutomatique(source: string): Promise<void> {
  */
 const MAX_ENTREES_RECENT = 500;
 
-type RecentEntry = { labels: string[]; total: number; at: number };
-
 /** Cache des « derniers chapitres » des cartes, avec purge des entrées mortes.
  *
  *  Le TTL existait **à la lecture** depuis le début, mais rien ne purgeait à
@@ -902,10 +910,10 @@ type RecentEntry = { labels: string[]; total: number; at: number };
  *  été prématuré — un cache n'a pas à être purgé pour être lu, et cela coûterait
  *  un `localStorage.setItem` par simple affichage.
  */
-function loadRecentCache(): Record<string, RecentEntry> {
+function loadRecentCache(): Record<string, EntreeRecent> {
   try {
     const raw = window.localStorage.getItem(RECENT_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, RecentEntry>) : {};
+    return raw ? (JSON.parse(raw) as Record<string, EntreeRecent>) : {};
   } catch {
     return {};
   }
@@ -918,9 +926,9 @@ function loadRecentCache(): Record<string, RecentEntry> {
  *  500 entrées ≈ 64 Ko, très en dessous du quota de ~5 Mo — mais un cache non
  *  borné finit toujours par le toucher, sur une machine qui browse beaucoup.
  */
-function purgerCacheRecent(cache: Record<string, RecentEntry>): Record<string, RecentEntry> {
+function purgerCacheRecent(cache: Record<string, EntreeRecent>): Record<string, EntreeRecent> {
   const maintenant = Date.now();
-  const vivants: [string, RecentEntry][] = [];
+  const vivants: [string, EntreeRecent][] = [];
   for (const [cle, entree] of Object.entries(cache)) {
     if (maintenant - (entree.at ?? 0) <= RECENT_TTL) vivants.push([cle, entree]);
   }
@@ -929,12 +937,41 @@ function purgerCacheRecent(cache: Record<string, RecentEntry>): Record<string, R
   return Object.fromEntries(vivants.slice(0, MAX_ENTREES_RECENT));
 }
 
-function saveRecentCache(cache: Record<string, RecentEntry>) {
+function saveRecentCache(cache: Record<string, EntreeRecent>) {
   try {
     window.localStorage.setItem(RECENT_KEY, JSON.stringify(purgerCacheRecent(cache)));
   } catch {
     /* quota atteint : le cache est un confort, pas une donnée */
   }
+}
+
+/** Clés des cartes du catalogue **dans la fenêtre de lecture**.
+ *
+ *  C'est la seule source des requêtes « derniers chapitres » : une carte hors
+ *  écran ne coûte rien tant que personne ne la regarde. Le prédicat est écrit
+ *  **une seule fois** — la marche et la surveillance du défilement s'en servent
+ *  toutes les deux, et deux copies finiraient par diverger, ce qui déplacerait
+ *  silencieusement la borne.
+ *
+ *  L'appariement se fait par la clé exposée en `data-manga-key`, jamais par
+ *  l'index. Mesuré le 2026-10-06 : la première version appariait le nᵉ bouton du
+ *  DOM au nᵉ élément de la file, ce qui est faux — la file est filtrée (on saute
+ *  les entrées déjà en cache) et la grille est rendue dans l'ordre de
+ *  `latestTrie`, qui est trié. Les deux index divergeaient, donc le tri ne
+ *  triait rien.
+ */
+function clesVisibles(): string[] {
+  const cles: string[] = [];
+  document.querySelectorAll<HTMLElement>('.manga-grid .manga[data-manga-key]').forEach((el) => {
+    const r = el.getBoundingClientRect();
+    // Une fenêtre de marge : ce qui est juste sous le bord remplit déjà la vue,
+    // sinon un petit défilement laisserait des cartes vides.
+    if (r.bottom > -window.innerHeight && r.top < window.innerHeight * 2) {
+      const cle = el.getAttribute('data-manga-key');
+      if (cle) cles.push(cle);
+    }
+  });
+  return cles;
 }
 
 /** File de téléchargement persistée : ce qui reste à faire si l'app s'arrête. */
@@ -1467,6 +1504,14 @@ export default function Home() {
   const [recentBusy, setRecentBusy] = useState(0);
   const [showRecent, setShowRecent] = useState(true);
   const recentInFlight = useRef<Set<string>>(new Set());
+  /** Réveil de la marche : incrémenté quand la **fenêtre de lecture** change.
+   *
+   *  La marche ne demande plus que les cartes visibles (voir
+   *  `lib/cartes-recentes.ts`), donc une carte qui entre dans la vue après coup
+   *  resterait sans ligne sans ce signal. `signatureFenetre` garde l'ensemble vu
+   *  la dernière fois, pour ne pas relancer au moindre évènement de défilement. */
+  const [recentTick, setRecentTick] = useState(0);
+  const signatureFenetre = useRef<string | null>(null);
   const [queueRunning, setQueueRunning] = useState(false);
   const cancelQueue = useRef(false);
 
@@ -2835,71 +2880,95 @@ function nomSource(s: Source): string {
     return () => clearInterval(id);
   }, [grilleEnAttente, chargementT0]);
 
-  // Charge en arrière-plan les derniers chapitres des cartes affichées.
+  // Réveille la marche des « derniers chapitres » quand la **fenêtre de lecture**
+  // change. Sans ce signal, une carte qui entre dans la vue après la marche
+  // resterait sans ligne : c'est le prix de l'avoir bornée (2026-10-17).
+  //
+  // La relance se décide sur la **signature de l'ensemble visible**, pas sur
+  // chaque évènement : un défilement émet des dizaines de `scroll` par seconde,
+  // et un `setState` par évènement ferait rendre cet écran de ~4 000 lignes à
+  // chaque image. Un rendu n'a donc lieu que quand des cartes entrent ou sortent
+  // de la fenêtre. Le tour d'horloge (1 s) est ce qui permet à ce **seul**
+  // mécanisme de couvrir aussi ce qui ne défile pas — un tri, un filtre, une
+  // page ajoutée en bas — sans dépendre de la liste des états qui les causent,
+  // liste qu'il faudrait tenir à jour à chaque ajout d'écran.
+  useEffect(() => {
+    if (!showRecent || latest.length === 0) return;
+    const id = setInterval(() => {
+      const signature = clesVisibles().sort().join('|');
+      const ancienne = signatureFenetre.current;
+      signatureFenetre.current = signature;
+      // Première mesure : la marche déclenchée par `latest` lit déjà la fenêtre
+      // au moment où elle démarre, il n'y a donc rien à réveiller.
+      if (ancienne === null || ancienne === signature) return;
+      setRecentTick((n) => n + 1);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [showRecent, latest]);
+
+  // Charge en arrière-plan les derniers chapitres des cartes **visibles**.
   // `recentInFlight` empêche les doublons quand l'effet se redéclenche avant
   // la fin des requêtes ; le cache local évite de refaire le travail au retour.
   useEffect(() => {
     if (!showRecent || latest.length === 0) return;
     const cache = loadRecentCache();
-    const now = Date.now();
+    const maintenant = Date.now();
     const sourceName = selected?.name;
-    const fresh: Record<string, string[]> = {};
-    const freshTotal: Record<string, number> = {};
-    const todo = latest
-      .map((m) => ({ m, key: mangaKey(m) }))
-      .filter(({ key }) => {
-        const hit = cache[key];
-        // Cache valide : on l'affiche sans requête. Sans ce report dans l'état,
-        // une carte servie par le cache resterait vide (plus aucune requête à
-        // faire pour la remplir) — c'est le bug mesuré au 3e run.
-        if (hit && now - hit.at <= RECENT_TTL) {
-          fresh[key] = hit.labels;
-          freshTotal[key] = hit.total;
-          return false;
-        }
-        if (recentInFlight.current.has(key)) return false;
-        return true;
-      });
-    if (Object.keys(fresh).length > 0) {
-      setCardRecent((prev) => ({ ...prev, ...fresh }));
-      setCardTotal((prev) => ({ ...prev, ...freshTotal }));
-    }
-    if (todo.length === 0) return;
-
-    // **Visible d'abord.** Mesuré le 2026-10-06 : le catalogue rend 20 cartes
-    // et il n'y en a qu'une poignée dans la fenêtre. Avec un intervalle de
-    // politesse, interroger les 20 dans l'ordre du tableau remplissait l'écran
-    // **entier en ~17 s** — dont une bonne moitié sur des cartes sous la ligne
-    // de flottaison, que personne ne regarde. On interroge donc d'abord ce qui
-    // est à l'écran ; le reste passe ensuite, à débit constant.
+    const cartes = latest.map((m) => ({ m, key: mangaKey(m) }));
+    // Cache valide : on l'affiche sans requête. Sans ce report dans l'état, une
+    // carte servie par le cache resterait vide (plus aucune requête à faire pour
+    // la remplir) — c'est le défaut mesuré le 2026-10-06.
     //
-    // L'appariement se fait par la **clé de la carte**, exposede en
-    // `data-manga-key`, et non par l'index. Mesuré le 2026-10-06 : la première
-    // version appariait le nᵉ bouton du DOM au nᵉ élément de la file, ce qui est
-    // faux — la file est filtrée (on saute les entrées déjà en cache) et la
-    // grille est rendue dans l'ordre de `latestTrie`, qui est trié. Les deux
-    // index divergeaient, donc le tri « visible d'abord » ne triait rien.
-    const visibles = new Set<string>();
-    document.querySelectorAll<HTMLElement>('.manga-grid .manga[data-manga-key]').forEach((el) => {
-      const r = el.getBoundingClientRect();
-      // Une fenêtre de marge : ce qui est juste sous le bord remplit déjà la
-      // vue, sinon un petit défilement laisserait des cartes vides.
-      if (r.bottom > -window.innerHeight && r.top < window.innerHeight * 2) {
-        const cle = el.getAttribute('data-manga-key');
-        if (cle) visibles.add(cle);
+    // Le report passe par un **microtour**, pas par un appel direct : la règle
+    // `react-hooks/set-state-in-effect` (plugin `react-hooks` v7, analyse du
+    // compilateur React) refuse un `setState` synchrone dans le corps d'un effet.
+    //
+    // Mesuré le 2026-10-17 : la version d'avant — la même écriture, mais calculée
+    // dans le `.filter()` qui construisait la file — passait `pnpm lint` sans
+    // erreur ; cette réécriture, qui calcule la même liste par une fonction de
+    // `lib/`, a fait sortir **1 erreur** sur cette ligne (4 avertissements → 1
+    // erreur + 4 avertissements, puis 0 erreur après ce changement). La mécanique
+    // exacte de la règle n'a **pas** été établie (elle vit dans `getSetStateCall`
+    // du plugin) : seul le fait est mesuré, donc il ne faut pas en déduire que la
+    // forme d'avant était juste.
+    const fraiches = entreesFraiches(cartes, cache, maintenant, RECENT_TTL);
+    const clesFraiches = Object.keys(fraiches);
+    if (clesFraiches.length > 0) {
+      const labels: Record<string, string[]> = {};
+      const totaux: Record<string, number> = {};
+      for (const cle of clesFraiches) {
+        labels[cle] = fraiches[cle].labels;
+        totaux[cle] = fraiches[cle].total;
       }
-    });
-    const ordre = [...todo].sort((a, b) => Number(visibles.has(b.key)) - Number(visibles.has(a.key)));
+      void Promise.resolve().then(() => {
+        setCardRecent((prev) => ({ ...prev, ...labels }));
+        setCardTotal((prev) => ({ ...prev, ...totaux }));
+      });
+    }
+    // **La fenêtre de lecture est la borne.** C'est elle qui empêche la marche
+    // d'occuper les 4 travailleurs du moteur en permanence (mesuré le
+    // 2026-10-17 : 423 appels `chapters` en 13 min, pour tout le catalogue).
+    const fenetre = new Set(clesVisibles());
+    const todo = cartesAFaire(cartes, fenetre, cache, recentInFlight.current, maintenant, RECENT_TTL);
+    if (todo.length === 0) return;
+    // **Réserver la file entière, pas chaque départ.** `cartesAFaire` écarte ce
+    // qui est déjà en vol, mais la file s'égraine sur plusieurs secondes (la
+    // politesse par source impose un écart) : une seconde marche qui démarre
+    // entre-temps voit les cartes non encore parties comme « libres » et les
+    // redemande. Mesuré le 2026-10-17 : **2 appels par série** sur les 28 cartes
+    // visibles (58 appels pour 28 séries, 26 séries à 2 appels). Réserver au
+    // démarrage rend la file visible pour la marche suivante ; le `finally`
+    // libère chaque clé, donc un échec reste réessayable.
+    for (const { key } of todo) recentInFlight.current.add(key);
 
     let cursor = 0;
     const run = async () => {
-      while (cursor < ordre.length) {
-        const { m, key } = ordre[cursor++];
+      while (cursor < todo.length) {
+        const { m, key } = todo[cursor++];
         // Porte de politesse **partagée par source** (niveau module) : voir
         // `attendreTourAutomatique`. C'est du trafic de fond — personne n'a
         // demandé ces requêtes — donc il a le droit d'attendre son tour.
         await attendreTourAutomatique(m.source);
-        recentInFlight.current.add(key);
         setRecentBusy((n) => n + 1);
         try {
           const r = await invoke<{ chapters: Chapter[] }>('chapters', {
@@ -2944,7 +3013,7 @@ function nomSource(s: Source): string {
       }
     };
     void Promise.all(
-      Array.from({ length: Math.min(RECENT_CONCURRENCY, ordre.length) }, () => run()),
+      Array.from({ length: Math.min(RECENT_CONCURRENCY, todo.length) }, () => run()),
     );
     // `t` est volontairement ABSENT des dépendances : c'est la seule forme
     // correcte ici. Mesuré le 2026-10-05 : `useI18n()` rend `t` sous forme de
@@ -2960,8 +3029,12 @@ function nomSource(s: Source): string {
     // quand la langue change, et `t` n'est utilisé ici que pour `depuis(t, …)`.
     // La porte `pnpm hooks:check` refuse le retour de `t` dans un tableau de
     // dépendances d'effet.
+    //
+    // `recentTick` est le réveil de la borne : il est incrémenté par la
+    // surveillance de la fenêtre (effet juste au-dessus), et c'est ce qui
+    // remplit une carte qui entre dans la vue après la marche.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latest, showRecent, selected?.name, langue]);
+  }, [latest, showRecent, selected?.name, langue, recentTick]);
 
   async function loadChapters(m: Manga) {
     setOpenManga(m);
@@ -6286,11 +6359,13 @@ if (reader) {
                     onChange={(e) => setShowRecent(e.target.checked)}
                   />
                   <span>{t('source.chapitres.recents')}</span>
-                  <span className="muted">
-                    {recentBusy > 0
-                      ? t('recent.en.cours', { n: recentBusy })
-                      : `${Object.keys(cardRecent).length}/${latest.length}`}
-                  </span>
+                  {/* Le compteur « n/taille du catalogue » a disparu avec la
+                      borne du 2026-10-17 : la marche ne vise plus toutes les
+                      cartes, donc ce rapport annonçait un progrès qui n'arrive
+                      jamais. Reste l'état utile : combien de requêtes en vol. */}
+                  {recentBusy > 0 && (
+                    <span className="muted">{t('recent.en.cours', { n: recentBusy })}</span>
+                  )}
                 </label>
                 <button className="btn" onClick={() => setSelectMode(true)} disabled={latest.length === 0}>
                   {t('libelle.selectionner')}

@@ -3903,3 +3903,70 @@ un **outil de tri**, pas un oracle : ces entrées gardent leur diagnostic.
 source scriptée est **redondante** et demande soit son retrait, soit une mesure
 qui la justifie encore.
 
+### Journal 2026-10-17 — les « derniers chapitres » ne se calculent plus que sur les cartes visibles
+
+**Le défaut, mesuré.** La marche de fond demandait sa ligne à **tout** le
+catalogue chargé. Sur `custom:rimuscan` (232 cartes rendues d'un coup) :
+**423 appels `chapters` en 13 min**, 223 séries distinctes, sans fin — et les
+25 couvertures lancées à la même seconde passaient de 0,5 s (la 1ʳᵉ) à 15,3 s
+puis **34,3 s** pour la 25ᵉ, quand le travail réel par image vaut ~1,3 s. Le
+moteur n'a que **`MAX_WORKERS = 4`** travailleurs : la marche les occupait en
+permanence, donc une requête demandée par l'utilisateur (ouvrir une série)
+attendait derrière du travail que personne n'avait demandé.
+
+**Le remède est une borne, pas un débit.** La marche — et la surveillance du
+défilement — ne considèrent plus que les cartes **dans la fenêtre de lecture**.
+La décision vit dans `lib/cartes-recentes.ts` (`cartesAFaire`, `entreesFraiches`),
+sans DOM ni réseau, donc testable : **7 tests**. Le prédicat de fenêtre est écrit
+**une seule fois** (`clesVisibles()` dans `page.tsx`), partagé par la marche et
+par le réveil — deux copies finiraient par diverger, ce qui déplacerait la borne
+sans bruit.
+
+**Avant/après sur le même écran** (`custom:rimuscan`, 232 cartes, même instance,
+`tatami.recent` vidé avant chaque relevé, code basculé par
+`git stash push -- app/page.tsx` puis `pop` — empreinte SHA-256 comparée à une
+copie d'octets) :
+
+| mesure | avant (`1f2fe89`) | après |
+|---|---|---|
+| requêtes `chapters` à l'ouverture d'un catalogue de 232 cartes | **233** (232 séries) | **28** (28 séries) |
+| durée de la rafale | **111,8 s** | ~20 s |
+| après la rafale | la file continue | **silence** (102 s à 254 s selon la fenêtre de mesure) |
+
+**Ce qui remplace « le reste de la liste » : un réveil.** La fenêtre est
+surveillée par un tour d'horloge de 1 s qui compare la **signature de l'ensemble
+visible** — et non chaque évènement de défilement, qui en émet des dizaines par
+seconde et ferait rendre cet écran de ~4 000 lignes à chaque image. Quand des
+cartes entrent ou sortent, `recentTick` relance la marche. Mesuré : défilement de
+2 400 px → **43 appels**, **1 par série**, puis silence 102 s ; 47 des 49 cartes
+visibles portaient leur ligne après la rafale.
+
+**Le doublon, trouvé par la mesure et non par la lecture.** La première version
+bornée demandait **2 fois** chaque carte (58 appels pour 28 séries, 26 séries à
+2 appels) : `cartesAFaire` écarte ce qui est **déjà en vol**, mais la file
+s'égrène sur plusieurs secondes (la politesse par source impose un écart), donc
+une seconde marche démarrée entre-temps voyait les cartes non encore parties
+comme « libres » et les redemandait. Réserve de la file **entière** au démarrage
+(`for (const { key } of todo) recentInFlight.current.add(key)`), libérée par le
+`finally` de chaque requête : mesuré ensuite **1 appel par série** (28/28, 43/43).
+`attendreTourAutomatique` ne peut pas lever (elle n'appelle que `Date.now`,
+`Map.get/set` et `setTimeout`), donc la réservation ne peut pas fuir.
+
+**Deux détails assumés.**
+- Le compteur `n/taille-du-catalogue` a été **retiré** : la marche ne visant plus
+  toutes les cartes, ce rapport annonçait un progrès qui n'arrive jamais. Reste
+  `recent.en.cours` quand des requêtes sont en vol.
+- `react-hooks/set-state-in-effect` est apparue avec la réécriture (4
+  avertissements → 1 erreur + 4). Elle est contournée par un **microtour**
+  (`void Promise.resolve().then(…)`) ; la mécanique exacte de la règle n'a **pas**
+  été établie, seul le fait est mesuré (HEAD 0 erreur, réécriture 1 erreur,
+  microtour 0 erreur). C'est écrit dans le commentaire, pour que personne ne
+  déduise de ce contournement que la forme d'avant était juste.
+
+**Portes.** Interface, dossier `apps\desktop` : `typecheck` 0 ; `lint` **0 erreur**
++ les 4 avertissements `exhaustive-deps` connus ; `test` **147 passés / 0** ; les
+douze `*:check` vertes (`i18n`, `hooks`, `chemins`, `pages`, `perso`, `ipc`,
+`moteur`, `libelles`, `francais`, `styles`, `lecteur`, `arrondi`) ; `build` vert.
+Changement **front-only** : ni le cœur ni le moteur ne sont concernés, donc
+`cargo` et `gradle` ne sont pas requis par cette intention.
+

@@ -152,10 +152,13 @@ Cinquième porte de l'interface : `pnpm chemins:check`
 Voir la leçon « la forme longue affichée telle quelle » en §14.
 
 Sixième porte de l'interface : `pnpm pages:check`
-(`scripts/check-pages-indisponibles.mjs`) refuse que le `<img>` du lecteur
-n'ait pas de `onError`, donc qu'une page que la source ne sert pas
-s'affiche en image cassée **sans message**. Voir la leçon « un 404 sans corps
-n'est pas une panne » en §14.
+(`scripts/check-pages-indisponibles.mjs`) refuse qu'une image que la source ne
+sert pas s'affiche en image cassée **sans message** : le `<img>` du lecteur doit
+porter un `onError` (une page absente), et il ne doit exister **qu'un seul**
+`<img>` de couverture dans `page.tsx` — toutes les vignettes passent par le
+composant `Vignette` qui se replie sur une initiale, avec `onError` et un
+`thumb-empty`. Voir les leçons « un 404 sans corps n'est pas une panne » et
+« une couverture vide se voyait mise en cache » en §14.
 
 Septième porte de l'interface : `pnpm perso:check`
 (`scripts/check-tuile-perso.mjs`) refuse que les sources personnalisées
@@ -2057,3 +2060,54 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   retour au code d'avant se prouve par `git stash push -- <fichier>` suivi d'un
   `pop` et d'une **empreinte SHA-256** comparée à une copie d'octets — pas par la
   mémoire.
+
+- **« La source plante sur certaines couvertures » : quatre fichiers de 0 octet,
+  et c'était le site qui le disait.** Mesuré le 2026-10-17 sur `custom:niadd-fr` :
+  60 couvertures sur 60 **absolues**, un seul hôte, aucune espace parasite — donc
+  ni une forme d'URL ni un blocage. Interrogées une par une, **4 rendent `200
+  image/jpeg` avec `Content-Length: 0`**, `etag: "…-0"`, `Last-Modified: 2020`,
+  `cf-cache-status: HIT`, `Age: 2584691` : **vides à l'origine**, figées ~30 j par
+  Cloudflare, et le `Referer` n'y change rien. Le témoin qui a tranché était dans
+  le HTML du site : 61 de ses 65 `<img>` portent
+  `onerror="this.src='/files/images/def_logo.svg'"` — **le site sait que ses
+  couvertures manquent**, il s'est donné un repli, nous n'en avions pas. Règle :
+  devant « ça plante », lire le `Content-Length` de la ressource avant d'accuser
+  le transport, et regarder ce que **le site** fait de l'échec.
+- **Un `onError` manquant, et le repli existait déjà à côté.** Le moteur refuse un
+  corps vide (`empty cover body`), le cœur répond 404, et **sept** emplacements
+  rendaient `<img src={coverSrc(...)}>` nus alors que le repli (`thumb-empty` +
+  initiale) servait déjà un **jeton absent**. Mesure après correction, dans
+  l'app : 60 cartes, 56 images, **4 replis — exactement les 4 séries mesurées
+  vides hors application** (Lost In Translation, Ventham, The Wolf That Picked
+  Something Up, I Met The Male Lead In Prison), **0 image cassée**. Corollaire :
+  quand un repli existe pour « donnée absente », demander s'il existe pour
+  « donnée reçue puis refusée » — ce sont deux chemins distincts, et le second
+  n'était pas prévu.
+- **Un état de repli retient *quelle* valeur a échoué, jamais un booléen.** Le
+  composant `Vignette` mémorise le **jeton** fautif : un booléen resterait vrai
+  quand la même vignette sert une autre série (fiche suivante, recherche
+  relancée), donc une initiale s'afficherait sur une couverture valable. Même
+  famille que « une valeur vide en cache fige » : une garde doit porter sur la
+  valeur, pas sur le fait qu'un échec a eu lieu.
+- **Un composant écrit dans le corps de la page est un nouveau type à chaque
+  rendu.** `react-hooks/static-components` l'a refusé (`pnpm lint`) : React
+  remonterait le composant, donc son état « cassée » repartirait de zéro et
+  la requête serait refaite à l'infini. `Vignette` vit donc **au niveau du
+  module**, comme `Toaster` et `AppBar`. Corollaire : la règle n'était pas du
+  bruit de linter, c'était le bug.
+- **Le repli n'était pas centré, et seule la capture l'a montré.** Jaugé dans
+  l'app : la boîte vaut `display: block` — `.manga .thumb` (spécificité 0,1,1)
+  écrase le `display: flex` de `.thumb-empty` (0,1,0), donc `align-items` et
+  `justify-content` ne s'appliquaient pas et l'initiale tombait à
+  `ecartGauche = 0`, `ecartHaut = 5`. Une règle `.manga .thumb-empty` (le remède
+  que `.bm-cover .thumb-empty` portait déjà) donne `ecartGauche = 76` sur 169 et
+  `ecartHaut = 106` sur 254, les deux moitiés exactes. **Aucun token nouveau.**
+  Règle générale : une propriété flex est **perdue en silence** par une règle
+  plus spécifique, et ça ne se voit qu'en mesurant `display` — ou en regardant.
+- **Élargir la porte qui couvre déjà le défaut vaut mieux qu'en ajouter une.**
+  `pnpm pages:check` lisait le `<img>` du lecteur et **excluait explicitement les
+  vignettes** : l'exclusion était le trou. Elle exige maintenant **qu'un seul**
+  `<img>` de couverture existe dans `page.tsx` (donc que toute vue passe par le
+  composant), qu'il porte `onError`, et qu'un `thumb-empty` existe. Les deux mors
+  prouvés **rouges** : `onError` retiré → la porte le nomme ; vignette brute
+  rajoutée → « 2 `<img>` de couverture au lieu d'un seul ».

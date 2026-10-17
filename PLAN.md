@@ -3970,3 +3970,66 @@ douze `*:check` vertes (`i18n`, `hooks`, `chemins`, `pages`, `perso`, `ipc`,
 Changement **front-only** : ni le cœur ni le moteur ne sont concernés, donc
 `cargo` et `gradle` ne sont pas requis par cette intention.
 
+### Journal 2026-10-17 — « Niadd FR plante sur certaines covers » : quatre couvertures vides, et rien pour le dire
+
+**Le défaut, mesuré.** `custom:niadd-fr` n'échouait sur aucune forme d'URL : la
+sonde compte **60 couvertures sur 60 absolues**, un seul hôte (`img11.niadd.com`),
+aucune espace parasite, aucun blocage — les 65 `<img>` de la page du site étant
+par ailleurs munis d'un `onerror="this.src='/files/images/def_logo.svg'"`, le site
+sait lui-même que certaines couvertures manquent. Interroger les 60 une par une
+donne **4 fichiers de 0 octet** servis `200 image/jpeg`, `Content-Length: 0`,
+`etag: "…-0"`, `Last-Modified: 2020-04-10`, `cf-cache-status: HIT`, `Age: 2584691`
+— donc **vides à l'origine**, mis en cache ~30 j par Cloudflare ; le `Referer`
+n'y change rien.
+
+**La chaîne, lue dans le code et non devinée.** Le moteur refuse un corps vide
+(`Server.kt:1309`, `IllegalStateException("empty $quoi")`, `quoi = "cover
+body"`), ce qui remonte en `INTERNAL` ; le cœur répond **404** (`pagecache.rs`,
+refus du corps vide) ; le front n'avait **aucun `onError`**, donc la carte
+affichait une image cassée muette. Reproduit dans l'app, fenêtre bornée
+(l. 11103 → 11261) : `WARN supervisor … id=fetchCover-… code=INTERNAL
+msg=IllegalStateException: empty cover body len=129` ×4, `tatami serve error:
+INTERNAL: … empty cover body` ×4.
+
+**Le remède est un repli, pas une correction de source.** Il n'y a rien à
+télécharger : ces fichiers sont vides chez la source et le resteront. Sept
+emplacements rendaient `<img src={coverSrc(...)}>` **sans repli** (grille du
+catalogue, fiche, bibliothèque, historique, signets, favoris de l'accueil,
+recherche) alors que le repli existait déjà pour un **jeton absent**
+(`thumb-empty` + initiale). Composant local `Vignette` (page.tsx) : un `onError`
+affiche la même pastille, et l'état retient **quel jeton** a échoué — un booléen
+resterait collé quand la vignette sert une autre série. Mesure dans l'app après
+rechargement : **60 cartes, 56 images, 4 replis, 0 image cassée**, et les 4 replis
+sont exactement les 4 séries mesurées vides hors application (*Lost In
+Translation*, *Ventham*, *The Wolf That Picked Something Up*, *I Met The Male
+Lead In Prison*), `#error-toast` = 0.
+
+**Un défaut de mise en page découvert par la capture.** Le repli **n'était pas
+centré** dans la grille : jaugé dans l'app, la boîte est `display: block`
+(`.manga .thumb` impose `block`, spécificité 0,1,1 > `.thumb-empty` 0,1,0, donc
+les propriétés flex ne s'appliquaient pas) et l'initiale tombait à
+`ecartGauche = 0`, `ecartHaut = 5` — un glyphe errant plutôt qu'une pastille.
+Règle `.manga .thumb-empty` (même remède que `.bm-cover .thumb-empty`, déjà
+présent) : mesuré ensuite `display: flex`, `ecartGauche = 76` sur 169 et
+`ecartHaut = 106` sur 254, soit les deux moitiés exactes. **Aucun token nouveau**
+ni couleur, ni police, ni rayon touchés : la règle ne fait que répéter le
+centrage que `.thumb-empty` porte déjà.
+
+**Porte élargie plutôt que porte nouvelle.** `pnpm pages:check`
+(`scripts/check-pages-indisponibles.mjs`) est la porte « une image refusée par la
+source doit le dire » : elle lisait le `<img>` du lecteur et **excluait
+explicitement les vignettes**, ce qui était précisément le trou. Elle vérifie
+maintenant aussi qu'il n'y a **qu'un seul** `<img>` de couverture dans le fichier
+(toute vue doit passer par le composant), qu'il porte un `onError` et qu'un
+`thumb-empty` existe. Les deux mors ont été prouvés **rouges** : `onError` retiré
+→ la porte nomme la vignette ; vignette brute rajoutée à un site → la porte
+nomme « 2 `<img>` de couverture au lieu d'un seul ».
+
+**Portes.** Interface, dossier `apps\desktop` : `typecheck` 0 ; `lint` **0
+erreur** + les 4 avertissements connus ; `test` **147 passés / 0** ; les
+`*:check` vertes (`i18n`, `hooks`, `chemins`, `pages`, `perso`, `ipc`, `moteur`) ;
+`build` vert. Changement **front-only** : ni le cœur ni le moteur ne bougent.
+Laissé de côté, faute d'accord humain : mapper `INTERNAL` → `SOURCE_UNAVAILABLE`
+quand le corps est vide, et le lead `FMTEAM`/`HNISCANTRAD`
+(`JSONObject["adult"] is not a string`).
+

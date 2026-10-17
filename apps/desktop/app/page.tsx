@@ -676,6 +676,65 @@ function AppBar({
   );
 }
 
+/** Couverture via le moteur : même protocole, préfixe `cover/`.
+ *
+ *  C'est cette fonction, et non `coverUrl`, qui doit alimenter un `<img src>`.
+ *  Rust répond `undefined` si la série n'a pas de couverture, ce qui laisse la
+ *  vignette de remplacement s'afficher au lieu d'une image cassée. */
+function coverSrc(token?: string | null): string | undefined {
+  return token ? `http://tatami.localhost/cover/${token}` : undefined;
+}
+
+/**
+ * Une vignette de couverture qui **se replie** quand la source ne la sert pas.
+ *
+ * Mesuré le 2026-10-17 sur `custom:niadd-fr` : sur les 60 couvertures de son
+ * catalogue, **4 sont des fichiers vides chez la source** — servis `200
+ * image/jpeg`, `Content-Length: 0`, `etag: "…-0"`, mis en cache 30 jours par
+ * Cloudflare. Le moteur les refuse (`octetsImage`, « empty cover body »), le
+ * cœur répond 404, et sans `onError` la carte affichait une **image cassée**
+ * que rien n'expliquait. Le site fait l'inverse : son `<img>` porte un
+ * `onerror` vers son logo par défaut.
+ *
+ * Un `onError` ne relance rien — le corps est vide, il le restera — il affiche
+ * l'initiale du titre, comme le fait déjà un jeton absent. L'état retient **quel
+ * jeton** a échoué, et non un simple booléen : sinon une vignette réutilisée
+ * pour une autre série (fiche suivante, recherche relancée) garderait
+ * l'initiale alors que sa couverture est valable.
+ *
+ * Déclaré **au niveau du module**, comme `Toaster` et `AppBar` : un composant
+ * écrit dans le corps de la page serait un nouveau type à chaque rendu, donc
+ * React le remonterait et l'état « cassée » repartirait de zéro à l'infini
+ * (`react-hooks/static-components`, refusé par `pnpm lint`).
+ */
+function Vignette({
+  jeton,
+  titre,
+  classe = 'thumb',
+}: {
+  jeton?: string | null;
+  titre: string;
+  classe?: string;
+}) {
+  const [cassee, setCassee] = useState<string | null>(null);
+  if (!jeton || cassee === jeton) {
+    return (
+      <span className={`${classe} thumb-empty`} aria-hidden="true">
+        {(titre.trim()[0] ?? '?').toUpperCase()}
+      </span>
+    );
+  }
+  return (
+    <img
+      className={classe}
+      src={coverSrc(jeton)}
+      alt=""
+      loading="lazy"
+      onError={() => setCassee(jeton)}
+    />
+  );
+}
+
 // MangaDex et quelques Madara renvoient un UUID comme titre de chapitre :
 // on retombe alors sur le numéro, sinon l'interface n'affiche qu'un identifiant.
 const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -3709,15 +3768,6 @@ function pageSrc(token: string, reprise: number) {
     : `http://tatami.localhost/page/${token}`;
 }
 
-/** Couverture via le moteur : même protocole, préfixe `cover/`.
- *
- *  C'est cette fonction, et non `coverUrl`, qui doit alimenter un `<img src>`.
- *  Rust répond `undefined` si la série n'a pas de couverture, ce qui laisse la
- *  vignette de remplacement s'afficher au lieu d'une image cassée. */
-function coverSrc(token?: string | null): string | undefined {
-  return token ? `http://tatami.localhost/cover/${token}` : undefined;
-}
-
 /**
  * Transforme une entrée d'historique en `Manga` exploitable par `loadChapters`.
  *
@@ -5477,17 +5527,11 @@ useEffect(() => {
                     : 100;
                 return (
                   <article className="dl-card" key={item.dir}>
-                    {item.coverToken ? (
-                      <img className="thumb" src={coverSrc(item.coverToken)} alt="" loading="lazy" />
-                    ) : (
-                      // Pas de couverture enregistrée (téléchargements
-                      // antérieurs à la colonne `coverUrl` de meta.json) : une
-                      // pastille d'initiale vaut mieux qu'un rectangle vide, qui
-                      // se lit comme une image cassée.
-                      <span className="thumb thumb-empty" aria-hidden="true">
-                        {(item.title.trim()[0] ?? '?').toUpperCase()}
-                      </span>
-                    )}
+                    {/* Pas de couverture enregistrée (téléchargements
+                        antérieurs à la colonne `coverUrl` de meta.json) : une
+                        pastille d'initiale vaut mieux qu'un rectangle vide, qui
+                        se lit comme une image cassée. */}
+                    <Vignette jeton={item.coverToken} titre={item.title} />
                     <div className="dl-body">
                       <h3 className="dl-title">{item.title}</h3>
                       <span className="muted dl-meta">
@@ -6024,7 +6068,7 @@ if (reader) {
         {(summary || rows.length > 0 || fiche.coverUrl) && (
           <section className="sheet">
             {fiche.coverToken && (
-              <img className="sheet-cover" src={coverSrc(fiche.coverToken)} alt="" loading="lazy" />
+              <Vignette jeton={fiche.coverToken} titre={fiche.title} classe="sheet-cover" />
             )}
             <div className="sheet-body">
               {summary && <p className="sheet-desc">{summary}</p>}
@@ -6526,13 +6570,7 @@ if (reader) {
                     onClick={() => (selectMode ? togglePick(m) : loadChapters(m))}
                   >
                     <span className="cover">
-                      {m.coverToken ? (
-                        <img className="thumb" src={coverSrc(m.coverToken)} alt="" loading="lazy" />
-                      ) : (
-                        <span className="thumb thumb-empty" aria-hidden="true">
-                          {(m.title.trim()[0] ?? '?').toUpperCase()}
-                        </span>
-                      )}
+                      <Vignette jeton={m.coverToken} titre={m.title} />
                       {cardTotal[key] > 0 && (
                         // Une clé, UN seul nombre. Mesuré le 2026-10-09 :
                         // `t('…compte', { n, total })` recevait **le même**
@@ -6772,13 +6810,7 @@ if (reader) {
           <div className="dl-grid">
             {recent.map((h) => (
               <article className="dl-card ouvrable" key={`${h.source}|${h.manga_url}`}>
-                {h.cover_token ? (
-                  <img className="thumb" src={coverSrc(h.cover_token)} alt="" loading="lazy" />
-                ) : (
-                  <span className="thumb thumb-empty" aria-hidden="true">
-                    {(h.title.trim()[0] ?? '?').toUpperCase()}
-                  </span>
-                )}
+                <Vignette jeton={h.cover_token} titre={h.title} />
                 <div className="dl-body">
                   <h3 className="dl-title">{h.title}</h3>
                   <span className="muted dl-meta">
@@ -6850,13 +6882,7 @@ if (reader) {
                   key={`${b.source}|${b.manga_url}|${b.chapter_url}|${b.page_index}`}
                 >
                   <span className="bm-cover">
-                    {b.cover_token ? (
-                      <img className="thumb" src={coverSrc(b.cover_token)} alt="" loading="lazy" />
-                    ) : (
-                      <span className="thumb thumb-empty" aria-hidden="true">
-                        {(b.title.trim()[0] ?? '?').toUpperCase()}
-                      </span>
-                    )}
+                    <Vignette jeton={b.cover_token} titre={b.title} />
                   </span>
                   <span className="bm-text">
                     <b>{b.title}</b>
@@ -6994,13 +7020,7 @@ if (reader) {
                     aria-label={t('accueil.ouvrir.favori', { titre: f.title })}
                   >
                     <span className="cover">
-                      {f.cover_token ? (
-                        <img className="thumb" src={coverSrc(f.cover_token)} alt="" loading="lazy" />
-                      ) : (
-                        <span className="thumb thumb-empty" aria-hidden="true">
-                          {(f.title.trim()[0] ?? '?').toUpperCase()}
-                        </span>
-                      )}
+                      <Vignette jeton={f.cover_token} titre={f.title} />
                       {f.category_id != null && (
                         <span
                           className="cat-dot on-cover"
@@ -7147,18 +7167,7 @@ if (reader) {
                           diverger — cf. la leçon du squelette en §14. */}
                       <button className="manga-open" onClick={() => ouvrirResultat(m)}>
                         <span className="cover">
-                          {m.coverToken ? (
-                            <img
-                              className="thumb"
-                              src={coverSrc(m.coverToken)}
-                              alt=""
-                              loading="lazy"
-                            />
-                          ) : (
-                            <span className="thumb thumb-empty" aria-hidden="true">
-                              {(m.title.trim()[0] ?? '?').toUpperCase()}
-                            </span>
-                          )}
+                          <Vignette jeton={m.coverToken} titre={m.title} />
                         </span>
                         <span className="label">{m.title}</span>
                         {/* Le nom de la source est OBLIGATOIRE ici : un même

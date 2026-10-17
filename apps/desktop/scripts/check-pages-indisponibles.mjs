@@ -11,10 +11,18 @@
 // premiere. **C'est le seul default qui reste de notre cote.** Le 404 n'est pas
 // notre erreur, mais l'absence de message, elle, en est une.
 //
-// Cette porte lit le JSX du lecteur et refuse un `<img>` de page qui n'a ni
-// `onError` ni un traitement d'equivalent. Elle est volontairement textuelle :
-// le projet n'a pas de harness de test unitaire cote front (les portes sont des
-// scripts `.mjs` qui analysent le code, comme `check-hooks.mjs`).
+// Meme famille, mesuree le 2026-10-17 (`custom:niadd-fr`) : **4 couvertures sur
+// 60 sont des fichiers vides chez la source** (`200 image/jpeg`,
+// `Content-Length: 0`, `etag: "…-0"`, mis en cache 30 jours par Cloudflare). Le
+// moteur les refuse, le coeur repond 404, et une vignette sans repli affiche une
+// image cassee. Le site, lui, a un `onerror` vers son logo par defaut.
+//
+// Cette porte lit le JSX et refuse un `<img>` d'image sans `onError` : celui du
+// lecteur (une page), et celui des couvertures (une vignette). Elle est
+// volontairement textuelle : le projet n'a pas de harness de test unitaire cote
+// front (les portes sont des scripts `.mjs` qui analysent le code, comme
+// `check-hooks.mjs`).
+
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,9 +32,9 @@ const page = readFileSync(join(ici, '..', 'app', 'page.tsx'), 'utf8');
 
 const echecs = [];
 
-// On cherche la balise `<img` du lecteur : celle qui porte `data-index`, ce qui
-// la distingue des vignettes (`.thumb`), des couvertures (`.sheet-cover`) et
-// des miniatures de la bibliotheque.
+// On cherche la balise `<img` du lecteur : celle qui porte `data-index`.
+// (Les vignettes de couverture sont traitees plus bas : meme defaut, meme
+// regle.)
 //
 // Une balise de page SANS `data-index` est un défaut a part entiere : elle
 // rend la page invisible a l'observateur de pages du lecteur. On la signale
@@ -64,6 +72,40 @@ for (const b of imgLecteur) {
   }
 }
 
+// Les vignettes de couverture : meme defaut, meme regle.
+//
+// La contrainte n'est pas seulement « onError », c'est **un seul** `<img>` de
+// couverture dans tout le fichier : toutes les vues doivent passer par le
+// composant qui se replie. Une vue qui ecrirait son propre `<img
+// src={coverSrc(...)}>` ne se verrait pas autrement — c'est exactement ce qui
+// est arrive aux sept emplacements corriges le 2026-10-17.
+const imgCouverture = balises.filter((b) => b.includes('coverSrc('));
+if (imgCouverture.length === 0) {
+  echecs.push(
+    'aucun <img> de couverture (coverSrc) trouve dans page.tsx : la porte ne peut ' +
+      'rien verifier (le composant de repli a-t-il ete supprime ?)',
+  );
+} else if (imgCouverture.length > 1) {
+  echecs.push(
+    `${imgCouverture.length} <img> de couverture (coverSrc) au lieu d'un seul : toute ` +
+      'couverture doit passer par le composant de repli (`Vignette`), sinon celle qui ' +
+      "l'oublie s'affiche cassee sans rien dire",
+  );
+}
+for (const b of imgCouverture) {
+  if (!/\bonError\s*=/.test(b)) {
+    echecs.push(
+      'la vignette de couverture n\'a pas de onError : une couverture vide chez la source ' +
+        "s'affiche cassee. Mesure : 4 sur 60 sur custom:niadd-fr, fichiers de 0 octet servis 200.",
+    );
+  }
+}
+if (!/thumb-empty/.test(page)) {
+  echecs.push(
+    'aucun repli `thumb-empty` dans page.tsx : une couverture refusee n\'a pas de remplacement',
+  );
+}
+
 // Le refus doit etre transformation en un etat visible : on cherche un appel
 // qui enregistre l'echec. `useState` + `set` est la forme employee partout
 // dans ce fichier, donc on verifie qu'un etat d'echec existe ET qu'il est
@@ -87,13 +129,17 @@ if (!/indisponible|introuvable/.test(dico)) {
 }
 
 if (echecs.length) {
-  console.error('ECHEC — le lecteur ne dit pas qu\'une page est indisponible :');
+  console.error('ECHEC — une image que la source ne sert pas n\'est pas annoncee :');
   for (const e of echecs) console.error('  - ' + e);
   console.error(
-    '\nRappel de la mesure : un chapitre FR sert 7/8 pages, un autre 0/8, ' +
-    'par le meme code. Sans message, l\'utilisateur lit la seconde comme une panne.',
+    '\nRappel des mesures : un chapitre FR sert 7/8 pages, un autre 0/8, ' +
+    'par le meme code ; et 4 couvertures sur 60 de custom:niadd-fr sont des ' +
+    'fichiers de 0 octet. Sans repli, l\'utilisateur lit la seconde comme une panne.',
   );
   process.exit(1);
 }
 
-console.log(`OK — ${imgLecteur.length} <img> du lecteur gere(nt) l'echec, avec alt et cle i18n.`);
+console.log(
+  `OK — ${imgLecteur.length} <img> du lecteur et ${imgCouverture.length} vignette(s) ` +
+    "de couverture gerent l'echec, avec alt et cle i18n.",
+);

@@ -1144,6 +1144,20 @@ button:disabled {
   background: var(--surface-2);
 }
 
+/* Une vignette vide dans la grille : `.manga .thumb` impose `display: block`
+   (specificite 0,1,1) et annulait donc le centrage de `.thumb-empty` (0,1,0) —
+   l'initiale tombait en haut a gauche, en petit, et se lisait comme un glyphe
+   errant plutot que comme une pastille. Mesure du 2026-10-17 sur
+   `custom:niadd-fr` (4 couvertures sur 60 sont des fichiers de 0 octet) :
+   `display: block`, `ecartGauche = 0`, `ecartHaut = 5`. Meme remede que
+   `.bm-cover .thumb-empty` plus haut. Aucun token nouveau : la couleur, la
+   police et le rayon viennent deja de `.thumb-empty`. */
+.manga .thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .card-count {
   position: absolute;
   right: 0;

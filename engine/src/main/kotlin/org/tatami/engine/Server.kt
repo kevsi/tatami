@@ -517,7 +517,13 @@ const val CUSTOM_PREFIX = "custom:"
  * cache sans invalidation.
  */
 internal fun construireCatalogueNatif(context: EngineContext): List<JSONObject> =
-    MangaParserSource.entries.map { src ->
+    // RIMUSCANS (natif, kotatsu-parsers-redo) est cassé pour ce site : son
+    // parseur ne renvoie qu'une page par chapitre (mesuré le 2026-10-17 :
+    // Martial Peak ch.1 -> pages=1 alors que le site en sert 17). La source
+    // personnalisée `custom:rimuscan` fait le même travail correctement.
+    // On masque donc le natif pour éviter qu'un utilisateur le choisisse et
+    // obtienne des .cbz à une page.
+    MangaParserSource.entries.filter { it.name != "RIMUSCANS" }.map { src ->
         val parser = context.newParserInstance(src)
         val sourceInfo = JSONObject()
             .put("name", src.name)

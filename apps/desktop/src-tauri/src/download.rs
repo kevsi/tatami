@@ -728,6 +728,25 @@ async fn run_download(
         .await?;
     let _ = &details; // le moteur complete le cache manga/chapitres
 
+    // **Peupler le cache des chapitres.** `pages` (source native) exige que
+    // `chapters` ait ete appele pour ce couple (source, chapitre) : sans cela,
+    // il repond « unknown chapter url, call chapters first » et le telechargement
+    // echoue pour toute source native (mesure le 2026-10-17 : RIMUSCANS ch.1).
+    // `details` seul ne peuple pas ce cache. On appelle donc `chapters` ici ;
+    // le resultat est jete (on a deja `details` pour l'URL publique), mais le
+    // cache est alimente pour `pages` juste apres.
+    let _ = sup
+        .request_with_retry(
+            "chapters",
+            serde_json::json!({
+                "source": source,
+                "mangaUrl": manga_url,
+                "mangaTitle": manga_title,
+            }),
+            FETCH_TIMEOUT,
+        )
+        .await;
+
     // URL à ouvrir si une vérification est nécessaire : la page du webtoon sur
     // le site, que l'utilisateur voit et où il confirme lui-même (âge, captcha).
     // Mesuré : HENTAIORIGINES répond 200 OK avec sa page de vérification d'âge,
@@ -769,6 +788,13 @@ async fn run_download(
     let total = page_list.len();
     if total == 0 {
         return Err("chapitre sans page".to_string());
+    }
+    // Garde : un chapitre a une seule page est suspect. Mesure le 2026-10-17 :
+    // la source native RIMUSCANS renvoyait 1 page (en realite 17 sur le site) et
+    // le telechargement ecrivait un .cbz a une page sans rien signaler. On refuse
+    // d'ecrire un fichier probablement incomplet et on explique la piste.
+    if total <= 1 {
+        return Err(format!("ce chapitre ne contient qu'une page ({}) - la source a probablement renvoye un resultat incomplet. Essayez la source personnalisee (custom:*) si elle existe.", total));
     }
 
     // Mesuré : sur une source à vérification d'âge, le moteur renvoie des pages

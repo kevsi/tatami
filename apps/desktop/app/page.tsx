@@ -12,7 +12,7 @@ import {
   type TentativesChallenge,
 } from '../lib/challenge-garde';
 import { describeError, estRejeuRefuse } from '../lib/erreurs-source';
-import { admettreLaCible, admettreUne } from '../lib/quota-pages';
+import { admettreLaCible, admettreUne, admettreCibleEtVoisins } from '../lib/quota-pages';
 import { lireListeSources } from '../lib/prefs-tolérantes';
 import { memeSignet } from '../lib/signet-cle';
 import { supprimerPuisRafraichirCatalogue } from '../lib/source-perso-suppression';
@@ -4263,7 +4263,7 @@ function scrollToPage(i: number) {
     // donc pas de `onLoad`, donc plus aucune admission. La bande restait
     // vierge, et seule une remontée manuelle à la page 3 débloquait la
     // lecture. Même circularity que le changement de chapitre corrigé plus tôt.
-    setAdmis((prec) => admettreLaCible(prec, cible));
+    setAdmis((prec) => admettreCibleEtVoisins(prec, cible, pagesBande.length));
     // Second passage, **exact**. `offsets` est bâti sur des hauteurs encore
     // partielles (les pages après la fenêtre ne sont pas mesurées), donc
     // l'atterrissage ci-dessus peut être décalé d'une page — mesuré le
@@ -4284,12 +4284,12 @@ function scrollToPage(i: number) {
     setReader((r) => (r ? { ...r, index: cible } : r));
     // Même raison qu'au-dessus : hors virtualisation, la page visée doit être
     // admise pour que son image arrive.
-    setAdmis((prec) => admettreLaCible(prec, cible));
+    setAdmis((prec) => admettreCibleEtVoisins(prec, cible, pagesBande.length));
   } else {
     // Fallback sans bande rendue : positionne l'état, la bande se replace
     // à son effet suivant via `bandeVirtualisable`.
     setReader((r) => (r ? { ...r, index: cible } : r));
-    setAdmis((prec) => admettreLaCible(prec, cible));
+    setAdmis((prec) => admettreCibleEtVoisins(prec, cible, pagesBande.length));
   }
 }
 

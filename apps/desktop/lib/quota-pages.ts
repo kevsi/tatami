@@ -44,3 +44,30 @@ export function admettreLaCible(prec: readonly number[], cible: number): number[
   if (prec.includes(cible)) return prec.slice();
   return [...prec, cible];
 }
+
+
+/** Admet la page demandee **et une fenetre de voisins**, pour qu'un saut
+ *  lointain n'aboutisse pas a une bande vierge.
+ *
+ *  Le defaut mesure (2026-10-17) : un saut vers la fin n'admettait que la
+ *  page cible. La fenetre de montage se deplacait sur elle, mais ses voisins
+ *  (les pages visibles autour) n'avaient pas de src : pas de chargement,
+ *  donc pas de onLoad, donc plus aucune admission - la bande restait vide
+ *  jusqu'a ce que l'utilisateur remonte manuellement.
+ *
+ *  En admettant la cible et ses voisins immediats, toutes les pages visibles
+ *  recoivent leur src d'emblée et se chargent en parallele.
+ */
+export function admettreCibleEtVoisins(
+  prec: readonly number[],
+  cible: number,
+  nbPages: number,
+  rayon: number = 2,
+): number[] {
+  if (!Number.isInteger(cible) || cible < 0 || nbPages <= 0) return prec.slice();
+  const resultat = new Set(prec);
+  const debut = Math.max(0, cible - rayon);
+  const fin = Math.min(nbPages - 1, cible + rayon);
+  for (let i = debut; i <= fin; i += 1) resultat.add(i);
+  return [...resultat];
+}

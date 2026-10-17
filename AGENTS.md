@@ -1993,6 +1993,24 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   (l'arbre change si un seul fichier dedans change), c'est-à-dire en une requête
   par ref, sans lire un seul fichier.
 
+- **Comparer deux relevés de profondeur différente ne compare rien.** Mesuré le
+  2026-10-17 : le diff entre le balayage FR du 16 et celui du 17 annonçait
+  **dix-neuf** « changements de verdict » ; **douze** ne sont que l'ajout de
+  `--deep` (`ACTIF_LIGHT` → `ACTIF`), et les entrées correspondantes portaient
+  **déjà** `actif` / `etape: image` depuis un balayage profond antérieur. Règle :
+  avant de lire un delta, écrire **ce qui a changé dans la mesure** — ici la
+  profondeur du relevé, pas la dépendance montée.
+- **L'attribution d'un effet de montée de dépendance se lit dans le fichier
+  amont, jamais dans le symptôme.** Mesuré le même jour : deux sources FR se
+  réveillent avec le **même** symptôme résorbé (« 200 OK sans resultat » →
+  parcours complet jusqu'à l'image). Une seule est due à la montée — `RimuScans.kt`
+  a été réécrit **dans** l'intervalle (`851835b0`, dont le parent **est** l'ancien
+  pin) ; `SushiScan.kt` n'a plus bougé depuis 2026-07-12, donc c'est le site.
+  Une requête `commits?path=…&sha=<nouveau pin>` tranche en une mesure, là où
+  « ça a changé au même moment » ne prouve rien. Et la sortie est utile dans les
+  deux sens : elle **valide** la montée sur un cas et **refuse** de lui en
+  attribuer un autre.
+
 - **Un drapeau inconnu était ignoré en silence, et le filtre disparaissait avec
   lui.** Mesuré le 2026-10-17 : `sonde-sources.mjs --langue fr --deep` (au lieu
   de `--lang fr`) a sondé **1374 sources** au lieu de 97 — mon propre lancement,

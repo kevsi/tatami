@@ -3826,3 +3826,80 @@ n'a pas été lancé : il mesurerait si le bump a réveillé des sources hors de
 prédites, et 4 sources sont apparues au catalogue (1370 → 1374, langues inconnues).
 Il écrirait un relevé **neuf et daté**, sans écraser `contract/sources-etat.json`.
 
+### Journal 2026-10-17 — balayage FR profond : deux sources rendues par la montée, une par le site
+
+**Le balayage.** 97 sources `fr` (le filtre `--lang fr` du moteur, pas le
+catalogue), en profond, 2 moteurs en parallèle, ~18 minutes. Répartition :
+18 `ORIGIN_DOWN`, 17 `SOURCE_DEAD`, 15 `CHALLENGE_REQUIRED`, 13 `INTERNAL`,
+**13 `ACTIF`**, 11 `INCERTAIN`, 10 `PARSER_OUTDATED`. Relevé daté :
+`docs/mesures/sources-fr-2026-10-17.json` (45 580 o, 97 entrées).
+
+**Erreur d'abord : le drapeau s'appelait `--lang`, pas `--langue`.** Un drapeau
+inconnu était **ignoré en silence** : le premier lancement a sondé **1374**
+sources au lieu de 97, arrêté à la 195ᵉ après lecture de la ligne d'en-tête
+(« 1374 source(s) a sonder », quand j'attendais « 97 … (langue fr) »). Coût
+mesuré : 195 hôtes interrogés pour rien. La sonde refuse désormais tout drapeau
+inconnu, et tout drapeau à valeur laissé sans valeur, en **nommant les valides**
+(`41907c0`, prouvé sur ses quatre cas — y compris qu'elle ne bloque pas un appel
+correct).
+
+**Comparer un relevé profond à un relevé superficiel ne compare rien.** Celui du
+2026-10-16 avait été fait **sans `--deep`** : il portait 14 `ACTIF_LIGHT` et
+1 `HANG`. Douze des dix-neuf « changements de verdict » du diff ne sont donc que
+la **profondeur ajoutée** — et ces entrées du catalogue portaient **déjà**
+`actif` / `etape: image` (mesure 2026-10-12, balayage profond antérieur) : le
+balayage du jour les **confirme**, il ne les change pas.
+
+**Deux vraies récupérations, et l'attribution se lit dans le fichier amont.**
+
+| source | 2026-10-16 | 2026-10-17 | cause mesurée |
+|---|---|---|---|
+| RIMUSCANS | `INCERTAIN`, « 200 OK sans resultat » | **`ACTIF`**, image WebP décodée | **la montée** : `RimuScans.kt` a été réécrit **dans** l'intervalle (`851835b0`, dont le parent **est** `b3c0000` ; `a0132e74`, 2026-10-15, « list via /api/series, complete chapter lists ») |
+| SUSHISCAN | `ACTIF_LIGHT` (catalogue : `images_bloquees`) | **`ACTIF`**, image servie | **le site** : `SushiScan.kt` n'a plus bougé depuis 2026-07-12, antérieur à `b3c0000` — l'épingle n'y peut rien |
+
+**Mécanisme du retag, confirmé dans le code.** `inferLang` (`Server.kt:186`)
+appelle `SourceLocaleIndex.langOf` avec `className = ""` : la langue vient du
+**dossier du JAR** (`site/<type>/<xx>/`), pas d'une heuristique de nom. L'amont a
+déplacé RAIJINSCANS de `fr/` vers `int/`.
+
+**Le recensement des langues tranche « langues inconnues ».**
+`docs/mesures/sources-langues-2026-10-17.json` : **1374 natives** (1389 avec les
+15 persos), **97 `fr`** ; le catalogue en compte 98, dont RAIJINSCANS (`int`) —
+**le jeu FR du catalogue est donc complet**, et **aucune** des 4 sources apparues
+au pin n'est française.
+
+**Six entrées corrigées à la main, et pas une de plus.**
+- `RIMUSCANS` `incertain` → `actif` ; `SUSHISCAN` `images_bloquees` → `actif`,
+  chacune avec sa cause dans le motif (cf. tableau ci-dessus).
+- `BLUESOLO` (`actif` → `hors_service`), `MANGAKAWAII` (`actif` → `hors_service`),
+  `JAPSCANSFR` (`verification` → `hors_service`) : leurs messages sont
+  **identiques aux deux relevés** (404 `www1.bluesolo.org/manga/`, 410
+  `www.mangakawaii.io/manga-list/`, 404 `japscan.foo/manga`). Ce n'est donc pas
+  un changement du jour mais une **contradiction préexistante** entre l'entrée et
+  le chemin que le parseur suit : une source que l'application n'arrive pas à lire
+  ne doit pas être marquée `actif`. Les motifs gardent la piste (domaine nu,
+  extension `.to`).
+- `MANGAHUB` : `etape: image` → `null`. L'entrée portait « chapitre sans aucune
+  image » **et** `etape: image` ; la sonde ne pose son `etapeEchec` qu'à l'étape
+  image, donc un chapitre sans image laisse `etape` nulle. Incohérence interne,
+  pas mesure.
+
+**Là où le reclassement automatique se tait, et c'est voulu.** Le catalogue
+reclassé **désaccorde** avec huit entrées dont la mesure, elle, n'a pas bougé :
+`HENTAISCANTRADVF` (notre pile TLS refusée depuis Node → « identité non
+mesurable », ce que l'entrée avait écrit la veille) et
+`ANTEIKUSCAN`/`ASTRAMES`/`KAIJUNO8`/`MANGASORIGINESUNOFFICIAL`/`SCANTRADVF`/
+`FRSCAN`/`SCANVFORG`, où le motif humain nomme **l'hôte de parking** (« DETOURNE
+vers clladss.com », 9 043 octets, aucun titre) là où l'outil dit « domaine
+disparu » — le réseau de parking tourne d'un jour à l'autre. Le reclassement est
+un **outil de tri**, pas un oracle : ces entrées gardent leur diagnostic.
+
+**Portes du cœur, vertes après la montée.** `cargo fmt --check` 0 ;
+`cargo clippy --all-targets -- -D warnings` 0 ; `cargo test` → **266 passés /
+0 échec**, ce qui valide au passage la fixture `01-hello.json` réenregistrée.
+
+**À FAIRE (mesuré, hors de cette intention).** `docs/source-rimuscan.js` a été
+écrite pour contourner un natif cassé ; le natif marche depuis `b4df40e9` : la
+source scriptée est **redondante** et demande soit son retrait, soit une mesure
+qui la justifie encore.
+

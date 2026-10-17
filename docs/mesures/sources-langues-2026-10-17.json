@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-17",
+  "total": 1374,
+  "totalAvecPerso": 1389,
+  "parLangue": {
+    "tr": 114,
+    "int": 220,
+    "id": 113,
+    "cz": 1,
+    "ja": 18,
+    "th": 32,
+    "pt": 137,
+    "it": 19,
+    "es": 114,
+    "en": 349,
+    "ar": 65,
+    "fr": 97,
+    "pl": 3,
+    "vi": 54,
+    "zh": 12,
+    "ko": 3,
+    "ru": 12,
+    "de": 10,
+    "nl": 1
+  },
+  "frMoteur": 97,
+  "catalogue": 98,
+  "catalogueSansFr": [
+    {
+      "nom": "RAIJINSCANS",
+      "langMoteur": "int",
+      "etatCatalogue": "actif"
+    }
+  ],
+  "frHorsCatalogue": []
+}

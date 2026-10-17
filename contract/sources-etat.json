@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "mesure": "2026-10-12",
+  "mesure": "2026-10-17",
   "sources": {
     "ANIMESAMA": {
       "etat": "incertain",
@@ -59,11 +59,11 @@
       "motif": "derriere un challenge Cloudflare"
     },
     "BLUESOLO": {
-      "etat": "actif",
+      "etat": "hors_service",
       "langue": "fr",
-      "mesure": "2026-10-12",
+      "mesure": "2026-10-17",
       "etape": null,
-      "motif": "site actif sous le domaine .org (bluesolo.org)"
+      "motif": "404 sur www1.bluesolo.org/manga/, message identique aux deux releves (2026-10-16 et 2026-10-17) : c'est le chemin que le parseur suit qui est mort. L'entree avait ete ecrite « site actif sous le domaine .org (bluesolo.org) » (mesure 2026-10-12) — a verifier sur le domaine nu avant de conclure que le site est ferme"
     },
     "CENTURYBOYS20TH": {
       "etat": "indisponible",
@@ -241,11 +241,11 @@
       "motif": "changements fréquents d'extension pour contourner le blocage DNS"
     },
     "JAPSCANSFR": {
-      "etat": "verification",
+      "etat": "hors_service",
       "langue": "fr",
-      "mesure": "2026-10-12",
-      "etape": "latest",
-      "motif": "domaine redirige vers japscan.foo : racine 200 mais /manga/ protege (Cloudflare 403/404)"
+      "mesure": "2026-10-17",
+      "etape": null,
+      "motif": "404 sur japscan.foo/manga, message identique aux deux releves (2026-10-16 et 2026-10-17), apres arret a l'etape latest. L'entree disait « racine 200 mais /manga/ protege (Cloudflare 403/404) » (mesure 2026-10-12) : le 404 est confirme deux fois, il n'y a pas de page a debloquer"
     },
     "JPMANGAS": {
       "etat": "hors_service",
@@ -348,16 +348,16 @@
     "MANGAHUB": {
       "etat": "incertain",
       "langue": "fr",
-      "mesure": "2026-10-12",
-      "etape": "image",
-      "motif": "chapitre sans aucune image"
+      "mesure": "2026-10-17",
+      "etape": null,
+      "motif": "chapitre sans aucune image : le parcours s'arrete a l'etape pages, donc etape = null (l'entree portait « image », en contradiction avec ce motif). Releves du 2026-10-16 et du 2026-10-17"
     },
     "MANGAKAWAII": {
-      "etat": "actif",
+      "etat": "hors_service",
       "langue": "fr",
-      "mesure": "2026-10-12",
-      "etape": "image",
-      "motif": "utilise principalement l'extension .to (mangakawaii.to)"
+      "mesure": "2026-10-17",
+      "etape": null,
+      "motif": "410 sur www.mangakawaii.io/manga-list/, message identique aux deux releves (2026-10-16 et 2026-10-17), apres arret a l'etape latest, alors que l'entree disait « actif » : le parseur interroge l'extension .io. L'extension .to (mangakawaii.to) reste la piste d'une source scriptee"
     },
     "MANGAMANA": {
       "etat": "verification",
@@ -514,11 +514,11 @@
       "motif": "chaine de certificats refusee par Conscrypt ET par JSSE"
     },
     "RIMUSCANS": {
-      "etat": "incertain",
+      "etat": "actif",
       "langue": "fr",
-      "mesure": "2026-10-12",
-      "etape": null,
-      "motif": "200 OK sans resultat"
+      "mesure": "2026-10-17",
+      "etape": "image",
+      "motif": "RECUPERE par la montee d'epingle : l'amont a reecrit ce parseur dans l'intervalle b3c0000..b4df40e9 (851835b0 « JSON-LD for chapters », a0132e74 « list via /api/series, complete chapter lists »), la ou l'epingle precedente rendait « 200 OK sans resultat ». Mesure 2026-10-17 : parcours complet jusqu'a une image WebP decodee. La source scriptee docs/source-rimuscan.js est devenue redondante"
     },
     "SAKAMOTODAYS": {
       "etat": "indisponible",
@@ -619,11 +619,11 @@
       "motif": "domaine disparu, 404/410, ou domaine repris par une regie publicitaire"
     },
     "SUSHISCAN": {
-      "etat": "images_bloquees",
+      "etat": "actif",
       "langue": "fr",
-      "mesure": "2026-10-12",
+      "mesure": "2026-10-17",
       "etape": "image",
-      "motif": "catalogue lisible, CDN d'images protege"
+      "motif": "le CDN d'images sert maintenant : image decodee le 2026-10-17, alors que l'entree decrivait « catalogue lisible, CDN d'images protege » (mesure 2026-10-12). Ce n'est PAS un effet de la montee d'epingle : le fichier amont SushiScan.kt n'a plus bouge depuis le 2026-07-12, anterieur a b3c0000 — c'est le site qui a change"
     },
     "SUSHISCANFR": {
       "etat": "incertain",

@@ -1748,7 +1748,13 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   lira ». Le moteur est **Nashorn 15.6** (`engine/build.gradle.kts`) ; `vm` est
   **V8**. Les trois sources écrites ce jour-là ont donc passé le test et ont été
   **rejetées au chargement**, sur `<eval>:115:8 Expected an operand but found )`
-  — une virgule finale dans les arguments d'un appel, de l'ES2017. Corollaire :
+  — une virgule finale dans les arguments d'un appel, de l'ES2017. Second
+  déclencheur, mesuré le 2026-10-17 : un **groupe de capture dans un lookahead**
+  (`(?=…(…)…)`) est rempli par V8 et laissé `undefined` par Nashorn — le harnais
+  hors ligne rendait 24 cartes vertes, le moteur refusait sur
+  `TypeError: Cannot read property "indexOf" from undefined`. `pnpm moteur:check`
+  ne couvre que la virgule finale, donc un harnais vert **ne dispense pas** de la
+  sonde profonde, qui est le seul juge. Corollaire :
   un test qui rejoue du code hors de son moteur d'exécution **ne prouve que le
   code**, jamais son évaluation ; et « le moteur recharge les sources à chaud »
   est faux ici aussi — il y a bien un `boucleWatcher`, ce qui a rendu le défaut

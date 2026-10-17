@@ -596,6 +596,8 @@ const FR = {
   "chapitre.afficher.plus": "Afficher plus ({n} restants)",
   "filtre.effacer": "Effacer ({n})",
   "filtre.genres.total": "{n} genres au total",
+  "filtre.genres.voir.reste": "Voir les {n} autres",
+  "filtre.genres.reduire": "Réduire",
   "carte.chapitres": "{n} ch.",
   "catalogue.compte.titres": "{visibles} / {total} catalogues",
   "catalogue.tronque":
@@ -1119,6 +1121,8 @@ const EN: Record<Cle, string> = {
   "chapitre.afficher.plus": "Show more ({n} remaining)",
   "filtre.effacer": "Clear ({n})",
   "filtre.genres.total": "{n} genres in total",
+  "filtre.genres.voir.reste": "See the {n} others",
+  "filtre.genres.reduire": "Show less",
   "carte.chapitres": "{n} ch.",
   "catalogue.compte.titres": "{visibles} / {total} catalogues",
   "catalogue.tronque": "First 200 catalogues out of {n}. Use the search for the others.",

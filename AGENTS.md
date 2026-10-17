@@ -2133,3 +2133,14 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   sortie dans un fichier — les 16 portes du front rendent `exit=0` ainsi.
   Corollaire : ne jamais déclarer une porte rouge sur le statut d'un pipeline
   PowerShell ; le lire, lui.
+
+- **Tronquer une liste au chargement rend tout dépliement impossible, et le
+  bouton qui le commande ne le dira pas.** Mesuré le 2026-10-17 sur les genres :
+  `loadTags` faisait `setTags((r.tags ?? []).slice(0, TAGS_SHOWN))`, donc `tags`
+  ne contenait jamais que 24 entrées ; le toggle « Voir les 53 autres » basculait
+  bien `tagsExpanded` (le libellé devenait « Réduire »), mais la liste restait à
+  24 — le bouton **mentait**. Le moteur renvoyait 77 genres (mesuré sur
+  `MANGADEX`). Corollaire : un plafond d'affichage se pose au **rendu**
+  (`tagsExpanded ? tags : tags.slice(0, TAGS_SHOWN)`), jamais à la source ;
+  et un bouton dont le libellé change sans que le contenu change est le signal
+  qu'une donnée a été jetée en amont.

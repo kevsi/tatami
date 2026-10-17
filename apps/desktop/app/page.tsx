@@ -1395,6 +1395,8 @@ export default function Home() {
   const [nouvelleCategorie, setNouvelleCategorie] = useState('');
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagsTotal, setTagsTotal] = useState(0);
+  // Affichage replié : seuls `TAGS_SHOWN` genres visibles ; déplié = tous.
+  const [tagsExpanded, setTagsExpanded] = useState(false);
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [mangaQuery, setMangaQuery] = useState('');
   // Tâche 1.3 : tri. Décidé avec l'utilisateur : alphabétique seul, appliqué
@@ -2864,7 +2866,11 @@ export default function Home() {
   async function loadTags(s: Source) {
     try {
       const r = await invoke<{ tags: Tag[] }>('filter_options', { source: s.name });
-      setTags((r.tags ?? []).slice(0, TAGS_SHOWN));
+      // On conserve la liste **complete** : le plafond TAGS_SHOWN n'est
+      // applique qu'a l'affichage (voir le bouton « Voir les N autres »).
+      // Tronquer ici rendrait le depliement impossible - c'etait le defaut
+      // mesure : 24 chips affichees, 77 annoncees, et le bouton ne changeait rien.
+      setTags(r.tags ?? []);
       setTagsTotal(r.tags?.length ?? 0);
     } catch {
       setTags([]);
@@ -2889,6 +2895,7 @@ function nomSource(s: Source): string {
   setSelected(s);
     setActiveTags([]);
     setTags([]);
+    setTagsExpanded(false);
     setMangaQuery('');
     setOnePageOnly(false);
     void loadTags(s);
@@ -6324,7 +6331,7 @@ if (reader) {
 
         {tags.length > 0 && (
           <div className="chips" role="group" aria-label={t('fiche.genres')}>
-            {tags.map((t) => (
+            {(tagsExpanded ? tags : tags.slice(0, TAGS_SHOWN)).map((t) => (
               <button
                 key={t.key}
                 className="chip"
@@ -6339,10 +6346,21 @@ if (reader) {
                 {t('filtre.effacer', { n: activeTags.length })}
               </button>
             )}
-            {tagsTotal > tags.length && (
-              <span className="muted chips-note">
-                {t('filtre.genres.total', { n: tagsTotal })}
-              </span>
+            {tagsTotal > TAGS_SHOWN && (
+              <>
+                <span className="muted chips-note">
+                  {t('filtre.genres.total', { n: tagsTotal })}
+                </span>
+                {tagsExpanded ? (
+                  <button className="chip chip-more" onClick={() => setTagsExpanded(false)}>
+                    {t('filtre.genres.reduire')}
+                  </button>
+                ) : (
+                  <button className="chip chip-more" onClick={() => setTagsExpanded(true)}>
+                    {t('filtre.genres.voir.reste', { n: tagsTotal - TAGS_SHOWN })}
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}

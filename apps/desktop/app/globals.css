@@ -511,6 +511,11 @@ button:disabled {
   border-color: var(--danger-bordure);
 }
 
+.chip-more {
+  color: var(--text-3);
+  border-style: dashed;
+}
+
 .chips-note {
   color: var(--text-3);
   font-size: var(--t-sm);

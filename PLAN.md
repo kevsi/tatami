@@ -4097,3 +4097,29 @@ catalogue restent en repli centré (le correctif de la veille tient).
 `lecteur`, `arrondi`, `ipc`, `moteur`) ; `test` **147 passés / 0** ; `build`.
 Changement **front-only** : ni le cœur, ni le moteur.
 
+
+### Journal 2026-10-17 (suite) — genres : dépliement à la demande
+
+**La suite de la demande.** L'utilisateur voulait voir *tous* les genres, pas un
+cap à 24 avec une note « +N ». Option retenue : garder 24 visibles par défaut
+avec un bouton « Voir les N autres » qui déplie la liste complète, et
+« Réduire » pour la replier.
+
+**Le piège mesuré.** Première version du toggle : le bouton changeait bien de
+libellé (« Voir les 53 autres » → « Réduire »), mais la liste restait à 24
+genres. Cause : `loadTags` faisait `setTags((r.tags ?? []).slice(0, TAGS_SHOWN))`
+**au chargement** — `tags` ne contenait jamais que 24 entrées, donc le dépliement
+ne pouvait rien montrer. Le moteur renvoyait bien les 77 genres (mesuré sur
+`MANGADEX` : 77 tags), mais ils étaient jetés à la porte. Le correctif :
+conserver la liste complète dans `tags` et n'appliquer le plafond qu'à
+l'affichage (`tagsExpanded ? tags : tags.slice(0, TAGS_SHOWN)`).
+
+**Mesure dans l'app** (MANGADEX, 77 genres) :
+- replié : 24 genres + « Voir les 53 autres » + note « 77 genres au total » ;
+- déplié : 77 genres + « Réduire » ;
+- round-trip replié→déplié→replié : 24 → 77 → 24, 0 `#error-toast`.
+
+**Portes.** Interface, dossier `apps\desktop` : `typecheck`, `lint` (0 erreur +
+4 avertissements), `i18n` (402 clés = 402 littéraux), `hooks`, `chemins`,
+`libelles`, `francais`, `styles`, `pages`, `perso`, `lecteur`, `arrondi`, `ipc`,
+`moteur`, `test` (147/0), `build` — **16/16 vertes**. Changement **front-only**.

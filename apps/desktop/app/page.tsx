@@ -2204,7 +2204,7 @@ export default function Home() {
       setShelfCharge(true);
       try {
         const [fav, hist, cats] = await Promise.all([
-          invoke<Favorite[]>('list_favorites'),
+          invoke<Favorite[]>('list_favorites', { hideAdult: hide }),
           invoke<HistoryItem[]>('list_recent', { limit: RECENT_LIMIT, hideAdult: hide }),
           invoke<Category[]>('list_categories'),
         ]);

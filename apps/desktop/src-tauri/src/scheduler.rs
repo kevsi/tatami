@@ -701,7 +701,7 @@ pub async fn passe(
         resultat.desactive = true;
         return Ok(resultat);
     }
-    let favoris = store.list_favorites()?;
+    let favoris = store.list_favorites(false)?;
     let desactivees = store.disabled_sources()?;
     let mut limites = Limites::neuf(reglages.delai_source(), std::mem::take(&mut etat.debit));
     let mut sources: BTreeSet<String> = BTreeSet::new();

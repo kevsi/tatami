@@ -202,8 +202,9 @@ pub struct FavoriteState {
 pub async fn list_favorites(
     store: State<'_, Arc<Store>>,
     cache: State<'_, Arc<PageCache>>,
+    hide_adult: Option<bool>,
 ) -> Result<Vec<Favorite>, String> {
-    let mut lignes = store.list_favorites()?;
+    let mut lignes = store.list_favorites(hide_adult.unwrap_or(false))?;
     for l in lignes.iter_mut() {
         l.cover_token = jeton(&cache, &l.source, &l.manga_url, l.cover_url.as_deref());
     }

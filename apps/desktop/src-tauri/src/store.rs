@@ -542,21 +542,28 @@ impl Store {
         Ok(())
     }
 
-    pub fn list_favorites(&self) -> Result<Vec<Favorite>, String> {
+    pub fn list_favorites(&self, hide_adult: bool) -> Result<Vec<Favorite>, String> {
         let conn = self
             .conn
             .lock()
             .map_err(|_| "base verrouillée".to_string())?;
+        let sql = if hide_adult {
+            "SELECT f.source, f.manga_url, f.title, f.cover_url, f.content_rating,
+                    f.added_at, f.category_id, c.color
+             FROM favorites f
+             LEFT JOIN categories c ON c.id = f.category_id
+             WHERE f.content_rating IS NULL
+                OR f.content_rating NOT IN ('ADULT', 'EROTIC_AO', 'PORNOGRAPHIC')
+             ORDER BY f.added_at DESC, f.title ASC"
+        } else {
+            "SELECT f.source, f.manga_url, f.title, f.cover_url, f.content_rating,
+                    f.added_at, f.category_id, c.color
+             FROM favorites f
+             LEFT JOIN categories c ON c.id = f.category_id
+             ORDER BY f.added_at DESC, f.title ASC"
+        };
         let mut stmt = conn
-            .prepare(
-                // La catégorie est jointe pour que la carte puisse afficher sa
-                // pastille sans un second aller-retour.
-                "SELECT f.source, f.manga_url, f.title, f.cover_url, f.content_rating,
-                        f.added_at, f.category_id, c.color
-                 FROM favorites f
-                 LEFT JOIN categories c ON c.id = f.category_id
-                 ORDER BY f.added_at DESC, f.title ASC",
-            )
+            .prepare(sql)
             .map_err(|e| format!("favoris : {e}"))?;
         let rows = stmt
             .query_map([], |r| {
@@ -990,7 +997,9 @@ impl Store {
             conn.execute(
                 &format!(
                     "UPDATE {table} SET content_rating = ?3
-                     WHERE source = ?1 AND manga_url = ?2 AND content_rating IS NULL"
+                     WHERE source = ?1 AND manga_url = ?2
+                       AND (content_rating IS NULL OR content_rating = 'UNKNOWN')
+                       AND ?3 <> 'UNKNOWN'"
                 ),
                 params![source, manga_url, rating],
             )
@@ -1238,12 +1247,12 @@ mod tests {
         let (s, path) = store_vierge();
         s.set_favorite("SRC", "/m/1", "Titre", Some("http://c"), Some("SAFE"), true)
             .unwrap();
-        let list = s.list_favorites().unwrap();
+        let list = s.list_favorites(false).unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].title, "Titre");
         s.set_favorite("SRC", "/m/1", "Titre", None, None, false)
             .unwrap();
-        assert!(s.list_favorites().unwrap().is_empty());
+        assert!(s.list_favorites(false).unwrap().is_empty());
         nettoyer(&path);
     }
 
@@ -1254,7 +1263,7 @@ mod tests {
             .unwrap();
         s.set_favorite("SRC", "/m/1", "Nouveau", None, Some("ADULT"), true)
             .unwrap();
-        let list = s.list_favorites().unwrap();
+        let list = s.list_favorites(false).unwrap();
         assert_eq!(list.len(), 1, "un favori ne doit pas être dupliqué");
         assert_eq!(list[0].title, "Nouveau");
         assert_eq!(
@@ -1266,7 +1275,7 @@ mod tests {
         s.set_favorite("SRC", "/m/1", "Nouveau", None, Some("UNKNOWN"), true)
             .unwrap();
         assert_eq!(
-            s.list_favorites().unwrap()[0].content_rating.as_deref(),
+            s.list_favorites(false).unwrap()[0].content_rating.as_deref(),
             Some("ADULT")
         );
         nettoyer(&path);
@@ -1340,15 +1349,15 @@ mod tests {
         // l'accueil, où aucun contexte de liste ne peut le fournir.
         s.set_favorite("SRC", "/m/fav", "Favori", None, None, true)
             .unwrap();
-        assert_eq!(s.list_favorites().unwrap()[0].content_rating, None);
+        assert_eq!(s.list_favorites(false).unwrap()[0].content_rating, None);
         s.note_content_rating("SRC", "/m/fav", "ADULT").unwrap();
         assert_eq!(
-            s.list_favorites().unwrap()[0].content_rating.as_deref(),
+            s.list_favorites(false).unwrap()[0].content_rating.as_deref(),
             Some("ADULT"),
             "ouvrir la fiche d'un favori doit lui apprendre son classement"
         );
         assert_eq!(
-            s.list_favorites().unwrap().len(),
+            s.list_favorites(false).unwrap().len(),
             1,
             "et toujours aucun favori fabriqué"
         );
@@ -1387,7 +1396,7 @@ mod tests {
             "la colonne manquante doit etre retablie, obtenu {colonnes:?}"
         );
         assert_eq!(
-            s.list_favorites().unwrap()[0].title,
+            s.list_favorites(false).unwrap()[0].title,
             "Titre",
             "et les donnees doivent survivre"
         );
@@ -1602,7 +1611,7 @@ mod tests {
         }
         assert_eq!(s.version().unwrap(), SCHEMA_VERSION);
         assert_eq!(
-            s.list_favorites().unwrap()[0].content_rating.as_deref(),
+            s.list_favorites(false).unwrap()[0].content_rating.as_deref(),
             Some("ADULT")
         );
         nettoyer(&path);
@@ -1647,12 +1656,12 @@ mod tests {
         s.set_favorite("SRC", "/m/1", "Titre", None, Some("SAFE"), true)
             .unwrap();
         s.set_favorite_category("SRC", "/m/1", Some(c.id)).unwrap();
-        assert_eq!(s.list_favorites().unwrap()[0].category_id, Some(c.id));
-        assert_eq!(s.list_favorites().unwrap()[0].category_color, Some(1));
+        assert_eq!(s.list_favorites(false).unwrap()[0].category_id, Some(c.id));
+        assert_eq!(s.list_favorites(false).unwrap()[0].category_color, Some(1));
 
         s.delete_category(c.id).unwrap();
         // Le favori survit, il perd seulement son classement (ON DELETE SET NULL).
-        let f = s.list_favorites().unwrap();
+        let f = s.list_favorites(false).unwrap();
         assert_eq!(f.len(), 1, "supprimer une categorie ne perd aucun favori");
         assert_eq!(f[0].category_id, None);
         assert_eq!(f[0].category_color, None);
@@ -1668,7 +1677,7 @@ mod tests {
         // Sans ce refus, le favori pointerait vers une catégorie fantôme et le
         // filtrage par catégorie afficherait un vide incompréhensible.
         assert!(s.set_favorite_category("SRC", "/m/1", Some(42)).is_err());
-        assert_eq!(s.list_favorites().unwrap()[0].category_id, None);
+        assert_eq!(s.list_favorites(false).unwrap()[0].category_id, None);
         // Retirer la catégorie est toujours possible.
         s.set_favorite_category("SRC", "/m/1", None).unwrap();
         assert!(s.list_categories().unwrap().is_empty());
@@ -1827,7 +1836,7 @@ mod tests {
         .unwrap();
         s.set_source_enabled("WAMANGA", false).unwrap();
         // Écarter une source ne doit pas perdre ce qu'on a lu ni mis en favori.
-        assert_eq!(s.list_favorites().unwrap().len(), 1);
+        assert_eq!(s.list_favorites(false).unwrap().len(), 1);
         assert_eq!(s.list_recent(10, false).unwrap().len(), 1);
         nettoyer(&path);
     }
@@ -1969,7 +1978,7 @@ mod tests {
             .unwrap();
         // On relève l'état AVANT de mutiler le schéma : `list_favorites` lit la
         // colonne que la v3 va ajouter, il échouerait sur la base dégradée.
-        let avant = s.list_favorites().unwrap();
+        let avant = s.list_favorites(false).unwrap();
         assert_eq!(avant.len(), 1);
         {
             let conn = s.conn.lock().unwrap();
@@ -1987,7 +1996,7 @@ mod tests {
         }
         s.migrate().unwrap();
         assert_eq!(s.version().unwrap(), SCHEMA_VERSION);
-        let apres = s.list_favorites().unwrap();
+        let apres = s.list_favorites(false).unwrap();
         assert_eq!(
             apres.len(),
             1,
@@ -2171,7 +2180,7 @@ mod tests {
             .collect();
         assert_eq!(sauvegardes.len(), 1, "exactement une sauvegarde attendue");
         let rouvert = Store::open(sauvegardes.remove(0)).expect("réouverture de la sauvegarde");
-        let favoris = rouvert.list_favorites().unwrap();
+        let favoris = rouvert.list_favorites(false).unwrap();
         assert_eq!(
             favoris.len(),
             1,

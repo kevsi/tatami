@@ -1992,3 +1992,16 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   Corollaire : un `git diff` de paquets se fait par **sha d'entrée de dossier**
   (l'arbre change si un seul fichier dedans change), c'est-à-dire en une requête
   par ref, sans lire un seul fichier.
+
+- **Un drapeau inconnu était ignoré en silence, et le filtre disparaissait avec
+  lui.** Mesuré le 2026-10-17 : `sonde-sources.mjs --langue fr --deep` (au lieu
+  de `--lang fr`) a sondé **1374 sources** au lieu de 97 — mon propre lancement,
+  arrêté à la 195ᵉ en lisant la ligne d'en-tête (« 1374 source(s) a sonder »,
+  quand j'attendais « 97 … (langue fr) »). Le drapeau **était** documenté dans le
+  bloc d'usage du script : c'est mon `grep` filtré sur `--sources|--out|--deep`
+  qui l'a masqué, et j'ai deviné le nom manquant au lieu de lire la liste.
+  Corollaire : un filtre ignoré produit un résultat **large et plausible**,
+  jamais une erreur — la sonde refuse donc maintenant tout drapeau inconnu, et
+  tout drapeau à valeur laissé sans valeur, en **nommant les drapeaux valides**.
+  Avant de passer un filtre à un outil, lire sa liste de drapeaux — pas un grep
+  de ceux qu'on cherche.

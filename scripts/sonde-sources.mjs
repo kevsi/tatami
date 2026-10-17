@@ -67,6 +67,53 @@ function arg(flag, defaut) {
 }
 const aOption = (flag) => process.argv.includes(flag);
 
+// Un drapeau inconnu était **ignore en silence** : `--langue fr` (au lieu de
+// `--lang fr`) lancait le balayage de **tout** le catalogue, et le mot
+// « fr » ne filtrait rien. Mesure le 2026-10-17 : `--langue fr` a sonde
+// 195 sources hors perimetre avant que la ligne d'en-tete
+// (« 1374 source(s) a sonder ») ne le revele — l'en-tete etait la seule trace,
+// et rien ne comparait ce nombre a ce qui etait demande.
+//
+// C'est la meme famille que la liste `--sources` videe en silence par le filtre
+// `custom:` : **une intention non appliquee doit crier**, parce qu'un filtre
+// ignore produit un resultat large et plausible, jamais une erreur.
+const AVEC_VALEUR = [
+  "--lang",
+  "--sources",
+  "--out",
+  "--vers",
+  "--depuis",
+  "--workers",
+  "--delai-liste",
+  "--delai-etape",
+];
+const SANS_VALEUR = ["--deep", "--classer"];
+
+function verifierArguments() {
+  for (let i = 2; i < process.argv.length; i++) {
+    const t = process.argv[i];
+    if (!t.startsWith("--")) continue;
+    if (AVEC_VALEUR.includes(t)) {
+      if (!process.argv[i + 1] || process.argv[i + 1].startsWith("--")) {
+        console.error(`ECHEC — ${t} attend une valeur, et n'en a pas recu.`);
+        process.exit(1);
+      }
+      i++; // la valeur n'est pas un drapeau : ne pas la valider comme tel
+      continue;
+    }
+    if (!SANS_VALEUR.includes(t)) {
+      console.error(
+        `ECHEC — drapeau inconnu : ${t}\n` +
+          `  avec valeur : ${AVEC_VALEUR.join(" ")}\n` +
+          `  sans valeur : ${SANS_VALEUR.join(" ")}\n` +
+          "(un drapeau ignore ne filtre rien : mieux vaut s'arreter que balayer tout)",
+      );
+      process.exit(1);
+    }
+  }
+}
+verifierArguments();
+
 /**
  * Traduit une étape ratée en verdict de catalogue.
  *

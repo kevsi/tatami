@@ -1579,9 +1579,22 @@ button:disabled {
   background: var(--reader-bg);
 }
 
+.reader-progress {
+  height: 3px;
+  width: 100%;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.reader-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.18s ease;
+}
+
 .reader-title {
   font-size: var(--t-md);
-  font-weight: 600;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1643,6 +1656,7 @@ button:disabled {
   font-size: var(--t-sm);
   font-weight: 600;
   color: var(--text-2);
+  transition: color 0.12s ease, background 0.12s ease;
 }
 
 .seg-btn:hover {

@@ -5806,6 +5806,20 @@ if (reader) {
           </div>
         </header>
 
+        <div
+          className="reader-progress"
+          role="progressbar"
+          aria-valuenow={index + 1}
+          aria-valuemin={1}
+          aria-valuemax={pages.length}
+          aria-label={t('lecteur.page.sur', { n: index + 1, total: pages.length })}
+        >
+          <div
+            className="reader-progress-fill"
+            style={{ width: `${((index + 1) / Math.max(1, pages.length)) * 100}%` }}
+          />
+        </div>
+
         <div className="webtoon" ref={stripRef} onScroll={onScrollBande}>
             {/* Tâche 1.9 — virtualisation. Mesuré : Killer Peter = 303 pages
                 dans UN `.cbz` ; rendues toutes, le navigateur chargeait les

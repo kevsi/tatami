@@ -3601,3 +3601,69 @@ forme du parseur est **relevée**, aucune devinée
 `scripts/sonde-sources.mjs` le verdict « domaine mort / parké » : aujourd'hui il
 envoie écrire un parseur pour un cadavre.
 
+### Journal 2026-10-17 — Hentai-Scantrad récupérée, et le harnais qui ne voit pas Nashorn
+
+**Contexte.** Deuxième des trois sources récupérables du tri des
+`PARSER_OUTDATED` (après `fr.niadd.com`, commit `c535b97`). C'est la source
+native `SCANTRAD` : son entrée de `contract/sources-etat.json` portait déjà
+« natif rompu : `scan-trad.com` mort … Contourne par la source scriptee
+`docs/source-hentai-scantrad.js` ». La version en place datait du 2026-10-13 et
+reposait sur **deux lectures fausses** : « la recherche n'existe pas » (elle
+existe : `/?s=<q>&post_type=wp-manga&paged=<n>`, 10 résultats) et une pagination
+sur l'archive `/manga/page/<n>/`.
+
+**Ce qui a été fait.** `docs/source-hentai-scantrad.js` réécrite depuis les formes
+**relevées** les 2026-10-16 et 17 (`.mesures/session-2026-10-16/50…68-scantrad-*`).
+Jamais un fork de `kotatsu-parsers-redo` (AGENTS.md §13).
+
+**Preuves.**
+- `node scripts/sonde-sources.mjs --sources custom:hentai-scantrad --deep` →
+  **`ACTIF`** : 24 séries, fiche OK, 12 chapitres, 49 pages, image `image/webp`
+  (`docs/mesures/sources-hentai-scantrad-2026-10-16.json`).
+- Harnais hors ligne (`.mesures/session-2026-10-16/66-source-harnais.cjs`, 7
+  étapes) : 24 cartes au catalogue et 10 en recherche, **pagination réelle**
+  (0 recouvrement entre les pages), fiche « Secret Class » avec **316 chapitres**
+  portant **les deux formes d'URL**, 26 pages sur `chapitre-316`, 22 sur `ch-1`.
+- `pnpm moteur:check` : 14 sources personnalisées évaluables par Nashorn.
+
+**Six pièges du site, mesurés.**
+1. `manga_get_chapters`, l'action Ajax « évidente », **n'existe pas** (`400`,
+   corps de 1 octet « 0 »). Le vrai chargeur est lu dans
+   `madara-core/assets/js/script.js` : `POST <fiche>ajax/chapters/`.
+2. **Deux formes d'URL de chapitre** : `chapitre-N/` (≥ 83) et `ch-N/` (≤ 82). Un
+   motif qui exige `chapitre-` voit 235 chapitres sur 316 — nombre plausible, donc
+   erreur invisible.
+3. `data-src=" https://…"` : l'URL est précédée d'une espace (déjà vu sur
+   hhentai-fr et bananascans). Sans `trim()`, le chapitre rend 0 page.
+4. `&page=<n>` est **ignoré** par la recherche (il rend la page 1 à l'identique) :
+   c'est `&paged=<n>` qui pagine.
+5. `og:image` est une jpg de **2020**, la couverture affichée une webp de **2026**.
+6. Un groupe de capture dans un `(?=…)` (voir ci-dessous).
+
+**Deux corrections que la mesure a imposées, pas le goût.**
+- **`http://` → `https://` sur les images.** Les chapitres ≤ 82 servent leurs
+  pages en `http://stockage.hentai-scantrad.org/…`, et le moteur **refuse** ce
+  schéma (`validerUrlImage` : « seul https:// est accepte ») : sans réécriture,
+  ces chapitres rendraient 0 page. Le même chemin en `https` a été mesuré :
+  `200, 121 866 octets, image/jpeg` — les mêmes octets.
+- **La liste.** Accueil `/page/<n>/` : 24 cartes × 35 pages ; archive
+  `/manga/page/<n>/` : 10 cartes × 83 pages, et sa page 1 est un **sous-ensemble**
+  de l'accueil. Même catalogue, donc l'accueil gagne (2,4× moins de requêtes) —
+  et c'est la sémantique « dernières mises à jour » de la source de référence
+  Niadd FR.
+
+**La leçon qui a coûté le plus : le harnais (V8) a validé ce que le moteur
+(Nashorn) refusait.** La première version extrayait titre et URL d'un seul motif
+à pré-vérification `(?=…)`. Le harnais hors ligne rendait **24 cartes vertes** ;
+la sonde profonde refusait net — `ScriptedSourceException: TypeError: Cannot read
+property "indexOf" from undefined`, ligne 108. Un groupe de capture **dans un
+lookahead** est rempli par V8 et laissé `undefined` par Nashorn. `pnpm
+moteur:check` ne garde que la virgule finale d'appel, donc il était vert aussi.
+Corollaire : le harnais est un **filtre de logique**, la sonde profonde est le
+**juge** ; un harnais vert ne dispense pas de la sonde. C'est la deuxième fois que
+ce dépôt paie « le moteur est Nashorn, le test est V8 » — la première (virgule
+finale) est déjà en `AGENTS.md §14`, qui porte maintenant les deux déclencheurs.
+
+**Reste à faire.** `manga-scantrad.io` (Cloudflare → dépend du transport), puis
+apprendre à `scripts/sonde-sources.mjs` le verdict « domaine mort / parké ».
+

@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-17",
+  "releves": [
+    {
+      "source": "custom:hentai-scantrad",
+      "lang": "?",
+      "domaines": [],
+      "date": "2026-10-17",
+      "etapes": {
+        "latest": {
+          "code": "OK",
+          "n": 24
+        },
+        "details": {
+          "code": "OK"
+        },
+        "chapters": {
+          "code": "OK",
+          "n": 12
+        },
+        "pages": {
+          "code": "OK",
+          "n": 49
+        },
+        "image": {
+          "code": "OK",
+          "type": "image/webp"
+        }
+      },
+      "verdict": "ACTIF",
+      "urlListe": null,
+      "etapeEchec": "image"
+    }
+  ]
+}

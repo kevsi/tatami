@@ -486,11 +486,11 @@
       "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
     },
     "RAIJINSCANS": {
-      "etat": "incertain",
-      "langue": "fr",
-      "mesure": "2026-10-12",
-      "etape": null,
-      "motif": "aucune reponse"
+      "etat": "actif",
+      "langue": "int",
+      "mesure": "2026-10-17",
+      "etape": "image",
+      "motif": "recuperee par la montee d'epingle b4df40e9 : l'amont a suivi la migration du domaine (raijin-scans.fr -> aniverse.fr), et le moteur la declare desormais 'int'. Parcours complet mesure : 24 items, 15 chapitres, 22 pages, image webp decodee"
     },
     "READERGEN": {
       "etat": "indisponible",

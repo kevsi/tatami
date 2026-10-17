@@ -3742,3 +3742,87 @@ porte la distinction, et il est daté et mesuré.
 des 98 sources FR). Et les **35** sources FR définitivement mortes
 (18 `ORIGIN_DOWN` + 17 `SOURCE_DEAD`) restent telles quelles.
 
+### Journal 2026-10-17 — le pin des parseurs passe à `b4df40e9`, et une source FR revient
+
+**Décision.** Le pin monte de `b3c0000` (2026-09-17, tête du 17 septembre) à
+`b4df40e9` (2026-10-16), soit 97 commits d'amont. La tête `dc223c3d` a été
+écartée : JitPack a échoué à la construire (`429 Too Many Requests` sur
+`repo.maven.apache.org` pendant la résolution du *buildscript*) et **sert cet
+échec en cache** — 24 relances n'ont rien redéclenché, l'API rendait encore
+l'heure de la première tentative. Un commit jamais demandé se construit tout de
+suite (`200` en 30 s). Le repli perd **un** commit (`Update KdtScans.kt`, non-FR).
+
+**Le risque de compilation, mesuré et non espéré.** Sur les 16 entrées du paquet
+`org.koitharu.kotatsu.parsers` que le moteur compile, **14 sont identiques** entre
+l'ancien et le nouveau pin ; seuls `site/` (les 1200 parseurs) et `util/` bougent.
+Le risque est donc dans les sources, pas dans l'API — et le build reste la porte.
+
+**Preuves.**
+- `gradle --write-verification-metadata sha256 --refresh-dependencies build` →
+  vert (6m53) ; `verification-metadata.xml` gagne les 3 lignes de `b4df40e9`
+  (jar `56566232…`, `.module` `2083782e…`). L'entrée `b3c0000` reste : Gradle
+  n'élague pas, et la retirer serait un changement de politique sans bénéfice.
+- `gradle clean build --refresh-dependencies` → vert (5m29) : c'est la résolution
+  **à froid**, celle de la CI sur un checkout neuf.
+- **La porte mord** : un **caractère** du sha256 altéré fait échouer la résolution
+  en **nommant** `kotatsu-parsers-redo-b4df40e9.jar`
+  (`com.github.Kotatsu-Redo:kotatsu-parsers-redo:b4df40e9`), en 4 s. Restauré par
+  copie d'octets, `mtime` remis à jour : hash identique (`3F1CD1DE…`).
+- `gradle test --rerun-tasks` → vert, **220 tests réellement exécutés**
+  (41 XML frais, « 6 tasks executed ») — `FROM-CACHE` prouverait zéro.
+- `scripts\build-engine.ps1` → `dist/` (68,9 Mo) embarque
+  **`kotatsu-parsers-redo-b4df40e9.jar`** (9 396 631 o) ; l'ancien a disparu.
+- `list-sources` → **1374** sources (1370 avant) ; `hello` →
+  `parsersVersion: b4df40e9`, `protocolVersion: 0.2`.
+
+**La mesure ciblée : une source FR revient, deux ne bougent pas.**
+
+| source | 2026-10-16 | 2026-10-17 (pin `b4df40e9`) |
+|---|---|---|
+| RAIJINSCANS | `INCERTAIN`, « 200 OK sans resultat », domaine `raijin-scans.fr` | **`ACTIF`** — 24 items, 15 chapitres, 22 pages, **image webp décodée**, domaine **`aniverse.fr`** |
+| FMTEAM | `INTERNAL`, JSONException `adult` | `INTERNAL`, **message identique** |
+| HNISCANTRAD | `INTERNAL`, JSONException `adult` | `INTERNAL`, **message identique** |
+
+RAIJINSCANS revient parce que l'amont a **suivi la migration du domaine** ; le
+moteur la déclare désormais `int` (elle était `fr`). C'est le gain mesuré du bump.
+La prédiction de la session précédente (trois sources) n'en tenait donc **qu'une**.
+
+**À VÉRIFIER — le `adult` de FMTEAM et HNISCANTRAD.** Les deux échouent sur
+`JSONException: JSONObject["adult"] is not a string (class java.lang.Integer : 0)`
+— **message identique, même type de valeur, deux sites différents**, et
+**2 sources sur 98** portent ce message. Vérifié : le moteur n'écrit **aucun**
+champ `adult` (les 11 occurrences de `engine/src` sont de la prose). Ce n'est donc
+pas notre JSON. Reste à trancher, par la lecture et non par l'intuition :
+« le site renvoie `adult` en entier » ou « le parseur amont le lit en `String` ».
+Le discriminera : lire le parseur amont de ces deux sources (elles sont toutes
+deux bâties sur le même gabarit) et regarder **qui écrit `adult: 0`**.
+
+**Le fichier d'état de catalogue, corrigé sur une seule entrée.** `RAIJINSCANS`
+passe de `incertain` / « aucune reponse » (2026-10-12) à `actif`
+(`etape: image`, `langue: int`) — sans quoi la prochaine session chercherait à
+« récupérer » une source qui marche. Les 97 autres entrées ne sont pas touchées :
+un balayage FR complet écraserait leurs motifs rédigés.
+
+**Mensonges corrigés dans la doc, parce que le bump les a rendus faux.**
+`README.md` (le compte attendu de `list-sources`, et « 1 370 sources embarquées »),
+`docs/smoke-test.md` (l'attente devient un **seuil** — `N` > 1 000 — plus la valeur
+mesurée, un compte qui suit l'amont ne doit pas être une porte qui accuse à tort),
+et la fixture `01-hello.json`, **réenregistrée** depuis une sonde `hello` réelle
+(`protocolVersion` 0.1 → 0.2, `parsersVersion` → `b4df40e9`) et non éditée à la
+main. Laissés tels quels, parce que **datés** : `AGENTS.md §14`, `PLAN.md`,
+`docs/spike-phase0.md`, `docs/notes/loader-context.md`, `docs/rapport-session-recherche.md`,
+l'ADR 0005, et `moteur.rs` (manifeste **de test**, valeur arbitraire).
+
+**Un chiffre périmé que je n'ai pas touché, et pourquoi.** `README.md` annonce
+64,1 Mo pour `dist/` ; il en fait **68,9** aujourd'hui. L'écart n'est **pas** le
+bump (+0,31 Mo sur le jar de parsers) : c'est **Conscrypt** (4,32 Mo, ajouté par
+`381f4d5` le 2026-10-11), dont l'auteur n'a pas rafraîchi le chiffre. Hors
+périmètre du bump, et signalé ici plutôt que corrigé en silence.
+
+**Ce qui reste.** `.github/workflows/amont.yml` reste au rouge : il échoue dès que
+le pin n'est plus la tête, et c'était **déjà** le cas avec `b3c0000` — aucune
+régression, rien à corriger ici. Un **balayage FR complet** (~18 min en profond)
+n'a pas été lancé : il mesurerait si le bump a réveillé des sources hors des trois
+prédites, et 4 sources sont apparues au catalogue (1370 → 1374, langues inconnues).
+Il écrirait un relevé **neuf et daté**, sans écraser `contract/sources-etat.json`.
+

@@ -1476,8 +1476,14 @@ button:disabled {
   justify-content: center;
   border-radius: var(--r-sm);
   color: var(--text-3);
-  opacity: 0;
+  opacity: 0.55;
   transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.chapter-dl:hover {
+  opacity: 1;
+  color: var(--text);
+  background: var(--surface-3);
 }
 
 .chapter-cell:hover .chapter-dl,

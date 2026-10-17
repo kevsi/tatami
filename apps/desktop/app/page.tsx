@@ -1266,6 +1266,12 @@ export default function Home() {
   const [reveal, setReveal] = useState(0);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
+  // File d'attente des telechargements demandes pendant qu'un autre est en cours :
+  // un clic sur « telecharger » n'echoue plus en silence (« deja en cours »),
+  // il est mis en file et demarre a la fin de l'actuel.
+  const downloadingRef = useRef(false);
+  const downloadQueueRef = useRef<Chapter[]>([]);
+  const [queueCount, setQueueCount] = useState(0);
   const [progressParSource, setProgressParSource] = useState<Map<string, Progress>>(() => new Map());
   const [tab, setTab] = useState<string>('home');
   // Tâche 3.2 — le flux « mises à jour ». État propre : il est relu au
@@ -3300,30 +3306,49 @@ function nomSource(s: Source): string {
     });
   }
 
-  async function downloadChapter(c: Chapter) {
+  // Execution reelle d'un telechargement (un chapitre). Pose le verrou,
+  // invoque le moteur, puis libere et passe au suivant dans la file.
+  async function runDownload(c: Chapter) {
     if (!openManga || !selected) return;
+    downloadingRef.current = true;
     setDownloading(true);
     setError(null);
     try {
       const file = await fetchOneChapter(selected.name, openManga, c, chapters.length);
-      // `file` vient de `downloads_root()`, donc canonicalisé, donc préfixé de
-      // `\\?\` (forme longue). Le toast est un texte destiné à l'écran : sans ce
-      // retrait, l'utilisateur lisait `\\?\C:\Users\…` — valide mais illisible,
-      // et incollable dans un explorateur.
       setNotice(t('notice.telecharge', { f: cheminLisible(file) }));
       refreshDownloads();
     } catch (e) {
       setError(t('erreur.telechargement', { raison: String(e) }));
     } finally {
+      downloadingRef.current = false;
       setDownloading(false);
       setProgressParSource((prev) => {
         const next = new Map(prev);
         next.delete(selected.name);
         return next;
       });
+      const suivant = downloadQueueRef.current.shift();
+      if (suivant) {
+        setQueueCount(downloadQueueRef.current.length);
+        void runDownload(suivant);
+      } else {
+        setQueueCount(0);
+      }
     }
   }
 
+  // Point d'entree : si un telechargement est deja en cours, le chapitre est
+  // mis en file (pas d'echec silencieux « deja en cours ») ; sinon il demarre.
+  async function downloadChapter(c: Chapter) {
+    if (!openManga || !selected) return;
+    if (downloadingRef.current) {
+      downloadQueueRef.current.push(c);
+      setQueueCount(downloadQueueRef.current.length);
+      setNotice(t('notice.telechargement.file', { chapitre: chapterLabel(c), n: downloadQueueRef.current.length }));
+      return;
+    }
+    void runDownload(c);
+  }
   async function downloadSelected() {
     const targets = chapters.filter((c) => checked.has(c.url));
     for (const c of targets) {
@@ -6278,7 +6303,6 @@ if (reader) {
                   </button>
                   <button
                     className="chapter-dl"
-                    disabled={downloading}
                     onClick={() => void downloadChapter(c)}
                     aria-label={t('libelle.telecharger.un', { chapitre: chapterLabel(c) })}
                     title={t('libelle.telecharger')}

@@ -3545,3 +3545,59 @@ usurper un en-tête d'Origin Pull, ou router le trafic par des adresses
 résidentielles tierces ne sont pas des améliorations de Tatami : ce sont des
 contournements délibérés des accès d'un tiers, et je ne les intègre pas.
 
+### Journal 2026-10-16 — Niadd FR récupéré en source personnalisée
+
+**Contexte.** Le tri des 10 `PARSER_OUTDATED` du relevé FR (commit `92d05d8`) a
+montré **8 domaines morts** (4 revendus à un parking `clickroutebeacon.com`, 1 à
+`asiafilm.org`, `fr-scan.com` 11 o, `scan-trad.com` injoignable, `scanvf.org`
+472 o, `hentai.scantrad-vf.cc` page d'atterrissage) et **3 récupérables** :
+`fr.niadd.com`, `hentai-scantrad.org`, `manga-scantrad.io` (Cloudflare). Niadd FR
+d'abord : c'est la seule des trois **sans** Cloudflare, donc la seule dont la
+récupération ne dépend pas du transport.
+
+**Ce qui a été fait.** `docs/source-niadd-fr.js` (source personnalisée, ADR 0010)
+— jamais un fork de `kotatsu-parsers-redo`, interdit par AGENTS.md §13. Chaque
+forme du parseur est **relevée**, aucune devinée
+(`.mesures/session-2026-10-16/25…44-niadd-*.cjs`).
+
+**Preuves.**
+- `node scripts/sonde-sources.mjs --sources custom:niadd-fr --deep` → **`ACTIF`** :
+  60 séries, fiche OK, **105 chapitres**, **21 pages**, image `image/webp`.
+- Parcours dans l'app (`.mesures/session-2026-10-16/45-niadd-parcours.cjs`) :
+  **60 séries**, **56/60 couvertures décodées**, fiche de **59 chapitres triés
+  Ch.1 → Ch.59**, lecteur avec la page 1 décodée.
+- `pnpm moteur:check` : 14 sources personnalisées évaluables par Nashorn.
+
+**Trois pièges du site, mesurés.**
+1. Les couvertures vivent sous `/fr_manga/logo/…` — un dossier nommé `logo` qui
+   contient les couvertures, pas la bannière. Elles sont servies par le **même
+   hôte** que les pages de chapitre (`/pic5/`), donc il faut les **exclure** côté
+   pages, sinon la couverture devient la première page.
+2. Chaque page de chapitre **répète 6 fois** l'image courante et annonce la
+   suivante. Le dédoublonnage se fait donc par **chemin nu** : le jeton `?acc=`
+   change d'une occurrence à l'autre, l'image non.
+3. `?page=2` renvoie **la même page** (304 730 o identiques) sur le catalogue,
+   `chapters.html` et la recherche. Le parseur rend `[]` au-delà de la page 1 —
+   c'est le défaut « page 2 = page 1 » déjà mesuré sur sushiscan le 2026-10-14.
+
+**Deux leçons de mesure, payées dans la séance.**
+- **Trois paramètres de recherche devinés rendent la même coquille.** `?q=`,
+  `?keyword=` et `?page=` renvoyaient tous **31 059 o** avec « 0 série » : un
+  paramètre inconnu est ignoré en silence, donc « 0 série » ne voulait rien dire.
+  Le champ du formulaire s'appelle `name` (`<input name="name" class="query">`) —
+  lu, il rend 18 séries. **Un « 0 résultat » identique pour trois entrées
+  différentes n'est pas une mesure, c'est un paramètre ignoré.**
+- **Le squelette porte les mêmes classes que le contenu.** `page.tsx:6410` rend
+  un squelette `.manga-grid` > `.manga` > `.manga-open`, et `page.tsx:6069` un
+  `.chapter-open` — donc `waitForSelector('.manga-grid .manga')` réussit sur des
+  cartes **vides**. Première mesure : « 6 séries sans titre, 0 chapitre ». La
+  vraie : 60 séries, 59 chapitres. On attend désormais un **contenu** (libellé non
+  vide + disparition de `aria-busy`), pas un sélecteur. Même famille que « une
+  mesure qui renvoie 0 élément ne prouve rien », mais par l'autre bout : ici elle
+  renvoyait **6** éléments et ne prouvait pas davantage.
+
+**Reste à faire.** `hentai-scantrad.org` (200, sans Cloudflare) puis
+`manga-scantrad.io` (Cloudflare → transport). Enfin, apprendre à
+`scripts/sonde-sources.mjs` le verdict « domaine mort / parké » : aujourd'hui il
+envoie écrire un parseur pour un cadavre.
+

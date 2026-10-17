@@ -537,6 +537,26 @@ internal fun construireCatalogueNatif(context: EngineContext): List<JSONObject> 
         sourceInfo
     }
 
+// Heuristique de classification pour les sources personnalisees : si le script
+// ne fournit pas de contentRating, on tente d'inferer ADULT depuis les tags et
+// le titre. Fragile (mots-cles), mais mieux que de laisser UNKNOWN silencieusement.
+private fun infererClassificationAdulte(m: JSONObject): String? {
+    val haystack = StringBuilder()
+    haystack.append(m.optString("title", "")).append(' ')
+    haystack.append(m.optString("name", "")).append(' ')
+    val tags = m.opt("tags")
+    if (tags is JSONArray) {
+        for (i in 0 until tags.length()) {
+            val t = tags.opt(i)
+            if (t is JSONObject) haystack.append(t.optString("title", "")).append(' ')
+            else if (t is String) haystack.append(t).append(' ')
+        }
+    }
+    val low = haystack.toString().lowercase()
+    val mots = listOf("hentai", "18+", "nsfw", "ecchi", "xxx", "porn", "ero", "mature", "adult", "r18", "r-18", "doujin")
+    return if (mots.any { low.contains(it) }) "ADULT" else null
+}
+
 fun serve() {
     val context = EngineContext()
     val pool = ParserPool(context)
@@ -1035,7 +1055,11 @@ internal suspend fun dispatchCustom(
                 // Un script ne déclare pas de classification : l'interface lit
                 // ce champ pour le mode incognito, autant lui donner la valeur
                 // explicite des natives sans classification.
-                if (!m.has("contentRating")) m.put("contentRating", "UNKNOWN")
+                val ratingExistant = m.optString("contentRating", "")
+                if (ratingExistant.isBlank() || ratingExistant == "UNKNOWN") {
+                    val infere = infererClassificationAdulte(m)
+                    m.put("contentRating", infere ?: "UNKNOWN")
+                }
                 cache.putCustomManga(sourceName, m.optString("url", ""), m)
             }
             JSONObject().put("list", arr)
@@ -1060,6 +1084,12 @@ internal suspend fun dispatchCustom(
             // montrait (là, la réponse de `search` porte bien `url`).
             if (!result.has("url") || result.isNull("url")) {
                 result.put("url", mangaUrl)
+            }
+            val ratingExistant = result.optString("contentRating", "")
+            if (ratingExistant.isBlank() || ratingExistant == "UNKNOWN") {
+                val infere = infererClassificationAdulte(result)
+                if (infere != null) result.put("contentRating", infere)
+                else if (!result.has("contentRating")) result.put("contentRating", "UNKNOWN")
             }
             cache.putCustomDetails(sourceName, mangaUrl, result)
             JSONObject().put("manga", result)

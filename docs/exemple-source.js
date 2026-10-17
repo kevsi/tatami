@@ -74,8 +74,13 @@ var SOURCE = {
     //
     // status : "ongoing" | "finished" | "paused" | "abandoned" | "unknown"
     // authors : tableau de strings
-    // tags    : tableau de strings
-    // chapters : [{id, title, number, url}]  — triés du plus vieux au plus récent
+    // tags           : tableau de strings
+    // chapters       : [{id, title, number, url}]  — triés du plus vieux au plus récent
+    // contentRating  : "SAFE" | "SUGGESTIVE" | "ADULT" | "EROTIC_AO" | "PORNOGRAPHIC"
+    //                  (optionnel — si absent ou "UNKNOWN", le moteur tente une
+    //                  heuristique sur les tags/titre, sinon "UNKNOWN" ; l'incognito
+    //                  et le filtre de contenu s'appuient dessus, donc le fournir
+    //                  quand le site l'indique évite les faux négatifs)
     // -------------------------------------------------------------------------
     getDetails: function(mangaUrl) {
         var url = SOURCE.baseUrl + mangaUrl;
@@ -124,8 +129,11 @@ var SOURCE = {
             coverUrl:    coverUrl,
             status:      statut,
             authors:     [],
-            tags:        [],
-            chapters:    chapitres,
+            tags:          [],
+            chapters:      chapitres,
+            // contentRating : "SAFE" | "SUGGESTIVE" | "ADULT" | "EROTIC_AO" |
+            //                 "PORNOGRAPHIC"  (optionnel — sinon "UNKNOWN")
+            // contentRating: "UNKNOWN",
         });
     },
 

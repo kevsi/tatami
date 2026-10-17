@@ -1962,3 +1962,33 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   traquer, c'est le comportement mesuré ; (b) quand on demande un clic, il faut
   dire ce qu'il apporte et ce qu'il n'apportera pas ; (c) la piste qui fonctionne
   est « laisser le navigateur lire », pas « faire rejouer le moteur ».
+
+- **JitPack sert un échec de construction en cache, et re-demander l'artefact ne
+  le redéclenche pas.** Mesuré le 2026-10-17, pour monter l'épingle des parseurs :
+  la tête de l'amont (`dc223c3d`) a échoué à se construire chez JitPack, et son
+  journal dit **pourquoi** — `429 Too Many Requests` sur
+  `repo.maven.apache.org` pendant la résolution du *buildscript*, donc une limite
+  de débit de JitPack et **pas** un défaut de l'amont. Ensuite, **24 relances** de
+  l'artefact n'ont rien redéclenché : l'API renvoyait encore l'heure de la
+  première tentative (`10:00:22Z`). Corollaires : (a) l'URL de l'artefact ne dit
+  rien (404 pendant ou après un échec) — la source de vérité est
+  `https://jitpack.io/api/builds/com.github.Kotatsu-Redo/kotatsu-parsers-redo/<sha>`
+  (`status: ok | Error | none`), et `none` veut dire **jamais demandé** ; (b) un
+  artefact absent n'est pas un artefact impossible : un commit **jamais demandé**
+  se construit tout de suite (`b4df40e9`, `200` en 30 s), donc la sortie est
+  d'épingler un autre commit plutôt que d'attendre ; (c) avant de renoncer, lire
+  ce que coûte ce repli — ici **un** commit perdu sur la tête
+  (`Update KdtScans.kt`, non-FR), mesuré et non supposé.
+
+- **Le risque de compilation d'une montée de dépendance se mesure sur le paquet,
+  pas sur le changelog.** Toujours le 2026-10-17 : **97 commits** séparaient
+  l'ancien pin du nouveau, ce qui ne dit rien du risque. Comparer les **sha des
+  entrées du paquet que notre code compile** entre les deux refs
+  (`src/main/kotlin/org/koitharu/kotatsu/parsers` : `MangaLoaderContext.kt`,
+  `MangaParser.kt`, et les dossiers `model/`, `config/`, `network/`, `bitmap/`,
+  `exception/`) a montré **14 entrées identiques sur 16** — seuls `site/` (les
+  1200 parseurs) et `util/` avaient bougé. Le risque est donc dans les sources,
+  pas dans l'API, et le build reste la porte : il a répondu vert du premier coup.
+  Corollaire : un `git diff` de paquets se fait par **sha d'entrée de dossier**
+  (l'arbre change si un seul fichier dedans change), c'est-à-dire en une requête
+  par ref, sans lire un seul fichier.

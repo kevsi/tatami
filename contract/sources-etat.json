@@ -10,11 +10,11 @@
       "motif": "natif incomplet : anime-sama.eu mort, et episodes.js renvoie 404 sur anime-sama.to. Contourne par la source scriptee docs/source-anime-sama.js (API /s2/scans, parcours valide : 1004 chapitres One Piece, 55 images, image decodee). Attention : seules les oeuvres servies par l'API ont des scans"
     },
     "ANTEIKUSCAN": {
-      "etat": "parseur_perime",
+      "etat": "hors_service",
       "langue": "fr",
-      "mesure": "2026-10-12",
+      "mesure": "2026-10-17",
       "etape": null,
-      "motif": "le site a change de page"
+      "motif": "domaine DETOURNE : redirige vers clladss.com, hors du domaine declare (anteikuscan.fr) — mesure 2026-10-17, 9 043 octets, aucun titre. Le 200 est trompeur, et ce n'est pas un parseur a reparer"
     },
     "ASTRALMANGA": {
       "etat": "verification",
@@ -24,11 +24,11 @@
       "motif": "derriere un challenge Cloudflare"
     },
     "ASTRAMES": {
-      "etat": "parseur_perime",
+      "etat": "hors_service",
       "langue": "fr",
-      "mesure": "2026-10-12",
+      "mesure": "2026-10-17",
       "etape": null,
-      "motif": "le site a change de page"
+      "motif": "domaine DETOURNE : redirige vers 29870506-20567-32251.squitoiages.com, hors du domaine declare (astrames.fr) — mesure 2026-10-17, 199 octets. Le reseau de parking tourne (clladss.com la veille) : c'est le domaine declare qui tranche, pas une liste de parkings"
     },
     "BANANASCAN": {
       "etat": "hors_service",
@@ -150,11 +150,11 @@
       "motif": "ConnectException: Failed to connect to www.frmanga.com/198.251.84.92:443"
     },
     "FRSCAN": {
-      "etat": "parseur_perime",
+      "etat": "hors_service",
       "langue": "fr",
-      "mesure": "2026-10-12",
+      "mesure": "2026-10-17",
       "etape": null,
-      "motif": "le site a change de page"
+      "motif": "domaine PARKED : le titre servi est « fr-scan.com », soit le domaine nu, sur le sous-domaine de parking ww80.fr-scan.com — mesure 2026-10-17, 39 688 octets. Le 200 est trompeur"
     },
     "FRSCANSCOM": {
       "etat": "hors_service",
@@ -199,11 +199,11 @@
       "motif": null
     },
     "HENTAISCANTRADVF": {
-      "etat": "parseur_perime",
+      "etat": "hors_service",
       "langue": "fr",
-      "mesure": "2026-10-12",
+      "mesure": "2026-10-17",
       "etape": null,
-      "motif": "le site a change de page"
+      "motif": "domaine PARKED : le titre servi est « scantrad-vf.cc », soit le domaine nu — mesure 2026-10-16 par curl, 39 310 octets. Non remesurable depuis Node le 17 (ECONNRESET avant TLS : notre pile est refusee, pas le site). A ne pas confondre avec SCANTRAD, qui vit"
     },
     "HENTAIZONE": {
       "etat": "verification",
@@ -262,11 +262,11 @@
       "motif": "origine du site injoignable (Cloudflare 52x) — peut revenir"
     },
     "KAIJUNO8": {
-      "etat": "parseur_perime",
+      "etat": "hors_service",
       "langue": "fr",
-      "mesure": "2026-10-12",
+      "mesure": "2026-10-17",
       "etape": null,
-      "motif": "le site a change de page"
+      "motif": "domaine DETOURNE : redirige vers asiafilm.org, hors du domaine declare (kaijuno8.fr) — mesure 2026-10-17, 6 742 octets. Regie de redirection, pas un site de scantrad"
     },
     "KINGDOMSCAN": {
       "etat": "verification",
@@ -388,11 +388,11 @@
       "motif": null
     },
     "MANGASORIGINESUNOFFICIAL": {
-      "etat": "parseur_perime",
+      "etat": "hors_service",
       "langue": "fr",
-      "mesure": "2026-10-12",
+      "mesure": "2026-10-17",
       "etape": null,
-      "motif": "le site a change de page"
+      "motif": "domaine DETOURNE : redirige vers clladss.com, hors du domaine declare (crunchyscan.fr) — mesure 2026-10-17, 69 061 octets, aucun titre ; filter.explorads.com la veille. Le reseau de parking tourne. A ne pas confondre avec MANGASORIGINES, qui vit"
     },
     "MANGASSCANS": {
       "etat": "hors_service",
@@ -418,9 +418,9 @@
     "NINEMANGA_FR": {
       "etat": "parseur_perime",
       "langue": "fr",
-      "mesure": "2026-10-12",
+      "mesure": "2026-10-17",
       "etape": null,
-      "motif": "le site a change de page"
+      "motif": "site VIVANT (325 619 octets, titre « Répertoire -- index - Niadd », mesure 2026-10-17) : le parseur est perime, donc la source est RECUPERABLE. Recuperee par la source scriptee docs/source-niadd-fr.js (sonde ACTIF : 60 series, 105 chapitres, 21 pages)"
     },
     "ONEPIECESCAN": {
       "etat": "indisponible",
@@ -577,11 +577,11 @@
       "motif": null
     },
     "SCANTRADVF": {
-      "etat": "parseur_perime",
+      "etat": "hors_service",
       "langue": "fr",
-      "mesure": "2026-10-12",
+      "mesure": "2026-10-17",
       "etape": null,
-      "motif": "le site a change de page"
+      "motif": "domaine DETOURNE : redirige vers clladss.com, hors du domaine declare (scantrad-vf.me) — mesure 2026-10-17, 9 066 octets, aucun titre. A ne pas confondre avec SCANTRAD, qui vit"
     },
     "SCANVF": {
       "etat": "actif",
@@ -591,11 +591,11 @@
       "motif": null
     },
     "SCANVFORG": {
-      "etat": "parseur_perime",
+      "etat": "hors_service",
       "langue": "fr",
-      "mesure": "2026-10-12",
+      "mesure": "2026-10-17",
       "etape": null,
-      "motif": "le site a change de page"
+      "motif": "page de 477 octets seulement, titre « Loading... » (mesure 2026-10-17, scanvf.org sert un 200) : interstitiel, pas un catalogue. Le 200 est trompeur"
     },
     "SEINEMANGA": {
       "etat": "certificat_invalide",

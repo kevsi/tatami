@@ -3725,8 +3725,20 @@ donc la règle ne pouvait pas mordre là où elle sert).
 elle est maintenant fondée. Cette source relève du transport, qui est gelé, et
 non du parseur.
 
-**Ce qui reste.** Un balayage FR complet remplacerait `contract/sources-etat.json`
-et écraserait les motifs rédigés à la main : la mise à jour se fera à la main sur
-les entrées concernées, pas par `--classer`. Et le pin des parseurs
-(`b3c0000` → `master`) reste à décider.
+**L'état de catalogue est corrigé, à la main.** `contract/sources-etat.json`
+portait `parseur_perime` / « le site a change de page » sur les **dix** : il
+promettait huit réparations qui n'existent pas. Les huit cadavres sont passés à
+`hors_service` avec le fait mesuré dans le motif (hôte détourné, titre = domaine
+nu, interstitiel de 477 octets), et `NINEMANGA_FR` a gagné sa mesure (325 619
+octets) et le rappel qu'elle est déjà récupérée. Le fichier compte désormais
+**2** `parseur_perime` — `NINEMANGA_FR` et `SCANTRAD`, les deux récupérables — au
+lieu de 10. Édition à la main et non par `--classer` : un balayage FR complet
+écraserait les motifs rédigés des 88 autres entrées. Rien ne valide cet
+énuméré côté outillage (aucun schéma, aucun lecteur) : c'est le `motif` qui
+porte la distinction, et il est daté et mesuré.
+
+**Ce qui reste.** Le pin des parseurs (`b3c0000` → `master`) reste à décider
+(décision de dépendance : régénération de `verification-metadata.xml` et re-sonde
+des 98 sources FR). Et les **35** sources FR définitivement mortes
+(18 `ORIGIN_DOWN` + 17 `SOURCE_DEAD`) restent telles quelles.
 

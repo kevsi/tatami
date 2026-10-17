@@ -1939,6 +1939,14 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   partir du nom d'une source — j'ai écrit `www.mangasorigines.fr` pour une source
   qui s'appelle MANGASORIGINES et qui vit ailleurs ; les URL se **relisent** dans
   le relevé (`docs/mesures/cloudflare-depuis-cette-machine-2026-10-16.json`).
+  **Seconde** cause, mesurée le 2026-10-17, et elle n'est pas le DNS :
+  `hentai.scantrad-vf.cc/manga/` a rendu à Node
+  `ECONNRESET … before secure TLS connection was established` pendant que
+  `curl.exe` lisait la même page (`200`, 39 312 octets) — c'est l'**empreinte
+  TLS** (JA3) de la pile Node qui est refusée. Conséquence pratique : une sonde
+  hors du moteur qui échoue à lire une page ne prouve **rien** sur le site ; le
+  motif doit le dire (`scripts/sonde-sources.mjs` : « identite non mesurable
+  depuis Node ») au lieu de classer en silence.
 
 - **Une vérification manuelle ne débloque pas le moteur — seulement le
   navigateur.** Mesuré deux fois le 2026-10-16, après un clic humain : 8 cookies

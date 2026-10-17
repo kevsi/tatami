@@ -1,12 +1,12 @@
 {
-  "_source": "réponse réelle du moteur (engine/dist, protocole 0.1), capturée le 2026-10-05, puis anonymisée. Voir tests/fixtures/README.md.",
+  "_source": "réponse réelle du moteur (engine/dist, protocole 0.2), capturée le 2026-10-05, rafraîchie le 2026-10-17 (montée d'épingle des parseurs), puis anonymisée. Voir tests/fixtures/README.md.",
   "_methode": "hello",
   "id": "hello-enregistre",
   "ok": true,
   "result": {
-    "protocolVersion": "0.1",
+    "protocolVersion": "0.2",
     "engineVersion": "0.1.0-SNAPSHOT",
-    "parsersVersion": "b3c0000",
+    "parsersVersion": "b4df40e9",
     "defaultUserAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/116.0"
   }
 }

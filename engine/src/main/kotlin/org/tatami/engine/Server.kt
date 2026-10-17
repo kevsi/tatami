@@ -27,7 +27,7 @@ const val PROTOCOL_VERSION = "0.2"
 const val ENGINE_VERSION = "0.1.0-SNAPSHOT"
 
 // Version des parsers épinglée : même valeur que build.gradle.kts (pas de tags/releases amont).
-const val PARSERS_VERSION = "b3c0000"
+const val PARSERS_VERSION = "b4df40e9"
 
 private const val DEFAULT_TIMEOUT_MS = 120_000L
 

@@ -9,21 +9,36 @@
 `engine/build.gradle.kts` :
 
 ```kotlin
-implementation("com.github.Kotatsu-Redo:kotatsu-parsers-redo:b3c0000")
+implementation("com.github.Kotatsu-Redo:kotatsu-parsers-redo:b4df40e9")
 ```
 
 C'est un artefact `com.github.*` résolu par **JitPack**, épinglé sur un **commit**.
 Le dépôt amont ne publie pas de tag : il n'y a donc rien d'autre à épingler.
 
-## État mesuré le 2026-10-05
+## État mesuré le 2026-10-17
 
-| Dépôt | Archivé | Dernier push |
+| Dépôt | Archivé | Dernier commit amont |
 |---|---|---|
 | `KotatsuApp/kotatsu-parsers` (l'original, parent) | **oui** | 2025-11-03 |
-| `Kotatsu-Redo/kotatsu-parsers-redo` (**le nôtre**) | non | 2026-09-17 |
+| `Kotatsu-Redo/kotatsu-parsers-redo` (**le nôtre**) | non | 2026-10-16 (`dc223c3d`) |
 | `KotatsuApp/kotatsu` (l'app amont) | oui | 2025-11-04 |
 
-`b3c0000` est **la tête de `master`** de notre fork. Il n'y a rien à monter.
+Notre épingle est `b4df40e9` (2026-10-16 10:40), soit **un** commit derrière la
+tête `dc223c3d`. Ce n'est pas un choix de confort : JitPack a échoué à construire
+la tête le 2026-10-17 — son journal de construction porte `429 Too Many Requests`
+sur `repo.maven.apache.org` pendant la résolution du *buildscript*, donc une
+limite de débit de JitPack et non un défaut de l'amont. Et il **sert ensuite cet
+échec en cache** : 24 relances de l'artefact n'ont rien redéclenché, l'API
+renvoyait encore l'heure de la première tentative. Une construction neuve n'est
+possible que sur un commit **jamais demandé**, d'où `b4df40e9` — qui ne perd
+qu'un commit sur la tête (`Update KdtScans.kt`, non-FR).
+
+La montée précédente (`b3c0000` → `b4df40e9`) avait **97 commits** d'écart. Le
+paquet contre lequel le moteur compile (`org.koitharu.kotatsu.parsers` :
+`MangaLoaderContext`, `MangaParser`, `model/`, `config/`, `network/`, `bitmap/`,
+`exception/`) est **identique** entre les deux : seuls `site/` (les parseurs) et
+`util/` ont bougé. Le risque de compilation était donc borné par la mesure, pas
+par l'espoir — mais la porte reste le build.
 
 > Le tableau des risques de `PLAN.md` disait « Amont archivé (dépôts KotatsuApp) ».
 > C'est vrai **d'un cran trop bas** : le dépôt archivé est le parent, pas celui
@@ -42,7 +57,7 @@ curl.exe -s "https://api.github.com/repos/Kotatsu-Redo/kotatsu-parsers-redo/comm
 
 ```powershell
 curl.exe -s -o NUL -w "http=%{http_code}`n" `
-  "https://jitpack.io/com/github/Kotatsu-Redo/kotatsu-parsers-redo/b3c0000/kotatsu-parsers-redo-b3c0000.pom"
+  "https://jitpack.io/com/github/Kotatsu-Redo/kotatsu-parsers-redo/b4df40e9/kotatsu-parsers-redo-b4df40e9.pom"
 ```
 
 Un `200` est la normale. C'est la **seule** défaillance qui justifierait
@@ -77,6 +92,31 @@ gradle clean build --refresh-dependencies
 
 Après (c), `engine/gradle/verification-metadata.xml` **doit avoir changé**. S'il
 n'a pas changé, c'est que (b) n'a rien modifié — donc que le pin ne sert à rien.
+
+### 4. Quand JitPack refuse de construire la tête
+
+Mesuré le 2026-10-17. Le journal de construction porte un `429 Too Many Requests`
+sur `repo.maven.apache.org` — c'est une limite de débit de JitPack, pas un défaut
+de l'amont. Plus important : **JitPack sert ensuite cet échec en cache**, donc
+re-demander l'artefact ne le redéclenche pas (24 relances n'ont rien changé, l'API
+renvoyait encore l'heure de la première tentative).
+
+Un commit **jamais demandé** se construit tout de suite. On épingle donc un autre
+commit, et on lit ce que ce repli coûte avant de le choisir :
+
+```powershell
+# L'état réel de la construction (l'URL de l'artefact ne dit rien : 404
+# pendant ET après un échec). "none" = jamais demandé.
+curl.exe -s "https://jitpack.io/api/builds/com.github.Kotatsu-Redo/kotatsu-parsers-redo/<sha>"
+
+# Ce que le repli perd, et si notre paquet de compilation a bougé
+git log --oneline <tête> ^<repli>
+```
+
+Le second point est le seul qui décide : comparer les sha des entrées de
+`org.koitharu.kotatsu.parsers` entre les deux refs (un dossier change dès qu'un
+seul fichier dedans change) dit si le risque est dans l'**API** ou seulement dans
+les **parseurs**. Le build reste la porte.
 
 ## Ce qui fait échouer le build, et pourquoi c'est voulu
 

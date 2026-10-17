@@ -92,7 +92,8 @@ engine\dist\tatami-engine\tatami-engine.bat list-sources
 engine\dist\tatami-engine\tatami-engine.bat search MANGADEX naruto
 ```
 
-Preuve attendue : `sources: 1370` puis `results: N` (`N` > 0) et cinq titres
+Preuve attendue : `sources: N` (`N` > 1 000 — **1 374** au pin `b4df40e9` : le compte
+suit l'amont), puis `results: N` (`N` > 0) et cinq titres
 `Titre | url`. Commandes définies en `engine/src/main/kotlin/org/tatami/engine/Main.kt:29-45`.
 Si cette étape échoue, ne perdez pas de temps sur l'interface : le problème est dans le moteur.
 

@@ -61,7 +61,7 @@ Quatre règles structurantes, détaillées dans [`AGENTS.md`](AGENTS.md) §4 :
 
 | Composant | Provenance | Version |
 |---|---|---|
-| `kotatsu-parsers-redo` | [Kotatsu-Redo/kotatsu-parsers-redo](https://github.com/Kotatsu-Redo/kotatsu-parsers-redo), via JitPack | **commit `b3c0000`** (2026-09-17, aucun tag ni release) |
+| `kotatsu-parsers-redo` | [Kotatsu-Redo/kotatsu-parsers-redo](https://github.com/Kotatsu-Redo/kotatsu-parsers-redo), via JitPack | **commit `b4df40e9`** (2026-10-16, aucun tag ni release) |
 | Kotlin | Gradle | 2.2.10, `jvmToolchain(21)` |
 | OkHttp / Okio | `gradle/libs.versions.toml` du fork | 5.1.0 / 3.16.0 |
 | Nashorn | `org.openjdk.nashorn:nashorn-core` | 15.6 — le JDK 21 ne fournit plus de moteur JS |
@@ -138,7 +138,7 @@ démarrage à froid **1 576 ms** jusqu'à `hello`, mémoire privée au repos 231
 Contrôle du moteur sans l'application :
 
 ```powershell
-engine\dist\tatami-engine\tatami-engine.bat list-sources        # attendu : sources: 1370
+engine\dist\tatami-engine\tatami-engine.bat list-sources        # attendu : sources: 1374
 engine\dist\tatami-engine\tatami-engine.bat search MANGADEX naruto
 ```
 
@@ -189,7 +189,7 @@ toute redistribution.
 |---|---|
 | [Kotatsu](https://github.com/KotatsuApp/Kotatsu) | lecteur de manga Android d'origine, auteur de l'API `MangaParser` sur laquelle repose le moteur. |
 | [Kotatsu-Redo](https://github.com/Kotatsu-Redo/Kotatsu-Redo) | fork maintenu dont l'application reprend la parité fonctionnelle. |
-| [kotatsu-parsers-redo](https://github.com/Kotatsu-Redo/kotatsu-parsers-redo) | librairie de sources (1 370 sources embarquées) chargée par le sidecar JVM. |
+| [kotatsu-parsers-redo](https://github.com/Kotatsu-Redo/kotatsu-parsers-redo) | librairie de sources (1 374 sources embarquées) chargée par le sidecar JVM. |
 
 Aucun code de ces projets n'est recopié dans ce dépôt : le moteur **charge** la librairie
 published via JitPack. Les noms de sources appartiennent à leurs sites respectifs ; Tatami ne

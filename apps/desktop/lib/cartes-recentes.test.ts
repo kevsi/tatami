@@ -10,11 +10,7 @@ const TTL = 30 * 60 * 1000;
 const MAINTENANT = 1_700_000_000_000;
 
 const carte = (key: string) => ({ key, titre: `titre ${key}` });
-const entree = (at: number, labels: string[] = ["Ch. 1"]): EntreeRecent => ({
-  labels,
-  total: 42,
-  at,
-});
+const entree = (at: number): EntreeRecent => ({ total: 42, at });
 
 test("une carte hors fenetre n'est jamais demandee", () => {
   // Le rouge de ce test est la borne elle-meme : sans le filtre de fenetre,
@@ -69,9 +65,9 @@ test("une carte deja en vol n'est pas redemandee", () => {
 
 test("une entree de cache sans date est traitee comme expiree", () => {
   // `localStorage` peut porter n'importe quoi : une entree illisible ne doit
-  // pas figer une carte sans ligne pour toujours.
+  // pas figer une carte sans pastille pour toujours.
   const cartes = [carte("a")];
-  const cache = { a: { labels: [], total: 0 } as unknown as EntreeRecent };
+  const cache = { a: { total: 0 } as unknown as EntreeRecent };
   assert.deepEqual(
     cartesAFaire(cartes, new Set(["a"]), cache, new Set(), MAINTENANT, TTL).map((c) => c.key),
     ["a"],
@@ -80,11 +76,10 @@ test("une entree de cache sans date est traitee comme expiree", () => {
 
 test("les entrees fraiches sont reportees a l'affichage, meme hors fenetre", () => {
   // L'asymetrie est voulue : reporter une entree deja calculee ne coute aucune
-  // requete, et une carte revenue a l'ecran doit afficher sa ligne tout de suite.
+  // requete, et une carte revenue a l'ecran doit afficher son compte tout de suite.
   const cartes = [carte("a"), carte("b")];
   const cache = { a: entree(MAINTENANT - 1_000), b: entree(MAINTENANT - TTL - 1) };
   const fraiches = entreesFraiches(cartes, cache, MAINTENANT, TTL);
   assert.deepEqual(Object.keys(fraiches), ["a"]);
-  assert.deepEqual(fraiches.a.labels, ["Ch. 1"]);
   assert.equal(fraiches.a.total, 42);
 });

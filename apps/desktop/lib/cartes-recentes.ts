@@ -1,5 +1,9 @@
 /**
- * Quelles cartes du catalogue reçoivent leur ligne « derniers chapitres ».
+ * Quelles cartes du catalogue reçoivent leur **nombre de chapitres**.
+ *
+ * Ce compte est celui de la pastille posée sur la couverture. Il vivait à
+ * côté d'une ligne « derniers chapitres » sous le titre, retirée le
+ * 2026-10-17 : elle répétait ce que la couverture dit déjà.
  *
  * ## Pourquoi, mesuré le 2026-10-17
  *
@@ -14,7 +18,7 @@
  *    15,3 s puis **34,3 s** (la 25ᵉ), alors que le travail réel par image vaut
  *    ~1,3 s : le reste est de l'attente.
  *
- * Le remède est la borne : on ne demande la ligne que des cartes **dans la
+ * Le remède est la borne : on ne demande le compte que des cartes **dans la
  * fenêtre de lecture**. Une carte hors écran ne coûte rien tant que personne ne
  * la regarde — et si elle entre dans la vue, le composant relance la marche
  * (voir `recentTick` dans `page.tsx`).
@@ -27,8 +31,8 @@
  * retournée, et une fenêtre vide ne demande rien.
  */
 
-/** Entrée du cache local : les lignes calculées et la date du calcul. */
-export type EntreeRecent = { labels: string[]; total: number; at: number };
+/** Entrée du cache local : le compte calculé et la date du calcul. */
+export type EntreeRecent = { total: number; at: number };
 
 /** Cache encore valide : à **reporter dans l'affichage**, sans requête.
  *
@@ -37,7 +41,7 @@ export type EntreeRecent = { labels: string[]; total: number; at: number };
  *
  *  Volontairement **non borné à la fenêtre** : reporter une entrée déjà
  *  calculée ne coûte aucune requête, et une carte revenue à l'écran par un
- *  défilement rapide doit afficher sa ligne immédiatement.
+ *  défilement rapide doit afficher son compte immédiatement.
  */
 export function entreesFraiches<T extends { key: string }>(
   cartes: readonly T[],

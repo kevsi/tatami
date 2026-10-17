@@ -1191,15 +1191,6 @@ button:disabled {
   text-align: left;
 }
 
-.manga .recent {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: var(--s2) 12px 12px;
-  margin-top: var(--s1);
-  border-top: 1px solid var(--line-soft);
-}
-
 .recent-line {
   font-size: var(--t-xs);
   color: var(--text-3);

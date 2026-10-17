@@ -4033,3 +4033,67 @@ Laissé de côté, faute d'accord humain : mapper `INTERNAL` → `SOURCE_UNAVAIL
 quand le corps est vide, et le lead `FMTEAM`/`HNISCANTRAD`
 (`JSONObject["adult"] is not a string`).
 
+### Journal 2026-10-17 — la carte du catalogue ne répète plus ses chapitres
+
+**La demande.** « Plus besoin d'afficher les chapitres dans le card, il y en a
+déjà affiché sur le cover » : la carte portait **deux** fois l'information de
+chapitres — la pastille de la couverture (`cardTotal`, « 70 ch. ») et une ligne
+sous le titre (`cardRecent`, « Ch. 63 · il y a 2 j »). La ligne part, la
+pastille reste.
+
+**Ce que la suppression entraîne, et qui n'était pas visible au départ.** La
+ligne était le **seul** lecteur du formatage de la marche mise en place le même
+jour (`f702915`) ; les deux informations venant du **même** appel `chapters`, la
+borne aux cartes visibles **reste utile** (c'est elle qui alimente la pastille),
+mais tout ce qui ne servait qu'à la ligne devient mort :
+
+| ce qui disparaît | raison |
+|---|---|
+| `const [cardRecent, setCardRecent]` | plus lu nulle part (`tsc` l'aurait refusé) |
+| le tri par date + `.slice(0, 1)` + `depuis(t, …)` | servait à choisir et formater le dernier chapitre |
+| `labels` de l'entrée de cache (`EntreeRecent`) | donnée dérivée que plus personne ne lit |
+| `.manga .recent` (globals.css) | unique conteneur `recent` du dépôt |
+| `langue` dans les dépendances de l'effet | n'était là que parce que `t` servait à `depuis(t, …)` |
+| la dérogation `eslint-disable-next-line react-hooks/exhaustive-deps` | devenue inutile, cf. ci-dessous |
+| la clé i18n `source.chapitres.recents` | la case ne commande plus la ligne mais le compte → `source.chapitres.nombre` (« Nombre de chapitres » / « Chapter count ») |
+
+**La dérogation devenue inutile, mesurée par la porte.** Premier `pnpm lint`
+après le retrait : **5 avertissements** au lieu des 4 de référence —
+« Unused eslint-disable directive (no problems were reported from
+'react-hooks/exhaustive-deps') ». Elle n'existait que parce que `t`
+(`useI18n()` le recrée à chaque rendu) manquait aux dépendances ; `t` n'étant
+plus lu dans l'effet, la règle n'a plus rien à signaler. Retirée : retour à 4.
+Corollaire : un compteur d'avertissements **constant** (« les 4 connus ») est une
+porte — le 5ᵉ nomme l'endroit exact qu'un retrait a laissé en trop.
+
+**Mesure dans l'app** (`.mesures/session-2026-10-17/05-carte-sans-ligne.cjs`,
+grille de `custom:niadd-fr` — 60 cartes, app réelle, CDP 9223) :
+
+| relevé | T+1,5 s | T+9,5 s |
+|---|---|---|
+| `.recent-line` dans la grille | **0** | **0** |
+| conteneurs `.recent` dans la grille | **0** | **0** |
+| pastilles `.card-count` | **60** | 60 |
+| dont un compte > 0 | **60** | 60 |
+| `#error-toast` | 0 | 0 |
+
+Le second passage (même écran, relancé) donne 60 pastilles **dès T+1,5 s** :
+elles viennent du cache local (`tatami.recent`, TTL 30 min) **sans aucune
+requête** — le chemin « entrée fraîche reportée à l'affichage » fonctionne
+toujours. Marqueur de version servie
+(`.mesures/session-2026-10-17/06-marqueur-nouveau-code.cjs`) : la case de la
+barre d'outils porte `Nombre de chapitres`, et ni « Chapitres récents » ni
+« Recent chapters » ne sont dans le document — donc c'est bien le nouveau front
+qui est mesuré, pas l'ancien servi par le dev.
+
+**Capture.** `.mesures/session-2026-10-17/05-carte-sans-ligne.png` : couverture
++ pastille + titre, aucune ligne de chapitre ; les 4 couvertures vides du
+catalogue restent en repli centré (le correctif de la veille tient).
+
+**Portes.** Interface, dossier `apps\desktop`, **16/16 vertes** : `typecheck` 0 ;
+`lint` **0 erreur + 4 avertissements** (la référence) ; les douze `*:check`
+(`i18n` 400 clés = 400 littéraux, `hooks`, `chemins`, `libelles`, `francais`,
+`styles` 175 classes + 68 variables toutes définies, `pages`, `perso`,
+`lecteur`, `arrondi`, `ipc`, `moteur`) ; `test` **147 passés / 0** ; `build`.
+Changement **front-only** : ni le cœur, ni le moteur.
+

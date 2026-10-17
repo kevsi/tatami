@@ -2111,3 +2111,25 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   composant), qu'il porte `onError`, et qu'un `thumb-empty` existe. Les deux mors
   prouvés **rouges** : `onError` retiré → la porte le nomme ; vignette brute
   rajoutée → « 2 `<img>` de couverture au lieu d'un seul ».
+
+- **Retirer le dernier lecteur d'une donnée laisse une dérogation devenue
+  inutile, et c'est `eslint` qui la nomme.** Mesuré le 2026-10-17 : la ligne
+  « derniers chapitres » de la carte partait, donc `t` n'était plus lu dans
+  l'effet de fond, donc la directive
+  `// eslint-disable-next-line react-hooks/exhaustive-deps` — posée uniquement
+  parce que `t` manquait aux dépendances — ne couvrait plus rien. Premier
+  `pnpm lint` après le retrait : **5 avertissements** au lieu des 4 de
+  référence, « Unused eslint-disable directive (no problems were reported from
+  'react-hooks/exhaustive-deps') ». Retirée : retour à 4. Corollaire : un
+  compteur d'avertissements **constant** est une porte — « toujours 4 » fait
+  lire le 5ᵉ, et il désigne l'endroit exact qu'un retrait a laissé en trop.
+- **`pnpm <script> 2>&1 | Select-Object` peut rapporter « Exited with code 1 »
+  sur une porte verte.** Mesuré le 2026-10-17 : `pnpm lint` affichait « 4
+  problems (0 errors, 4 warnings) » pendant que le harnais annonçait
+  `Exited with code 1` — PowerShell convertit la sortie **stderr** de pnpm
+  (`$ eslint`) en `NativeCommandError`, donc le statut du pipeline ne dit rien
+  de la porte. Ce qui tranche : passer par `cmd`
+  (`cmd /c "pnpm lint > fichier 2>&1"` puis `$LASTEXITCODE`) en écrivant la
+  sortie dans un fichier — les 16 portes du front rendent `exit=0` ainsi.
+  Corollaire : ne jamais déclarer une porte rouge sur le statut d'un pipeline
+  PowerShell ; le lire, lui.

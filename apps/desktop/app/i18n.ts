@@ -419,7 +419,7 @@ const FR = {
   // --- Téléchargements
   "fiche.chapitres.vide": "Aucun chapitre disponible sur cette source.",
   "source.chapitres.vide": "Clique un webtoon pour voir ses chapitres.",
-  "source.chapitres.recents": "Chapitres récents",
+  "source.chapitres.nombre": "Nombre de chapitres",
   "source.vide": "Aucun résultat sur cette source.",
   "source.chargement.long": "Cette source met du temps à répondre. Si une fenêtre de vérification s’est ouverte, résolvez-la pour continuer.",
   "telechargements.dossier": "Dossier de téléchargement",
@@ -953,7 +953,7 @@ const EN: Record<Cle, string> = {
 
   "fiche.chapitres.vide": "No chapter available on this source.",
   "source.chapitres.vide": "Click a webtoon to see its chapters.",
-  "source.chapitres.recents": "Recent chapters",
+  "source.chapitres.nombre": "Chapter count",
   "source.vide": "No result on this source.",
   "source.chargement.long": "This source is slow to answer. If a verification window opened, solve it to continue.",
   "telechargements.dossier": "Downloads folder",

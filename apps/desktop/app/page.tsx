@@ -1557,8 +1557,9 @@ export default function Home() {
   const [selectMode, setSelectMode] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [queue, setQueue] = useState<QueueItem[]>([]);
-  // Tâche 0.16 : derniers chapitres par carte du catalogue
-  const [cardRecent, setCardRecent] = useState<Record<string, string[]>>({});
+  // Tâche 0.16 : nombre de chapitres par carte du catalogue (la pastille de la
+  // couverture). Auparavant, une seconde ligne sous le titre portait le dernier
+  // chapitre — retirée le 2026-10-17, à la demande : elle répétait ce compte.
   const [cardTotal, setCardTotal] = useState<Record<string, number>>({});
   const [recentBusy, setRecentBusy] = useState(0);
   const [showRecent, setShowRecent] = useState(true);
@@ -2965,9 +2966,10 @@ function nomSource(s: Source): string {
     return () => clearInterval(id);
   }, [showRecent, latest]);
 
-  // Charge en arrière-plan les derniers chapitres des cartes **visibles**.
-  // `recentInFlight` empêche les doublons quand l'effet se redéclenche avant
-  // la fin des requêtes ; le cache local évite de refaire le travail au retour.
+  // Charge en arrière-plan le **nombre de chapitres** des cartes **visibles** :
+  // c'est lui que porte la pastille de la couverture. `recentInFlight` empêche
+  // les doublons quand l'effet se redéclenche avant la fin des requêtes ; le
+  // cache local évite de refaire le travail au retour.
   useEffect(() => {
     if (!showRecent || latest.length === 0) return;
     const cache = loadRecentCache();
@@ -2993,14 +2995,9 @@ function nomSource(s: Source): string {
     const fraiches = entreesFraiches(cartes, cache, maintenant, RECENT_TTL);
     const clesFraiches = Object.keys(fraiches);
     if (clesFraiches.length > 0) {
-      const labels: Record<string, string[]> = {};
       const totaux: Record<string, number> = {};
-      for (const cle of clesFraiches) {
-        labels[cle] = fraiches[cle].labels;
-        totaux[cle] = fraiches[cle].total;
-      }
+      for (const cle of clesFraiches) totaux[cle] = fraiches[cle].total;
       void Promise.resolve().then(() => {
-        setCardRecent((prev) => ({ ...prev, ...labels }));
         setCardTotal((prev) => ({ ...prev, ...totaux }));
       });
     }
@@ -3036,34 +3033,19 @@ function nomSource(s: Source): string {
             mangaTitle: m.title,
           });
           const list = r.chapters ?? [];
-          // Les DERNIERS chapitres, pas les premiers : sur la fiche du site,
-          // ces lignes servent à voir si une série est vivante. Les parsers
-          // rendent la liste dans l'ordre croissant, mais pas toujours (ni
-          // toujours avec une date), donc on trie explicitement.
-          const labels = [...list]
-            .sort((a, b) => {
-              const da = a.uploadDate ?? 0;
-              const db = b.uploadDate ?? 0;
-              if (da !== db) return db - da;
-              return (b.number ?? 0) - (a.number ?? 0);
-            })
-            .slice(0, 1)
-            .map(
-              (c) =>
-                `${chapterShort(c)}${
-                  c.uploadDate != null && c.uploadDate > 0 ? ` · ${depuis(t, c.uploadDate)}` : ''
-                }`,
-            );
-          cache[key] = { labels, total: list.length, at: Date.now() };
+          // Seul le **nombre** est retenu : c'est lui que porte la pastille
+          // posée sur la couverture. La ligne « derniers chapitres » qui était
+          // calculée ici (tri par date, formatage `depuis`) a été retirée le
+          // 2026-10-17 : elle répétait ce compte.
+          cache[key] = { total: list.length, at: Date.now() };
           saveRecentCache(cache);
-          // Si la source a changé entre-temps, le résultat ne appartient plus à
+          // Si la source a changé entre-temps, le résultat n'appartient plus à
           // l'écran courant : on l'écrit quand même au cache, on ne l'affiche pas.
           if (m.source === sourceName) {
-            setCardRecent((prev) => ({ ...prev, [key]: labels }));
             setCardTotal((prev) => ({ ...prev, [key]: list.length }));
           }
         } catch {
-          // Source morte ou chapitre vide : la carte reste simplement sans ligne.
+          // Source morte ou chapitre vide : la carte reste simplement sans pastille.
           // Rien n'est mémorisé pour ne pas figer un échec définitif.
         } finally {
           recentInFlight.current.delete(key);
@@ -3074,26 +3056,27 @@ function nomSource(s: Source): string {
     void Promise.all(
       Array.from({ length: Math.min(RECENT_CONCURRENCY, todo.length) }, () => run()),
     );
-    // `t` est volontairement ABSENT des dépendances : c'est la seule forme
-    // correcte ici. Mesuré le 2026-10-05 : `useI18n()` rend `t` sous forme de
-    // fonction recréée à chaque rendu (le même fait qui faisait appeler
-    // `set_libelles` 18 fois au démarrage en 3.4). Avec `t` en dépendance, cet
-    // effet se rejoue **à chaque rendu** alors qu'il appelle `setCardRecent`,
-    // `setCardTotal` et `setRecentBusy` : chaque exécution provoque un rendu de
-    // plus, qui recrée `t`, qui relance l'effet — donc une **boucle infinie**.
-    // Mesuré : « Maximum update depth exceeded » × 12 à l'ouverture d'une série,
-    // reproduit par le pilotage de l'application (`.mesures/pilot-13.cjs`).
+    // Aucune valeur recréée à chaque rendu ne figure ici. Mesuré le 2026-10-05 :
+    // cet effet appelle `setCardTotal` et `setRecentBusy`, donc une dépendance
+    // recréée à chaque rendu le relance **à chaque rendu** — chaque exécution
+    // provoque un rendu de plus, qui recrée la dépendance, qui relance l'effet :
+    // une **boucle infinie**. Mesuré alors : « Maximum update depth exceeded »
+    // × 12 à l'ouverture d'une série, reproduit par le pilotage de
+    // l'application (`.mesures/pilot-13.cjs`). La dépendance fautive était `t`
+    // (`useI18n()` le recrée à chaque rendu) ; il n'est plus lu ici depuis le
+    // 2026-10-17, la seule ligne qu'il format se formatant avec `depuis(t, …)`.
     //
-    // `langue` est la bonne dépendance : c'est un **primitif**, il ne change que
-    // quand la langue change, et `t` n'est utilisé ici que pour `depuis(t, …)`.
-    // La porte `pnpm hooks:check` refuse le retour de `t` dans un tableau de
-    // dépendances d'effet.
+    // La porte `pnpm hooks:check` refuse le retour de `t` (ou d'un
+    // `useCallback([t])`) dans un tableau de dépendances d'effet.
     //
     // `recentTick` est le réveil de la borne : il est incrémenté par la
     // surveillance de la fenêtre (effet juste au-dessus), et c'est ce qui
-    // remplit une carte qui entre dans la vue après la marche.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latest, showRecent, selected?.name, langue, recentTick]);
+    // remplit la pastille d'une carte qui entre dans la vue après la marche.
+    // Il n'est jamais lu dans le corps, et le plugin ne le signale pas —
+    // mesuré le 2026-10-17 : la dérogation `eslint-disable` qui le couvrait est
+    // devenue inutile dès que `t` a cessé d'être lu ici, et `eslint` la
+    // signalait donc elle-même comme non utilisée.
+  }, [latest, showRecent, selected?.name, recentTick]);
 
   async function loadChapters(m: Manga) {
     setOpenManga(m);
@@ -6402,7 +6385,7 @@ if (reader) {
                     checked={showRecent}
                     onChange={(e) => setShowRecent(e.target.checked)}
                   />
-                  <span>{t('source.chapitres.recents')}</span>
+                  <span>{t('source.chapitres.nombre')}</span>
                   {/* Le compteur « n/taille du catalogue » a disparu avec la
                       borne du 2026-10-17 : la marche ne vise plus toutes les
                       cartes, donc ce rapport annonçait un progrès qui n'arrive
@@ -6587,15 +6570,6 @@ if (reader) {
                       )}
                     </span>
                     <span className="label">{m.title}</span>
-                    {showRecent && cardRecent[key] && cardRecent[key].length > 0 && (
-                      <span className="recent">
-                        {cardRecent[key].map((line) => (
-                          <span className="recent-line" key={line}>
-                            {line}
-                          </span>
-                        ))}
-                      </span>
-                    )}
                   </button>
                   <button
                     className={`fav-btn${isFavorite(m) ? ' on' : ''}`}

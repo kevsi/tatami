@@ -714,9 +714,11 @@ async fn run_download(
         &mut noms_presents(&dir),
     ));
 
-    // 1. chapitres -> details (le cache moteur a le manga de la source)
-    let details = sup
-        .request_with_retry(
+    // 1. details + chapters en parallèle : details pour l'URL publique (challenge),
+    //    chapters pour peupler le cache que `pages` exige (source native). Les deux
+    //    sont indépendants, on les lance ensemble pour gagner un aller-retour.
+    let (details_res, _chapters_res) = tokio::join!(
+        sup.request_with_retry(
             "details",
             serde_json::json!({
                 "source": source,
@@ -724,19 +726,8 @@ async fn run_download(
                 "mangaTitle": manga_title,
             }),
             FETCH_TIMEOUT,
-        )
-        .await?;
-    let _ = &details; // le moteur complete le cache manga/chapitres
-
-    // **Peupler le cache des chapitres.** `pages` (source native) exige que
-    // `chapters` ait ete appele pour ce couple (source, chapitre) : sans cela,
-    // il repond « unknown chapter url, call chapters first » et le telechargement
-    // echoue pour toute source native (mesure le 2026-10-17 : RIMUSCANS ch.1).
-    // `details` seul ne peuple pas ce cache. On appelle donc `chapters` ici ;
-    // le resultat est jete (on a deja `details` pour l'URL publique), mais le
-    // cache est alimente pour `pages` juste apres.
-    let _ = sup
-        .request_with_retry(
+        ),
+        sup.request_with_retry(
             "chapters",
             serde_json::json!({
                 "source": source,
@@ -744,8 +735,13 @@ async fn run_download(
                 "mangaTitle": manga_title,
             }),
             FETCH_TIMEOUT,
-        )
-        .await;
+        ),
+    );
+    let details = details_res?;
+    // On ignore le résultat de chapters (seul le cache compte), mais on propage
+    // une erreur réseau.
+    _chapters_res?;
+    let _ = &details;
 
     // URL à ouvrir si une vérification est nécessaire : la page du webtoon sur
     // le site, que l'utilisateur voit et où il confirme lui-même (âge, captcha).
@@ -826,92 +822,127 @@ async fn run_download(
     // retéléchargé en entier plutôt que résumé (on ne sait pas où il s'était arrêté).
     let _ = tokio::fs::remove_file(&partial).await;
     let mut cbz = CbzWriter::create(&partial).map_err(|e| format!("création: {e}"))?;
-    for (i, page) in page_list.iter().enumerate() {
-        let page_url = page
-            .get("url")
-            .and_then(|v| v.as_str())
-            .ok_or("page sans url")?;
-        let progress = Progress {
-            source: source.to_string(),
-            chapter: chapter_title.to_string(),
-            page: i + 1,
-            total,
-            done: false,
-            error: None,
-        };
-        let _ = app.emit("download://progress", &progress);
+    // Téléchargement parallèle des images, concurrence bornée à 4 (le moteur
+    // n'a que MAX_WORKERS travailleurs ; au-delà, on sature la source et le
+    // réseau). Les résultats sont collectés puis écrits dans l'ordre, pour que
+    // le .cbz garde ses pages dans le bon ordre.
+    const CONCURRENCE: usize = 4;
+    let page_urls: Vec<String> = page_list
+        .iter()
+        .map(|p| {
+            p.get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        })
+        .collect();
+    // Garde déjà faite plus haut : total >= 2 ici.
 
-        let fetched = sup
-            .request_with_retry(
-                "fetchImage",
-                serde_json::json!({ "source": source, "pageUrl": page_url }),
-                FETCH_TIMEOUT,
-            )
-            .await;
-        let value: Value = match fetched {
-            Ok(v) => v,
-            Err(e) => {
-                let message = format!("page {}: {e}", i + 1);
-                let _ = app.emit(
-                    "download://progress",
-                    Progress {
-                        source: source.to_string(),
-                        chapter: chapter_title.to_string(),
-                        page: i + 1,
-                        total,
-                        done: false,
-                        error: Some(message.clone()),
-                    },
-                );
-                return Err(message);
-            }
-        };
-        let result = value.get("result").ok_or("fetchImage: pas de result")?;
-        let b64 = result
-            .get("data")
-            .and_then(|v| v.as_str())
-            .ok_or("image: pas de data")?;
-        let content_type = result
-            .get("contentType")
-            .and_then(|v| v.as_str())
-            .unwrap_or("image/jpeg");
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(b64)
-            .map_err(|e| format!("décodage base64: {e}"))?;
-        // Mesuré : une source répond 200 OK avec la page HTML de son
-        // interstitiel de vérification d'âge. Sans ce contrôle, ce HTML partait
-        // dans le `.cbz` sous le nom `001.jpg` et le lecteur n'affichait que du
-        // noir — 37 chapitres sur 44 dans un cas réel. Le type est donc déduit
-        // des OCTETS, jamais du `contentType` annoncé.
-        let kind = crate::image::detect(&bytes).ok_or_else(|| {
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(CONCURRENCE));
+    let mut taches: Vec<
+        tokio::task::JoinHandle<Result<(usize, Vec<u8>, crate::image::ImageKind), String>>,
+    > = Vec::with_capacity(total);
+    for (i, url) in page_urls.iter().enumerate() {
+        let page_url = url.clone();
+        let source = source.to_string();
+        let sup = Arc::clone(sup);
+        let sem = Arc::clone(&semaphore);
+        let app = app.clone();
+        let chapter_title = chapter_title.to_string();
+        let page_publique = page_publique.clone();
+        let total = total;
+        taches.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await.map_err(|e| format!("semaphore: {e}"))?;
             let _ = app.emit(
                 "download://progress",
                 Progress {
-                    source: source.to_string(),
-                    chapter: chapter_title.to_string(),
+                    source: source.clone(),
+                    chapter: chapter_title.clone(),
                     page: i + 1,
                     total,
                     done: false,
-                    error: Some("réponse qui n'est pas une image".to_string()),
+                    error: None,
                 },
             );
-            // Même symptôme qu'un challenge : la source a renvoyé sa page de
-            // vérification. On ouvre donc la fenêtre plutôt que d'écrire une
-            // page web dans le `.cbz`.
-            //
-            // `content_type` est **utilisé**, pas jeté. C'était `let _ =
-            // content_type` (mesuré le 2026-10-09, audit) : l'en-tête annoncé
-            // était lu puis abandonné, alors que `pagecache.rs:411` le passe à
-            // `not_an_image_message` et que le message s'en sert. Un champ lu
-            // d'un côté et abandonné de l'autre est un contrat mort.
-            //
-            // Le type de l'image, lui, reste déduit des OCTETS (`kind` plus
-            // haut) : l'en-tête est un indice pour le message, jamais une
-            // autorisation d'écrire.
+            let fetched = sup
+                .request_with_retry(
+                    "fetchImage",
+                    serde_json::json!({ "source": source, "pageUrl": page_url }),
+                    FETCH_TIMEOUT,
+                )
+                .await;
+            let value: Value = match fetched {
+                Ok(v) => v,
+                Err(e) => {
+                    let message = format!("page {}: {e}", i + 1);
+                    let _ = app.emit(
+                        "download://progress",
+                        Progress {
+                            source: source.clone(),
+                            chapter: chapter_title.clone(),
+                            page: i + 1,
+                            total,
+                            done: false,
+                            error: Some(message.clone()),
+                        },
+                    );
+                    return Err(message);
+                }
+            };
+            let result = value.get("result").ok_or("fetchImage: pas de result")?;
+            let b64 = result
+                .get("data")
+                .and_then(|v| v.as_str())
+                .ok_or("image: pas de data")?;
+            let content_type = result
+                .get("contentType")
+                .and_then(|v| v.as_str())
+                .unwrap_or("image/jpeg");
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|e| format!("décodage base64: {e}"))?;
+            let kind = match crate::image::detect(&bytes) {
+                Some(k) => k,
+                None => {
+                    let _ = app.emit(
+                        "download://progress",
+                        Progress {
+                            source: source.clone(),
+                            chapter: chapter_title.clone(),
+                            page: i + 1,
+                            total,
+                            done: false,
+                            error: Some("réponse qui n'est pas une image".to_string()),
+                        },
+                    );
+                    let _ = app.emit(
+                        "download://challenge",
+                        serde_json::json!({ "source": source, "url": page_publique, "reason": "le serveur a renvoyé une page web au lieu de l'image" }),
+                    );
+                    return Err("réponse qui n'est pas une image".to_string());
+                }
+            };
             let _ = content_type;
-            demander_verification("le serveur a renvoyé une page web au lieu de l'image")
-        })?;
-        cbz.add_image_kind(i + 1, kind, &bytes)
+            Ok((i, bytes, kind))
+        }));
+    }
+
+    // Collecte des résultats (propagation de la première erreur).
+    let mut images: Vec<Option<(Vec<u8>, crate::image::ImageKind)>> = vec![None; total];
+    for tache in taches {
+        let res = tache.await.map_err(|e| format!("join: {e}"))?;
+        match res {
+            Ok((i, bytes, kind)) => {
+                images[i] = Some((bytes, kind));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    // Écriture séquentielle dans l'ordre des pages.
+    for (i, img) in images.iter().enumerate() {
+        let (bytes, kind) = img.as_ref().expect("image manquante");
+        cbz.add_image_kind(i + 1, *kind, bytes)
             .map_err(|e| format!("écriture page {}: {e}", i + 1))?;
     }
 

@@ -98,7 +98,20 @@ fn main() {
     let context = tauri::generate_context!();
     let resource_dir =
         tauri::utils::platform::resource_dir(context.package_info(), &tauri::utils::Env::default())
-            .ok();
+            .ok()
+            .map(|p| {
+                // `resource_dir()` peut renvoyer un chemin préfixé `\\?\` (forme longue
+                // Windows). Le JVM n'interprète pas ce préfixe dans un classpath :
+                // `\\?\…\lib\*` ne charge aucune classe (`ClassNotFoundException`).
+                // On retire le préfixe ici, une fois pour toutes, pour que le moteur
+                // embarqué démarre sur une machine où le chemin de dev n'existe pas.
+                let s = p.to_string_lossy();
+                if let Some(rest) = s.strip_prefix(r"\\?\") {
+                    PathBuf::from(rest)
+                } else {
+                    p
+                }
+            });
 
     // Tâche 5.1 — sonde de démarrage, **avant** le choix du moteur.
     //

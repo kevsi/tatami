@@ -1460,6 +1460,42 @@ export default function Home() {
   const [chapitresVisibles, setChapitresVisibles] = useState<LibraryItem | null>(null);
   const [reader, setReader] = useState<Reader | null>(null);
   const [readerLoading, setReaderLoading] = useState(false);
+  // Pré-chargement du chapitre suivant : quand un chapitre est ouvert, on
+  // fetch ses pages en arrière-plan pour que « chapitre suivant » soit
+  // instantané. On ne charge que le suivant (pas tout le reste), et on saute
+  // si déjà en cache. Confort uniquement : tout échec est silencieux.
+  useEffect(() => {
+    if (!reader || !chapters.length) return;
+    const idx = chapters.findIndex((c) => c.url === reader.chapter.url);
+    const suivant = idx >= 0 ? chapters[idx + 1] : null;
+    if (!suivant) return;
+    const src = reader.source;
+    const cle = `${src}|${suivant.url}`;
+    if (cachePages.current.has(cle)) return;
+    const titre = reader.mangaTitre;
+    let annule = false;
+    void (async () => {
+      try {
+        const locales = await invoke<LocalPage[]>('local_chapter_pages', {
+          source: src,
+          mangaTitle: titre,
+          chapterTitle: chapterLabel(suivant),
+          chapterUrl: suivant.url,
+        }).catch(() => [] as LocalPage[]);
+        if (annule) return;
+        if (locales.length > 0) {
+          cachePages.current.set(cle, locales.map((p) => ({ index: p.index, url: '', token: p.token, largeur: p.width, hauteur: p.height })));
+          return;
+        }
+        const r = await invoke<{ pages: Page[] }>('pages', { source: src, chapterUrl: suivant.url });
+        if (annule) return;
+        if (r.pages?.length) cachePages.current.set(cle, r.pages);
+      } catch {
+        // silencieux
+      }
+    })();
+    return () => { annule = true; };
+  }, [reader?.chapter?.url, chapters.length]);
   const [challenge, setChallenge] = useState<string | null>(null);
   /** Incrémenté après chaque vérification résolue : force le rechargement des
    *  images du lecteur, dont le 404 est resté en cache. Voir `pageSrc`. */

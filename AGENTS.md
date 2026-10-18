@@ -2247,3 +2247,12 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   bouton qui ne réagit pas, lire **les gardes en amont** et l'état qui les
   alimente, pas seulement le `onClick` ; et une fiche sans source affichée est
   le symptôme visible de cet état.
+
+- **La sélection du catalogue n'est pas la source d'une fiche.** Mesuré le
+  2026-10-18 : une fiche ouverte depuis l'historique ou les favoris a
+  `selected === null`, et `downloadChapter` sortait sur `if (!openManga ||
+  !selected) return` — bouton inerte, sans message. `ouvrirResultat` (recherche
+  globale) posait `setSelected` à la main, ce qui masquait le piège ailleurs.
+  Corollaire : une garde qui dépend de `selected` est fausse pour tout parcours
+  qui ouvre une fiche sans passer par le catalogue ; la source fiable est
+  `openManga.source` (cf. `lib/source-fiche.ts`).

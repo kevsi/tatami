@@ -17,6 +17,7 @@ import { lireListeSources } from '../lib/prefs-tolérantes';
 import { memeSignet } from '../lib/signet-cle';
 import { supprimerPuisRafraichirCatalogue } from '../lib/source-perso-suppression';
 import { chapitresSansDoublons } from '../lib/chapitres-doublons';
+import { sourceDeLaFiche } from '../lib/source-fiche';
 import { attenteDepasseLeSeuil } from '../lib/chargement-long';
 import { cartesAFaire, entreesFraiches, type EntreeRecent } from '../lib/cartes-recentes';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -3139,6 +3140,15 @@ function nomSource(s: Source): string {
 
   async function loadChapters(m: Manga) {
     setOpenManga(m);
+    // **La fiche connaît sa source, la sélection non.** Ouverte depuis
+    // l'historique ou les favoris, une fiche n'a aucune source sélectionnée :
+    // le téléchargement sortait alors en silence (`if (!openManga || !selected)
+    // return`), et l'en-tête affichait un sous-titre vide. On résout la source
+    // ici, au point d'entrée commun à tous les parcours. Si `sources` n'est pas
+    // encore chargé, la résolution ne fait rien — le téléchargement, lui, lit
+    // la source de la fiche (`sourceDeLaFiche`).
+    const src = sources.find((s) => s.name === m.source);
+    if (src) setSelected(src);
     setLoadingState(true);
     setError(null);
     setChapters([]);
@@ -3276,14 +3286,9 @@ function nomSource(s: Source): string {
 
   /** Ouvre la fiche d'un résultat de recherche globale.
    *
-   *  `setSelected` est posé **avant** `loadChapters` : le téléchargement depuis
-   *  la fiche lit `selected.name` (`fetchOneChapter`, gardé par
-   *  `if (!openManga || !selected) return`). Un résultat ouvert sans source
-   *  sélectionnée ferait donc échouer le téléchargement en silence — un bouton
-   *  qui ne fait rien, sans le moindre message. */
+   *  `loadChapters` résout ensuite la source de la fiche ; la sélection n'est
+   *  donc pas ce qui autorise le téléchargement (cf. `sourceDeLaFiche`). */
   function ouvrirResultat(m: Manga) {
-    const src = sources.find((s) => s.name === m.source);
-    if (src) setSelected(src);
     void loadChapters(m);
   }
 
@@ -3364,12 +3369,14 @@ function nomSource(s: Source): string {
   // Execution reelle d'un telechargement (un chapitre). Pose le verrou,
   // invoque le moteur, puis libere et passe au suivant dans la file.
   async function runDownload(c: Chapter) {
-    if (!openManga || !selected) return;
+    const manga = openManga;
+    const source = sourceDeLaFiche(manga);
+    if (!manga || !source) return;
     downloadingRef.current = true;
     setDownloading(true);
     setError(null);
     try {
-      const file = await fetchOneChapter(selected.name, openManga, c, chapters.length);
+      const file = await fetchOneChapter(source, manga, c, chapters.length);
       compterLot(false);
       setNotice(t('notice.telecharge', { f: cheminLisible(file) }));
       refreshDownloads();
@@ -3381,7 +3388,7 @@ function nomSource(s: Source): string {
       setDownloading(false);
       setProgressParSource((prev) => {
         const next = new Map(prev);
-        next.delete(selected.name);
+        next.delete(source);
         return next;
       });
       const suivant = downloadQueueRef.current.shift();
@@ -3400,7 +3407,7 @@ function nomSource(s: Source): string {
   // `depuisLot` : appelé par « Télécharger la sélection », le lot en cours ne
   // doit pas être effacé.
   async function downloadChapter(c: Chapter, depuisLot = false) {
-    if (!openManga || !selected) return;
+    if (!sourceDeLaFiche(openManga)) return;
     if (!depuisLot) {
       lotActif.current = false;
       setLotChapitres(null);
@@ -3415,13 +3422,15 @@ function nomSource(s: Source): string {
   }
   async function downloadSelected() {
     const targets = chapters.filter((c) => checked.has(c.url));
-    if (!openManga || !selected || targets.length === 0) return;
+    const manga = openManga;
+    const source = sourceDeLaFiche(manga);
+    if (!manga || !source || targets.length === 0) return;
     // Le lot se compte en chapitres : c'est ce que l'utilisateur a demandé,
     // et la page d'un chapitre ne dit rien des 44 autres.
     lotActif.current = true;
     setLotChapitres({
-      source: openManga.source,
-      url: openManga.url,
+      source,
+      url: manga.url,
       total: targets.length,
       done: 0,
       failed: 0,
@@ -6232,11 +6241,11 @@ if (reader) {
       <main>
         <AppBar tab={tab} onTab={goTab} />{renderSuperpositions()}
         <button className="crumb" onClick={backToSource}>
-          {'←'} {selected ? nomSource(selected) : ''}
+          {'←'} {nomSourceParNom(openManga.source)}
         </button>
         <header className="page-head">
           <h1>{openManga.title}</h1>
-          <span className="sub">{selected ? nomSource(selected) : ''}</span>
+          <span className="sub">{nomSourceParNom(openManga.source)}</span>
           <button
             className={`btn fav-toggle${isFavorite(fiche) ? ' on' : ''}`}
             aria-pressed={isFavorite(fiche)}

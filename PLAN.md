@@ -4417,46 +4417,94 @@ Portes (front) : `typecheck`, `lint` (4 avertissements connus), `i18n:check`,
 
 ### Mini-plan 2026-10-18 - progression de la file en chapitres, pas en pages
 
-Demande : « on voit les pages se télécharger, pourquoi pas juste 12/45 chapitres ».
+Demande : ï¿½ on voit les pages se tï¿½lï¿½charger, pourquoi pas juste 12/45 chapitres ï¿½.
 Trois changements, tous d'affichage :
 
-1. **File de l'écran Téléchargements** : la ligne montrait le compte de chapitres
-   *et* le détail `Chapitre 13, page 7/19` *et* un paragraphe qui répétait le même
-   détail. Les pages partent ; il reste `13/45 chapitres · Chapitre 13`.
-2. **Fiche, « Télécharger la sélection »** : la barre ne montrait que la page du
-   chapitre courant. Un lot (`LotChapitres`) compte les chapitres terminés, y
-   compris les échecs, et se limite à la fiche ouverte (source + URL). Un clic
+1. **File de l'ï¿½cran Tï¿½lï¿½chargements** : la ligne montrait le compte de chapitres
+   *et* le dï¿½tail `Chapitre 13, page 7/19` *et* un paragraphe qui rï¿½pï¿½tait le mï¿½me
+   dï¿½tail. Les pages partent ; il reste `13/45 chapitres ï¿½ Chapitre 13`.
+2. **Fiche, ï¿½ Tï¿½lï¿½charger la sï¿½lection ï¿½** : la barre ne montrait que la page du
+   chapitre courant. Un lot (`LotChapitres`) compte les chapitres terminï¿½s, y
+   compris les ï¿½checs, et se limite ï¿½ la fiche ouverte (source + URL). Un clic
    unitaire efface le lot, pour qu'il ne progresse pas tout seul.
-3. **Pluriel** : `telechargements.chapitres` valait `{s} chapitre{s}` et était
-   appelée avec `s: 's'`, donc l'écran affichait `13/45 s chapitres`. La clé est
-   supprimée ; le compte passe par `compte` / `compte1`, qui existaient déjà.
+3. **Pluriel** : `telechargements.chapitres` valait `{s} chapitre{s}` et ï¿½tait
+   appelï¿½e avec `s: 's'`, donc l'ï¿½cran affichait `13/45 s chapitres`. La clï¿½ est
+   supprimï¿½e ; le compte passe par `compte` / `compte1`, qui existaient dï¿½jï¿½.
 
-La barre d'un **chapitre unique** (clic « télécharger » sur une ligne) garde les
+La barre d'un **chapitre unique** (clic ï¿½ tï¿½lï¿½charger ï¿½ sur une ligne) garde les
 pages : sans elles, elle ne bougerait pas, puisqu'il n'y a qu'un chapitre.
 
-### Journal 2026-10-18 - file en chapitres : mesuré sur l'app réelle
+### Journal 2026-10-18 - file en chapitres : mesurï¿½ sur l'app rï¿½elle
 
-**File** (`.mesures/file-2026-10-18/probe-file.cjs`, file réelle sauvegardée puis
-restaurée) : jalons `0/21` ? `13/21 chapitres · Chapitre 111` ; `paragraphesMuted`
-**0** (le doublon a disparu), **1** ligne de détail, aucune occurrence de `page`,
+**File** (`.mesures/file-2026-10-18/probe-file.cjs`, file rï¿½elle sauvegardï¿½e puis
+restaurï¿½e) : jalons `0/21` ? `13/21 chapitres ï¿½ Chapitre 111` ; `paragraphesMuted`
+**0** (le doublon a disparu), **1** ligne de dï¿½tail, aucune occurrence de `page`,
 `fileRestaureeIdentique: true`. Capture : `capture-file.png`.
 
-**Lot de fiche** (`.mesures/file-2026-10-18/probe-lot.cjs`, source personnalisée
-`custom:rimuscan`, 9 chapitres, 3 cochés, dossier de téléchargement pointé vers
-une fixture) : `0/3 chapitres · Chapitre 1` ? `1/3 · Chapitre 2` ? `2/3 ·
-Chapitre 3` ? `3/3 chapitres` ; le bouton reprend son libellé à la fin ; **3
-`.cbz`** écrits (3 497, 2 784, 3 355 o) ; dossier réel restauré
+**Lot de fiche** (`.mesures/file-2026-10-18/probe-lot.cjs`, source personnalisï¿½e
+`custom:rimuscan`, 9 chapitres, 3 cochï¿½s, dossier de tï¿½lï¿½chargement pointï¿½ vers
+une fixture) : `0/3 chapitres ï¿½ Chapitre 1` ? `1/3 ï¿½ Chapitre 2` ? `2/3 ï¿½
+Chapitre 3` ? `3/3 chapitres` ; le bouton reprend son libellï¿½ ï¿½ la fin ; **3
+`.cbz`** ï¿½crits (3 497, 2 784, 3 355 o) ; dossier rï¿½el restaurï¿½
 (`\\?\C:\Users\alexanders\Documents\Tatami`). Captures : `capture-lot.png`,
 `capture-lot-fin.png`.
 
 **Portes (front)** : `typecheck`, `lint` (4 avertissements connus), `i18n:check`
-(**409 FR / 409 EN**, aucune clé morte), `hooks:check`, `chemins:check`,
+(**409 FR / 409 EN**, aucune clï¿½ morte), `hooks:check`, `chemins:check`,
 `libelles:check`, `francais:check`, `styles:check`, `pages:check`, `perso:check`,
 `lecteur:check`, `arrondi:check`, `ipc:check`, `moteur:check`, `test`, `build` :
 **0**. Aucun changement Rust.
 
-**Défaut préexistant constaté, non corrigé (hors périmètre)** : une fiche ouverte
+**Dï¿½faut prï¿½existant constatï¿½, non corrigï¿½ (hors pï¿½rimï¿½tre)** : une fiche ouverte
 depuis une carte d'**historique** de l'accueil a `selected === null` (le
-sous-titre de la fiche est vide), donc le bouton « Télécharger la sélection (3) »
-ne lance rien — ni barre, ni fichier, ni message. Le parcours catalogue, lui,
-fonctionne (mesure ci-dessus). À traiter séparément.
+sous-titre de la fiche est vide), donc le bouton ï¿½ Tï¿½lï¿½charger la sï¿½lection (3) ï¿½
+ne lance rien ï¿½ ni barre, ni fichier, ni message. Le parcours catalogue, lui,
+fonctionne (mesure ci-dessus). ï¿½ traiter sï¿½parï¿½ment.
+
+
+---
+
+## Journal 2026-10-18 â€” clÃ´ture v1 (fiche sans sÃ©lection, README, installeur)
+
+### 1. TÃ©lÃ©chargement depuis une fiche sans source sÃ©lectionnÃ©e
+
+**DÃ©faut mesurÃ©** : une fiche ouverte depuis l'historique (`loadChapters(mangaDepuisHistorique(h))`) ou les
+favoris (`ouvrirFavori`) n'a aucune source sÃ©lectionnÃ©e â€” `selected === null` â€”, donc
+`downloadChapter` sortait sur `if (!openManga || !selected) return` : bouton inerte, sans message, et
+l'en-tÃªte affichait un sous-titre vide. `ouvrirResultat` (recherche globale) Ã©vitait le piÃ¨ge en
+posant `setSelected` Ã  la main, ce qui prouvait que la cause Ã©tait l'absence de ce geste ailleurs.
+
+**Correctif** (surgical, un seul point d'entrÃ©e) :
+- `loadChapters(m)` rÃ©sout la source de la fiche (`setSelected(sources.find(s => s.name === m.source))`) ;
+- `runDownload` / `downloadChapter` / `downloadSelected` lisent dÃ©sormais la source de la fiche via
+  `sourceDeLaFiche(openManga)` (`lib/source-fiche.ts`), et ne dÃ©pendent plus de `selected` ;
+- l'en-tÃªte de fiche affiche `nomSourceParNom(openManga.source)` (repli sur le nom brut si la source
+  n'est plus dans `sources`).
+
+**Preuve rouge/verte** :
+- `lib/source-fiche.test.ts` : 4 tests, **4/4**. Red prouvÃ© en remplaÃ§ant `||` par `??` â†’ le test
+  Â« ne prend pas une source vide pour une source Â» tombe en nommant son nom, puis retour Ã  vert.
+- Mesure dans l'app rÃ©elle (CDP 9223) : fiche Â« Versatile Mage Â» ouverte depuis l'historique â†’
+  sous-titre et fil d'Ariane = `MANGASORIGINES`, 100 chapitres. Clic sur le premier chapitre â†’ toast
+  Â« TÃ©lÃ©chargÃ© : â€¦\Chapitre 1.cbz Â» en **2,7 s**, fichier de **3 719 113 o** Ã©crit dans la racine
+  rÃ©elle. Le fichier et le dossier `MANGASORIGINES` (crÃ©Ã©s Ã  13:54:05) ont Ã©tÃ© supprimÃ©s pour
+  restaurer la bibliothÃ¨que de l'utilisateur (55 chapitres / 11 webtoons).
+- Portes : `pnpm typecheck` 0, `pnpm lint` 0 erreur (4 warnings connus), `pnpm test` **154/154**.
+
+**LeÃ§on** : la sÃ©lection du catalogue n'est pas la source d'une fiche. Une garde qui dÃ©pend de
+`selected` est fausse pour tout parcours qui ouvre une fiche sans passer par le catalogue.
+
+### 2. README rafraÃ®chi
+
+Tableau Â« Ã‰tat du projet Â» mis Ã  jour au 2026-10-18 : les fonctionnalitÃ©s livrÃ©es depuis le 2026-10-04
+(catÃ©gories, hors ligne, i18n, notifications, updater signÃ©) sont maintenant indiquÃ©es comme livrÃ©es ;
+seuls restent Â« en cours Â» les installeurs signÃ©s (5.6) et Â« reportÃ© en v1.1 Â» le suivi externe et la
+synchro (ADR 0015).
+
+### 3. Installeur
+
+`pnpm build` : succÃ¨s (Next 16.4, TypeScript 0 erreur, 3/3 pages statiques).
+`pnpm tauri build` : succÃ¨s â€” `Tatami_0.1.0_x64_en-US.msi` (58,80 MiB) et
+`Tatami_0.1.0_x64-setup.exe` (53,58 MiB) dans `target/release/bundle/`.
+VÃ©rification du binaire release : URL `http://tauri.localhost/`, titre Â« Tatami Â», Accueil rendu,
+aucune erreur console, `list_sources` rend le catalogue complet (moteur embarquÃ© fonctionnel).

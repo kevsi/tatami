@@ -1264,6 +1264,11 @@ export default function Home() {
   const [latestOffset, setLatestOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [openManga, setOpenManga] = useState<Manga | null>(null);
+  // Cache mémoire des données lentes à recharger : re-ouvrir une fiche ou un
+  // chapitre déjà vus ne repasse plus par le réseau. Clé = source|url.
+  const cacheChapitres = useRef(new Map<string, Chapter[]>());
+  const cacheInfo = useRef(new Map<string, Manga>());
+  const cachePages = useRef(new Map<string, Page[]>());
   // Tâche 0.17 : fiche détaillée (résumé, état, genres). Les chapters arrivent
   // à part : les deux appels sont indépendants et l'un ne doit pas masquer l'autre.
   const [info, setInfo] = useState<Manga | null>(null);
@@ -3149,10 +3154,30 @@ function nomSource(s: Source): string {
     // la source de la fiche (`sourceDeLaFiche`).
     const src = sources.find((s) => s.name === m.source);
     if (src) setSelected(src);
+    const cleFiche = `${m.source}|${m.url}`;
+    const chapitresEnCache = cacheChapitres.current.get(cleFiche);
+    const infoEnCache = cacheInfo.current.get(cleFiche);
+    if (chapitresEnCache) setChapters(chapitresEnCache);
+    if (infoEnCache) setInfo(infoEnCache);
+    const toutEnCache = !!chapitresEnCache && !!infoEnCache;
+    if (toutEnCache) {
+      setChapterLimit(CHAPTER_PAGE);
+      setChapterQuery('');
+      setChecked(new Set());
+      setLoadingState(false);
+      setError(null);
+      void invoke<Progression | null>('derniere_lecture', {
+        source: m.source,
+        mangaUrl: m.url,
+      })
+        .then(setProgression)
+        .catch(() => setProgression(null));
+      return;
+    }
     setLoadingState(true);
     setError(null);
-    setChapters([]);
-    setInfo(null);
+    if (!chapitresEnCache) setChapters([]);
+    if (!infoEnCache) setInfo(null);
     setChapterLimit(CHAPTER_PAGE);
     setChapterQuery('');
     setChecked(new Set());
@@ -3181,6 +3206,7 @@ function nomSource(s: Source): string {
     })
       .then((r) => {
         setInfo(r.manga ?? null);
+        if (r.manga) cacheInfo.current.set(cleFiche, r.manga);
         // Les deux sources de classification se contredisent : mesuré,
         // WAMANGA classe `ADULT` dans la liste mais `UNKNOWN` sur la fiche,
         // MANGABUFF fait l'inverse. On prend donc la PREMIÈRE valeur connue,
@@ -3218,6 +3244,7 @@ function nomSource(s: Source): string {
         mangaTitle: m.title,
       });
       setChapters(r.chapters ?? []);
+      cacheChapitres.current.set(cleFiche, r.chapters ?? []);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -4037,11 +4064,18 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
       pages = locales.map((p) => ({ index: p.index, url: '', token: p.token, largeur: p.width, hauteur: p.height }));
       horsLigne = true;
     } else {
-      const r = await invoke<{ pages: Page[] }>('pages', {
-        source: src,
-        chapterUrl: c.url,
-      });
-      pages = r.pages ?? [];
+      const clePages = `${src}|${c.url}`;
+      const pagesEnCache = cachePages.current.get(clePages);
+      if (pagesEnCache) {
+        pages = pagesEnCache;
+      } else {
+        const r = await invoke<{ pages: Page[] }>('pages', {
+          source: src,
+          chapterUrl: c.url,
+        });
+        pages = r.pages ?? [];
+        if (pages.length > 0) cachePages.current.set(clePages, pages);
+      }
     }
     if (pages.length === 0) {
       setError(t('erreur.chapitre.vide'));

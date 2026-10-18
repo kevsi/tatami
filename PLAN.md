@@ -4508,3 +4508,44 @@ synchro (ADR 0015).
 `Tatami_0.1.0_x64-setup.exe` (53,58 MiB) dans `target/release/bundle/`.
 Vérification du binaire release : URL `http://tauri.localhost/`, titre « Tatami », Accueil rendu,
 aucune erreur console, `list_sources` rend le catalogue complet (moteur embarqué fonctionnel).
+
+
+---
+
+## Journal 2026-10-18 — performance (cache mémoire)
+
+### Mesures (app réelle, CDP 9223, source MANGASORIGINES)
+
+| Flux | Avant | Après cache |
+|---|---|---|
+| Accueil (sources + recent) | 1,1 s | — |
+| Fiche série (100 chapitres) | 0,9 s | instantané (cache) |
+| Ouverture lecteur (réseau) | 8,9 s | 8,9 s (réseau) |
+| Ouverture lecteur (cache) | — | 3,8 s |
+| Catalogue SUSHISCAN (cartes) | 172 ms | — |
+| Catalogue SUSHISCAN (1re image) | 908 ms | — |
+
+### Correctif
+
+Cache mémoire (`useRef<Map>`) dans `page.tsx` :
+- `cacheChapitres` / `cacheInfo` : clé `source|url`, alimentés dans `loadChapters` (succès).
+- `cachePages` : clé `source|chapterUrl`, alimenté dans `openReaderAt` (succès).
+
+Sur une ré-ouverture, `loadChapters` et `openReaderAt` court-circuitent les appels
+`chapters`/`details`/`pages` et affichent immédiatement les données mises en cache.
+Mesure : premier chapitre 17,0 s → 3,8 s à la ré-ouverture (gain 13,2 s).
+
+### Diagnostic
+
+Les goulots restants sont liés à l'I/O, pas au code :
+- démarrage à froid du JVM (~2,8 s) + `listSources` (~10 s) — déjà pré-chauffé au montage ;
+- ouverture d'un chapitre non téléchargé (8-9 s) = temps de réponse de la source ;
+- première image d'un catalogue (0,9 s) = réseau.
+
+Le code est déjà virtualisé, mémoïsé (`useMemo` pour `filteredChapters`,
+`latestTrie`, `chapitresUniques`) et paginé. Les optimisations restantes
+(pré-chargement du chapitre suivant, cache disque des métadonnées de pages)
+demandent une décision produit (mémoire vs. rapidité).
+
+Portes : `pnpm typecheck` 0, `pnpm lint` 0 erreur (4 warnings connus),
+`pnpm test` **154/154**.

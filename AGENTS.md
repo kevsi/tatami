@@ -2220,3 +2220,30 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   un bouton dont le texte se coupe **en hauteur** n'a pas un problème de
   largeur, il a un `nowrap` manquant ; et « ça déborde » se mesure en
   `button.right − card.right`, pas à l'œil.
+- **Une progression qui compte l'unité *interne* ne répond pas à la question
+  posée.** Mesuré le 2026-10-18 : pour un lot de 45 chapitres, la fiche affichait
+  `Chapitre 13 — page 7/19 (37 %)` — la page du chapitre courant — et l'écran
+  Téléchargements répétait ce détail en plus du compte. L'unité demandée est le
+  **chapitre** (`12/45 chapitres`), parce que c'est ce que l'utilisateur a coché.
+  Corollaire : une barre qui ne montre que la page d'un seul chapitre reste
+  légitime (un chapitre n'a pas d'étape « chapitre »), mais un **lot** doit
+  compter son unité de commande. Le compteur du lot s'incrémente dans le
+  `finally` de chaque chapitre (échec compris), se limite à la fiche ouverte
+  (`source` + `url`) et s'efface au premier clic unitaire, sinon il progresse
+  tout seul.
+- **Une clé i18n qui ne porte que le suffixe pluriel ne peut pas porter le
+  nombre.** `telechargements.chapitres` valait `{s} chapitre{s}` et était appelée
+  avec `s: 's'`, donc l'écran affichait `13/45 s chapitres`. La clé est supprimée
+  au profit de `compte` / `compte1`, qui existaient déjà. Règle : quand une clé
+  contient **deux fois** le même placeholder, demander ce que chacune des deux
+  occurrences est censée recevoir — ici, l'une était le nombre et l'autre le
+  suffixe, et un seul paramètre ne peut pas être les deux.
+- **Un bouton peut être inerte pour une raison qui n'est pas dans son
+  gestionnaire.** Mesuré le 2026-10-18 : une fiche ouverte depuis une carte
+  d'**historique** a `selected === null` (le sous-titre de la fiche est vide), et
+  `downloadChapter` sort sur `if (!openManga || !selected) return;` — le bouton
+  « Télécharger la sélection (3) » ne lance rien, sans message. Le parcours
+  catalogue, lui, renseigne `selected` et fonctionne. Corollaire : devant un
+  bouton qui ne réagit pas, lire **les gardes en amont** et l'état qui les
+  alimente, pas seulement le `onClick` ; et une fiche sans source affichée est
+  le symptôme visible de cet état.

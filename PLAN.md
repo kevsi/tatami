@@ -4414,3 +4414,49 @@ Portes (front) : `typecheck`, `lint` (4 avertissements connus), `i18n:check`,
 `styles:check`, `pages:check`, `perso:check`, `lecteur:check`, `arrondi:check`,
 `ipc:check`, `moteur:check`, `test`, `build` : **0**. Pas de changement Rust.
 
+
+### Mini-plan 2026-10-18 - progression de la file en chapitres, pas en pages
+
+Demande : « on voit les pages se télécharger, pourquoi pas juste 12/45 chapitres ».
+Trois changements, tous d'affichage :
+
+1. **File de l'écran Téléchargements** : la ligne montrait le compte de chapitres
+   *et* le détail `Chapitre 13, page 7/19` *et* un paragraphe qui répétait le même
+   détail. Les pages partent ; il reste `13/45 chapitres · Chapitre 13`.
+2. **Fiche, « Télécharger la sélection »** : la barre ne montrait que la page du
+   chapitre courant. Un lot (`LotChapitres`) compte les chapitres terminés, y
+   compris les échecs, et se limite à la fiche ouverte (source + URL). Un clic
+   unitaire efface le lot, pour qu'il ne progresse pas tout seul.
+3. **Pluriel** : `telechargements.chapitres` valait `{s} chapitre{s}` et était
+   appelée avec `s: 's'`, donc l'écran affichait `13/45 s chapitres`. La clé est
+   supprimée ; le compte passe par `compte` / `compte1`, qui existaient déjà.
+
+La barre d'un **chapitre unique** (clic « télécharger » sur une ligne) garde les
+pages : sans elles, elle ne bougerait pas, puisqu'il n'y a qu'un chapitre.
+
+### Journal 2026-10-18 - file en chapitres : mesuré sur l'app réelle
+
+**File** (`.mesures/file-2026-10-18/probe-file.cjs`, file réelle sauvegardée puis
+restaurée) : jalons `0/21` ? `13/21 chapitres · Chapitre 111` ; `paragraphesMuted`
+**0** (le doublon a disparu), **1** ligne de détail, aucune occurrence de `page`,
+`fileRestaureeIdentique: true`. Capture : `capture-file.png`.
+
+**Lot de fiche** (`.mesures/file-2026-10-18/probe-lot.cjs`, source personnalisée
+`custom:rimuscan`, 9 chapitres, 3 cochés, dossier de téléchargement pointé vers
+une fixture) : `0/3 chapitres · Chapitre 1` ? `1/3 · Chapitre 2` ? `2/3 ·
+Chapitre 3` ? `3/3 chapitres` ; le bouton reprend son libellé à la fin ; **3
+`.cbz`** écrits (3 497, 2 784, 3 355 o) ; dossier réel restauré
+(`\\?\C:\Users\alexanders\Documents\Tatami`). Captures : `capture-lot.png`,
+`capture-lot-fin.png`.
+
+**Portes (front)** : `typecheck`, `lint` (4 avertissements connus), `i18n:check`
+(**409 FR / 409 EN**, aucune clé morte), `hooks:check`, `chemins:check`,
+`libelles:check`, `francais:check`, `styles:check`, `pages:check`, `perso:check`,
+`lecteur:check`, `arrondi:check`, `ipc:check`, `moteur:check`, `test`, `build` :
+**0**. Aucun changement Rust.
+
+**Défaut préexistant constaté, non corrigé (hors périmètre)** : une fiche ouverte
+depuis une carte d'**historique** de l'accueil a `selected === null` (le
+sous-titre de la fiche est vide), donc le bouton « Télécharger la sélection (3) »
+ne lance rien — ni barre, ni fichier, ni message. Le parcours catalogue, lui,
+fonctionne (mesure ci-dessus). À traiter séparément.

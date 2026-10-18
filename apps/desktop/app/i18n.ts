@@ -507,7 +507,6 @@ const FR = {
   "erreur.telechargement": "Téléchargement : {raison}",
   "erreur.telechargement.chapitre": "Chapitre « {chapitre} » : {raison}",
   "erreur.fiche": "Fiche indisponible : {raison}",
-  "telechargements.chapitres": "{s} chapitre{s}",
   "telechargements.deja.la": "déjà là",
   "telechargements.en.echec": "en échec",
   "telechargements.chapitres.nouveaux": "{n} nouveau(x) chapitre(s)",
@@ -614,7 +613,6 @@ const FR = {
   "catalogue.compte.titres": "{visibles} / {total} catalogues",
   "catalogue.tronque":
     "200 premiers catalogues sur {n}. Utilise la recherche pour les autres.",
-  "recherche.progression": "{titre} - {chapitre} : page {page}/{total}",
   "recherche.une.page":
     "{source} ne renvoie qu'une seule page : son catalogue est plus court qu'il n'y paraît (limite du site, pas de l'application).",
   "recherche.chargement": "Chargement…",
@@ -1053,7 +1051,6 @@ const EN: Record<Cle, string> = {
   "erreur.telechargement": "Download: {raison}",
   "erreur.telechargement.chapitre": 'Chapter "{chapitre}": {raison}',
   "erreur.fiche": "Details unavailable: {raison}",
-  "telechargements.chapitres": "{s} chapter{s}",
   "telechargements.deja.la": "already there",
   "telechargements.en.echec": "failed",
   "telechargements.chapitres.nouveaux": "{n} new chapter(s)",
@@ -1150,7 +1147,6 @@ const EN: Record<Cle, string> = {
   "carte.chapitres": "{n} ch.",
   "catalogue.compte.titres": "{visibles} / {total} catalogues",
   "catalogue.tronque": "First 200 catalogues out of {n}. Use the search for the others.",
-  "recherche.progression": "{titre} - {chapitre}: page {page}/{total}",
   "recherche.une.page":
     "{source} returns a single page only: its catalogue is shorter than it looks (a limit of the site, not of the app).",
   "recherche.chargement": "Loading…",

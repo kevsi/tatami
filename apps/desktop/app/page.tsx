@@ -421,6 +421,20 @@ type Progress = {
   error: string | null;
 };
 
+/** Avancement d'un lot de chapitres demandé depuis une fiche.
+ *
+ *  Mesuré le 2026-10-18 : la barre de la fiche affichait « Chapitre 13 —
+ *  page 7/19 », donc la progression d'**une page** alors que l'utilisateur
+ *  avait demandé 45 chapitres. Le compteur de chapitres dit ce qui est fini ;
+ *  la page dit seulement que le chapitre en cours avance. */
+type LotChapitres = {
+  source: string;
+  url: string;
+  total: number;
+  done: number;
+  failed: number;
+};
+
 /** Ce que l'historique sait d'une lecture, tel que `derniere_lecture` le rend.
  *
  *  `chapterUrl` est la seule clé **stable** : c'est elle qui permet de retrouver
@@ -1280,6 +1294,12 @@ export default function Home() {
   const downloadingRef = useRef(false);
   const downloadQueueRef = useRef<Chapter[]>([]);
   const [queueCount, setQueueCount] = useState(0);
+  // Lot demandé depuis la fiche (« Télécharger la sélection ») : le compteur
+  // de chapitres remplace la page dans la barre de progression. `lotActif`
+  // évite qu'un téléchargement unitaire lancé plus tard ne fasse avancer un
+  // lot déjà terminé.
+  const [lotChapitres, setLotChapitres] = useState<LotChapitres | null>(null);
+  const lotActif = useRef(false);
   const [progressParSource, setProgressParSource] = useState<Map<string, Progress>>(() => new Map());
   const [tab, setTab] = useState<string>('home');
   // Tâche 3.2 — le flux « mises à jour ». État propre : il est relu au
@@ -3332,6 +3352,15 @@ function nomSource(s: Source): string {
     });
   }
 
+  // Compte un chapitre terminé pour le lot en cours. Ne fait rien pour un
+  // téléchargement unitaire : `lotActif` n'est vrai que pendant un lot.
+  function compterLot(echec: boolean) {
+    if (!lotActif.current) return;
+    setLotChapitres((prev) =>
+      prev ? { ...prev, done: prev.done + 1, failed: prev.failed + (echec ? 1 : 0) } : prev,
+    );
+  }
+
   // Execution reelle d'un telechargement (un chapitre). Pose le verrou,
   // invoque le moteur, puis libere et passe au suivant dans la file.
   async function runDownload(c: Chapter) {
@@ -3341,9 +3370,11 @@ function nomSource(s: Source): string {
     setError(null);
     try {
       const file = await fetchOneChapter(selected.name, openManga, c, chapters.length);
+      compterLot(false);
       setNotice(t('notice.telecharge', { f: cheminLisible(file) }));
       refreshDownloads();
     } catch (e) {
+      compterLot(true);
       setError(t('erreur.telechargement', { raison: String(e) }));
     } finally {
       downloadingRef.current = false;
@@ -3359,14 +3390,21 @@ function nomSource(s: Source): string {
         void runDownload(suivant);
       } else {
         setQueueCount(0);
+        lotActif.current = false;
       }
     }
   }
 
   // Point d'entree : si un telechargement est deja en cours, le chapitre est
   // mis en file (pas d'echec silencieux « deja en cours ») ; sinon il demarre.
-  async function downloadChapter(c: Chapter) {
+  // `depuisLot` : appelé par « Télécharger la sélection », le lot en cours ne
+  // doit pas être effacé.
+  async function downloadChapter(c: Chapter, depuisLot = false) {
     if (!openManga || !selected) return;
+    if (!depuisLot) {
+      lotActif.current = false;
+      setLotChapitres(null);
+    }
     if (downloadingRef.current) {
       downloadQueueRef.current.push(c);
       setQueueCount(downloadQueueRef.current.length);
@@ -3377,8 +3415,19 @@ function nomSource(s: Source): string {
   }
   async function downloadSelected() {
     const targets = chapters.filter((c) => checked.has(c.url));
+    if (!openManga || !selected || targets.length === 0) return;
+    // Le lot se compte en chapitres : c'est ce que l'utilisateur a demandé,
+    // et la page d'un chapitre ne dit rien des 44 autres.
+    lotActif.current = true;
+    setLotChapitres({
+      source: openManga.source,
+      url: openManga.url,
+      total: targets.length,
+      done: 0,
+      failed: 0,
+    });
     for (const c of targets) {
-      await downloadChapter(c);
+      await downloadChapter(c, true);
     }
   }
 
@@ -5556,10 +5605,23 @@ useEffect(() => {
                     </div>
                     <span className="queue-detail">
                       {q.total > 0
-                        ? `${q.done + q.skipped}/${q.total} ${t('telechargements.chapitres', { s: q.total > 1 ? 's' : '' })}${q.skipped > 0 ? ` (${q.skipped} ${t('telechargements.deja.la')})` : ''}${q.failed > 0 ? ` · ${q.failed} ${t('telechargements.en.echec')}` : ''}`
+                        ? `${t(
+                            q.done + q.skipped === 1 && q.total === 1
+                              ? 'telechargements.chapitres.compte1'
+                              : 'telechargements.chapitres.compte',
+                            { n: q.done + q.skipped, total: q.total },
+                          )}${q.skipped > 0 ? ` (${q.skipped} ${t('telechargements.deja.la')})` : ''}${q.failed > 0 ? ` · ${q.failed} ${t('telechargements.en.echec')}` : ''}`
                         : 'préparation…'}
-                      {q.state === 'téléchargement' && progressParSource.get(q.source)?.total
-                        ? ` · ${progressParSource.get(q.source)!.chapter}, page ${progressParSource.get(q.source)!.page}/${progressParSource.get(q.source)!.total}`
+                      {/* Le compteur de chapitres dit ce qui est **fini** ; le
+                          nom du chapitre en cours dit seulement sur quoi la
+                          file travaille. Les pages ne sont plus affichées ici :
+                          mesuré le 2026-10-18, elles apparaissaient deux fois
+                          (ligne de file + paragraphe en dessous) et ne disent
+                          rien sur l'avancement d'un lot de 45 chapitres. */}
+                      {q.state === 'téléchargement'
+                        ? progressParSource.get(q.source)?.chapter
+                          ? ` · ${progressParSource.get(q.source)!.chapter}`
+                          : ''
                         : q.current
                           ? ` · ${q.current}`
                           : ''}
@@ -5576,21 +5638,6 @@ useEffect(() => {
                 );
               })}
             </div>
-            {queue
-              .filter((q) => q.state === 'téléchargement')
-              .map((q) => {
-                const p = progressParSource.get(q.source);
-                return p && p.total > 0 ? (
-                  <p key={q.key} className="muted">
-                    {t('recherche.progression', {
-                      titre: q.title,
-                      chapitre: p.chapter,
-                      page: p.page,
-                      total: p.total,
-                    })}
-                  </p>
-                ) : null;
-              })}
           </section>
         )}
 
@@ -6165,6 +6212,18 @@ if (reader) {
     // du monde (présuppression de la file, file active) vit ailleurs.
     const progress = progressParSource.get(openManga.source) ?? null;
     const pct = progress && progress.total > 0 ? Math.round((progress.page / progress.total) * 100) : 0;
+    // Lot lancé depuis cette fiche : il se compte en chapitres, pas en pages.
+    const lotIci =
+      lotChapitres && lotChapitres.url === openManga.url && lotChapitres.source === openManga.source
+        ? lotChapitres
+        : null;
+    const largeur = lotIci
+      ? lotIci.total > 0
+        ? Math.round((lotIci.done / lotIci.total) * 100)
+        : 0
+      : progress?.done
+        ? 100
+        : pct;
     // `info` peut être en retard sur les chapitres : on affiche ce qu'on a.
     const fiche = info ?? openManga;
     const rows = infoRows(info, t);
@@ -6332,18 +6391,31 @@ if (reader) {
           />
         </div>
 
-        {progress && (
+        {lotIci || progress ? (
           <div className="progress" role="status">
-            <div className="progress-bar" style={{ width: `${progress.done ? 100 : pct}%` }} />
+            <div className="progress-bar" style={{ width: `${largeur}%` }} />
             <span>
-              {progress.done
-                ? 'Terminé'
-                : progress.total > 0
-                  ? `${progress.chapter} — page ${progress.page}/${progress.total} (${pct}%)`
-                  : `${progress.chapter} — préparation…`}
+              {lotIci
+                ? `${t(
+                    lotIci.done === 1 && lotIci.total === 1
+                      ? 'telechargements.chapitres.compte1'
+                      : 'telechargements.chapitres.compte',
+                    { n: lotIci.done, total: lotIci.total },
+                  )}${progress && !progress.done ? ` · ${progress.chapter}` : ''}${
+                    lotIci.failed > 0
+                      ? ` · ${lotIci.failed} ${t('telechargements.en.echec')}`
+                      : ''
+                  }`
+                : progress
+                  ? progress.done
+                    ? 'Terminé'
+                    : progress.total > 0
+                      ? `${progress.chapter} — page ${progress.page}/${progress.total} (${pct}%)`
+                      : `${progress.chapter} — préparation…`
+                  : ''}
             </span>
           </div>
-        )}
+        ) : null}
 
         {loading && chapters.length === 0 ? (
           /* Même principe que le catalogue, mesuré le 2026-10-06 : le
@@ -6615,25 +6687,29 @@ if (reader) {
         {queueRunning &&
           queue
             .filter((q) => q.state === 'téléchargement')
-            .map((q) => {
-              const p = progressParSource.get(q.source);
-              return (
-                <div key={q.key} className="progress" role="status">
-                  <div
-                    className="progress-bar"
-                    style={{
-                      width: `${
-                        p && p.total > 0 ? Math.round((p.page / p.total) * 100) : 15
-                      }%`,
-                    }}
-                  />
-                  <span>
-                    {q.title}
-                    {p ? ` — ${p.chapter} ${p.page}/${p.total || '?'}` : ''}
-                  </span>
-                </div>
-              );
-            })}
+            .map((q) => (
+              <div key={q.key} className="progress" role="status">
+                <div
+                  className="progress-bar"
+                  style={{
+                    width: `${
+                      q.total > 0 ? Math.round(((q.done + q.skipped) / q.total) * 100) : 15
+                    }%`,
+                  }}
+                />
+                <span>
+                  {q.title}
+                  {q.total > 0
+                    ? ` — ${t(
+                        q.done + q.skipped === 1 && q.total === 1
+                          ? 'telechargements.chapitres.compte1'
+                          : 'telechargements.chapitres.compte',
+                        { n: q.done + q.skipped, total: q.total },
+                      )}`
+                    : ''}
+                </span>
+              </div>
+            ))}
 
         {/* Le bandeau ne s'affiche que pour un **challenge** : il porte les
             boutons d'action (« Résoudre », « C'est fait, réessayer »,

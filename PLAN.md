@@ -4237,3 +4237,62 @@ Portes : `gradle test --rerun-tasks` sur le code restauré (226 tests, 43 XML) ;
 `runBlocking`). Les trois portes des tests ont été prouvées rouges puis
 restaurées : entête ZENMANGA refusé, interstitiel HTML et corps vide refusés,
 `horsVerrou` qui ne prend pas le verrou.
+
+### Mini-plan 2026-10-18 - l'incognito ne couvre pas tout l'accueil
+
+1. Mesurer l'accueil avec l'incognito actif et lire la base (classifications réelles).
+2. Corriger la coquille `ERATIC_AO`, le rattrapage qui ignore `UNKNOWN`, et la
+   troisième liste de l'accueil (signets), avec une seule liste de mots-clés.
+3. Prouver chaque correctif rouge puis vert, passer les portes, reconstruire le
+   binaire et re-mesurer dans l'application.
+
+### Journal 2026-10-18 - incognito : trois trous mesurés, dont la troisième liste
+
+L'utilisateur signale que l'incognito « ne marche pas pour tout ». Mesure dans
+l'app (incognito `1` dans `localStorage`) : l'accueil affichait **5 lus
+récemment**, dont `【Artificial Fox】Yoruichi's Bimbofication` (source `EXHENTAI`)
+et `Teto X Egen` (`custom:mangadexFr`). La base disait `UNKNOWN` pour les deux.
+Trois causes distinctes, mesurées séparément :
+
+1. **`UNKNOWN` n'est pas `NULL`.** Le filtre laisse passer les deux (`WHERE
+   content_rating IS NULL OR … NOT IN (…)`) et le rattrapage ne regardait que
+   `NULL`. Or c'est `UNKNOWN` que `save_progress` écrit quand la source ne
+   classe pas. Le titre `EXHENTAI` restait donc visible pour toujours.
+2. **Coquille `ERATIC_AO`** dans le filtre de l'historique (`store.rs`) : les
+   titres `EROTIC_AO` passaient. Les favoris avaient la bonne valeur.
+3. **« Vos signets » n'était pas filtré du tout** : `list_bookmarks` n'avait ni
+   paramètre ni condition, et l'interrupteur ne rechargeait que favoris et
+   historique. C'est la troisième liste de l'accueil, donc dans le périmètre
+   annoncé par la note.
+
+Correctifs : une fonction pure `classement_adulte(source, titre)` (une seule
+liste de mots-clés) utilisée **à l'écriture** (`save_progress`, `set_favorite`)
+et au rattrapage, qui couvre désormais `NULL` **et** `UNKNOWN` ; la coquille
+corrigée ; `list_bookmarks(limit, manga_url, hide_adult)` filtre par `EXISTS`
+sur `history`/`favorites` (le signet ne duplique pas la classification) ; le
+front passe `hideAdult` et recharge les signets au clic ; la note i18n dit
+maintenant « par leur source ou repérés par un mot-clé » et nomme les trois
+listes.
+
+Preuves rouges (chaque porte cassée à la main, puis restaurée) :
+`incognito_masque_aussi_erotic_ao` ; `une_source_adulte_classe_le_titre_a_l_ecriture`
+et `un_favori_de_source_adulte_est_classe_a_l_ecriture` (les deux tombent quand
+`classement_adulte` rend `None`) ; `incognito_masque_les_signets_adultes` ;
+`le_rattrapage_reclasse_les_lignes_unknown` (`left: Some("UNKNOWN")` contre
+`right: Some("ADULT")`).
+
+Mesure après reconstruction du binaire et relance (pid 2728) : la base porte
+`EXHENTAI` en `ADULT` (rattrapage au démarrage), l'accueil affiche **4 lus
+récemment** sans le titre adulte. Geste réel sur l'interrupteur : OFF → « 5 lus
+récemment » et le titre réapparaît ; ON → « 4 lus récemment » et il disparaît.
+`list_bookmarks` accepte `hideAdult` sans erreur (2 signets, aucun adulte).
+
+Portes : `cargo fmt --check` propre, `cargo clippy --all-targets -D warnings` 0,
+`cargo test --lib` **247 passés / 0 échec** ; front `typecheck`, `lint` (4
+avertissements connus), `i18n:check` (404 clés), `hooks:check`, `chemins:check`,
+`pages:check`, `perso:check`, `ipc:check`, `moteur:check`, `test`, `build` : 0.
+
+Limite qui reste, et elle est dite : un titre que la source classe `UNKNOWN` et
+qu'aucun mot-clé ne trahit reste visible (`Teto X Egen`, tags Romance/Slice of
+Life). Le catalogue et la recherche ne sont pas filtrés, conformément à la note
+(« Ils restent accessibles en recherche »).

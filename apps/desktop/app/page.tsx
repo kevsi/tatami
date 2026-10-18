@@ -2232,18 +2232,28 @@ export default function Home() {
     [incognito],
   );
 
-  const refreshSignets = useCallback(async (mangaUrl?: string) => {
-    try {
-      const r = await invoke<Bookmark[]>('list_bookmarks', {
-        limit: 200,
-        mangaUrl: mangaUrl ?? null,
-      });
-      setSignets(r ?? []);
-    } catch (e) {
-      console.error('lecture des signets impossible', e);
-      setSignets([]);
-    }
-  }, []);
+  /** `hideAdult` explicite pour la même raison que `refreshShelf` : le clic sur
+   *  l'interrupteur arrive AVANT que l'état `incognito` change. Le lecteur, lui,
+   *  doit voir ses propres signets : il passe `mangaUrl`, donc l'incognito ne
+   *  s'y applique pas.
+   */
+  const refreshSignets = useCallback(
+    async (mangaUrl?: string, hideAdult?: boolean) => {
+      const hide = hideAdult ?? incognito;
+      try {
+        const r = await invoke<Bookmark[]>('list_bookmarks', {
+          limit: 200,
+          mangaUrl: mangaUrl ?? null,
+          hideAdult: mangaUrl ? false : hide,
+        });
+        setSignets(r ?? []);
+      } catch (e) {
+        console.error('lecture des signets impossible', e);
+        setSignets([]);
+      }
+    },
+    [incognito],
+  );
 
   const goTab = useCallback(
     (id: string) => {
@@ -6854,6 +6864,10 @@ if (reader) {
                 setIncognito(hide);
                 window.localStorage.setItem(INCOGNITO_KEY, hide ? '1' : '0');
                 void refreshShelf(hide);
+                // L'accueil a une troisième liste : les signets. Sans ce
+                // rechargement, l'interrupteur ne les touchait pas (mesuré le
+                // 2026-10-18 : aucun filtrage du tout côté commande).
+                void refreshSignets(undefined, hide);
               }}
             />
             <span>{t('accueil.incognito')}</span>

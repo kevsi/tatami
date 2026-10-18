@@ -69,6 +69,34 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Mots-clés qui trahissent un contenu adulte quand la source ne le classe pas.
+///
+/// Une **seule** liste, utilisée à l'écriture (`save_progress`, `set_favorite`)
+/// et au rattrapage des lignes déjà en base. Deux listes divergeraient sans que
+/// rien ne le signale — c'est la leçon des champs signés partagés entre Rust et
+/// un script (AGENTS.md §14).
+///
+/// Retourne `Some("ADULT")` ou `None` : on ne devine jamais `SAFE`, donc une
+/// ligne non reconnue reste `UNKNOWN` et visible (cf. le test
+/// `incognito_masque_les_titres_adultes`, qui exige qu'un titre sans
+/// classification ne disparaisse pas).
+fn classement_adulte(source: &str, titre: &str) -> Option<&'static str> {
+    const MOTS: [&str; 7] = [
+        "harem",
+        "branlette",
+        "hentai",
+        "ecchi",
+        "nsfw",
+        "xxx",
+        "adult",
+    ];
+    let source = source.to_lowercase();
+    let titre = titre.to_lowercase();
+    MOTS.iter()
+        .any(|mot| source.contains(mot) || titre.contains(mot))
+        .then_some("ADULT")
+}
+
 /// Une catégorie de favoris créée par l'utilisateur. `color` est un index
 /// dans la palette du thème (1..=8), jamais une valeur CSS : l'interface la
 /// traduit en variable, cf. AGENTS.md §9.2.
@@ -249,24 +277,51 @@ impl Store {
         // l'accueil n'a plus aucun contexte de liste, donc sans cette colonne
         // l'incognito ne pouvait plus rien masquer.
         Self::ensure_column(&tx, "favorites", "content_rating", "TEXT")?;
-        // Backfill incognito : les webtoons dont le titre ou la source contient un
-        // mot-cle adulte et dont la classification est encore inconnue sont marques
-        // ADULT, pour que l'incognito et le filtre de contenu les masquent.
-        // Idempotent : ne touche que les lignes encore NULL.
-        tx.execute_batch(
-            "UPDATE history SET content_rating = 'ADULT' \
-             WHERE content_rating IS NULL \
-               AND (LOWER(title) LIKE '%harem%' OR LOWER(title) LIKE '%branlette%' \
-                    OR LOWER(title) LIKE '%hentai%' OR LOWER(title) LIKE '%ecchi%' \
-                    OR LOWER(title) LIKE '%nsfw%' OR LOWER(title) LIKE '%xxx%' \
-                    OR LOWER(source) LIKE '%hentai%' OR LOWER(source) LIKE '%adult%'); \
-             UPDATE favorites SET content_rating = 'ADULT' \
-             WHERE content_rating IS NULL \
-               AND (LOWER(title) LIKE '%harem%' OR LOWER(title) LIKE '%branlette%' \
-                    OR LOWER(title) LIKE '%hentai%' OR LOWER(title) LIKE '%ecchi%' \
-                    OR LOWER(title) LIKE '%nsfw%' OR LOWER(title) LIKE '%xxx%' \
-                    OR LOWER(source) LIKE '%hentai%' OR LOWER(source) LIKE '%adult%');",
-        ).map_err(|e| format!("backfill incognito : {e}"))?;
+        // Backfill incognito : un webtoon dont la source ou le titre porte un
+        // mot-clé adulte et dont la classification est NULL **ou UNKNOWN** est
+        // marqué ADULT.
+        //
+        // `UNKNOWN` compte : c'est ce que `save_progress` écrit quand la source
+        // ne classe pas, et l'ancien backfill ne regardait que NULL. Mesuré le
+        // 2026-10-18 : deux titres adultes (EXHENTAI, `custom:mangadexFr`)
+        // restaient affichés à l'accueil alors que l'incognito était actif.
+        //
+        // La liste de mots-clés vit dans `classement_adulte`, partagée avec
+        // l'écriture : deux listes finiraient par diverger.
+        for table in ["history", "favorites"] {
+            let a_classer: Vec<(String, String, String)> = {
+                let mut req = tx
+                    .prepare(&format!(
+                        "SELECT source, manga_url, title FROM {table}
+                         WHERE content_rating IS NULL OR content_rating = 'UNKNOWN'"
+                    ))
+                    .map_err(|e| format!("backfill incognito ({table}) : {e}"))?;
+                let rows = req
+                    .query_map([], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                        ))
+                    })
+                    .map_err(|e| format!("backfill incognito ({table}) : {e}"))?;
+                rows.collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| format!("backfill incognito ({table}) : {e}"))?
+            };
+            for (source, manga_url, titre) in a_classer {
+                if classement_adulte(&source, &titre).is_none() {
+                    continue;
+                }
+                tx.execute(
+                    &format!(
+                        "UPDATE {table} SET content_rating = 'ADULT'
+                         WHERE source = ?1 AND manga_url = ?2"
+                    ),
+                    params![source, manga_url],
+                )
+                .map_err(|e| format!("backfill incognito ({table}) : {e}"))?;
+            }
+        }
         // v4 : activation/désactivation des sources. Sans cela, les 1370
         // catalogues sont proposals à equalité et l'utilisateur ne peut pas
         // écarter ceux qui l'intéressent pas. Seules les sources DÉSACTIVÉES
@@ -541,6 +596,11 @@ impl Store {
             .conn
             .lock()
             .map_err(|_| "base verrouillée".to_string())?;
+        // Même règle que `save_progress` : une valeur connue gagne, sinon un
+        // mot-clé classe le titre, sinon on laisse `UNKNOWN`.
+        let classement = content_rating
+            .filter(|r| !r.eq_ignore_ascii_case("UNKNOWN"))
+            .or_else(|| classement_adulte(source, title));
         if favorite {
             conn.execute(
                 "INSERT INTO favorites (source, manga_url, title, cover_url, content_rating, added_at)
@@ -548,7 +608,7 @@ impl Store {
                  ON CONFLICT(source, manga_url) DO UPDATE SET
                    title = ?3, cover_url = ?4,
                    content_rating = COALESCE(NULLIF(?5, 'UNKNOWN'), content_rating)",
-                params![source, manga_url, title, cover_url, content_rating, now_ms()],
+                params![source, manga_url, title, cover_url, classement, now_ms()],
             )
         } else {
             conn.execute(
@@ -580,9 +640,7 @@ impl Store {
              LEFT JOIN categories c ON c.id = f.category_id
              ORDER BY f.added_at DESC, f.title ASC"
         };
-        let mut stmt = conn
-            .prepare(sql)
-            .map_err(|e| format!("favoris : {e}"))?;
+        let mut stmt = conn.prepare(sql).map_err(|e| format!("favoris : {e}"))?;
         let rows = stmt
             .query_map([], |r| {
                 Ok(Favorite {
@@ -824,18 +882,28 @@ impl Store {
         chapter_url: &str,
         page_index: u16,
     ) -> Result<bool, String> {
-        Ok(self.list_bookmarks(500, Some(manga_url))?.iter().any(|b| {
-            b.source == source && b.chapter_url == chapter_url && b.page_index == page_index
-        }))
+        Ok(self
+            .list_bookmarks(500, Some(manga_url), false)?
+            .iter()
+            .any(|b| {
+                b.source == source && b.chapter_url == chapter_url && b.page_index == page_index
+            }))
     }
 
     /// Signets du plus récent au plus ancien, éventuellement limités à un
     /// webtoon. Le même ordre que l'historique, pour que les deux sections de
     /// l'accueil se lisent pareil.
+    ///
+    /// `hide_adult` applique l'incognito comme aux deux autres listes de
+    /// l'accueil. Le signet ne porte pas sa classification : elle vit dans
+    /// `history` (écrite à la lecture) et `favorites`. On filtre par
+    /// `EXISTS` plutôt que par jointure, sinon deux lignes adultes
+    /// dupliqueraient le signet.
     pub fn list_bookmarks(
         &self,
         limit: u32,
         manga_url: Option<&str>,
+        hide_adult: bool,
     ) -> Result<Vec<Bookmark>, String> {
         let conn = self
             .conn
@@ -843,18 +911,30 @@ impl Store {
             .map_err(|_| "base verrouillée".to_string())?;
         let colonnes = "source, manga_url, chapter_url, title, cover_url, chapter_title,
                         page_index, page_count, created_at";
+        let filtre_adulte = if hide_adult {
+            " AND NOT EXISTS (
+                  SELECT 1 FROM history h
+                  WHERE h.source = b.source AND h.manga_url = b.manga_url
+                    AND h.content_rating IN ('ADULT', 'EROTIC_AO', 'PORNOGRAPHIC'))
+              AND NOT EXISTS (
+                  SELECT 1 FROM favorites f
+                  WHERE f.source = b.source AND f.manga_url = b.manga_url
+                    AND f.content_rating IN ('ADULT', 'EROTIC_AO', 'PORNOGRAPHIC'))"
+        } else {
+            ""
+        };
         let (sql, args): (&str, Vec<Box<dyn rusqlite::ToSql>>) = match manga_url {
             Some(u) => (
                 &*format!(
-                    "SELECT {colonnes} FROM bookmarks WHERE manga_url = ?1
-                     ORDER BY created_at DESC, page_index DESC LIMIT ?2"
+                    "SELECT {colonnes} FROM bookmarks b WHERE b.manga_url = ?1{filtre_adulte}
+                     ORDER BY b.created_at DESC, b.page_index DESC LIMIT ?2"
                 ),
                 vec![Box::new(u.to_string()), Box::new(limit as i64)],
             ),
             None => (
                 &*format!(
-                    "SELECT {colonnes} FROM bookmarks
-                     ORDER BY created_at DESC, page_index DESC LIMIT ?1"
+                    "SELECT {colonnes} FROM bookmarks b WHERE 1 = 1{filtre_adulte}
+                     ORDER BY b.created_at DESC, b.page_index DESC LIMIT ?1"
                 ),
                 vec![Box::new(limit as i64)],
             ),
@@ -1046,6 +1126,13 @@ impl Store {
             .conn
             .lock()
             .map_err(|_| "base verrouillée".to_string())?;
+        // La source ne classe pas toujours (`UNKNOWN`) : un mot-clé du titre ou
+        // de la source vaut mieux qu'une ligne non classée, qui resterait
+        // visible en incognito. Une valeur **connue** (SAFE, ADULT…) n'est
+        // jamais écrasée.
+        let classement = content_rating
+            .filter(|r| !r.eq_ignore_ascii_case("UNKNOWN"))
+            .or_else(|| classement_adulte(source, title));
         conn.execute(
             "INSERT INTO history
                (source, manga_url, title, cover_url, content_rating, chapter_url,
@@ -1065,7 +1152,7 @@ impl Store {
                 manga_url,
                 title,
                 cover_url,
-                content_rating,
+                classement,
                 chapter_url,
                 chapter_title,
                 chapter_index,
@@ -1146,7 +1233,7 @@ impl Store {
                     chapter_title, chapter_index, page_index, page_count, read_at
              FROM history
              WHERE content_rating IS NULL
-                OR content_rating NOT IN ('ADULT', 'ERATIC_AO', 'PORNOGRAPHIC')
+                OR content_rating NOT IN ('ADULT', 'EROTIC_AO', 'PORNOGRAPHIC')
              ORDER BY read_at DESC LIMIT ?1"
         } else {
             "SELECT source, manga_url, title, cover_url, content_rating, chapter_url,
@@ -1293,7 +1380,9 @@ mod tests {
         s.set_favorite("SRC", "/m/1", "Nouveau", None, Some("UNKNOWN"), true)
             .unwrap();
         assert_eq!(
-            s.list_favorites(false).unwrap()[0].content_rating.as_deref(),
+            s.list_favorites(false).unwrap()[0]
+                .content_rating
+                .as_deref(),
             Some("ADULT")
         );
         nettoyer(&path);
@@ -1370,7 +1459,9 @@ mod tests {
         assert_eq!(s.list_favorites(false).unwrap()[0].content_rating, None);
         s.note_content_rating("SRC", "/m/fav", "ADULT").unwrap();
         assert_eq!(
-            s.list_favorites(false).unwrap()[0].content_rating.as_deref(),
+            s.list_favorites(false).unwrap()[0]
+                .content_rating
+                .as_deref(),
             Some("ADULT"),
             "ouvrir la fiche d'un favori doit lui apprendre son classement"
         );
@@ -1629,7 +1720,9 @@ mod tests {
         }
         assert_eq!(s.version().unwrap(), SCHEMA_VERSION);
         assert_eq!(
-            s.list_favorites(false).unwrap()[0].content_rating.as_deref(),
+            s.list_favorites(false).unwrap()[0]
+                .content_rating
+                .as_deref(),
             Some("ADULT")
         );
         nettoyer(&path);
@@ -1705,7 +1798,7 @@ mod tests {
     #[test]
     fn un_signet_memorise_la_page_exacte() {
         let (s, path) = store_vierge();
-        assert!(s.list_bookmarks(50, None).unwrap().is_empty());
+        assert!(s.list_bookmarks(50, None, false).unwrap().is_empty());
         s.add_bookmark(
             "SRC",
             "/m/1",
@@ -1717,7 +1810,7 @@ mod tests {
             12,
         )
         .unwrap();
-        let l = s.list_bookmarks(50, None).unwrap();
+        let l = s.list_bookmarks(50, None, false).unwrap();
         assert_eq!(l.len(), 1);
         assert_eq!(l[0].page_index, 4);
         assert_eq!(l[0].page_count, 12);
@@ -1734,7 +1827,7 @@ mod tests {
             12,
         )
         .unwrap();
-        assert_eq!(s.list_bookmarks(50, None).unwrap().len(), 1);
+        assert_eq!(s.list_bookmarks(50, None, false).unwrap().len(), 1);
         // Une autre page du même chapitre est un signet distinct.
         s.add_bookmark(
             "SRC",
@@ -1747,11 +1840,11 @@ mod tests {
             12,
         )
         .unwrap();
-        assert_eq!(s.list_bookmarks(50, None).unwrap().len(), 2);
+        assert_eq!(s.list_bookmarks(50, None, false).unwrap().len(), 2);
         // Retirer est exact et idempotent.
         s.remove_bookmark("SRC", "/m/1", "/c/1", 4).unwrap();
         s.remove_bookmark("SRC", "/m/1", "/c/1", 4).unwrap();
-        assert_eq!(s.list_bookmarks(50, None).unwrap().len(), 1);
+        assert_eq!(s.list_bookmarks(50, None, false).unwrap().len(), 1);
         assert!(!s.has_bookmark("SRC", "/m/1", "/c/1", 4).unwrap());
         assert!(s.has_bookmark("SRC", "/m/1", "/c/1", 7).unwrap());
         nettoyer(&path);
@@ -1765,18 +1858,18 @@ mod tests {
             s.add_bookmark("SRC", manga, "/c/1", "Titre", None, None, page, 10)
                 .unwrap();
         }
-        let l = s.list_bookmarks(50, None).unwrap();
+        let l = s.list_bookmarks(50, None, false).unwrap();
         assert_eq!(
             l.iter().map(|b| b.page_index).collect::<Vec<_>>(),
             vec![3, 2, 1],
             "le plus recent d'abord"
         );
         // Le filtre par webtoon ne renvoie que le sien.
-        let un = s.list_bookmarks(50, Some("/m/1")).unwrap();
+        let un = s.list_bookmarks(50, Some("/m/1"), false).unwrap();
         assert_eq!(un.len(), 2);
         assert!(un.iter().all(|b| b.manga_url == "/m/1"));
         // La limite est respectee.
-        assert_eq!(s.list_bookmarks(1, None).unwrap().len(), 1);
+        assert_eq!(s.list_bookmarks(1, None, false).unwrap().len(), 1);
         nettoyer(&path);
     }
 
@@ -1984,6 +2077,155 @@ mod tests {
             filtre.iter().any(|e| e.title == "Sans classe"),
             "un titre sans classification ne doit pas disparaitre"
         );
+        nettoyer(&path);
+    }
+
+    /// La valeur `EROTIC_AO` était écrite `ERATIC_AO` dans le filtre de
+    /// l'historique : la faute de frappe laissait passer ces titres.
+    /// Rouge avant le correctif (le titre restait dans la liste filtrée).
+    #[test]
+    fn incognito_masque_aussi_erotic_ao() {
+        let (s, path) = store_vierge();
+        s.save_progress(
+            "SRC",
+            "/m/erotic",
+            "Erotique",
+            None,
+            Some("EROTIC_AO"),
+            Some("/c/1"),
+            None,
+            0,
+            0,
+            10,
+        )
+        .unwrap();
+        assert_eq!(s.list_recent(10, false).unwrap().len(), 1);
+        assert!(
+            s.list_recent(10, true).unwrap().is_empty(),
+            "EROTIC_AO doit etre masque"
+        );
+        nettoyer(&path);
+    }
+
+    /// Une source qui ne classe pas écrit `UNKNOWN` : sans mot-clé reconnu la
+    /// ligne resterait visible en incognito. Mesure du 2026-10-18 : EXHENTAI
+    /// laissait passer ses titres pour cette raison.
+    #[test]
+    fn une_source_adulte_classe_le_titre_a_l_ecriture() {
+        let (s, path) = store_vierge();
+        s.save_progress(
+            "EXHENTAI",
+            "/m/1",
+            "Un titre sans indice",
+            None,
+            Some("UNKNOWN"),
+            Some("/c/1"),
+            None,
+            0,
+            0,
+            10,
+        )
+        .unwrap();
+        assert!(
+            s.list_recent(10, true).unwrap().is_empty(),
+            "une source adulte doit etre classee a l'ecriture"
+        );
+        assert_eq!(
+            s.list_recent(10, false).unwrap()[0]
+                .content_rating
+                .as_deref(),
+            Some("ADULT")
+        );
+        nettoyer(&path);
+    }
+
+    /// Un favori ajouté avec une classification inconnue suit la même règle.
+    #[test]
+    fn un_favori_de_source_adulte_est_classe_a_l_ecriture() {
+        let (s, path) = store_vierge();
+        s.set_favorite("NHENTAI", "/m/1", "Sans indice", None, None, true)
+            .unwrap();
+        assert!(s.list_favorites(true).unwrap().is_empty());
+        assert_eq!(
+            s.list_favorites(false).unwrap()[0]
+                .content_rating
+                .as_deref(),
+            Some("ADULT")
+        );
+        nettoyer(&path);
+    }
+
+    /// Les signets sont la troisième liste de l'accueil : sans ce filtre,
+    /// l'incognito ne couvrait pas « Vos signets ».
+    #[test]
+    fn incognito_masque_les_signets_adultes() {
+        let (s, path) = store_vierge();
+        s.save_progress(
+            "SRC",
+            "/m/adulte",
+            "Adulte",
+            None,
+            Some("ADULT"),
+            Some("/c/1"),
+            None,
+            0,
+            0,
+            10,
+        )
+        .unwrap();
+        s.save_progress(
+            "SRC",
+            "/m/safe",
+            "Safe",
+            None,
+            Some("SAFE"),
+            Some("/c/1"),
+            None,
+            0,
+            0,
+            10,
+        )
+        .unwrap();
+        s.add_bookmark("SRC", "/m/adulte", "/c/1", "Adulte", None, None, 1, 10)
+            .unwrap();
+        s.add_bookmark("SRC", "/m/safe", "/c/1", "Safe", None, None, 1, 10)
+            .unwrap();
+        assert_eq!(s.list_bookmarks(50, None, false).unwrap().len(), 2);
+        let masques = s.list_bookmarks(50, None, true).unwrap();
+        assert_eq!(masques.len(), 1);
+        assert_eq!(masques[0].title, "Safe");
+        // Le lecteur demande les signets d'un webtoon précis : le filtre ne
+        // doit pas le priver des siens.
+        assert_eq!(
+            s.list_bookmarks(50, Some("/m/adulte"), false)
+                .unwrap()
+                .len(),
+            1
+        );
+        nettoyer(&path);
+    }
+
+    /// Le rattrapage tourne à chaque démarrage et doit couvrir `UNKNOWN`, pas
+    /// seulement NULL : c'est la valeur que les sources qui ne classent pas ont
+    /// déjà écrite. Rouge avant le correctif (la ligne restait UNKNOWN).
+    #[test]
+    fn le_rattrapage_reclasse_les_lignes_unknown() {
+        let (s, path) = store_vierge();
+        // Écriture directe : `save_progress` classerait déjà à l'écriture, donc
+        // on simule une base d'avant le correctif.
+        {
+            let conn = s.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO history (source, manga_url, title, cover_url, content_rating,
+                 chapter_url, chapter_title, chapter_index, page_index, page_count, read_at)
+                 VALUES ('EXHENTAI', '/m/1', 'Sans indice', NULL, 'UNKNOWN', NULL, NULL, 0, 0, 10, 0)",
+                [],
+            )
+            .unwrap();
+        }
+        s.migrate().unwrap();
+        let e = &s.list_recent(10, false).unwrap()[0];
+        assert_eq!(e.content_rating.as_deref(), Some("ADULT"));
         nettoyer(&path);
     }
 
@@ -2206,7 +2448,7 @@ mod tests {
         );
         assert_eq!(favoris[0].manga_url, "/m/1");
         assert_eq!(
-            rouvert.list_bookmarks(50, None).unwrap().len(),
+            rouvert.list_bookmarks(50, None, false).unwrap().len(),
             1,
             "la sauvegarde doit contenir le signet écrit juste avant elle"
         );

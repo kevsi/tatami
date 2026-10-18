@@ -2170,3 +2170,19 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
 - **`note_content_rating` ne mettait à jour que les lignes `IS NULL`, pas `UNKNOWN`.** Mesuré : la liste renvoyait `UNKNOWN`, stocké en premier ; la fiche renvoyait `ADULT` ; `note_content_rating` ignorait la mise à jour (UNKNOWN ≠ NULL) → le manga restait UNKNOWN → non filtré par l'incognito. Fix : `WHERE (content_rating IS NULL OR content_rating = 'UNKNOWN') AND ?3 <> 'UNKNOWN'`. Leçon : « ne jamais écraser une valeur déjà apprise » ne doit pas traiter `UNKNOWN` comme une valeur apprise.
 - **Un backfill idempotent répare les données existantes sans migration de version.** Mesuré : « Harem de Gyarus » était classé NULL en base ; l'incognito ne le masquait pas. Ajout d'un `UPDATE ... WHERE content_rating IS NULL AND titre/source contient un mot-clé adulte` dans la migration (tourne à chaque démarrage, ne touche que les NULL). Leçon : quand une classification est corrigée, penser aux données déjà stockées, pas seulement au code nouveau.
 - **Un saut dans un lecteur virtualisé ne montre rien si on n'admet pas les voisins.** Mesuré : sauter vers la fin n'admettait que la page cible ; ses voisins (visibles) n'avaient pas de `src` → pas de chargement → pas d'`onLoad` → plus aucune admission → bande vierge. Fix : admettre la cible et un rayon de voisins (±2). Leçon : une garantie qui ne se déclenche que sur un événement qui ne peut pas arriver n'en est pas une (même circularité que le changement de chapitre).
+
+- **`UNKNOWN` n'est pas `NULL`, et un rattrapage qui ne regarde que `NULL` ne
+  répare rien.** Mesuré le 2026-10-18 : deux titres adultes restaient à l'accueil
+  avec l'incognito actif, parce que `save_progress` écrit `UNKNOWN` quand la
+  source ne classe pas et que le backfill filtrait `IS NULL` seulement.
+  Corollaire : quand une donnée « inconnue » a une valeur explicite (`UNKNOWN`),
+  toute garde écrite pour `NULL` la rate — et le symptôme est un filtre qui
+  « marche » sur les données de test et pas sur celles du terrain.
+
+- **Un interrupteur qui recharge deux listes sur trois laisse la troisième
+  mentir.** Mesuré : « Vos signets » est sur l'accueil, et `list_bookmarks`
+  n'avait ni paramètre `hide_adult` ni condition. La note i18n disait pourtant
+  « masque de l'accueil », ce qui engage les trois listes. Corollaire : quand un
+  réglage s'applique à un écran, énumérer les listes de l'écran, pas celles dont
+  on se souvient ; et le filtre d'un signet se lit là où vit sa classification
+  (`history`/`favorites`), sans dupliquer la colonne.

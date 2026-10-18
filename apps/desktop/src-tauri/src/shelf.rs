@@ -177,13 +177,14 @@ pub async fn list_bookmarks(
     cache: State<'_, Arc<PageCache>>,
     limit: Option<u32>,
     manga_url: Option<String>,
+    hide_adult: Option<bool>,
 ) -> Result<Vec<Bookmark>, String> {
     let n = limit.unwrap_or(RECENT_LIMIT).min(200);
     let filtre = manga_url
         .as_deref()
         .map(str::trim)
         .filter(|u| !u.is_empty());
-    let mut lignes = store.list_bookmarks(n, filtre)?;
+    let mut lignes = store.list_bookmarks(n, filtre, hide_adult.unwrap_or(false))?;
     for l in lignes.iter_mut() {
         l.cover_token = jeton(&cache, &l.source, &l.manga_url, l.cover_url.as_deref());
     }

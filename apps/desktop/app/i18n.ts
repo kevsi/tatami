@@ -301,7 +301,7 @@ const FR = {
   "accueil.continuer": "Continuer la lecture",
   "accueil.incognito": "Incognito",
   "accueil.incognito.note":
-    "Masque de l'accueil les titres classés adultes par leur source. Ils restent accessibles en recherche.",
+    "Masque de l'accueil (reprise, signets, favoris) les titres classés adultes par leur source ou repérés par un mot-clé. Ils restent accessibles en recherche.",
   "accueil.lu.recemment": "{n} lus récemment",
   "accueil.lu.recemment1": "{n} lu récemment",
   "accueil.favori": "{n} favoris",
@@ -935,7 +935,7 @@ const EN: Record<Cle, string> = {
   "accueil.continuer": "Continue reading",
   "accueil.incognito": "Incognito",
   "accueil.incognito.note":
-    "Hides titles their source rates as adult. They stay reachable through search.",
+    "Hides adult-rated or keyword-flagged titles from Home (resume, bookmarks, favourites). They stay reachable through search.",
   "accueil.lu.recemment": "{n} recently read",
   "accueil.lu.recemment1": "{n} recently read",
   "accueil.favori": "{n} favourites",

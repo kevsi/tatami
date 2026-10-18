@@ -687,6 +687,11 @@ pub async fn download_chapter(
     .await
 }
 
+/// Une page téléchargée en parallèle : (index, octets, type d'image).
+/// L'alias évite un `Vec<JoinHandle<…>>` au-delà du seuil de complexité de
+/// clippy — le type n'est pas plus simple, il est seulement nommé.
+type PageTelechargee = Result<(usize, Vec<u8>, crate::image::ImageKind), String>;
+
 #[allow(clippy::too_many_arguments)]
 async fn run_download(
     app: &AppHandle,
@@ -839,9 +844,7 @@ async fn run_download(
     // Garde déjà faite plus haut : total >= 2 ici.
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(CONCURRENCE));
-    let mut taches: Vec<
-        tokio::task::JoinHandle<Result<(usize, Vec<u8>, crate::image::ImageKind), String>>,
-    > = Vec::with_capacity(total);
+    let mut taches: Vec<tokio::task::JoinHandle<PageTelechargee>> = Vec::with_capacity(total);
     for (i, url) in page_urls.iter().enumerate() {
         let page_url = url.clone();
         let source = source.to_string();
@@ -850,7 +853,6 @@ async fn run_download(
         let app = app.clone();
         let chapter_title = chapter_title.to_string();
         let page_publique = page_publique.clone();
-        let total = total;
         taches.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.map_err(|e| format!("semaphore: {e}"))?;
             let _ = app.emit(

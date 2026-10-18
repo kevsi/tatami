@@ -4549,3 +4549,48 @@ demandent une décision produit (mémoire vs. rapidité).
 
 Portes : `pnpm typecheck` 0, `pnpm lint` 0 erreur (4 warnings connus),
 `pnpm test` **154/154**.
+
+
+---
+
+## Journal 2026-10-18 — performance (pré-chargement)
+
+### Optimisation 1 — pré-chargement du chapitre suivant
+
+À l'ouverture d'un chapitre, un `useEffect` fetch les pages du chapitre suivant
+en arrière-plan et les stocke dans `cachePages`. « Chapitre suivant » est alors
+instantané (cache hit) au lieu de re-passer par le réseau.
+
+Comportement :
+- déclenché sur `reader.chapter.url` / `chapters.length` ;
+- saute si le chapitre suivant est déjà en cache ;
+- essaie d'abord `local_chapter_pages` (lecture locale, rapide), puis `pages` ;
+- annulé si le chapitre change avant la fin (flag `annule`) ;
+- silencieux en cas d'échec (confort, pas une donnée).
+
+### Optimisation 2 — cache disque des métadonnées de pages
+
+Non implémentée : nécessiterait une table SQLite (migration forward-only) ou un
+fichier JSON dédié dans le cache. Le cache mémoire couvre déjà les re-lectures
+dans la même session. À reprendre si le besoin de persistance inter-sessions
+est confirmé.
+
+### Optimisation 3 — indicateur de progression pendant l'ouverture
+
+Non implémentée : le compteur de pages n'est connu qu'après la résolution de
+`pages`, donc il ne peut pas être affiché pendant l'attente. Le spinner
+(`.chargement`, `renderChargement`) existe déjà et s'affiche immédiatement
+(`setReaderLoading(true)` avant l'`invoke`).
+
+### Mesures (app réelle, CDP 9223, MANGASORIGINES)
+
+| Flux | Avant | Après cache mémoire + pré-chargement |
+|---|---|---|
+| Accueil | 1,1 s | 1,1 s |
+| Fiche série (100 chapitres) | 0,9 s | instantané (cache) |
+| Ouverture lecteur (réseau) | 8,9 s | 8,9 s (réseau) |
+| Ouverture lecteur (cache) | — | 3,8 s |
+| Ouverture lecteur (pré-chargé) | — | ~0 s (mesure à confirmer) |
+
+Portes : `pnpm typecheck` 0, `pnpm lint` 0 erreur (4 warnings connus),
+`pnpm test` **154/154**.

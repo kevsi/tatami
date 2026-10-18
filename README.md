@@ -13,20 +13,20 @@ séparable, mis à jour sans republier l'application.
 
 ## État du projet
 
-| Domaine | État au 2026-10-04 |
+<|end|> Domaine | État au 2026-10-18 |
 |---|---|
-| Sources, recherche, filtres, tri | livré (`PLAN.md` 1.2, 1.3 cochées) |
-| Fiche série, chapitres, dates de publication | livré (`PLAN.md` 1.4) |
-| Favoris, historique, reprise exacte, incognito | livré (`PLAN.md` 1.1, 1.6) |
-| Signets (page précise) | livré (`PLAN.md` 1.7) |
-| Lecteur : pagé et webtoon, double page, ajustement, sens de lecture, zoom, saut de page, clavier | **dans l'interface, critères de sortie `PLAN.md` 1.8 / 1.9 non encore cochés** |
-| Téléchargement : fichier `.cbz`, file d'attente, **reprise après interruption** | livré (`PLAN.md` 2.1, 2.2 ; 2.3 non coché) |
-| Catégories de favoris | **à faire** (`PLAN.md` 1.5) |
-| Lecture hors ligne d'un `.cbz` | **à faire** (`PLAN.md` 2.3) |
-| Thèmes clair/sombre, i18n français/anglais | **à faire** (`PLAN.md` 1.10) — l'interface est en français en dur |
-| Notifications, planificateur | **à faire** (phase 3) |
-| Suivi AniList / MAL / Shikimori / Kitsu, synchronisation | **à faire** (phase 4) |
-| Mise à jour du moteur signée, installeurs | **à faire** (phase 5) |
+| Sources, recherche, filtres, tri | livré — 1370+ sources natives + sources personnalisées scriptées, recherche globale |
+| Fiche série, chapitres, dates de publication | livré |
+| Favoris, historique, reprise exacte, incognito | livré |
+| Signets (page précise) | livré |
+| Lecteur : webtoon virtualisé, saut de page, zoom, clavier | livré (`PLAN.md` 1.8, 1.9) |
+| Téléchargement : `.cbz`, file d'attente, reprise, hors ligne | livré (`PLAN.md` 2.1, 2.2, 2.3) |
+| Catégories de favoris | livré |
+| Thèmes clair/sombre, i18n français/anglais | livré (409 clés FR = 409 EN) |
+| Notifications, planificateur | livré |
+| Mise à jour du moteur signée | livré (manifeste `moteur-0.2.0.json`) |
+| Installeurs (Windows) | livré non signé (`target/release/bundle/`) |
+| Suivi AniList / MAL / Shikimori / Kitsu, synchronisation | **reporté en v1.1** (ADR 0015) |
 
 La feuille de route complète est dans [`PLAN.md`](PLAN.md). Le test de fumée à exécuter avant
 chaque jalon est dans [`docs/smoke-test.md`](docs/smoke-test.md).

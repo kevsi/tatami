@@ -837,7 +837,15 @@ function infoRows(
   if (m.rating != null && m.rating > 0) {
     rows.push({ label: t('fiche.note'), value: t('fiche.note.valeur', { note: m.rating.toFixed(1) }) });
   }
-  rows.push({ label: t('fiche.source'), value: m.source });
+  // Mesuré le 2026-10-18, sur `custom:rimuscan` : les détails d'une source
+  // perso peuvent porter une chaîne vide pour certains champs, et la ligne
+  // « Source » en sortait **avec un `<dd>` vide** — exactement la « ligne vide
+  // pire qu'une ligne absente » que la doc de ce module proscrit. Une chaîne
+  // vide n'est pas une donnée.
+  const valeurSource = String(m.source ?? '').trim();
+  if (valeurSource) {
+    rows.push({ label: t('fiche.source'), value: valeurSource });
+  }
   return rows;
 }
 
@@ -3145,7 +3153,7 @@ function nomSource(s: Source): string {
         // **Ne pas avaler.** Mesuré le 2026-10-09 (audit) : la source pouvait
         // répondre pour `chapters` mais échouer sur `details` (timeout,
         // `PARSE_ERROR`, 404). `setInfo(null)` faisait alors disparaître le bloc
-        // `(summary || rows.length > 0 || fiche.coverUrl)` — donc le résumé, les
+        // `(summary || rows.length > 0)` — donc le résumé, les
         // genres et la couverture — **sans le moindre message**, alors qu'un
         // échec identique sur `chapters` est affiché deux lignes plus bas.
         //
@@ -4688,9 +4696,9 @@ useEffect(() => {
     return (
       <main>
         <AppBar tab={tab} onTab={goTab} />{renderSuperpositions()}
-        <button className="crumb" onClick={() => setTab('catalog')}>
-          {'←'} {t('nav.catalogues')}
-        </button>
+        {/* Mesuré le 2026-10-18 : le fil d'ariane « ← Catalogues » s'affichait
+            ici en dur, alors que Paramètres est un onglet racine de l'AppBar,
+            pas un sous-écran du catalogue. Retiré. */}
         <header className="page-head">
           <h1>{t('nav.parametres')}</h1>
         </header>
@@ -6107,7 +6115,12 @@ if (reader) {
           </div>
         )}
 
-        {(summary || rows.length > 0 || fiche.coverUrl) && (
+        {/* Mesuré le 2026-10-18 : pour une source perso sans résumé ni
+            métadonnées, la carte mesurait 1210×268 — une ligne « Source » à
+            `<dd>` vide et ~900 px de blanc. La ligne vide part avec le filtre
+            de `infoRows`, et `coverUrl` seul ne déclenche plus la carte : une
+            fiche sans contenu ne rend plus un encart quasi vide. */}
+        {(summary || rows.length > 0) && (
           <section className="sheet">
             {fiche.coverToken && (
               <Vignette jeton={fiche.coverToken} titre={fiche.title} classe="sheet-cover" />

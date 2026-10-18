@@ -4123,3 +4123,49 @@ l'affichage (`tagsExpanded ? tags : tags.slice(0, TAGS_SHOWN)`).
 4 avertissements), `i18n` (402 clés = 402 littéraux), `hooks`, `chemins`,
 `libelles`, `francais`, `styles`, `pages`, `perso`, `lecteur`, `arrondi`, `ipc`,
 `moteur`, `test` (147/0), `build` — **16/16 vertes**. Changement **front-only**.
+
+### Journal 2026-10-18 — audit visuel : le crumb fantôme de Paramètres et la carte quasi vide des fiches perso
+
+**Contexte.** Passe visuelle lecture seule d'abord, corrections ensuite, chaque
+défaut prouvé à l'écran (CDP port 9223) : 11 captures de l'app réelle dans
+`.mesures/visuel-2026-10-18/captures/` (01 accueil → 09 thème clair). Deux
+faux positifs écartés avec mesure à l'appui (bouton « Sélectionner » paraissant
+désactivé : mesuré `disabled: false` sur 232 cartes ; « footer » du lecteur :
+l'étiquette `next dev`, absente de l'app livrée).
+
+**V0 (sév. 2).** L'écran Paramètres affichait à froid un fil d'ariane
+« ← Catalogues » codé en dur — Paramètres est un onglet racine de l'AppBar, pas
+un sous-écran du catalogue. Retiré.
+
+**V1 (sév. 3).** Sur une source perso sans résumé ni métadonnées
+(`custom:rimuscan`), la fiche rendait une carte `section.sheet` de
+**1210×268** : une ligne « Source » à `<dd>` vide (contraire au commentaire du
+module `infoRows` lui-même) et ~900 px de vide. Deux correctifs :
+1. `infoRows` ignore les valeurs à chaîne vide — une chaîne vide n'est pas
+   une donnée ;
+2. la carte ne se déclenche plus sur `fiche.coverUrl` seul — une fiche sans
+   contenu ne rend plus un encart quasi vide. **Conséquence assumée** : la
+   couverture n'apparaît plus dans la carte quand rien ne l'accompagne (capture
+   après : fiche compacte titre + reprise + chapitres, sans encart).
+
+**Preuve à l'écran.** `.mesures/visuel-2026-10-18/marche8.cjs` (chemin éprouvé :
+tuile « Sources personnalisées » → Rimu Scans → 232 cartes → 1ʳᵉ fiche,
+9 chapitres) : `settings.crumbs = 0` contre le crumb visible sur la capture
+08 ante ; `fiche.sheet = null`, 0 ligne vide, capture `10-fiche-apres.png`
+contre `05-fiche.png` (1210×268) avant. Captures Paramètres :
+`08c-parametres-frais.png` (crumb) → `10-parametres-apres.png` (sans crumb).
+
+**Portes.** Interface, dossier `apps\desktop` : `typecheck`, `lint` (0 erreur +
+les 4 avertissements connus), `i18n`, `hooks`, `chemins` (+ `chemins-toast`),
+`pages`, `perso`, `ipc`, `moteur`, `test`, `build`, puis les scripts node
+`check-libelles-fiche`, `check-francais-dur`, `check-styles`,
+`check-lecteur-etat`, `check-arrondi-bande` — **16/16 vertes**. Changement
+**front-only**.
+
+**Leçon de mesure.** Le walk « après » tombait sur 0 chapitre et une grille
+vide tant qu'il attendait des durées fixes : la recompilation HMR de
+`page.tsx` après un edit rend le premier clic muet. Attente d'élément
+(`waitForFunction` sur `chapter-open`), jamais de `waitForTimeout` sur le
+chemin critique. Et la tuile perso n'est pas dans la liste FR : c'est la
+première tuile de la grille des langues (`marche5.cjs` est le chemin qui
+marche, `marche4.cjs` avait rendu `noms: []` pour exactement cette raison).

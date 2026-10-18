@@ -4371,3 +4371,46 @@ Portes (front, toutes exécutées depuis `apps/desktop`) : `typecheck`, `lint`
 `pages:check`, `perso:check`, `ipc:check`, `moteur:check`, `test`, `build` : **0**. Pas de changement Rust, donc
 pas de reconstruction du binaire : le front est servi par `next dev`.
 
+### Mini-plan 2026-10-18 - option « Vider la liste » des téléchargements
+
+Demande de l'utilisateur : pouvoir vider la liste des téléchargements, pas seulement
+supprimer une fiche. La bibliothèque **est** le dossier de téléchargements, donc
+vider = supprimer chaque dossier de webtoon. Trois décisions :
+
+1. **Réutiliser `remove_download`** (source + titre, déjà confinée à la racine)
+   une fois par fiche, plutôt qu'ajouter une commande « tout supprimer » qui
+   devrait refaire ce confinement côté Rust. Aucun changement du cœur, donc
+   aucune reconstruction du binaire.
+2. **Confirmer avec les totaux** (webtoons, chapitres, poids) avant d'effacer :
+   une action destructive ne doit pas être un clic unique. Le bouton est désactivé
+   pendant une file de téléchargement, avec un `title` qui dit pourquoi.
+3. **Mesurer sur une bibliothèque fictive**, pas sur celle de l'utilisateur :
+   `set_downloads_dir` pointe vers `%TEMP%\opencode\dl-vider` (2 webtoons,
+   3 chapitres), puis le dossier réel est restauré — la sonde restaure aussi en
+   cas d'échec.
+
+### Journal 2026-10-18 - « Vider la liste » : mesuré sur une bibliothèque fictive
+
+Ajout d'un bouton `band-action` à droite du bandeau « Vos webtoons », d'une
+confirmation (`telechargements.vider.titre`) et de `removeAllDownloads`, qui
+appelle `remove_download` par fiche, continue après un échec et rafraîchit la
+liste dans tous les cas.
+
+**Mesure** (`.mesures/vider-2026-10-18/probe-vider.cjs`, app réelle, dossier
+pointé vers une fixture) : avant **2 cartes** (Alpha, Beta), **3 chapitres**,
+392 o ; le bouton affiche « Vider la liste », hauteur **32,6 px** dans un bandeau
+de **46,6 px**, collé à **20 px** du bord droit ; la confirmation annonce
+« 2 webtoons, 3 chapitre(s) (392 o)… Les favoris et le catalogue ne sont pas
+touchés » ; après confirmation : **0 carte**, **0 entrée** dans `list_library`,
+**0 fichier** sur disque, toast « 2 webtoons supprimés. », aucune erreur.
+**Restauration vérifiée** : `get_downloads_dir` rend de nouveau
+`\\?\C:\Users\alexanders\Documents\Tatami`, la liste réaffiche **15 cartes**, et
+le dossier de l'utilisateur n'a pas été touché. Captures :
+`.mesures/vider-2026-10-18/capture-bandeau.png` et `capture-confirmation.png`
+(annulation mesurée : 15 cartes toujours là).
+
+Portes (front) : `typecheck`, `lint` (4 avertissements connus), `i18n:check`,
+`hooks:check`, `chemins:check`, `libelles:check`, `francais:check`,
+`styles:check`, `pages:check`, `perso:check`, `lecteur:check`, `arrondi:check`,
+`ipc:check`, `moteur:check`, `test`, `build` : **0**. Pas de changement Rust.
+

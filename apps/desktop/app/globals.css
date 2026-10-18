@@ -386,6 +386,13 @@ button:disabled {
   margin-top: 0;
 }
 
+/* Action posée à droite d'un bandeau de section. `margin-left: auto` plutôt
+   qu'un `justify-content: space-between` : le bandeau sert aussi de simple
+   étiquette sur les autres écrans, et sa mise en page ne doit pas changer. */
+.band-action {
+  margin-left: auto;
+}
+
 .band .muted {
   font-size: var(--t-sm);
   font-weight: 400;

@@ -1421,6 +1421,14 @@ export default function Home() {
   const [onePageOnly, setOnePageOnly] = useState(false);
   const [listTimeout, setListTimeout] = useState(60);
   const [deleteTarget, setDeleteTarget] = useState<LibraryItem | null>(null);
+  // Vider la liste : la bibliothèque est le disque, donc « vider » supprime
+  // tous les dossiers — d'où une confirmation qui annonce le total, jamais un
+  // clic qui efface 375 Mo sur une mauvaise cible.
+  const [viderConfirme, setViderConfirme] = useState(false);
+  // Empêche une seconde confirmation pendant que les dossiers partent : la
+  // boucle dure le temps des IPC, et un second clic relancerait la même
+  // suppression sur des dossiers déjà absents.
+  const [viderEnCours, setViderEnCours] = useState(false);
   // Sélecteur de chapitre d'un webtoon téléchargé : avant, « Lire » ouvrait
   // toujours le premier chapitre, ce qui est inutilisable sur une série de 137.
   const [chapitresVisibles, setChapitresVisibles] = useState<LibraryItem | null>(null);
@@ -3633,6 +3641,52 @@ function nomSource(s: Source): string {
     }
   }
 
+  // Vide la liste : la bibliothèque est le dossier de téléchargements, donc
+  // chaque entrée part avec son dossier. `remove_download` est appelé une fois
+  // par webtoon — la commande existante, déjà confinée et testée — plutôt
+  // qu'une commande « tout supprimer » qui devrait refaire ce confinement.
+  // Un échec sur un dossier ne doit pas interrompre les suivants : le bilan
+  // nomme ceux qui restent, et la liste est relue quoi qu'il arrive.
+  async function removeAllDownloads() {
+    let supprimes = 0;
+    let echecs = 0;
+    let premiereErreur = '';
+    setViderEnCours(true);
+    try {
+      for (const item of library) {
+        try {
+          await invoke<number>('remove_download', {
+            source: item.source,
+            title: item.title,
+          });
+          supprimes += 1;
+        } catch (e) {
+          echecs += 1;
+          if (!premiereErreur) premiereErreur = String(e);
+        }
+      }
+    } finally {
+      setViderEnCours(false);
+    }
+    refreshDownloads();
+    if (echecs > 0) {
+      setError(
+        t('telechargements.vider.partiel', {
+          n: echecs,
+          s: echecs > 1 ? 's' : '',
+          raison: premiereErreur,
+        }),
+      );
+    } else {
+      setNotice(
+        t('telechargements.vider.fait', {
+          n: supprimes,
+          s: supprimes > 1 ? 's' : '',
+        }),
+      );
+    }
+  }
+
   function cancelQueueNow() {
     cancelQueue.current = true;
   }
@@ -5580,7 +5634,17 @@ useEffect(() => {
               </div>
             </section>
 
-            <div className="band">{t('telechargements.vos.webtoons')}</div>
+            <div className="band">
+              <span>{t('telechargements.vos.webtoons')}</span>
+              <button
+                className="btn btn-ghost band-action"
+                disabled={queueRunning || viderEnCours}
+                title={queueRunning ? t('telechargements.vider.file') : undefined}
+                onClick={() => setViderConfirme(true)}
+              >
+                {t('telechargements.vider')}
+              </button>
+            </div>
 
             <div className="dl-grid">
               {library.map((item) => {
@@ -5697,6 +5761,38 @@ useEffect(() => {
                 {t('telechargements.supprimer.definitif')}
               </button>
               <button className="btn btn-ghost" onClick={() => setDeleteTarget(null)}>
+                {t('telechargements.annuler')}
+              </button>
+            </div>
+          </DialogueModal>
+        )}
+
+        {viderConfirme && (
+          <DialogueModal
+            className="confirm"
+            labelledBy="confirm-vider-titre"
+            onClose={() => setViderConfirme(false)}
+          >
+            <h3 id="confirm-vider-titre">{t('telechargements.vider.titre')}</h3>
+            <p className="muted">
+              {t('telechargements.vider.note', {
+                n: library.length,
+                s: library.length > 1 ? 's' : '',
+                chapitres: totalChapters,
+                poids: formatBytes(totalBytes),
+              })}
+            </p>
+            <div className="alert-actions">
+              <button
+                className="btn btn-danger"
+                onClick={() => {
+                  setViderConfirme(false);
+                  void removeAllDownloads();
+                }}
+              >
+                {t('telechargements.vider.definitif')}
+              </button>
+              <button className="btn btn-ghost" onClick={() => setViderConfirme(false)}>
                 {t('telechargements.annuler')}
               </button>
             </div>

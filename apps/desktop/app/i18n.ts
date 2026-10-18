@@ -443,6 +443,16 @@ const FR = {
     "{n} chapitre(s), {poids} seront supprimés du dossier de téléchargements. Le webtoon reste téléchargeable ensuite.",
   "telechargements.supprimer.definitif": "Supprimer définitivement",
   "telechargements.annuler": "Annuler",
+  "telechargements.vider": "Vider la liste",
+  "telechargements.vider.titre": "Vider la liste des téléchargements ?",
+  "telechargements.vider.note":
+    "{n} webtoon{s}, {chapitres} chapitre(s) ({poids}) seront supprimés du dossier de téléchargements. Les favoris et le catalogue ne sont pas touchés.",
+  "telechargements.vider.definitif": "Tout supprimer",
+  "telechargements.vider.file":
+    "La file de téléchargement est en cours : la mettre en pause avant de vider la liste.",
+  "telechargements.vider.fait": "{n} webtoon{s} supprimé{s}.",
+  "telechargements.vider.partiel":
+    "Suppression incomplète : {n} webtoon{s} encore présent{s} ({raison}). La liste a été rafraîchie.",
 
   // --- Lecteur
   "lecteur.signet": "Signet",
@@ -981,6 +991,16 @@ const EN: Record<Cle, string> = {
     "{n} chapter(s), {poids} will be deleted from the downloads folder. The webtoon stays downloadable.",
   "telechargements.supprimer.definitif": "Delete permanently",
   "telechargements.annuler": "Cancel",
+  "telechargements.vider": "Clear the list",
+  "telechargements.vider.titre": "Clear the downloads list?",
+  "telechargements.vider.note":
+    "{n} webtoon{s}, {chapitres} chapter(s) ({poids}) will be deleted from the downloads folder. Favourites and the catalogue are untouched.",
+  "telechargements.vider.definitif": "Delete all",
+  "telechargements.vider.file":
+    "The download queue is running: pause it before clearing the list.",
+  "telechargements.vider.fait": "{n} webtoon{s} deleted.",
+  "telechargements.vider.partiel":
+    "Incomplete deletion: {n} webtoon{s} still present ({raison}). The list was refreshed.",
 
   "lecteur.signet": "Bookmark",
   "lecteur.signet.actif": "Bookmark ✓",

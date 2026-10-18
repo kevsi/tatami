@@ -4296,3 +4296,78 @@ Limite qui reste, et elle est dite : un titre que la source classe `UNKNOWN` et
 qu'aucun mot-clé ne trahit reste visible (`Teto X Egen`, tags Romance/Slice of
 Life). Le catalogue et la recherche ne sont pas filtrés, conformément à la note
 (« Ils restent accessibles en recherche »).
+
+### Mini-plan 2026-10-18 - lecture : les pages qui ne viennent jamais, et les boutons qui débordent
+
+1. Mesurer la lecture d'un chapitre local de bout en bout : descente jusqu'à la
+   dernière page, puis sauts au milieu et à la fin par le formulaire.
+2. Mesurer la carte de téléchargement : position des boutons par rapport au bord
+   de la carte, hauteur, `flex-wrap`.
+3. Corriger, prouver rouge, re-mesurer, passer les portes, documenter.
+
+### Journal 2026-10-18 - lecture : l'admission s'arrêtait au premier retard
+
+Signalé par l'utilisateur : « les boutons de la page Téléchargements débordent et
+sont gros », et « quand je saute d'une page à l'autre, l'image doit s'afficher
+quand même ».
+
+**Défilement continu, chapitre local de 23 pages (`Got a Gallery in the Wild`,
+`custom:rimuscan`, `HORS LIGNE`)** — la bande est virtualisée (Rust donne la
+hauteur de chaque page). Mesure instrumentée (requêtes `/page/` comptées) :
+
+| instant | pages montées | avec `src` | décodées | requêtes `/page/` |
+|---|---|---|---|---|
+| ouverture | 6 | 6 | 5 | 6 |
+| 16 000 px | 8 | 6 | 5 | 6 |
+| 48 000 px | 9 | 4 | 2 | 6 |
+| 96 000 px | 9 | **0** | **0** | 7 (après 4 s d'attente : toujours 0) |
+
+Cause : `admis` ne grandissait que d'**une page par `onLoad`**
+(`admettreUne(prec, fenetre)`). Dès que les chargements prenaient du retard sur
+le défilement, la fenêtre montée ne contenait plus aucune page admise — pas de
+`src`, donc pas de chargement, donc pas de `onLoad`, donc plus rien n'était
+admis. Même cercle vicieux que le saut de page du 2026-10-10 et que le saut vers
+la fin du 2026-10-17, sous une troisième forme : **le défilement**.
+
+Correctif : `pagesAffichees(admis, fenetre, virtualisee)` (`lib/quota-pages.ts`)
+— en bande virtualisée, l'ensemble affiché est l'union de `admis` et de la
+**fenêtre montée** (bornée : marge 3 + portée de 4 200 px, ~8 pages, soit la
+rafale de l'ouverture). C'est un **calcul de rendu** (`useMemo`), pas un
+`setState` dans un effet : `react-hooks/set-state-in-effect` refuse ce dernier,
+et un effet recopiant la fenêtre dans l'état aurait provoqué des rendus en
+cascade. Hors virtualisation, `fenetreBande` rend **toutes** les pages : on y
+garde la file « une par décodage » (sinon 303 requêtes d'un coup).
+
+Mesure après correctif (même chapitre, même sonde) : à 16 000 px **8 montées /
+8 avec `src`** ; à 96 000 px **9 / 9**, 5 décodées, **12 requêtes** ; descente
+par paliers jusqu'au fond (221 pas) → compteur **23 / 23**, dernière page
+`complete`, `900 × 15 141`, **0 page manquante, 0 erreur console**. Sauts par le
+formulaire : page 12 → image `900 × 16 000` décodée, dans la fenêtre (`top:
+73`) ; page 23 → dernière page décodée ; retour page 1 → décodée (`1778 × 2320`
+affichée `810 × 1 058`).
+
+Preuve rouge : en revenant à `src={admis.includes(i) ? … : undefined}` (sans
+l'union), la même sonde redonne **0 page avec `src`, 0 décodée, 7 requêtes**
+après 96 000 px. Preuve rouge du test unitaire : en neutralisant
+`if (virtualisee)` dans `pagesAffichees`, `pnpm test` passe à 1 et nomme
+`en bande virtualisée, toute la fenêtre est affichable` ; restauré, 0.
+
+Chapitre **distant** (non virtualisé, `Teto X Egen`, 56 pages) : après 3
+défilements, compteur 5 / 56, `avecSrc` = 10 pages, décodées, 0 erreur — le
+quota « une par décodage » continue d'avancer de son côté.
+
+**Boutons de Téléchargements** — mesuré avant : `.dl-actions` en `flex-wrap:
+nowrap`, dernier bouton **+37,7 px au-delà du bord droit** de la carte, tous les
+libellés coupés (« Lire » sur 3 lignes), hauteur **88,4 px**. Cause : quatre
+boutons (« Lire », « Choisir un chapitre (n) », « Reprendre la file »,
+« Supprimer ») ne tiennent pas sur 265 px et `flex` les comprimait au lieu de
+les faire passer à la ligne. Correctif : `flex-wrap: wrap` +
+`align-items: flex-start` + `white-space: nowrap`. Après : débordement **−23 px**
+(donc dedans), hauteur **32,6 px**, `scrollWidth === width` ; « Supprimer » passe
+sur une seconde ligne. Capture : `.mesures/lecture-2026-10-18/capture-cartes.png`.
+
+Portes (front, toutes exécutées depuis `apps/desktop`) : `typecheck`, `lint`
+(4 avertissements connus, 0 erreur), `i18n:check`, `hooks:check`, `chemins:check`,
+`pages:check`, `perso:check`, `ipc:check`, `moteur:check`, `test`, `build` : **0**. Pas de changement Rust, donc
+pas de reconstruction du binaire : le front est servi par `next dev`.
+

@@ -2186,3 +2186,37 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   réglage s'applique à un écran, énumérer les listes de l'écran, pas celles dont
   on se souvient ; et le filtre d'un signet se lit là où vit sa classification
   (`history`/`favorites`), sans dupliquer la colonne.
+
+- **Une admission qui n'avance que sur `onLoad` s'arrête dès que le défilement
+  la dépasse — troisième forme du même cercle vicieux.** Mesuré le 2026-10-18
+  sur un chapitre local de 23 pages, requêtes `/page/` comptées : à 96 000 px de
+  défilement, **9 pages montées, 0 avec `src`, 0 décodée, 7 requêtes au total**
+  (contre 12 après correctif). La file `admettreUne` gagnait une page par
+  décodage ; quand les chargements prennent du retard, la fenêtre ne contient
+  plus aucune page admise → pas de `src` → pas de chargement → pas de `onLoad`
+  → plus rien. Les deux formes précédentes étaient le saut de page
+  (2026-10-10) et le saut vers la fin (2026-10-17) : **avant de conclure qu'une
+  admission est correcte, demander quel événement la fait avancer, et ce qui
+  arrive si cet événement n'a plus lieu.** Correctif : l'ensemble affiché est
+  l'union `admis ∪ fenêtre`, mais **seulement en bande virtualisée** — hors
+  virtualisation `fenetreBande` rend toutes les pages, et l'union lancerait 303
+  requêtes d'un coup. La règle vit dans `pagesAffichees` avec ses tests, et le
+  test est prouvé rouge en neutralisant `if (virtualisee)`.
+- **Un `setState` dans un effet pour recopier une valeur dérivable est refusé,
+  et c'est une bonne chose.** La première version du correctif ci-dessus posait
+  `setAdmis` dans un `useEffect([fenetre])` : `react-hooks/set-state-in-effect`
+  passe de 4 à 5 problèmes (1 erreur) et la porte tombe. L'ensemble affiché est
+  une **fonction du rendu** (`useMemo` sur `admis`, `fenetre`,
+  `bandeVirtualisable`) : aucun état intermédiaire, aucun rendu en cascade.
+  Corollaire : devant « il faut synchroniser deux états », demander d'abord si
+  le second n'est pas un **calcul** du premier. (Le 5ᵉ avertissement, ici une
+  erreur, était aussi le signal : le compte constant de 4 est une porte.)
+- **`flex-wrap` vaut `nowrap`, et `flex-shrink` comprime un libellé au lieu de
+  le faire passer à la ligne.** Mesuré le 2026-10-18 sur `.dl-actions` (4
+  boutons dans 265 px) : dernier bouton **+37,7 px hors de la carte**, tous les
+  libellés coupés (« Lire » sur 3 lignes), hauteur **88,4 px**. Correctif :
+  `flex-wrap: wrap` + `align-items: flex-start` + `white-space: nowrap` →
+  débordement **−23 px**, hauteur **32,6 px**, `scrollWidth === width`. Règle :
+  un bouton dont le texte se coupe **en hauteur** n'a pas un problème de
+  largeur, il a un `nowrap` manquant ; et « ça déborde » se mesure en
+  `button.right − card.right`, pas à l'œil.

@@ -399,14 +399,17 @@ impl Supervisor {
         if !java.is_file() {
             return Err(format!("java introuvable : {}", java.display()));
         }
-        let mut child = Command::new(java)
-            .args(SPAWN_ARGS)
-            .args(["-cp", classpath, "org.tatami.engine.MainKt", "serve"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("spawn: {e}"))?;
+        let mut cmd = Command::new(java);
+        cmd.args(SPAWN_ARGS);
+        cmd.args(["-cp", classpath, "org.tatami.engine.MainKt", "serve"]);
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            cmd.creation_flags(0x08000000);
+        }
+        let mut child = cmd.spawn().map_err(|e| format!("spawn: {e}"))?;
 
         // On lit stdout à la main : la sonde est ponctuelle, donc elle n'a pas
         // besoin du routage par identifiant du superviseur. `stderr` est jeté —
@@ -518,15 +521,15 @@ impl Supervisor {
         if !self.java.is_file() {
             return Err(format!("java introuvable : {}", self.java.display()));
         }
-        let mut child = Command::new(&self.java)
+        let mut cmd = Command::new(&self.java);
             // Les drapeaux JVM sont partagés avec `probe` (voir `SPAWN_ARGS`) :
             // deux listes divergentes feraient valider par la sonde un moteur que
             // la production refuse.
-            .args(SPAWN_ARGS)
-            .args(["-cp", &self.classpath, "org.tatami.engine.MainKt", "serve"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            cmd.args(SPAWN_ARGS);
+            cmd.args(["-cp", &self.classpath, "org.tatami.engine.MainKt", "serve"]);
+            cmd.stdin(Stdio::piped());
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
             // **Nécessaire, pas prudent.** Mesuré le 2026-10-15 : `spawn_once`
             // fait `engine_proc.lock().await.take()` puis attend le fils dans une
             // variable locale (ligne 624), donc `engine_proc` vaut `None` pendant
@@ -535,9 +538,12 @@ impl Supervisor {
             // simplement lâché à l'arrêt du runtime et le **JVM continue de
             // tourner, orphelin**, avec ses 256 Mo. Cinq fermetures dans la
             // journée, cinq JVM dormants sur une machine de 12 Go.
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| format!("spawn: {e}"))?;
+            cmd.kill_on_drop(true);
+        #[cfg(windows)]
+        {
+            cmd.creation_flags(0x08000000);
+        }
+        let mut child = cmd.spawn().map_err(|e| format!("spawn: {e}"))?;
         let pid = child.id();
         tracing::info!("sidecar démarré (pid={pid:?})");
 

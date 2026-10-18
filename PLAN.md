@@ -4169,3 +4169,71 @@ vide tant qu'il attendait des durées fixes : la recompilation HMR de
 chemin critique. Et la tuile perso n'est pas dans la liste FR : c'est la
 première tuile de la grille des langues (`marche5.cjs` est le chemin qui
 marche, `marche4.cjs` avait rendu `noms: []` pour exactement cette raison).
+
+### Mini-plan 2026-10-18 — téléchargement des chapitres : rendre le parallélisme réel
+
+Demande utilisateur : « téléchargement ultra rapide ». Mesure d'entrée
+(`.mesures/debit-2026-10-18/verif-verrou.mjs`) : 4 `fetchImage` **de la même page**
+en parallèle = 762 ms contre 669 ms en série → **sérialisé**. Le verrou par source
+(`ParserPool.avec`) est tenu pendant l'`execute()` bloquant de `fetch_octets`.
+
+1. Moteur : `ParserPool.horsVerrou` (parser **posé** sur le fil, verrou non pris) ;
+   `fetchImage` natif télécharge hors verrou. Ce qui débrouille une image, c'est
+   `ParserActif`, pas le verrou.
+2. Garde-fou : `estImageProbable` (signatures) — si les octets ne sont pas une
+   image, le téléchargement est **refait sous le verrou** (chemin d'avant).
+   La politesse reste : `fetch_octets` passe par `LIMITES_IMAGES` (4 simultanées).
+3. Tests : signature (accepte JPEG/PNG/WEBP/GIF, rejette l'entête ZENMANGA mesuré) ;
+   `horsVerrou` ne bloque pas un `avec` concurrent ; `avec` sérialise toujours.
+4. Preuve : reconstruire `dist/`, re-mesurer `verif-verrou.mjs`, télécharger un
+   chapitre dans l'app et relire le `.cbz` strictement.
+
+### Journal 2026-10-18 — téléchargement des chapitres : hors verrou, mesuré dans l'app
+
+Livré : `ParserPool.horsVerrou` + `relacher` extrait, `Server.fetchImage` qui
+télécharge hors verrou avec repli sous verrou, `SignatureImage.estImageProbable`,
+et 6 tests (`SignatureImageTest` 4, `ParserPoolHorsVerrouTest` 2). ADR
+`docs/decisions/0019-telechargement-hors-verrou.md`.
+
+**La mesure hors application ne tranchait pas, et c'était un fait, pas une panne.**
+`verif-verrou.mjs` (4 requêtes d'une même page, 3 passes) a rendu tour à tour
+`SERIALISE` (gain 0,48), `PARALLELE` (gain 2,33) et un état intermédiaire : la
+latence du CDN varie de ±50 % d'une passe à l'autre, donc quatre requêtes ne
+suffisent pas à conclure. Le signal cherché (×4) n'était pas dans l'échantillon.
+
+**Ce qui a tranché : le chapitre entier, dans l'app, plus le journal du cœur.**
+Protocole `marche-telechargement.cjs` (CDP 9223) : filtrer le catalogue sur
+`HARMONY`, ouvrir la série, supprimer les `.cbz` de la série, cliquer
+`.chapter-dl`, chronométrer jusqu'à la taille stable du fichier. Résultat, même
+chapitre (19 pages, 15 822 335 o, `.cbz` validé par `verifier-cbz.py` : 19
+entrées, 19 tailles distinctes, 19 JPEG) :
+
+| mesure | avant | après |
+|---|---|---|
+| chapitre à froid | 12 545 ms | 7 333 ms |
+| chapitre à chaud (2ᵉ passe) | 19 138 ms | 6 756 ms |
+| latence médiane d'un `fetchImage` (journal) | 2 810 ms | 606 ms |
+
+La latence par requête est la preuve de fond : elle est lue dans le journal du
+cœur, où l'`id=fetchImage-<epoch>-<n>` porte l'instant du **départ** et la ligne
+l'instant d'**arrivée**. 2 810 → 606 ms dit que l'attente n'est plus une file
+derrière le mutex mais le réseau seul. Quatre requêtes restent « en vol » côté
+cœur dans les deux cas : ce nombre ne prouve rien, il compte des envois.
+
+Trois pièges traversés, tous dus à la mesure :
+1. la racine de téléchargement réellement configurée est
+   `C:\Users\alexanders\Documents\Tatami`, pas le défaut `%APPDATA%\Tatami\downloads` ;
+   la sonde a attendu 300 s un `.cbz` qui était écrit ailleurs (leçon « chercher
+   la valeur dans le mauvais dossier », retrouvée à l'identique) ;
+2. le chapitre était **déjà** téléchargé : le clic répond « Téléchargé » en une
+   seconde, donc on chronomètre l'idempotence. La sonde supprime les `.cbz` de la
+   série avant de chronométrer ;
+3. la 2ᵉ passe est **plus lente** que la 1ʳᵉ côté ancien moteur (19 138 contre
+   12 545 ms) : le cache CDN ne biaise donc pas en faveur de l'« après », et les
+   deux comparaisons vont dans le même sens.
+
+Portes : `gradle test --rerun-tasks` sur le code restauré (226 tests, 43 XML) ;
+`dist/` reconstruit et vérifié par `javap` (`horsVerrou` présent, aucun
+`runBlocking`). Les trois portes des tests ont été prouvées rouges puis
+restaurées : entête ZENMANGA refusé, interstitiel HTML et corps vide refusés,
+`horsVerrou` qui ne prend pas le verrou.

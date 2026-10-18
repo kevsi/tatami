@@ -1579,14 +1579,23 @@ private suspend fun dispatchNatif(
                     "(page key '${p.optString("pageUrl", "")}')",
             )
         }
-        // **Le téléchargement doit rester dans `avec`.** C'est là que le parser
-        // est posé, et donc là que l'intercepteur peut débrouille la réponse.
-        // Mesuré le 2026-10-05 : en sortant de `avec`, ZENMANGA renvoyait 832 513
-        // octets d'entête `AA A1 AC 8B` — illisibles, `naturalWidth` = 0 à
-        // l'écran — alors que le même appel dans `avec` donnait `FF D8 FF E0`.
-        // Le test du moteur passait parce qu'il enveloppait tout le parcours ;
-        // l'application, elle, ne l'enveloppait qu'autour de `getPageUrl`.
-        val (bytes, contentType) = pool.avec(parseSource(sourceName)) { parser ->
+        // **Le téléchargement sort du verrou de source, mais garde le parser
+        // posé.** Ce qui débrouille une image, c'est `ParserActif` (le parser
+        // sur le fil), pas le `Mutex`. Mesuré le 2026-10-18 : sous verrou,
+        // quatre `fetchImage` de la même page prenaient 762 ms contre 669 ms en
+        // série — donc sérialisées — alors que le client en demande quatre à la
+        // fois (`download.rs`, `CONCURRENCE = 4`). La politesse n'est pas
+        // perdue : `fetch_octets` passe par `LIMITES_IMAGES` (4 images
+        // simultanées, toutes sources confondues).
+        //
+        // **Garde-fou.** Si le débrouillage d'une source ne passait pas par
+        // l'intercepteur, les octets ne seraient pas une image : dans ce cas,
+        // et **seulement** dans ce cas, le téléchargement est refait sous le
+        // verrou (chemin d'avant). Une erreur (HTTP, corps vide) n'est pas
+        // rejouée : elle est réelle, et la rejouer doublerait les requêtes d'un
+        // chapitre dont les pages manquent — mesuré sur `custom:mangadex-api`
+        // (ch. 3 : 15 pages sur 15 en 404, sans corps).
+        val rapide = pool.horsVerrou(parseSource(sourceName)) { parser ->
             // **Le referer est celui de la source, pas celui de l'image.** Le
             // chemin natif envoyait l'URL de l'image elle-même ; mesuré le
             // 2026-10-16, un CDN qui sert les chapitres depuis un autre domaine
@@ -1594,6 +1603,14 @@ private suspend fun dispatchNatif(
             // lisible. Voir `refererImage`.
             fetch_octets(context, imageUrl, refererImage(parser.domain, imageUrl))
         }
+        val (bytes, contentType) =
+            if (estImageProbable(rapide.first)) {
+                rapide
+            } else {
+                pool.avec(parseSource(sourceName)) { parser ->
+                    fetch_octets(context, imageUrl, refererImage(parser.domain, imageUrl))
+                }
+            }
         JSONObject()
             .put("data", Base64.getEncoder().encodeToString(bytes))
             .put("contentType", contentType)

@@ -111,6 +111,11 @@ internal object ParserActif {
  *   est plafonné, et l'éviction **saute les entrées en cours d'usage** :
  *   éjecter une entrée utilisée par une requête en vol lui retirerait son état
  *   sous les pieds.
+ * - **Le verrou n'est pas pris pour lire des octets** (`horsVerrou`) : ce que
+ *   la chaîne HTTP doit retrouver, c'est le parser *posé sur le fil*, pas
+ *   l'exclusion mutuelle. Mesuré le 2026-10-18 : le tenir pendant un
+ *   téléchargement sérialisait les pages d'un chapitre (4 en parallèle :
+ *   762 ms contre 669 ms en série).
  */
 internal class ParserPool(
     private val context: MangaLoaderContext,
@@ -171,10 +176,60 @@ internal class ParserPool(
                 }
             }
         } finally {
-            synchronized(garde) {
-                check(entry.utilisateurs > 0) { "reservation du parser deja liberee" }
-                entry.utilisateurs--
+            relacher(entry)
+        }
+    }
+
+    /**
+     * Exécute [bloc] avec le parser de [source], **sans prendre son verrou**.
+     *
+     * Réservé aux appels qui n'utilisent pas l'**état** du parser — aujourd'hui
+     * le seul : le téléchargement des octets d'une URL déjà résolue
+     * (`fetchImage`, après `getPageUrl`).
+     *
+     * ## Pourquoi c'est correct
+     *
+     * Ce que la chaîne HTTP a besoin de retrouver, c'est le parser **posé sur le
+     * fil** (ses en-têtes et son débrouillage d'image, cf. `ParserActif`), et
+     * c'est [ParserActif.activer] qui le pose — pas le `Mutex`. Le verrou, lui,
+     * protège l'état mutable (`PagedMangaParser` porte un `Paginator`), que la
+     * lecture d'octets ne touche pas.
+     *
+     * ## Mesure qui a motivé son existence
+     *
+     * Le 2026-10-18 : quatre `fetchImage` de la **même page** en parallèle
+     * prenaient 762 ms contre 669 ms en série — donc sérialisées, parce que le
+     * verrou était tenu pendant l'`execute()` bloquant. Le client demande 4
+     * images à la fois (`download.rs`, `CONCURRENCE = 4`).
+     *
+     * ## Ce qui n'est pas perdu
+     *
+     * La politesse : chaque téléchargement passe par `LIMITES_IMAGES` (4 images
+     * simultanées, toutes sources confondues), donc l'hôte voit toujours au plus
+     * quatre requêtes — c'est la borne voulue, et elle ne dépend pas de ce
+     * verrou. La réservation d'entrée (`utilisateurs`) est prise puis rendue,
+     * donc l'éviction LRU ne peut pas retirer ce parser sous les pieds de
+     * l'appel en cours.
+     */
+    fun <T> horsVerrou(source: MangaParserSource, bloc: (MangaParser) -> T): T {
+        val entry = entryPour(source)
+        try {
+            val precedent = ParserActif.lire()
+            ParserActif.activer(entry.parser)
+            try {
+                return bloc(entry.parser)
+            } finally {
+                ParserActif.activer(precedent)
             }
+        } finally {
+            relacher(entry)
+        }
+    }
+
+    private fun relacher(entry: Entry) {
+        synchronized(garde) {
+            check(entry.utilisateurs > 0) { "reservation du parser deja liberee" }
+            entry.utilisateurs--
         }
     }
 

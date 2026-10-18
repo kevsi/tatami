@@ -2145,7 +2145,27 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   et un bouton dont le libellé change sans que le contenu change est le signal
   qu'une donnée a été jetée en amont.
 
-- **Un mutex par source sérialise les téléchargements, et la parallélisation Rust n'y change rien.** Mesuré le 2026-10-17 : `ParserPool.avec` garde le `Mutex` pendant `fetch_octets` (l'intercepteur est nécessaire au débrouillage, cf. ZENMANGA). Un chapitre de 17 pages prenait ~18 s avant et après la parallélisation Rust. Le gain réel (×2,7) ne vient que des sources personnalisées, dont `fetchImage` ne prend pas le mutex. Le vrai levier serait de sortir le fetch du `avec` en réactivant l'intercepteur manuellement — risqué, à valider par source.
+- **Un mutex par source sérialise les téléchargements, et la parallélisation Rust n'y change rien.** Mesuré le 2026-10-17 : `ParserPool.avec` garde le `Mutex` pendant `fetch_octets` (l'intercepteur est nécessaire au débrouillage, cf. ZENMANGA). Un chapitre de 17 pages prenait ~18 s avant et après la parallélisation Rust. Le gain réel (×2,7) ne vient que des sources personnalisées, dont `fetchImage` ne prend pas le mutex. Le vrai levier serait de sortir le fetch du `avec` en réactivant l'intercepteur manuellement — risqué, à valider par source. **Fait le 2026-10-18 (ADR 0019)** : `ParserPool.horsVerrou` pose le parser sur le fil sans prendre le mutex, avec une garde de signature qui rejoue sous verrou ce qui n'est pas une image. Latence médiane par `fetchImage` **2 810 → 606 ms**, chapitre de 19 pages **12,5 → 7,3 s**. Ce qui débrouille une image est le `ParserActif` du fil, pas le verrou.
+- **Quatre requêtes ne suffisent pas à prouver un parallélisme, et la même sonde
+  peut rendre les deux verdicts.** Mesuré le 2026-10-18 : `verif-verrou.mjs` (4
+  `fetchImage` de la même page) a rendu `SERIALISE` (gain 0,48), puis `PARALLELE`
+  (2,33), puis un état intermédiaire — latences 408/2 281/1 096/1 632 ms, puis
+  442/1 016/2 369/1 166 ms. Le CDN varie de ±50 % d'une passe à l'autre, donc un
+  échantillon de 4 ne tranche pas. Ce qui tranche : une mesure qui **moyenne**
+  (un chapitre entier de 19 pages) **et** un témoin indépendant (le journal).
+- **Le journal du cœur porte déjà la latence de chaque requête, dans
+  l'identifiant.** `id=fetchImage-<epoch ms>-<n>` est l'instant du **départ**, la
+  ligne est l'instant d'**arrivée** : aucune instrumentation, et la mesure dit
+  `2 810 ms` avant / `606 ms` après sur le même chapitre. Corollaire : le
+  **nombre de requêtes « en vol » ne prouve rien** — il valait 4 dans les deux
+  cas, parce qu'il compte les envois du client, pas le service.
+- **Un téléchargement idempotent répond « Téléchargé » en une seconde :
+  chronométrer sans supprimer le fichier mesure un clic.** Mesuré le 2026-10-18,
+  après avoir attendu 300 s un `.cbz` écrit ailleurs — la racine réellement
+  configurée était `C:\Users\alexanders\Documents\Tatami`, pas le défaut
+  `%APPDATA%\Tatami\downloads` (leçon déjà écrite, retrouvée à l'identique).
+  Supprimer les `.cbz` de la série avant de lancer le chrono, et vérifier après
+  coup que la notice ne dit pas « Téléchargé » instantanément.
 - **Un parseur natif cassé renvoie un résultat plausible mais faux.** Mesuré : `RIMUSCANS` renvoyait 1 page pour Martial Peak ch.1 (le site en sert 17). Le `.cbz` produit (1 image) ressemblait à une couverture. La cause n'est pas le téléchargement — c'est le parseur (Next.js, pas de classes Madara). L'idempotence (`chapitre_deja_present`) renvoyait ensuite le fichier cassé sans retélécharger. Garde ajoutée : refuser d'écrire si ≤ 1 page. Leçon : un téléchargement « réussi » n'est pas un téléchargement valide — vérifier le contenu, pas seulement le code de retour.
 - **`note_content_rating` ne mettait à jour que les lignes `IS NULL`, pas `UNKNOWN`.** Mesuré : la liste renvoyait `UNKNOWN`, stocké en premier ; la fiche renvoyait `ADULT` ; `note_content_rating` ignorait la mise à jour (UNKNOWN ≠ NULL) → le manga restait UNKNOWN → non filtré par l'incognito. Fix : `WHERE (content_rating IS NULL OR content_rating = 'UNKNOWN') AND ?3 <> 'UNKNOWN'`. Leçon : « ne jamais écraser une valeur déjà apprise » ne doit pas traiter `UNKNOWN` comme une valeur apprise.
 - **Un backfill idempotent répare les données existantes sans migration de version.** Mesuré : « Harem de Gyarus » était classé NULL en base ; l'incognito ne le masquait pas. Ajout d'un `UPDATE ... WHERE content_rating IS NULL AND titre/source contient un mot-clé adulte` dans la migration (tourne à chaque démarrage, ne touche que les NULL). Leçon : quand une classification est corrigée, penser aux données déjà stockées, pas seulement au code nouveau.

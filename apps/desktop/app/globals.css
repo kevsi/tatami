@@ -2047,6 +2047,12 @@ button:disabled {
 
 .dl-actions {
   display: flex;
+  /* Quatre boutons (« Lire », « Choisir un chapitre », « Reprendre la file »,
+     « Supprimer ») ne tiennent pas sur une ligne : sans `wrap`, le dernier
+     sortait de la carte (mesuré : +37,7 px au-delà du bord droit) et tous les
+     libellés se coupaient en cinq lignes. */
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: var(--s2);
   margin-top: auto;
   padding-top: var(--s2);
@@ -2055,6 +2061,9 @@ button:disabled {
 .dl-actions .btn {
   padding: 6px 14px;
   font-size: var(--t-sm);
+  /* Un libellé se coupe entre deux mots, jamais au milieu d'un mot : sans ça,
+     « Lire » se repliait sur trois lignes dans 50 px de large. */
+  white-space: nowrap;
 }
 
 .confirm {

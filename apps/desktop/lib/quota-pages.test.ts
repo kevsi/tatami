@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { admettreUne, admettreLaCible } from './quota-pages.ts';
+import { admettreLaCible, admettreUne, admettreCibleEtVoisins, pagesAffichees } from './quota-pages.ts';
 
 // Le défaut mesuré le 2026-10-10 : `admis` — l'ensemble des pages qui ont le
 // droit de recevoir un `src` — ne grandit QUE sur un `onLoad`. À l'ouverture,
@@ -49,4 +49,27 @@ test('admettreUne n’admet qu’une page par appel', () => {
 test('admettreUne ne double pas une page déjà admise', () => {
   const apres = admettreUne([0, 1, 2, 3], [1, 2, 3]);
   assert.deepEqual(apres, [0, 1, 2, 3]);
+});
+
+// Défaut mesuré le 2026-10-18 : en défilement continu, l'admission « une page
+// par onLoad » cessait d'avancer dès que les chargements prenaient du retard.
+// La fenêtre montée n'avait alors plus aucun `src` — 6 requêtes au total, puis
+// une bande vide. La fenêtre **est** ce que l'utilisateur regarde : elle doit
+// pouvoir charger, sans attendre un décodage qui ne viendra pas.
+
+test('en bande virtualisée, toute la fenêtre est affichable', () => {
+  const vues = pagesAffichees([0, 1, 2, 3, 4, 5], [4, 5, 6, 7, 8, 9], true);
+  assert.deepEqual([...vues].sort((a, b) => a - b), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+});
+
+test('hors virtualisation, la fenêtre n’élargit pas le quota', () => {
+  // En flux normal `fenetreBande` rend toutes les pages : les unionner
+  // lancerait 303 requêtes d'un coup.
+  const vues = pagesAffichees([0, 1, 2, 3, 4, 5], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], false);
+  assert.deepEqual([...vues].sort((a, b) => a - b), [0, 1, 2, 3, 4, 5]);
+});
+
+test('une fenêtre déjà admise ne change pas l’ensemble', () => {
+  const vues = pagesAffichees([0, 1, 2], [0, 1, 2], true);
+  assert.deepEqual([...vues].sort((a, b) => a - b), [0, 1, 2]);
 });

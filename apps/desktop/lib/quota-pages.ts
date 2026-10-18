@@ -71,3 +71,38 @@ export function admettreCibleEtVoisins(
   for (let i = debut; i <= fin; i += 1) resultat.add(i);
   return [...resultat];
 }
+
+/** L'ensemble des pages qui ont le droit d'avoir un `src` **maintenant**.
+ *
+ *  ## Le défaut mesuré le 2026-10-18
+ *
+ *  L'admission ne se faisait que sur `onLoad` (`admettreUne`) : une page par
+ *  décodage. Tant que les chargements suivaient le défilement, la file
+ *  avançait ; dès qu'ils prenaient du retard, la fenêtre montée ne contenait
+ *  plus **aucune** page admise — pas de `src`, donc pas de chargement, donc pas
+ *  de `onLoad`, donc plus rien n'était admis. Mesuré sur un chapitre local de
+ *  23 pages : **6 requêtes au total**, puis 7 pages montées, 0 décodée, bande
+ *  vide. C'est le même cercle vicieux que le saut de page, sous une autre
+ *  forme : une garantie qui ne se déclenche que sur un événement qui ne peut
+ *  plus arriver.
+ *
+ *  ## Pourquoi la fenêtre, et seulement en virtualisation
+ *
+ *  En bande virtualisée, la fenêtre montée **est** ce que l'utilisateur
+ *  regarde, et elle est bornée (marge 3 + portée de 4 200 px, ~8 pages) :
+ *  l'admettre en entier ne fait pas plus de requêtes que l'ouverture (6 pages).
+ *  Hors virtualisation, `fenetreBande` rend **toutes** les pages — l'union
+ *  lancerait donc 303 requêtes d'un coup, la rafale que le quota existe pour
+ *  éviter. On y garde la file « une par décodage ».
+ */
+export function pagesAffichees(
+  admis: readonly number[],
+  fenetre: readonly number[],
+  virtualisee: boolean,
+): ReadonlySet<number> {
+  const ensemble = new Set(admis);
+  if (virtualisee) {
+    for (const i of fenetre) ensemble.add(i);
+  }
+  return ensemble;
+}

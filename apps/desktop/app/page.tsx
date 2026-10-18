@@ -12,7 +12,7 @@ import {
   type TentativesChallenge,
 } from '../lib/challenge-garde';
 import { describeError, estRejeuRefuse } from '../lib/erreurs-source';
-import { admettreLaCible, admettreUne, admettreCibleEtVoisins } from '../lib/quota-pages';
+import { admettreLaCible, admettreUne, admettreCibleEtVoisins, pagesAffichees } from '../lib/quota-pages';
 import { lireListeSources } from '../lib/prefs-tolérantes';
 import { memeSignet } from '../lib/signet-cle';
 import { supprimerPuisRafraichirCatalogue } from '../lib/source-perso-suppression';
@@ -4446,6 +4446,24 @@ const fenetre = useMemo(
   [pagesBande.length, offsets, hauteurs, scrollY],
 );
 
+/** Toute la fenêtre montée a droit à son image, **en bande virtualisée**.
+ *
+ *  Mesuré le 2026-10-18 : l'admission se faisait **une page par `onLoad`**, et
+ *  elle s'arrêtait net dès que les chargements prenaient du retard sur le
+ *  défilement — 6 requêtes au total, puis plus rien : pages 6 à 14 montées,
+ *  **0 décodée**, bande vide. La règle (et pourquoi elle ne vaut qu'en
+ *  virtualisation) est dans `pagesAffichees`, avec ses tests.
+ *
+ *  C'est un **calcul de rendu**, pas un `setState` dans un effet : l'ensemble
+ *  affiché est une fonction de `admis` et de la fenêtre, et un effet qui
+ *  recopie la fenêtre dans l'état provoquerait des rendus en cascade (refusé
+ *  par `react-hooks/set-state-in-effect`).
+ */
+const admisAffiches = useMemo(
+  () => pagesAffichees(admis, fenetre, bandeVirtualisable),
+  [admis, fenetre, bandeVirtualisable],
+);
+
 /** Nombre de pages téléchargées **en même temps**. Mesuré : 6 avant que la
  *  file ne s-engloutisse derrière les suivantes. */
 const FENETRE_TELECHARGEMENT = 6;
@@ -5981,7 +5999,7 @@ if (reader) {
                         stripImages.current[i] = el;
                         if (el) observateurBande.current?.observe(el);
                       }}
-                      src={admis.includes(i) ? pageSrc(p.token, reprisePages) : undefined}
+                      src={admisAffiches.has(i) ? pageSrc(p.token, reprisePages) : undefined}
                       alt={t('lecteur.page.une', { n: i + 1 })}
                     // Une page que la source ne sert pas **le dit**. Sans ceci,
                     // le 404 de MangaDex s'affiche en image cassee muette :
@@ -6028,7 +6046,11 @@ if (reader) {
                         suivant.add(i);
                         return suivant;
                       });
-                      setAdmis((prec) => admettreUne(prec, fenetre));
+                      // Hors virtualisation seulement : en bande virtualisée,
+                      // l'effet ci-dessus admet déjà toute la fenêtre.
+                      if (!bandeVirtualisable) {
+                        setAdmis((prec) => admettreUne(prec, fenetre));
+                      }
                     }}
                     onDoubleClick={() => changeZoom(zoom >= ZOOM_MAX ? 100 : ZOOM_MAX)}
                   />

@@ -190,8 +190,8 @@ précise son dossier, parce que la plupart échouent depuis la racine :
 # Interface — dossier apps\desktop
 cd apps\desktop
 pnpm typecheck          # tsc --noEmit
-pnpm lint               # eslint ; 4 warnings exhaustive-deps connus, 0 erreur
-pnpm i18n:check         # aucune clé morte ni manquante (152 clés)
+pnpm lint               # eslint ; 5 warnings exhaustive-deps connus, 0 erreur
+pnpm i18n:check         # aucune clé morte ni manquante (410 clés)
 pnpm hooks:check        # aucune dépendance d'effet recréée à chaque rendu
 pnpm chemins:check      # aucun chemin affiché sans cheminLisible(…)
 pnpm pages:check        # le <img> du lecteur gère l'échec et le dit
@@ -2256,3 +2256,59 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   Corollaire : une garde qui dépend de `selected` est fausse pour tout parcours
   qui ouvre une fiche sans passer par le catalogue ; la source fiable est
   `openManga.source` (cf. `lib/source-fiche.ts`).
+
+- **La latence d'interface se mesure sur l'artefact livré, pas en `next dev`.**
+  Mesuré le 2026-10-19 en confirmant le tableau de perf : en dev, une bascule
+  de chapitre coûte ~1,8 s de CPU et le profil CDP nomme `exports.jsxDEV`
+  (runtime JSX de développement) à **3 544 ms d'un profil de 4 s** (long tasks
+  ~500 ms en chaîne). Sur l'export (`pnpm build`, `out/` servi par un serveur
+  statique sur 3001 = le `devUrl` du binaire debug), la **même** bascule donne
+  **10-76 ms**, la réouverture en cache **119 ms**, le pré-chargé **10 ms**.
+  Règle : les mesures du **moteur** (journal Rust) sont insensibles au mode ;
+  les mesures **d'interface** ne se font que sur l'artefact livré.
+- **Un `t0` écrit avant des allers-retours d'outils mesure l'orchestration,
+  pas le démarrage.** Mesuré le même jour : `t0.txt` écrit dans une commande,
+  app relancée deux commandes plus loin → « CDP prêt à t0 + 26,5 s », alors que
+  le `StartTime` du processus donne **+1,2 s**. Règle : une chaîne à froid
+  s'horodate depuis
+  `(New-Object DateTimeOffset (Get-Process -Id $pid).StartTime).ToUnixTimeMilliseconds()`,
+  jamais depuis un fichier écrit avant l'appel d'outil suivant.
+
+- **`chapters` servi par le disque n'amorce pas le moteur, et `pages` le refuse
+  en le disant.** Le moteur ne connaît un chapitre que si la fiche a été listée
+  **pendant sa session** (état en mémoire) ; le cache disque (A) servi sans lui
+  fait donc répondre `PARSE_ERROR … unknown chapter url, call chapters first`.
+  Mesuré trois fois le 2026-10-19, même marche, même artefact : à +0,3 s du
+  lancement de l'app → **3 refus** (le `chapters` de démarrage est en vol,
+  29,4 s de latence) ; à +22 s → **0 refus** ; marche lancée avant l'app →
+  1 refus rejoué. Correctif A4 : index de session chapitre→manga alimenté par
+  la commande `chapters` **y compris sur le chemin du coup de cache** (sinon
+  l'index est vide dans le seul cas où il sert), et sur le refus précis,
+  `chapters` au moteur puis **une seule** nouvelle tentative — mesuré : reprise
+  en **308 ms**. Règle : un service qui sert par le cache doit **quand même**
+  apprendre au moteur ce que le client croit savoir, ou savoir réparer à la
+  première plainte — au niveau qui possède le contrat (`commands::pages`), pas
+  en quatre parades locales que le cache casse une à une.
+- **Une pause entre le lancement et la marche change ce que la marche mesure.**
+  Même marche, même machine, trois lancements, trois résultats (3 refus /
+  0 refus / 1 refus rejoué, cf. ci-dessus). La course de démarrage — l'app lit
+  sa fiche pendant que le moteur s'amorce — est un **état mesurable**, pas du
+  bruit : pour prouver un chemin de reprise, il faut la **rejouer** (lancer la
+  marche **avant** l'app : elle sonde le CDP jusqu'à ce qu'il réponde), pas
+  l'attendre. Corollaire : une pause de lancement (« le temps que ça chauffe »)
+  retire précisément le cas qu'on veut éprouver.
+- **Une revalidation d'arrière-plan doit écrire sous la clé que la lecture
+  utilise, et ça se vérifie sur disque.** `%APPDATA%\Tatami\cache\meta` : le
+  pré-chargement du chapitre suivant lit en s2c l'entrée du ch. 2 écrite par la
+  revalidation de s2b (hit 661 s), et la reprise A4 réécrit l'entrée du ch. 1
+  (`at` = instant de la reprise). Le témoin qui tranche est la **paire** (âge
+  lu, `at` du fichier) — un hit seul ne dit pas qui a écrit quoi, et un âge
+  « trop vieux » peut simplement appartenir à un autre chapitre.
+- **Le cinquième avertissement `exhaustive-deps` est volontaire — le compte de
+  §8 doit suivre.** L'effet « chapitre suivant » (`1ab5643`, 2026-10-18) dépend
+  de `reader?.chapter?.url` et `chapters.length` au lieu de `reader` et
+  `chapters` : dépendre des objets relancerait l'effet à chaque tableau
+  remplacé, pour un pré-chargement de confort. `pnpm lint` rend donc **5**
+  avertissements (0 erreur), mesuré le 2026-10-19 — §8 corrigé (4 → 5), et
+  `i18n:check` passe de 152 à **410** clés. Corollaire : ce compteur est une
+  porte ; le jour où il change, on met à jour §8 **avec sa raison**.

@@ -4590,7 +4590,180 @@ Non implémentée : le compteur de pages n'est connu qu'après la résolution de
 | Fiche série (100 chapitres) | 0,9 s | instantané (cache) |
 | Ouverture lecteur (réseau) | 8,9 s | 8,9 s (réseau) |
 | Ouverture lecteur (cache) | — | 3,8 s |
-| Ouverture lecteur (pré-chargé) | — | ~0 s (mesure à confirmer) |
+| Ouverture lecteur (pré-chargé) | — | ~0 s (confirmé le 2026-10-19 : 10-76 ms, cf. journal ci-dessous) |
 
 Portes : `pnpm typecheck` 0, `pnpm lint` 0 erreur (4 warnings connus),
 `pnpm test` **154/154**.
+
+---
+
+## Journal 2026-10-19 — confirmation des mesures de performance (artefact livré)
+
+Les valeurs d'interface du tableau du 2026-10-18 (« 3,8 s », « ~0 s à
+confirmer ») avaient été relevées en session de développement. Re-mesures sur
+**l'artefact livré** : `pnpm build` (export `out/` frais), servi sur
+`http://localhost:3001` (le `devUrl` du binaire debug), app relancée avec CDP
+9223 (`$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS='--remote-debugging-port=9223'`).
+
+Commandes (`.mesures/perf-2026-10-19/`, app réelle) :
+- `node froid.cjs` — chaîne à froid (sonde armée avant le lancement) ;
+- `node marche-prod.cjs` — accueil → fiche → ch. 1 → pré-chargement → bascule → retour → catalogue ;
+- `node verif-prod2.cjs`, `node verif-prod3.cjs` — réouverture (cache) et bascules en cache ;
+- sorties brutes : `froid.json`, `marche-prod.json`, `verif-prod2.json`, `verif-prod3.json`, `app-stdout-marche1.log`.
+
+### Chaîne à froid (recalculée depuis le `StartTime` du processus, cf. AGENTS.md)
+
+| Étape | Passe 2 | Passe 1 |
+|---|---|---|
+| CDP prêt (9223) | +1 241 ms | +1 124 ms |
+| shell (barre d'onglets) | +1 418 ms | +1 334 ms |
+| 4 cartes d'accueil | +1 703 ms | +1 960 ms |
+| début de navigation → DCL / load | +896 ms → 302 / 514 ms | — |
+
+### Flux (MANGASORIGINES / SUSHISCANFR)
+
+| Flux | 2026-10-18 | 2026-10-19 (artefact livré) |
+|---|---|---|
+| Accueil (rechargement) | 1,1 s | shell 119 ms, cartes 226 ms |
+| Fiche série (1re ouverture) | 0,9 s | 3 274 ms (`chapters` 3 242 ms ; `details` 6 512 ms en parallèle) |
+| Fiche série (2e ouverture) | instantané | 18 ms, 0 requête |
+| Ouverture lecteur (réseau, ch. 1) | 8,9 s | 3 837 ms (`pages` 3 470 ms), image +66 ms |
+| Pré-chargement du ch. suivant | non mesuré | `pages` (ch. 2) parti 429 ms après `pages` (ch. 1), latence 275 ms |
+| Ouverture lecteur (pré-chargé) | ~0 s (à confirmer) | **10 ms** (bascule) + 80 ms (1re image), 0 requête moteur |
+| Ouverture lecteur (cache) | 3,8 s | 119 ms (chemin complet `openReader`), image +28 ms |
+| Bascule ch. n / p (cache) | — | 10-76 ms (select), image +3-6 ms, 0 requête |
+| Catalogue SUSHISCANFR (24 cartes) | 172 ms | 10 875 ms cette passe (`latest` 10 790 ms ; 6 371 ms en dev le même jour) |
+
+### Lecture
+
+- « ~0 s » est **confirmé** : 10 ms et zéro requête moteur au moment de la
+  bascule ; le pré-chargement a bien eu lieu avant (2e `pages` au journal,
+  arrivée 275 ms, appui ensuite).
+- L'essentiel de l'écart avec les valeurs du 2026-10-18 est le **mode** : en
+  `next dev`, le profil CDP nomme `exports.jsxDEV` à **3 544 ms d'un profil de
+  4 s** sur une bascule (long tasks ~500 ms), soit 1,5-2,6 s de CPU par
+  changement d'écran qui n'existent pas dans l'artefact.
+- Les ouvertures non cachées restent dominées par la source : `pages` 3,5 s,
+  `chapters` 3,2 s, `latest` 6,4-10,8 s selon la passe ; `details` arrive après
+  `chapters` (requêtes parallèles).
+- Aucun changement de code depuis le 2026-10-18 ; portes inchangées. `pnpm build`
+  a régénéré `apps/desktop/next-env.d.ts` (`.next/dev/types` → `.next/types`),
+  non commité.
+
+---
+
+## Chantier perf 2026-10-19 (2) — cache disque des métadonnées (A) + pré-chargement étendu (B)
+
+Hors v1, validé par l'utilisateur le 2026-10-19 (« A + B (recommandé) », question
+du jour). Fait suite à la confirmation des mesures : seul le **réseau des
+sources** reste lent — `chapters` 3,2 s, `pages` 3,5 s, `latest` 6,4-10,8 s,
+`details` 6,5 s — et **rien n'est conservé d'une session à l'autre** (listes en
+mémoire seulement, `page.tsx:1269`/`1271` ; `latest` sans cache, `commands.rs`).
+
+**Mini-plan (décidé avant le code)** :
+1. A1 — module Rust `metacache.rs` : un fichier JSON par clé (genre + source + cle),
+   enveloppe `{genre, cle, at, donnees}`, purge au démarrage (âge 7 j) et plafonds
+   par genre (300/300/2000/150), fichier corrompu = manque ; tests unitaires.
+2. A2 — branchement dans `chapters`/`details`/`pages`/`latest` : paramètre
+   `refresh` (défaut faux = servir le cache instantanément ; vrai = re-réseau)
+   + champ `cacheAt` dans la réponse sur un coup de cache.
+3. A3 — front : sur `cacheAt`, un rafraîchissement d'arrière-plan (fiche, lecteur,
+   catalogue) ; la file des « derniers chapitres » passe `refresh: true` (le badge
+   doit dire vrai) ; la reprise de lecture (accueil/signets) re-tente en `refresh`
+   si le chapitre visé manque de la liste servie par le cache.
+4. B — pré-chargement à l'ouverture de la fiche : cible = chapitre de reprise
+   (historique) sinon ch. 1, via un helper pur `lib/prechargement.ts` testé.
+5. M — mesures sur l'artefact livré : session 1 (réseau) vs session 2 (cache),
+   preuve rouge (dossier `meta` vidé) puis verte, portes complètes.
+6. A4 — **amorçage du moteur quand `pages` suit une liste `chapters` servie par
+   le disque** (défaut trouvé par la session 2 de M, le 2026-10-19) : le moteur
+   ne connaît un chapitre que si la fiche a été listée **pendant sa session**
+   (cache en mémoire) ; servir `chapters` depuis le disque sans jamais toucher
+   le moteur fait donc refuser `pages` (« unknown chapter url, call chapters
+   first »). Quatre parades locales existaient (téléchargeur, reprise, signet,
+   commentaire de `openReaderAt`) que le cache vient de casser en silence.
+   Correctif **centralisé dans la commande `pages`** : index de session
+   chapitre→manga alimenté par la commande `chapters` (coup de cache compris),
+   et sur ce refus précis, refaire `chapters` au moteur (en réécrivant l'entrée
+   disque avec la réponse fraîche) puis **une seule** nouvelle tentative.
+
+### Tâches
+
+- [x] A1 — `metacache.rs` (+ tests) — fichier par clé, purge âge/plafonds, corrompu = manque
+- [x] A2 — `chapters`/`details`/`pages`/`latest` : `refresh` + `cacheAt` (+ tests)
+- [x] A3 — front : rafraîchissement d'arrière-plan, file récents en `refresh`, reprise robuste
+- [x] B — pré-chargement fiche (reprise sinon ch. 1) + `lib/prechargement.ts` testé
+- [x] M — mesures session 1 vs 2 + preuve rouge/verte + portes
+- [x] A4 — `pages` : amorçage `chapters` + nouvel essai sur refus moteur (index de session + test croisé avec `Server.kt`)
+
+### Mesures et preuves (2026-10-19)
+
+**Portes.** Interface (`apps\desktop`) : 9 portes rc=0 (`i18n`, `hooks`, `chemins`,
+`pages`, `perso`, `ipc`, `moteur`, `test`, `build` — `.mesures\a3-portes.txt`), plus
+`pnpm typecheck` et `pnpm lint` (`exit=0`, 5 avertissements `exhaustive-deps` connus —
+le cinquième date de `1ab5643`, cf. §8 d'`AGENTS.md` — 0 erreur ;
+`.mesures\typecheck-a4.txt`, `.mesures\lint-check.txt`). Cœur (`src-tauri`) :
+`cargo fmt --check` ok, `cargo clippy --all-targets -- -D warnings` exit 0, `cargo test`
+**261 + 1 + 23** (`.mesures\cargo-test-a4.txt`). La porte croisée d'A4 (la constante du
+message de refus est lue des deux côtés, `commands.rs` ↔ `Server.kt`) a été **prouvée
+rouge** — constante cassée, échec nommant `src\commands.rs:645`
+(`.mesures\red-proof-a4.txt`) — puis restaurée verte (`.mesures\green-proof-a4.txt`).
+
+**M — quatre sessions de `m-marche.cjs`** sur l'artefact livré (`out/` servi sur 3001,
+binaire debug, CDP 9224) :
+
+| Session | Lancement | Accueil (shell/cartes) | Fiche (chapitres) | ch. 1 (lecteur/image) | ch. 2 | Retour | Catalogue |
+|---|---|---|---|---|---|---|---|
+| s1 (`perf-2026-10-19\m-s1.json`) | dossier `meta` vide (1ʳᵉ session) | 130/228 ms | **51 682 ms** | 549/28 ms | 12/82 ms | 16/68 ms | **11 082 ms** |
+| s2 (`perf-2026-10-19\m-s2.json`) | +0,3 s après l'app | 351/11 ms | **99 ms** | 253/24 ms | 62/7 ms | 21/89 ms | **105 ms** |
+| s2b (`m-s2b.json`) | +22 s (pause) | 44/178 ms | **91 ms** | 159/21 ms | 53/12 ms | 58/3 ms | **102 ms** |
+| s2c (`m-s2c.json`) | avant l'app (sonde CDP) | 18/340 ms | **114 ms** | 156/56 ms | 59/79 ms | 51/5 ms | **108 ms** |
+
+s1 : aucun coup de cache, tout au réseau (`details` 22 176 ms, `chapters` 51 616 ms,
+`latest` 10 990 ms), 7 entrées écrites dans `%APPDATA%\Tatami\cache\meta`.
+s2/s2b/s2c : coups de cache sur `details`/`chapters`/`pages`/`latest` (âges
+170-1 926 s) — la fiche passe de 51,7 s à ~0,1 s. Décision : pas de session s3 ; la
+paire s1 (0 hit, 7 écritures) / s2 (hits), mêmes gestes, tient le rôle rouge/vert de la
+marche, le rouge au niveau code étant porté par la porte croisée A4.
+
+**La course de démarrage, mesurée trois fois** (même marche, même artefact) : à +0,3 s
+de l'app (s2), le moteur ne connaissait pas encore la fiche — son `chapters` de démarrage
+est arrivé à +29,4 s — donc **3 refus** `unknown chapter url, call chapters first` ; à
++22 s (s2b), 0 refus ; marche lancée **avant** l'app (s2c), 1 refus → reprise A4.
+
+**Preuve in-vivo d'A4 (s2c, journal `.mesures\m-s2c-stdout.log`)** :
+
+- `20:44:43.734` revalidation `pages` (n=6, chapitre 1) partie — la lecture était servie
+  par le disque (hit 775 s) ; refus moteur à `20:44:50.907` (7 173 ms d'attente) :
+  `PARSE_ERROR … "call chapters first"` ;
+- `20:44:50.907776` ligne `pages amorcage chapters puis nouvel essai chapitre=ad9e128d` ;
+- `20:45:01.376` `chapters` d'amorçage (n=7, `len=98061`, 10,46 s) arrivé →
+  `20:45:01.404` reprise `pages` (n=9) → **succès à `20:45:01.712`** (`len=3509`,
+  **308 ms**) ;
+- l'entrée disque du chapitre 1 est réécrite par la reprise (`at=1792442701715`).
+
+**Revalidations et lectures sur les mêmes clés** — vérifié sur disque : le
+pré-chargement du chapitre suivant à l'ouverture du lecteur lit en s2c l'entrée du ch. 2
+écrite par la revalidation de s2b (hit 661 s), puis l'entrée du ch. 3 écrite en s1 (hit
+2 726 s) ; aucun défaut de clé. Le pré-chargement de fiche (B) et le clic partagent le
+même appel (déduplication d'une requête en vol).
+
+### Journal
+
+- **2026-10-19 — A1/A2** (`c504485`) : `metacache.rs` (un fichier JSON par clé, enveloppe
+  `{genre, cle, at, donnees}`, purge à 7 j, plafonds 300/300/2000/150, fichier corrompu =
+  manque) + paramètre `refresh` et champ `cacheAt` dans `chapters`/`details`/`pages`/
+  `latest`.
+- **2026-10-19 — A3/B** (`9f5f692`) : revalidation d'arrière-plan sur `cacheAt` (fiche,
+  lecteur, catalogue), file des récents en `refresh: true`, reprise robuste ;
+  pré-chargement à l'ouverture de fiche (`lib/prechargement.ts`, testé).
+- **2026-10-19 — M s2** : défaut trouvé par la mesure — servir `chapters` par le disque
+  sans amorcer le moteur fait refuser `pages` pendant tout le démarrage (3 refus, s2).
+- **2026-10-19 — A4** (`7a9618e`) : index de session chapitre→manga dans `MetaCache`,
+  alimenté par `chapters` **y compris sur le chemin HIT** ; sur le refus précis, `chapters`
+  moteur une fois puis une seule nouvelle tentative `pages` ; refus sans manga connu rendu
+  tel quel. `pages_avec_amorcage` + tests, dont le croisé avec `Server.kt`.
+- **2026-10-19 — M s2c** : refus rejoué, reprise en 308 ms — preuve ci-dessus ; s2b/s2c
+  re-mesurent les mêmes étapes à ~0,1 s (fiche), 100 % de coups de cache.
+- **2026-10-19 — clôture** : `next-env.d.ts` remis en phase (`.next/dev` → `.next`,
+  `chore`), portes re-jouées après le chantier (`typecheck` exit 0, `lint` 5/0).

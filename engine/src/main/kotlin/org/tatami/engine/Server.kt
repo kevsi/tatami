@@ -623,7 +623,12 @@ fun serve() {
     // `fetch_octets`. Bonne tâche isolée, et marquée ici pour ne pas être
     // tentée de nouveau sans y repenser.
     // @todo(3.5) : raccorder cancellation -> OkHttp Call.cancel().
-    val MAX_WORKERS = (Runtime.getRuntime().availableProcessors()).coerceIn(2, 8)
+    // `+ 2` depuis le 2026-10-20 (chantier « concurrence 4→6 ») : la valeur
+    // brute — les cœurs logiques, 4 ici — plafonnait à 4 les images en vol,
+    // alors que le cœur en demande 6 (`download.rs::CONCURRENCE`) et que
+    // `LIMITES_IMAGES` en autorise 6. Les trois bougent ensemble ; mesure et
+    // décision : ADR 0019.
+    val MAX_WORKERS = (Runtime.getRuntime().availableProcessors() + 2).coerceIn(2, 8)
     val workers = Executors.newFixedThreadPool (MAX_WORKERS) { r ->
         Thread(r, "tatami-worker").apply { isDaemon = true }
     }
@@ -1583,10 +1588,10 @@ private suspend fun dispatchNatif(
         // posé.** Ce qui débrouille une image, c'est `ParserActif` (le parser
         // sur le fil), pas le `Mutex`. Mesuré le 2026-10-18 : sous verrou,
         // quatre `fetchImage` de la même page prenaient 762 ms contre 669 ms en
-        // série — donc sérialisées — alors que le client en demande quatre à la
-        // fois (`download.rs`, `CONCURRENCE = 4`). La politesse n'est pas
-        // perdue : `fetch_octets` passe par `LIMITES_IMAGES` (4 images
-        // simultanées, toutes sources confondues).
+        // série — donc sérialisées — alors que le client en demande plusieurs à
+        // la fois (6 depuis le 2026-10-20 — `download.rs`, `CONCURRENCE`). La
+        // politesse n'est pas perdue : `fetch_octets` passe par
+        // `LIMITES_IMAGES` (6 images simultanées, toutes sources confondues).
         //
         // **Garde-fou.** Si le débrouillage d'une source ne passait pas par
         // l'intercepteur, les octets ne seraient pas une image : dans ce cas,

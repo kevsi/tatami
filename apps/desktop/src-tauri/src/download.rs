@@ -827,11 +827,15 @@ async fn run_download(
     // retéléchargé en entier plutôt que résumé (on ne sait pas où il s'était arrêté).
     let _ = tokio::fs::remove_file(&partial).await;
     let mut cbz = CbzWriter::create(&partial).map_err(|e| format!("création: {e}"))?;
-    // Téléchargement parallèle des images, concurrence bornée à 4 (le moteur
-    // n'a que MAX_WORKERS travailleurs ; au-delà, on sature la source et le
-    // réseau). Les résultats sont collectés puis écrits dans l'ordre, pour que
-    // le .cbz garde ses pages dans le bon ordre.
-    const CONCURRENCE: usize = 4;
+    // Téléchargement parallèle des images, concurrence bornée. Les résultats
+    // sont collectés puis écrits dans l'ordre, pour que le .cbz garde ses
+    // pages dans le bon ordre.
+    //
+    // 4 → 6 le 2026-10-20 (chantier « concurrence 4→6 ») : les trois plafonds
+    // bougent **ensemble** — cette borne, `LIMITES_IMAGES` du moteur et ses
+    // `MAX_WORKERS` — sinon la plus basse garde la main, quel que soit le
+    // réglage du cœur. Mesure et décision : ADR 0019.
+    const CONCURRENCE: usize = 6;
     let page_urls: Vec<String> = page_list
         .iter()
         .map(|p| {

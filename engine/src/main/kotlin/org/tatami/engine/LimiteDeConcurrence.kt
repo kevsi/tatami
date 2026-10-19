@@ -77,8 +77,11 @@ internal class LimiteDeConcurrence(val places: Int) {
  * prise dans la file face à 30 pages est le bon arbitrage : elle fait 40 Ko,
  * une page 800 Ko.
  *
- * La valeur 4 reprend le `RECENT_CONCURRENCY` déjà mesuré sur le
- * planificateur (AGENTS.md §14). Elle n'est pas magique : c'est le seul nombre
- * déjà chez nous assorti d'une mesure.
+ * La valeur 4 initiale reprenait le `RECENT_CONCURRENCY` déjà mesuré sur le
+ * planificateur (AGENTS.md §14) — le seul nombre déjà chez nous assorti d'une
+ * mesure. Relevée à 6 le 2026-10-20 : elle suit les bornes du cœur
+ * (`download.rs::CONCURRENCE`) et le nombre de travailleurs du moteur
+ * (`Server.kt::MAX_WORKERS`), qui doivent bouger ensemble. Mesure et décision :
+ * ADR 0019.
  */
-internal val LIMITES_IMAGES = LimiteDeConcurrence(4)
+internal val LIMITES_IMAGES = LimiteDeConcurrence(6)

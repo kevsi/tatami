@@ -199,14 +199,14 @@ internal class ParserPool(
      *
      * Le 2026-10-18 : quatre `fetchImage` de la **même page** en parallèle
      * prenaient 762 ms contre 669 ms en série — donc sérialisées, parce que le
-     * verrou était tenu pendant l'`execute()` bloquant. Le client demande 4
-     * images à la fois (`download.rs`, `CONCURRENCE = 4`).
+     * verrou était tenu pendant l'`execute()` bloquant. Le client demande 6
+     * images à la fois depuis le 2026-10-20 (`download.rs`, `CONCURRENCE`).
      *
      * ## Ce qui n'est pas perdu
      *
-     * La politesse : chaque téléchargement passe par `LIMITES_IMAGES` (4 images
-     * simultanées, toutes sources confondues), donc l'hôte voit toujours au plus
-     * quatre requêtes — c'est la borne voulue, et elle ne dépend pas de ce
+     * La politesse : chaque téléchargement passe par `LIMITES_IMAGES` (6 images
+     * simultanées, toutes sources confondues), donc l'hôte voit toujours au
+     * plus six requêtes — c'est la borne voulue, et elle ne dépend pas de ce
      * verrou. La réservation d'entrée (`utilisateurs`) est prise puis rendue,
      * donc l'éviction LRU ne peut pas retirer ce parser sous les pieds de
      * l'appel en cours.

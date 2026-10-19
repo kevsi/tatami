@@ -20,8 +20,8 @@ use tauri::Manager;
 // chemin de `generate_handler!` ne se résout pas.
 use tatami_desktop::pagecache::PageRef;
 use tatami_desktop::{
-    challenge, commands, custom_source, download, journal, library, moteur, pagecache, recherche,
-    scheduler, shelf, store, tray,
+    challenge, commands, custom_source, download, journal, library, metacache, moteur, pagecache,
+    recherche, scheduler, shelf, store, tray,
 };
 
 fn not_found() -> tauri::http::Response<Vec<u8>> {
@@ -142,6 +142,10 @@ fn main() {
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
         .join("Tatami")
         .join("cache");
+    // Cache d'images (pagecache) et cache de métadonnées (listes) vivent sous le
+    // même dossier : le second est un sous-dossier parce que ses fichiers se
+    // purgent par âge/plafond, indépendamment des images.
+    let meta = metacache::MetaCache::new(cache_dir.join("meta"));
     let cache = pagecache::PageCache::new(cache_dir);
 
     // Base de données de l'utilisateur (favoris, historique, reprise). Si le
@@ -195,6 +199,7 @@ fn main() {
         .manage(sup.clone())
         .manage(Arc::new(store))
         .manage(cache.clone())
+        .manage(meta.clone())
         // Recherche globale : l'état d'annulation doit survivre d'un appel de
         // commande à l'autre — une commande Tauri est sans état, donc la passe
         // en cours vit ici (cf. `recherche::PasseEnCours`).

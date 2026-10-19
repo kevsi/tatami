@@ -43,6 +43,7 @@ pub mod download;
 pub mod image;
 pub mod journal;
 pub mod library;
+pub mod metacache;
 pub mod moteur;
 pub mod pagecache;
 pub mod recherche;

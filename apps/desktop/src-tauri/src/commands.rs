@@ -8,6 +8,8 @@ use tauri::{AppHandle, State};
 
 use super::pagecache::PageCache;
 use super::supervisor::Supervisor;
+use crate::metacache::{Genre, MetaCache};
+use crate::store::now_ms;
 
 /// Listes, filtres et pagination. 60 s par défaut : certaines sources
 /// scannent réellement le catalogue (EXHENTAI mesuré à 35,7 s pour une page),
@@ -186,6 +188,7 @@ pub async fn latest(
     app: AppHandle,
     sup: State<'_, Arc<Supervisor>>,
     cache: State<'_, Arc<PageCache>>,
+    meta: State<'_, Arc<MetaCache>>,
     source: String,
     offset: Option<u32>,
     limit: Option<u32>,
@@ -193,6 +196,7 @@ pub async fn latest(
     tags: Option<Vec<String>>,
     content_rating: Option<String>,
     timeout_secs: Option<u32>,
+    refresh: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     let timeout = list_timeout(timeout_secs);
     // Une seule classification à la fois : plusieurs lèvent « Multiple Content
@@ -214,6 +218,22 @@ pub async fn latest(
     if let Some(r) = &rating {
         params["contentRating"] = serde_json::json!(r);
     }
+    // La cle du cache est **les paramètres eux-mêmes** (sans le délai, qui ne
+    // change pas la réponse) : deux appels ne partagent une entrée que s'ils
+    // demandent exactement la même page — source, offset, tri, filtres.
+    let cle = params.to_string();
+    if refresh != Some(true) {
+        if let Some((at, donnees)) = meta.lire(Genre::Latest, &cle) {
+            let mut r = donnees;
+            ajouter_jetons_couverture(&cache, source.trim(), &mut r);
+            tracing::info!(
+                "latest cache=hit items={} age_s={}",
+                nb_items(&r),
+                (now_ms() - at) / 1000
+            );
+            return Ok(marquer_cache(r, at));
+        }
+    }
     // Passage par le transport webview : une source derrière Cloudflare se voit
     // refuser ici, et le navigateur passe. `request_avec_transport` ne le
     // tente **qu'une fois par URL** et jamais pour un refus déjà résolu.
@@ -221,14 +241,12 @@ pub async fn latest(
         sup.request_avec_transport(&app, source.trim(), "latest", params, timeout)
             .await?,
     )?;
+    // Écrit **avant** l'injection des jetons : le cache garde la réponse du
+    // moteur telle quelle, et l'injection (déterministe dans `pagecache`) est
+    // refaite à chaque lecture — un jeton d'une session morte ne fuit donc pas.
+    meta.ecrire(Genre::Latest, &cle, &r);
     ajouter_jetons_couverture(&cache, source.trim(), &mut r);
-    tracing::info!(
-        "latest ok: {} items",
-        r.get("list")
-            .and_then(|v| v.as_array())
-            .map(|a| a.len())
-            .unwrap_or(0)
-    );
+    tracing::info!("latest ok: {} items", nb_items(&r));
     Ok(r)
 }
 
@@ -273,16 +291,41 @@ pub fn into_result(enveloppe: serde_json::Value) -> Result<serde_json::Value, St
         .unwrap_or(serde_json::Value::Null))
 }
 
+/// Marque une réponse **servie par le cache disque** avec l'instant de son
+/// écriture (`cacheAt`, epoch ms). L'interface s'en sert pour rafraîchir en
+/// arrière-plan : une réponse fraîche du réseau n'a pas ce champ, donc il n'y a
+/// rien à revalider. Un champ **absent** ne ment pas — contrairement à un
+/// `cacheAt: 0`, qu'il faudrait distinguer d'un vrai minuit de 1970.
+fn marquer_cache(mut valeur: serde_json::Value, at: i64) -> serde_json::Value {
+    if let Some(o) = valeur.as_object_mut() {
+        o.insert("cacheAt".to_string(), serde_json::json!(at));
+    }
+    valeur
+}
+
+/// Nombre d'entrées d'une réponse `latest` — pour les lignes de journal, seule
+/// trace d'un coup de cache réussi (le superviseur, lui, n'écrit que sur un
+/// aller réseau).
+fn nb_items(v: &serde_json::Value) -> usize {
+    v.get("list")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0)
+}
+
 /// Tâche 0.17 : fiche détaillée (résumé, état, genres). Distinct de
 /// `chapters` : celle-ci récupère la liste des chapitres, celle-là la fiche.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn details(
     app: AppHandle,
     sup: State<'_, Arc<Supervisor>>,
     cache: State<'_, Arc<PageCache>>,
+    meta: State<'_, Arc<MetaCache>>,
     source: String,
     manga_url: String,
     manga_title: Option<String>,
+    refresh: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     if manga_url.trim().is_empty() {
         return Err("PARSE_ERROR: manga_url vide".to_string());
@@ -296,6 +339,17 @@ pub async fn details(
         "details source={source} manga={}",
         crate::journal::hachage(manga_url.trim())
     );
+    // Cle : source + URL, jamais le titre — celui-ci varie d'un chemin
+    // d'ouverture à l'autre (« Art » contre « Art (1) ») sans changer la réponse.
+    let cle = format!("{}|{}", source.trim(), manga_url.trim());
+    if refresh != Some(true) {
+        if let Some((at, donnees)) = meta.lire(Genre::Details, &cle) {
+            let mut r = donnees;
+            ajouter_jeton_couverture_unique(&cache, source.trim(), &mut r);
+            tracing::info!("details cache=hit age_s={}", (now_ms() - at) / 1000);
+            return Ok(marquer_cache(r, at));
+        }
+    }
     let params = serde_json::json!({
         "source": source.trim(),
         "url": manga_url,
@@ -305,6 +359,7 @@ pub async fn details(
         sup.request_avec_transport(&app, source.trim(), "details", params, DEEP_TIMEOUT)
             .await?,
     )?;
+    meta.ecrire(Genre::Details, &cle, &r);
     ajouter_jeton_couverture_unique(&cache, source.trim(), &mut r);
     Ok(r)
 }
@@ -313,9 +368,11 @@ pub async fn details(
 pub async fn chapters(
     app: AppHandle,
     sup: State<'_, Arc<Supervisor>>,
+    meta: State<'_, Arc<MetaCache>>,
     source: String,
     manga_url: String,
     manga_title: Option<String>,
+    refresh: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     if manga_url.trim().is_empty() {
         return Err("PARSE_ERROR: manga_url vide".to_string());
@@ -325,6 +382,13 @@ pub async fn chapters(
         "chapters source={source} manga={}",
         crate::journal::hachage(manga_url.trim())
     );
+    let cle = format!("{}|{}", source.trim(), manga_url.trim());
+    if refresh != Some(true) {
+        if let Some((at, donnees)) = meta.lire(Genre::Chapters, &cle) {
+            tracing::info!("chapters cache=hit age_s={}", (now_ms() - at) / 1000);
+            return Ok(marquer_cache(donnees, at));
+        }
+    }
     // `mangaTitle` permet au moteur de reconstruire le webtoon après un
     // redémarrage (cache de session vide) : sans lui, toute reprise échoue.
     let params = serde_json::json!({
@@ -332,10 +396,12 @@ pub async fn chapters(
         "mangaUrl": manga_url,
         "mangaTitle": manga_title.unwrap_or_default(),
     });
-    into_result(
+    let r = into_result(
         sup.request_avec_transport(&app, source.trim(), "chapters", params, DEEP_TIMEOUT)
             .await?,
-    )
+    )?;
+    meta.ecrire(Genre::Chapters, &cle, &r);
+    Ok(r)
 }
 
 /// Injecte le jeton de cache et les dimensions (si disponibles) dans chaque
@@ -367,17 +433,41 @@ pub async fn pages(
     app: AppHandle,
     sup: State<'_, Arc<Supervisor>>,
     pages_idx: State<'_, Arc<PageCache>>,
+    meta: State<'_, Arc<MetaCache>>,
     source: String,
     chapter_url: String,
+    refresh: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     if chapter_url.trim().is_empty() {
         return Err("PARSE_ERROR: chapter_url vide".to_string());
+    }
+    // Aucune ligne n'existait pour `pages` jusqu'ici : on voyait la demande
+    // arriver au moteur, jamais partir du cœur. Même empreinte que `details`,
+    // l'URL du chapitre contient le titre.
+    tracing::info!(
+        "pages source={source} chapitre={}",
+        crate::journal::hachage(chapter_url.trim())
+    );
+    let cle = format!("{}|{}", source.trim(), chapter_url.trim());
+    if refresh != Some(true) {
+        if let Some((at, donnees)) = meta.lire(Genre::Pages, &cle) {
+            let mut result = donnees;
+            if let Some(arr) = result.get_mut("pages").and_then(|v| v.as_array_mut()) {
+                injecter_dims_et_token(arr, &pages_idx, source.trim());
+            }
+            tracing::info!("pages cache=hit age_s={}", (now_ms() - at) / 1000);
+            return Ok(marquer_cache(result, at));
+        }
     }
     let params = serde_json::json!({ "source": source.trim(), "chapterUrl": chapter_url });
     let mut result = into_result(
         sup.request_avec_transport(&app, source.trim(), "pages", params, DEEP_TIMEOUT)
             .await?,
     )?;
+    // Cache la réponse du moteur **avant** l'injection : les jetons et les
+    // dimensions vivent dans le registre de session (`pagecache`) et sont
+    // refaits à chaque lecture — les figer ici les lierait à cette session.
+    meta.ecrire(Genre::Pages, &cle, &result);
     if let Some(arr) = result.get_mut("pages").and_then(|v| v.as_array_mut()) {
         injecter_dims_et_token(arr, &pages_idx, source.trim());
     }
@@ -386,7 +476,7 @@ pub async fn pages(
 
 #[cfg(test)]
 mod tests {
-    use super::{injecter_dims_et_token, latest_params, requested_rating};
+    use super::{injecter_dims_et_token, latest_params, marquer_cache, nb_items, requested_rating};
     use crate::pagecache::PageCache;
 
     #[test]
@@ -428,6 +518,31 @@ mod tests {
     fn cache_test() -> (std::sync::Arc<PageCache>, crate::download::DossierDeTest) {
         let garde = crate::download::DossierDeTest::new("cmd");
         (PageCache::new(garde.chemin()), garde)
+    }
+
+    /// Le marqueur de cache est la seule chose qu'une réponse servie par le
+    /// disque ajoute : si son nom ou sa forme changeait sans que l'interface
+    /// suive, le rafraîchissement d'arrière-plan ne partirait plus jamais —
+    /// les données, elles, sembleraient bonnes.
+    #[test]
+    fn marquer_cache_ajoute_l_instant_sans_toucher_aux_donnees() {
+        let v = serde_json::json!({ "chapters": [{ "url": "u" }], "manga": { "titre": "T" } });
+        let marque = marquer_cache(v, 1_700_000_000_000);
+        assert_eq!(marque["cacheAt"], serde_json::json!(1_700_000_000_000i64));
+        assert!(marque["chapters"].is_array(), "les données restent");
+        assert_eq!(marque["manga"]["titre"], "T");
+        assert_eq!(
+            marquer_cache(serde_json::json!([1, 2]), 5),
+            serde_json::json!([1, 2]),
+            "une réponse qui n'est pas un objet n'est pas transformée de force"
+        );
+    }
+
+    #[test]
+    fn nb_items_compte_la_liste_du_catalogue() {
+        assert_eq!(nb_items(&serde_json::json!({ "list": [1, 2, 3] })), 3);
+        assert_eq!(nb_items(&serde_json::json!({ "list": [] })), 0);
+        assert_eq!(nb_items(&serde_json::json!({ "pages": [1] })), 0);
     }
 
     // ---- Tests ADR-0012 : injecter_dims_et_token ----

@@ -4767,3 +4767,93 @@ même appel (déduplication d'une requête en vol).
   re-mesurent les mêmes étapes à ~0,1 s (fiche), 100 % de coups de cache.
 - **2026-10-19 — clôture** : `next-env.d.ts` remis en phase (`.next/dev` → `.next`,
   `chore`), portes re-jouées après le chantier (`typecheck` exit 0, `lint` 5/0).
+
+---
+
+## Chantier vitesse de téléchargement 2026-10-19 (3) — concurrence réseau 4→6
+
+Demande utilisateur du 2026-10-19 (« quant aux téléchargements ? (la rapidité) »),
+puis choix explicite du « Chantier concurrence 4→6 ». C'est la suite que l'ADR 0019
+avait laissée nommée — « mesurer un relèvement de la concurrence réseau par source » —
+non faite parce qu'elle touche la politesse envers les sites et demande sa propre
+mesure des refus.
+
+**Les trois plafonds qui tiennent le parallélisme réel à 4** (état de départ, mesuré
+le 2026-10-18 : chapitre de 19 pages en 7 333 ms, latence médiane par image 606 ms,
+chevauchement max 4) :
+
+- cœur : `CONCURRENCE = 4` images en vol par chapitre (`download.rs`) ;
+- moteur : `LIMITES_IMAGES = LimiteDeConcurrence(4)` — borne partagée par tous les
+  chemins d'octets d'image, natif (`fetch_octets`) comme scripté (`telechargerImage`) ;
+- moteur : `MAX_WORKERS = availableProcessors().coerceIn(2, 8)` = 4 sur ce CPU
+  (`Server.kt:626`) — une requête = un thread, donc l'exécution réelle des
+  `fetchImage` est bornée par lui aussi.
+
+**Mini-plan (décidé avant le code) :**
+
+1. Référence niveau 4, dans l'app (artefact `out/` servi sur 3001, CDP 9224) :
+   `HARMONYSCAN` ch. 1 (19 pages, 15 822 335 o — le chapitre même de l'ADR 0019)
+   ×2, puis un chapitre d'une 2ᵉ source dont le dossier est **absent** de
+   `Documents\Tatami` (SEIMANGA ; repli REMANGA/ZENMANGA) pour ne supprimer aucun
+   téléchargement de l'utilisateur.
+2. Signaux : durée du chapitre (harnais), latence médiane par image et
+   **chevauchement réel** (journal du cœur : `id=fetchImage-<départ>` → ligne
+   `stdout recu` d'arrivée), comptage des refus (403/429/`RATE_LIMITED`,
+   `CHALLENGE_REQUIRED`, réessais transitoires) par fenêtre de passe.
+3. Variante : `CONCURRENCE = 6`, `LIMITES_IMAGES = 6`, `MAX_WORKERS` = cœurs + 2
+   (formule ; 6 sur ce CPU) ; rejouer les mêmes passes, mêmes chapitres.
+4. Décision : garder seulement si le chevauchement atteint 6, qu'aucun refus
+   n'apparaît et que la durée du chapitre baisse de façon visible (médiane
+   variante sous la médiane de référence, gain ≥ ~5 %) ; sinon revenir et
+   consigner la mesure négative dans l'ADR 0019.
+5. Portes (moteur `gradle test --rerun-tasks`, cœur `fmt`/`clippy`/`test`) +
+   journal + commit(s).
+
+### Tâches
+
+- [x] Référence 4 : 2 passes `HARMONYSCAN` ch. 1 + 1 passe 2ᵉ source
+- [x] Variante 6 : mêmes 3 passes, moteur et cœur reconstruits
+- [x] Analyse : latences, chevauchement, refus ; `.cbz` relus (`verifier-cbz.py`)
+- [x] Décision, ADR 0019 mise à jour, journal, commit(s)
+
+### Résultat (2026-10-20) — retenue
+
+Données brutes : `.mesures\concurrence-2026-10-19\` (`b*.json`, `analyse-b.json`,
+`niveau-4\`, `hors-protocole\`).
+
+Deux passes écartées puis rejouées (elles vivent dans `hors-protocole\`) : un
+premier `a1` dont le clic était parti pendant les revalidations de fiche
+(`quiescenceS: 0` — le journal brut est coloré ANSI, le filtre de quiescence
+ratait les lignes), et un premier `b3` interrompu par une course du harnais
+(`meta.json.tmp` disparu entre le listing et le `stat`). Harnais corrigés
+(quiescence 6 s, blanc ANSI, `stat` tolérant aux fichiers volatils) puis
+relancés.
+
+| passe | niveau | pages | chevauchement | médiane img | réseau images | total | refus |
+|---|---|---|---|---|---|---|---|
+| a1 | 4 | 19 | 4 | 699 ms | 3,8 s | 7 535 ms | 0 |
+| a2 | 4 | 19 | 4 | 604 ms | 3,3 s | 6 974 ms | 0 |
+| b1 | 6 | 19 | 6 | 875 ms | 3,2 s | 6 839 ms | 0 |
+| b2 | 6 | 19 | 6 | 980 ms | 2,9 s | 6 582 ms | 0 |
+| a3 | 4 | 23 | 4 | 303 ms | 2,6 s | 4 134 ms | 0 |
+| b3 | 6 | 23 | 6 | 439 ms | 2,0 s | 3 534 ms | 0 |
+
+Gains : phase images **−0,5 s (~14 %)** HARMONYSCAN / **−0,6 s (~23 %)**
+SEIMANGA ; total −544 / −600 ms ; **0 refus** ; médiane par image en hausse
+(prix du débit). `.cbz` relus stricts : 19/19/19 JPEG (15 822 335 o) et
+23/23/23 (8 740 444 o).
+
+Décision : **retenue** — `CONCURRENCE = 6`, `LIMITES_IMAGES = 6`,
+`MAX_WORKERS = cœurs + 2` (6 ici). Détail, seuils et portes : ADR 0019,
+« Mise à jour 2026-10-20 ».
+
+### Journal
+
+- **2026-10-20 — harnais** : `marche-dl.cjs` (quiescence 6 s + blanc ANSI +
+  `stat` tolérant), `analyser.cjs`, `fenetre.cjs` ; passes `a1`/`a2`/`a3`
+  (niveau 4) puis `b1`/`b2`/`b3` (niveau 6 — app reconstruite, `workers=6` au
+  journal du moteur).
+- **2026-10-20 — portes** : moteur `gradle test --rerun-tasks` → 226 tests,
+  0 échec (XML frais) ; cœur `cargo fmt --check` / `cargo clippy --all-targets
+  -- -D warnings` / `cargo test` → 285 tests, 0 échec.
+- **2026-10-20 — commit** : `5116987` (code + ADR 0019), puis ce journal.

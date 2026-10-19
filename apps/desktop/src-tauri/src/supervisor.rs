@@ -522,23 +522,23 @@ impl Supervisor {
             return Err(format!("java introuvable : {}", self.java.display()));
         }
         let mut cmd = Command::new(&self.java);
-            // Les drapeaux JVM sont partagés avec `probe` (voir `SPAWN_ARGS`) :
-            // deux listes divergentes feraient valider par la sonde un moteur que
-            // la production refuse.
-            cmd.args(SPAWN_ARGS);
-            cmd.args(["-cp", &self.classpath, "org.tatami.engine.MainKt", "serve"]);
-            cmd.stdin(Stdio::piped());
-            cmd.stdout(Stdio::piped());
-            cmd.stderr(Stdio::piped());
-            // **Nécessaire, pas prudent.** Mesuré le 2026-10-15 : `spawn_once`
-            // fait `engine_proc.lock().await.take()` puis attend le fils dans une
-            // variable locale (ligne 624), donc `engine_proc` vaut `None` pendant
-            // toute la session et `kill_child` — qui ne voit que cette map —
-            // ne tuait jamais rien. Sans ce drapeau, le `Child` de tokio est
-            // simplement lâché à l'arrêt du runtime et le **JVM continue de
-            // tourner, orphelin**, avec ses 256 Mo. Cinq fermetures dans la
-            // journée, cinq JVM dormants sur une machine de 12 Go.
-            cmd.kill_on_drop(true);
+        // Les drapeaux JVM sont partagés avec `probe` (voir `SPAWN_ARGS`) :
+        // deux listes divergentes feraient valider par la sonde un moteur que
+        // la production refuse.
+        cmd.args(SPAWN_ARGS);
+        cmd.args(["-cp", &self.classpath, "org.tatami.engine.MainKt", "serve"]);
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+        // **Nécessaire, pas prudent.** Mesuré le 2026-10-15 : `spawn_once`
+        // fait `engine_proc.lock().await.take()` puis attend le fils dans une
+        // variable locale (ligne 624), donc `engine_proc` vaut `None` pendant
+        // toute la session et `kill_child` — qui ne voit que cette map —
+        // ne tuait jamais rien. Sans ce drapeau, le `Child` de tokio est
+        // simplement lâché à l'arrêt du runtime et le **JVM continue de
+        // tourner, orphelin**, avec ses 256 Mo. Cinq fermetures dans la
+        // journée, cinq JVM dormants sur une machine de 12 Go.
+        cmd.kill_on_drop(true);
         #[cfg(windows)]
         {
             cmd.creation_flags(0x08000000);

@@ -461,6 +461,8 @@ const FR = {
   // --- Erreurs
   "erreur.lecture": "Lecture impossible : {raison}",
   "erreur.chapitres": "Chapitres indisponibles : {raison}",
+  "erreur.reprise.introuvable":
+    "Reprise introuvable : ce chapitre n'apparaît pas dans la liste de la source.",
   "erreur.source.inconnue":
     "Source inconnue : cette série n'est rattachée à aucun catalogue. Réouvre sa fiche depuis le catalogue, ou réessaie depuis l'accueil.",
   "erreur.chapitre.vide": "Ce chapitre n’a aucune page lisible.",
@@ -1005,6 +1007,8 @@ const EN: Record<Cle, string> = {
 
   "erreur.lecture": "Cannot read: {raison}",
   "erreur.chapitres": "Chapters unavailable: {raison}",
+  "erreur.reprise.introuvable":
+    "Resume point not found: this chapter is not in the source's list.",
   "erreur.source.inconnue":
     "Unknown source: this series is not attached to any catalogue. Open its page from the catalogue, or try again from Home.",
   "erreur.chapitre.vide": "This chapter has no readable page.",

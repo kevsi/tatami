@@ -20,6 +20,7 @@ import { chapitresSansDoublons } from '../lib/chapitres-doublons';
 import { sourceDeLaFiche } from '../lib/source-fiche';
 import { attenteDepasseLeSeuil } from '../lib/chargement-long';
 import { cartesAFaire, entreesFraiches, type EntreeRecent } from '../lib/cartes-recentes';
+import { ciblePrechargement } from '../lib/prechargement';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   isPermissionGranted,
@@ -1269,6 +1270,54 @@ export default function Home() {
   const cacheChapitres = useRef(new Map<string, Chapter[]>());
   const cacheInfo = useRef(new Map<string, Manga>());
   const cachePages = useRef(new Map<string, Page[]>());
+  // Clés de `cachePages` dont la liste vient du **cache disque** (session
+  // précédente) et non du réseau de cette session : ses URL d'images peuvent
+  // expirer côté CDN, donc elles sont revalidées au moment de s'en servir —
+  // pas au moment où on les reçoit (chantier perf 2026-10-19, A).
+  const pagesDuDisque = useRef(new Set<string>());
+  // Requêtes `pages` en vol, clé = `source|chapitre` : un pré-chargement et le
+  // clic sur le même chapitre partagent la même promesse. Sans cela, le moteur
+  // — qui sérialise un chapitre à la fois par source — ferait attendre le clic
+  // derrière le pré-chargement, c'est-à-dire l'inverse du but.
+  const pagesEnVol = useRef(new Map<string, Promise<Page[]>>());
+  // La fiche **montrée** (source|url), vue depuis les rafraîchissements
+  // d'arrière-plan : une réponse arrivée après une navigation n'appartient
+  // plus à l'écran. Les caches mémoire, eux, sont toujours écrits — leurs clés
+  // nomment ce qu'ils contiennent (même règle que `rafraichirChapitres`).
+  const ficheOuverte = useRef<string | null>(null);
+  useEffect(() => {
+    ficheOuverte.current = openManga ? `${openManga.source}|${openManga.url}` : null;
+  }, [openManga]);
+  // Génération du catalogue : incrémentée à **chaque** chargement (clic
+  // source, pagination, filtres). Un rafraîchissement d'arrière-plan revenu
+  // après une nouvelle génération décrit une grille qui n'est plus à l'écran.
+  const catalogueGen = useRef(0);
+  /** Les pages d'un chapitre, une seule requête à la fois (cf. `pagesEnVol`).
+   *  Met les caches mémoire à jour au passage — l'appelant décide de ce qu'il
+   *  en fait (ouvrir le lecteur, pré-charger). */
+  const pagesDeChapitre = useCallback(async (src: string, chapterUrl: string): Promise<Page[]> => {
+    const cle = `${src}|${chapterUrl}`;
+    const enVol = pagesEnVol.current.get(cle);
+    if (enVol) return enVol;
+    const requete = (async () => {
+      const r = await invoke<{ pages: Page[]; cacheAt?: number }>('pages', {
+        source: src,
+        chapterUrl,
+      });
+      const list = r.pages ?? [];
+      if (list.length > 0) {
+        cachePages.current.set(cle, list);
+        if (r.cacheAt) pagesDuDisque.current.add(cle);
+        else pagesDuDisque.current.delete(cle);
+      }
+      return list;
+    })();
+    pagesEnVol.current.set(cle, requete);
+    void requete.catch(() => {}).finally(() => {
+      pagesEnVol.current.delete(cle);
+    });
+    return requete;
+  }, []);
   // Tâche 0.17 : fiche détaillée (résumé, état, genres). Les chapters arrivent
   // à part : les deux appels sont indépendants et l'un ne doit pas masquer l'autre.
   const [info, setInfo] = useState<Manga | null>(null);
@@ -1285,6 +1334,11 @@ export default function Home() {
    *  lecture** — une source qui réordonne sa liste le renderait faux, il ne sert
    *  donc qu'à afficher « chapitre n˚ 12 », jamais à adresser le chapitre. */
   const [progression, setProgression] = useState<Progression | null>(null);
+  // La reprise est une lecture locale quasi immédiate mais **asynchrone** :
+  // `false` tant qu'elle n'est pas arrivée, ce qui empêche le pré-chargement
+  // de tirer un premier chapitre avant de savoir qu'on reprend au 87 (cf.
+  // l'effet « pré-chargement à l'ouverture d'une fiche »).
+  const [reprisePrete, setReprisePrete] = useState(false);
   const [chapterLimit, setChapterLimit] = useState(CHAPTER_PAGE);
   const [chapterQuery, setChapterQuery] = useState('');
   // Nombre de chapitres à cocher d'un clic dans la barre de sélection.
@@ -1484,18 +1538,57 @@ export default function Home() {
         }).catch(() => [] as LocalPage[]);
         if (annule) return;
         if (locales.length > 0) {
+          pagesDuDisque.current.delete(cle);
           cachePages.current.set(cle, locales.map((p) => ({ index: p.index, url: '', token: p.token, largeur: p.width, hauteur: p.height })));
           return;
         }
-        const r = await invoke<{ pages: Page[] }>('pages', { source: src, chapterUrl: suivant.url });
-        if (annule) return;
-        if (r.pages?.length) cachePages.current.set(cle, r.pages);
+        await pagesDeChapitre(src, suivant.url);
       } catch {
         // silencieux
       }
     })();
     return () => { annule = true; };
-  }, [reader?.chapter?.url, chapters.length]);
+  }, [reader?.chapter?.url, chapters.length, pagesDeChapitre]);
+  // Pré-chargement à l'ouverture d'une fiche (chantier perf 2026-10-19, B) :
+  // le premier clic utile — « Reprendre » ou la première carte de chapitre —
+  // doit trouver ses pages déjà là. La cible est le chapitre de reprise quand
+  // il est connu, le premier sinon (`ciblePrechargement`), et `reprisePrete`
+  // impose d'attendre la reprise : sans lui, le pré-chargement tirerait le
+  // chapitre 1 au moment où la liste des chapitres arrive — la reprise, elle,
+  // est une lecture locale quasi immédiate mais asynchrone — puis la reprise,
+  // soit deux requêtes pour un seul clic attendu. `readerLoading` évite de
+  // partir pendant qu'un lecteur s'ouvre déjà (ouvrir un signet ou une reprise
+  // pose la fiche et le lecteur dans le même souffle : le pré-chargement n'y
+  // aurait aucun rôle, et pourrait se mettre derrière la requête du clic).
+  // Chapitre téléchargé : rien à faire (le lecteur lit le fichier, sans
+  // moteur). Confort uniquement : tout échec est silencieux.
+  useEffect(() => {
+    if (!reprisePrete || reader || readerLoading || !openManga || !chapters.length) return;
+    const cible = ciblePrechargement(chapters, progression?.chapter_url ?? null);
+    if (!cible) return;
+    const src = openManga.source;
+    const cle = `${src}|${cible.url}`;
+    if (cachePages.current.has(cle)) return;
+    const titre = openManga.title;
+    let annule = false;
+    void (async () => {
+      try {
+        const locales = await invoke<LocalPage[]>('local_chapter_pages', {
+          source: src,
+          mangaTitle: titre,
+          chapterTitle: chapterLabel(cible),
+          chapterUrl: cible.url,
+        }).catch(() => [] as LocalPage[]);
+        if (annule || locales.length > 0) return;
+        await pagesDeChapitre(src, cible.url);
+      } catch {
+        // silencieux : le pré-chargement est un confort
+      }
+    })();
+    return () => {
+      annule = true;
+    };
+  }, [reprisePrete, openManga, chapters, reader, readerLoading, progression, pagesDeChapitre]);
   const [challenge, setChallenge] = useState<string | null>(null);
   /** Incrémenté après chaque vérification résolue : force le rechargement des
    *  images du lecteur, dont le 404 est resté en cache. Voir `pageSrc`. */
@@ -2564,6 +2657,9 @@ export default function Home() {
       coverToken: b.cover_token,
     };
     setOpenManga(manga);
+    // Le lecteur va s'ouvrir pour un chapitre précis (celui du signet) : le
+    // pré-chargement de fiche n'a rien à préparer pendant ce temps.
+    setReprisePrete(false);
     // Le moteur ne connaît un chapitre que si la fiche a été listée dans la
     // session : sans cet appel, `pages` échoue et le lecteur ne s'ouvre pas.
     const [ficheRes, chapitresRes] = await Promise.allSettled([
@@ -2572,7 +2668,7 @@ export default function Home() {
         mangaUrl: b.manga_url,
         mangaTitle: b.title,
       }),
-      invoke<{ chapters: Chapter[] }>('chapters', {
+      invoke<{ chapters: Chapter[]; cacheAt?: number }>('chapters', {
         source: b.source,
         mangaUrl: b.manga_url,
         mangaTitle: b.title,
@@ -2585,7 +2681,14 @@ export default function Home() {
       setError(t('erreur.chapitres', { raison: String(chapitresRes.reason) }));
       return;
     }
-    const list: Chapter[] = chapitresRes.value.chapters ?? [];
+    // Le chapitre du signet est prioritaire : si le cache disque ne le
+    // contenait pas (publié depuis), `chapitresAvecReprise` retente une fois —
+    // sinon le repli silencieux ouvrirait le chapitre 1 à sa place.
+    const list: Chapter[] = await chapitresAvecReprise(
+      { source: b.source, url: b.manga_url, title: b.title },
+      chapitresRes.value,
+      b.chapter_url,
+    );
     setChapters(list);
     const chapter =
       list.find((c) => c.url === b.chapter_url) ?? list[0];
@@ -2799,8 +2902,14 @@ export default function Home() {
       setLatestOffset(0);
       setOnePageOnly(false);
     }
+    // Chaque chargement invalide les rafraîchissements d'arrière-plan partis
+    // avant lui : leur réponse décrirait une grille qui n'est plus à l'écran.
+    const generation = (catalogueGen.current += 1);
     try {
-      const r = await invoke<{ list: Manga[] }>('latest', {
+      // La requête est **gardée** dans un objet local : le rafraîchissement
+      // d'arrière-plan la rejoue telle quelle, condition pour retomber sur la
+      // même entrée du cache disque (sa clé est l'ensemble des paramètres).
+      const requete = {
         source: s.name,
         offset,
         limit: pageSize,
@@ -2808,8 +2917,13 @@ export default function Home() {
         tags: useTags,
         contentRating: rating === 'ALL' ? '' : rating,
         timeoutSecs: listTimeout,
-      });
+      };
+      const r = await invoke<{ list: Manga[]; cacheAt?: number }>('latest', requete);
       const items = r.list ?? [];
+      // Réponse servie par le cache disque : la première page est revalidée en
+      // arrière-plan — les titres publiés depuis apparaissent sans clic, et la
+      // réponse fraîche remplace l'entrée du cache au passage.
+      if (r.cacheAt && offset === 0) void rafraichirCatalogue(requete, generation);
       // L'action vient de réussir : le compteur de challenges consécutifs
       // retombe à zéro pour ce couple (source, action). Sans cette remise,
       // une source qui a défié l'utilisateur deux fois resterait marquée
@@ -3128,10 +3242,14 @@ function nomSource(s: Source): string {
         await attendreTourAutomatique(m.source);
         setRecentBusy((n) => n + 1);
         try {
+          // `refresh: true` : la pastille annonce un nombre de chapitres, donc
+          // un compte servi par le cache disque d'hier la ferait mentir. Cette
+          // file passe déjà par la porte de politesse — le coût est borné.
           const r = await invoke<{ chapters: Chapter[] }>('chapters', {
             source: m.source,
             mangaUrl: m.url,
             mangaTitle: m.title,
+            refresh: true,
           });
           const list = r.chapters ?? [];
           // Seul le **nombre** est retenu : c'est lui que porte la pastille
@@ -3181,6 +3299,11 @@ function nomSource(s: Source): string {
 
   async function loadChapters(m: Manga) {
     setOpenManga(m);
+    // La reprise relue plus bas appartient à CETTE fiche : la remettre à zéro
+    // évite d'afficher — et de pré-charger — celle de la précédente pendant la
+    // lecture en base, le temps que `derniere_lecture` réponde.
+    setProgression(null);
+    setReprisePrete(false);
     // **La fiche connaît sa source, la sélection non.** Ouverte depuis
     // l'historique ou les favoris, une fiche n'a aucune source sélectionnée :
     // le téléchargement sortait alors en silence (`if (!openManga || !selected)
@@ -3206,8 +3329,14 @@ function nomSource(s: Source): string {
         source: m.source,
         mangaUrl: m.url,
       })
-        .then(setProgression)
-        .catch(() => setProgression(null));
+        .then((p) => {
+          setProgression(p);
+          setReprisePrete(true);
+        })
+        .catch(() => {
+          setProgression(null);
+          setReprisePrete(true);
+        });
       return;
     }
     setLoadingState(true);
@@ -3231,11 +3360,17 @@ function nomSource(s: Source): string {
       source: m.source,
       mangaUrl: m.url,
     })
-      .then(setProgression)
-      .catch(() => setProgression(null));
+      .then((p) => {
+        setProgression(p);
+        setReprisePrete(true);
+      })
+      .catch(() => {
+        setProgression(null);
+        setReprisePrete(true);
+      });
     // La fiche et les chapitres partent en parallèle : une source lente pour
     // l'une ne doit pas retarder l'autre.
-    void invoke<{ manga: Manga }>('details', {
+    void invoke<{ manga: Manga; cacheAt?: number }>('details', {
       source: m.source,
       mangaUrl: m.url,
       mangaTitle: m.title,
@@ -3243,6 +3378,10 @@ function nomSource(s: Source): string {
       .then((r) => {
         setInfo(r.manga ?? null);
         if (r.manga) cacheInfo.current.set(cleFiche, r.manga);
+        // Fiche servie par le cache disque : revalidée en arrière-plan (le
+        // résumé, les genres et la couverture peuvent dater d'une session
+        // précédente), sans retarder l'affichage.
+        if (r.cacheAt) void rafraichirDetailsFiche(m, cleFiche);
         // Les deux sources de classification se contredisent : mesuré,
         // WAMANGA classe `ADULT` dans la liste mais `UNKNOWN` sur la fiche,
         // MANGABUFF fait l'inverse. On prend donc la PREMIÈRE valeur connue,
@@ -3274,17 +3413,176 @@ function nomSource(s: Source): string {
         setError(t('erreur.fiche', { raison: String(e) }));
       });
     try {
-      const r = await invoke<{ chapters: Chapter[] }>('chapters', {
+      const r = await invoke<{ chapters: Chapter[]; cacheAt?: number }>('chapters', {
         source: m.source,
         mangaUrl: m.url,
         mangaTitle: m.title,
       });
       setChapters(r.chapters ?? []);
       cacheChapitres.current.set(cleFiche, r.chapters ?? []);
+      // Liste servie par le cache disque : revalidée en arrière-plan pour que
+      // les chapitres publiés depuis apparaissent, sans retarder l'affichage
+      // qui vient de rendre du déjà connu.
+      if (r.cacheAt) void rafraichirChapitres(m, cleFiche);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoadingState(false);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chantier perf 2026-10-19 — seconde moitié (A : revalidation d'arrière-plan,
+  // B : pré-chargement). Le cœur sert désormais `chapters`/`details`/`pages`/
+  // `latest` depuis un cache disque et marque ces réponses d'un `cacheAt` (ms) :
+  // **présent = la réponse vient du disque**. On l'affiche donc tout de suite —
+  // c'est tout l'intérêt — et on redemande la vérité en arrière-plan. Absent =
+  // réponse réseau de cette session, rien à faire. Les fonctions ci-dessous
+  // sont cette seconde moitié : **silencieuses en échec**, et elles n'écrivent
+  // à l'écran que si ce qu'il montre est encore la chose rafraîchie. Les caches
+  // mémoire, eux, sont toujours écrits : leurs clés nomment ce qu'ils
+  // contiennent, donc une réponse arrivée « en retard » y est utile quand même.
+  // ---------------------------------------------------------------------------
+
+  /** Revalide en arrière-plan une liste de chapitres servie par le cache
+   *  disque (fiche). */
+  async function rafraichirChapitres(m: Manga, cleFiche: string) {
+    try {
+      const frais = await invoke<{ chapters: Chapter[] }>('chapters', {
+        source: m.source,
+        mangaUrl: m.url,
+        mangaTitle: m.title,
+        refresh: true,
+      });
+      const list = frais.chapters ?? [];
+      if (list.length === 0) return;
+      cacheChapitres.current.set(cleFiche, list);
+      if (ficheOuverte.current === cleFiche) setChapters(list);
+    } catch {
+      // silencieux : la liste affichée reste celle du cache
+    }
+  }
+
+  /** Revalide en arrière-plan une fiche servie par le cache disque. */
+  async function rafraichirDetailsFiche(m: Manga, cleFiche: string) {
+    try {
+      const frais = await invoke<{ manga: Manga }>('details', {
+        source: m.source,
+        mangaUrl: m.url,
+        mangaTitle: m.title,
+        refresh: true,
+      });
+      if (!frais.manga) return;
+      cacheInfo.current.set(cleFiche, frais.manga);
+      if (ficheOuverte.current === cleFiche) setInfo(frais.manga);
+    } catch {
+      // silencieux : la fiche affichée reste celle du cache
+    }
+  }
+
+  /** La liste de chapitres d'une REPRISE, rafraîchie quand le cache disque ne
+   *  contenait pas le chapitre mémorisé — il a pu être publié après l'écriture
+   *  du cache, et le repli silencieux ouvrirait le chapitre 1 à sa place. Une
+   *  seule nouvelle tentative ; en échec, la liste d'origine est rendue telle
+   *  quelle (le repli d'avant aura lieu, comme avant). */
+  async function chapitresAvecReprise(
+    cible: { source: string; url: string; title: string },
+    reponse: { chapters: Chapter[]; cacheAt?: number },
+    chapitreUrl: string,
+  ): Promise<Chapter[]> {
+    const list = reponse.chapters ?? [];
+    if (!reponse.cacheAt || list.some((c) => c.url === chapitreUrl)) return list;
+    try {
+      const frais = await invoke<{ chapters: Chapter[] }>('chapters', {
+        source: cible.source,
+        mangaUrl: cible.url,
+        mangaTitle: cible.title,
+        refresh: true,
+      });
+      const fraisList = frais.chapters ?? [];
+      if (fraisList.length === 0) return list;
+      cacheChapitres.current.set(`${cible.source}|${cible.url}`, fraisList);
+      return fraisList;
+    } catch {
+      return list;
+    }
+  }
+
+  /** Un chapitre par son URL, au réseau quand la liste affichée ne l'a pas
+   *  (cache disque antérieur à sa publication). `null` = introuvable des deux
+   *  côtés ; la liste rendue par le réseau est alors posée à l'écran si la
+   *  fiche est toujours ouverte. */
+  async function chapitreParUrlFrais(
+    cible: { source: string; url: string; title: string },
+    chapitreUrl: string,
+  ): Promise<Chapter | null> {
+    try {
+      const frais = await invoke<{ chapters: Chapter[] }>('chapters', {
+        source: cible.source,
+        mangaUrl: cible.url,
+        mangaTitle: cible.title,
+        refresh: true,
+      });
+      const list = frais.chapters ?? [];
+      if (list.length === 0) return null;
+      const cle = `${cible.source}|${cible.url}`;
+      cacheChapitres.current.set(cle, list);
+      if (ficheOuverte.current === cle) setChapters(list);
+      return list.find((c) => c.url === chapitreUrl) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Revalide une liste de pages servie par le cache disque : les URL d'images
+   *  sont souvent signées, donc périmées au bout de quelques heures. N'écrit
+   *  le lecteur que s'il lit **toujours ce chapitre** et que la pagination n'a
+   *  pas bougé — un remplacement de longueur différente décalerait l'index et
+   *  les ancres de la bande en cours de lecture. */
+  async function rafraichirPages(src: string, chapterUrl: string, cle: string) {
+    try {
+      const frais = await invoke<{ pages: Page[] }>('pages', {
+        source: src,
+        chapterUrl,
+        refresh: true,
+      });
+      const list = frais.pages ?? [];
+      if (list.length === 0) return;
+      cachePages.current.set(cle, list);
+      pagesDuDisque.current.delete(cle);
+      setReader((prev) =>
+        prev && prev.chapter.url === chapterUrl && prev.pages.length === list.length
+          ? { ...prev, pages: list }
+          : prev,
+      );
+    } catch {
+      // silencieux : les images du cache s'affichent, ou montrent leur repli
+    }
+  }
+
+  /** Revalide en arrière-plan la **première page** d'un catalogue servie par
+   *  le cache disque, en rejouant exactement la même requête (`requete`) —
+   *  condition pour retomber sur la même entrée de cache. N'écrit la grille
+   *  que si elle montre encore cette génération de catalogue. */
+  async function rafraichirCatalogue(
+    requete: {
+      source: string;
+      offset: number;
+      limit: number;
+      query: string;
+      tags: string[];
+      contentRating: string;
+      timeoutSecs: number;
+    },
+    generation: number,
+  ) {
+    try {
+      const frais = await invoke<{ list: Manga[] }>('latest', { ...requete, refresh: true });
+      const items = frais.list ?? [];
+      if (items.length === 0 || catalogueGen.current !== generation) return;
+      setLatest(items);
+    } catch {
+      // silencieux : la grille garde ce que le cache disque lui a servi
     }
   }
 
@@ -4104,13 +4402,17 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
       const pagesEnCache = cachePages.current.get(clePages);
       if (pagesEnCache) {
         pages = pagesEnCache;
+        // Mémoire remplie **depuis le cache disque** (pré-chargement d'une
+        // session précédente) : ses URL d'images peuvent être périmées côté
+        // CDN, on les revalide pendant que le lecteur s'ouvre. Le lecteur peut
+        // tourner en attendant, c'est le but.
+        if (pagesDuDisque.current.has(clePages)) void rafraichirPages(src, c.url, clePages);
       } else {
-        const r = await invoke<{ pages: Page[] }>('pages', {
-          source: src,
-          chapterUrl: c.url,
-        });
-        pages = r.pages ?? [];
-        if (pages.length > 0) cachePages.current.set(clePages, pages);
+        // `pagesDeChapitre` déduplique une requête déjà en vol (pré-chargement
+        // de la fiche ou du chapitre suivant) au lieu de la relancer.
+        pages = await pagesDeChapitre(src, c.url);
+        // Réponse du disque : mêmes URL potentiellement périmées que ci-dessus.
+        if (pagesDuDisque.current.has(clePages)) void rafraichirPages(src, c.url, clePages);
       }
     }
     if (pages.length === 0) {
@@ -4280,6 +4582,9 @@ async function resumeReading(h: HistoryItem) {
     return;
   }
   setOpenManga(manga);
+  // Le lecteur va s'ouvrir pour le chapitre repris : le pré-chargement de
+  // fiche n'a rien à préparer pendant ce temps.
+  setReprisePrete(false);
   setError(null);
   // Les deux appels partent ensemble : `details` sert au classement (incognito)
   // et à la couverture, `chapters` ré-enregistre les chapitres pour le moteur.
@@ -4289,7 +4594,7 @@ async function resumeReading(h: HistoryItem) {
       mangaUrl: h.manga_url,
       mangaTitle: h.title,
     }),
-    invoke<{ chapters: Chapter[] }>('chapters', {
+    invoke<{ chapters: Chapter[]; cacheAt?: number }>('chapters', {
       source: h.source,
       mangaUrl: h.manga_url,
       mangaTitle: h.title,
@@ -4313,7 +4618,10 @@ async function resumeReading(h: HistoryItem) {
     setError(t('erreur.chapitres', { raison: String(chapitresRes.reason) }));
     return;
   }
-  const list: Chapter[] = chapitresRes.value.chapters ?? [];
+  // Reprise : prioritaire sur la liste servie par le disque — si le chapitre
+  // mémorisé n'y est pas (publié depuis), une seconde tentative au réseau, et
+  // c'est elle qui peut le retrouver (cf. `chapitresAvecReprise`).
+  const list: Chapter[] = await chapitresAvecReprise(manga, chapitresRes.value, h.chapter_url);
   setChapters(list);
   // Le chapitre mémorisé a pu disparaître (source modifiée) : on retombe sur
   // le même rang, sinon sur le premier disponible.
@@ -6333,16 +6641,30 @@ if (reader) {
             C'est un bouton, pas un texte : l'information seule obligerait à
             chercher le chapitre dans une liste de 200. Un clic y va.
 
-            Le garde-fou `chapters.length > 0` est nécessaire : reprise vers un
-            chapitre qui n'est plus dans la liste (source réorganisée, chapitre
-            retiré) ouvrirait `openReader(undefined)` — un lecteur vide, sans
-            message. */}
+            Chapitre absent de la liste affichée : elle peut venir du cache
+            disque d'une session précédente, écrit avant la publication de ce
+            chapitre (chantier perf 2026-10-19). On repose donc la question au
+            réseau une fois, avant de dire « introuvable » — un clic muet est
+            le pire résultat pour une reprise (l'ancien garde-fou sortait en
+            silence, sans même un message). */}
         {repriseUtile(progression) && chapters.length > 0 && (
           <button
             className="btn btn-primary reprendre"
             onClick={() => {
-              const c = chapters.find((x) => x.url === progression.chapter_url);
-              if (c) void openReader(c);
+              // `repriseUtile` garantit un `chapter_url` non vide à l'exécution,
+              // mais le type de la charge utile reste `string | null`.
+              const cibleUrl = progression.chapter_url;
+              if (!cibleUrl) return;
+              const c = chapters.find((x) => x.url === cibleUrl);
+              if (c) {
+                void openReader(c);
+                return;
+              }
+              void (async () => {
+                const retrouve = await chapitreParUrlFrais(fiche, cibleUrl);
+                if (retrouve) void openReader(retrouve);
+                else setError(t('erreur.reprise.introuvable'));
+              })();
             }}
           >
             {progression.chapter_title

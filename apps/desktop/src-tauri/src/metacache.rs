@@ -30,10 +30,11 @@
 //! d'irremplaçable — c'est ce que la preuve rouge/verte utilise pour vérifier
 //! que c'est bien lui qui rend les secondes session rapides.
 
+use std::collections::HashMap;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
@@ -44,6 +45,11 @@ use serde_json::Value;
 /// ferait plus de mal que de bien, et le réseau de la source la rafraîchit en
 /// une requête. 7 jours = « la semaine dernière » est encore plausible.
 const AGE_MAX_MS: i64 = 7 * 24 * 3600 * 1000;
+
+/// Plafond de l'index de session chapitre→manga (cf. `indexer_chapitres`).
+/// Ordre de grandeur : une fiche ≈ 100-2 000 chapitres, donc 50 000 couvre des
+/// dizaines de fiches par session (quelques Mo au pire).
+const PLAFOND_INDEX_CHAPITRES: usize = 50_000;
 
 /// Genres de métadonnées cachées. Chaque genre a son préfixe de fichier et son
 /// plafond — les ordres de grandeur viennent des tailles mesurées : une liste
@@ -96,6 +102,11 @@ struct Enveloppe {
 
 pub struct MetaCache {
     dir: PathBuf,
+    /// Index de session `(source, url de chapitre)` → `(url du manga, titre)`.
+    /// Jamais écrit sur disque : vide après un redémarrage, c'est voulu — il ne
+    /// sert qu'aux refus du moteur pendant une même session (cf.
+    /// `indexer_chapitres`, et `commands.rs::pages` qui l'interroge).
+    chapitres: Mutex<HashMap<String, (String, String)>>,
 }
 
 impl MetaCache {
@@ -108,9 +119,72 @@ impl MetaCache {
         // ne servirait jamais — un cache qui ne s'écrit pas ne se voit qu'à la
         // deuxième session.
         let _ = fs::create_dir_all(&dir);
-        let cache = Self { dir };
+        let cache = Self {
+            dir,
+            chapitres: Mutex::new(HashMap::new()),
+        };
         cache.purger(None);
         Arc::new(cache)
+    }
+
+    /// Indexe les chapitres d'une réponse `chapters` : `(source, url de
+    /// chapitre)` → `(url du manga, titre)`.
+    ///
+    /// **À quoi ça sert.** Le moteur ne reconnaît un chapitre que si la fiche a
+    /// été listée **pendant sa session** (son cache est en mémoire). Quand le
+    /// cache disque sert `chapters` sans toucher le moteur, `pages` répond
+    /// « unknown chapter url » ; cet index est ce qui permet à
+    /// `commands.rs::pages` de retrouver le manga à réamorcer. Il est alimenté
+    /// dans les **deux** chemins (cache comme réseau) — un index qui ne se
+    /// remplirait qu'au réseau couvrirait exactement le cas où il ne sert pas.
+    pub fn indexer_chapitres(&self, source: &str, manga_url: &str, titre: &str, reponse: &Value) {
+        self.indexer_chapitres_plafond(source, manga_url, titre, reponse, PLAFOND_INDEX_CHAPITRES)
+    }
+
+    /// Même chose avec un plafond injectable — pour les tests, qui n'insèrent
+    /// pas 50 000 entrées (même motif que `evacuer`).
+    fn indexer_chapitres_plafond(
+        &self,
+        source: &str,
+        manga_url: &str,
+        titre: &str,
+        reponse: &Value,
+        plafond: usize,
+    ) {
+        let Some(arr) = reponse.get("chapters").and_then(Value::as_array) else {
+            return;
+        };
+        let mut index = self.verrou_index();
+        // Un index de session est une optimisation : le vider d'un bloc à
+        // saturation est correct (au pire, le prochain refus du moteur repart
+        // sans amorçage) et tient en une ligne, là où une éviction fine
+        // demanderait une structure dédiée pour un chemin rare.
+        if index.len() + arr.len() > plafond {
+            index.clear();
+        }
+        for c in arr {
+            if let Some(url) = c.get("url").and_then(Value::as_str) {
+                index.insert(
+                    format!("{source}|{url}"),
+                    (manga_url.to_string(), titre.to_string()),
+                );
+            }
+        }
+    }
+
+    /// Le manga d'un chapitre, tel que vu par la dernière liste qui l'a
+    /// contenue. `None` = jamais vu cette session : l'appelant doit rendre le
+    /// refus du moteur tel quel plutôt que d'inventer un manga.
+    pub fn manga_du_chapitre(&self, source: &str, chapter_url: &str) -> Option<(String, String)> {
+        self.verrou_index()
+            .get(&format!("{source}|{chapter_url}"))
+            .cloned()
+    }
+
+    /// Verrou de l'index, immunisé contre l'empoisonnement : un panic d'un
+    /// autre fil ne doit pas transformer une lecture d'index en panne du cache.
+    fn verrou_index(&self) -> std::sync::MutexGuard<'_, HashMap<String, (String, String)>> {
+        self.chapitres.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Relit une entrée. Rend `None` dans tous les cas douteux : fichier
@@ -415,12 +489,66 @@ mod tests {
     }
 
     #[test]
-    fn un_genre_de_fichier_inconnu_ne_compte_pas_dans_le_plafond() {
+    fn l_index_retrouve_le_manga_d_un_chapitre() {
         let (c, _garde) = cache();
-        fs::write(c.dir.join("zz_0000000000000000.json"), b"{}").unwrap();
-        assert_eq!(
-            genre_du_fichier(&c.dir.join("zz_0000000000000000.json")),
-            None
+        c.indexer_chapitres(
+            "SUSHISCANFR",
+            "https://x/manga",
+            "Un manga",
+            &json!({ "chapters": [{ "url": "https://x/manga/ch-1" }, { "url": "https://x/manga/ch-2" }] }),
         );
+        assert_eq!(
+            c.manga_du_chapitre("SUSHISCANFR", "https://x/manga/ch-2"),
+            Some(("https://x/manga".to_string(), "Un manga".to_string()))
+        );
+        // Un chapitre jamais vu, ou vu d'une autre source, n'a pas de manga :
+        // le refus du moteur sera rendu tel quel, sans amorçage à l'aveugle.
+        assert!(c
+            .manga_du_chapitre("SUSHISCANFR", "https://x/manga/ch-9")
+            .is_none());
+        assert!(c
+            .manga_du_chapitre("TOONFR", "https://x/manga/ch-1")
+            .is_none());
+    }
+
+    #[test]
+    fn un_index_sature_repart_de_zero() {
+        let (c, _garde) = cache();
+        // Le plafond est un paramètre : pas besoin d'insérer 50 000 entrées
+        // pour vérifier la remise à zéro (même motif que `evacuer`).
+        c.indexer_chapitres_plafond(
+            "S",
+            "m1",
+            "t1",
+            &json!({ "chapters": [{ "url": "u1" }, { "url": "u2" }] }),
+            4,
+        );
+        assert!(c.manga_du_chapitre("S", "u1").is_some());
+        // 2 + 3 > 4 : la saturation vide l'index entier, puis la liste
+        // courante y entre — l'ancienne n'y est plus.
+        c.indexer_chapitres_plafond(
+            "S",
+            "m2",
+            "t2",
+            &json!({ "chapters": [{ "url": "u3" }, { "url": "u4" }, { "url": "u5" }] }),
+            4,
+        );
+        assert!(
+            c.manga_du_chapitre("S", "u1").is_none(),
+            "l'ancien index est parti"
+        );
+        assert_eq!(
+            c.manga_du_chapitre("S", "u5"),
+            Some(("m2".to_string(), "t2".to_string()))
+        );
+    }
+
+    #[test]
+    fn une_reponse_sans_chapitres_n_alimente_pas_l_index() {
+        let (c, _garde) = cache();
+        // Une réponse `pages` ou `details` passée par erreur, ou un échec du
+        // moteur, ne doivent pas créer d'entrées fantômes.
+        c.indexer_chapitres("S", "m", "t", &json!({ "pages": [{ "url": "u1" }] }));
+        assert!(c.manga_du_chapitre("S", "u1").is_none());
     }
 }

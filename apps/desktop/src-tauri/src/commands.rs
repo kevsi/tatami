@@ -383,9 +383,14 @@ pub async fn chapters(
         crate::journal::hachage(manga_url.trim())
     );
     let cle = format!("{}|{}", source.trim(), manga_url.trim());
+    let titre = manga_title.unwrap_or_default();
     if refresh != Some(true) {
         if let Some((at, donnees)) = meta.lire(Genre::Chapters, &cle) {
             tracing::info!("chapters cache=hit age_s={}", (now_ms() - at) / 1000);
+            // L'index se remplit **aussi** sur un coup de cache : c'est le seul
+            // moyen pour `pages` de savoir quel manga réamorcer quand le moteur
+            // n'a jamais vu la fiche (cf. `pages_avec_amorcage`).
+            meta.indexer_chapitres(source.trim(), manga_url.trim(), &titre, &donnees);
             return Ok(marquer_cache(donnees, at));
         }
     }
@@ -393,14 +398,15 @@ pub async fn chapters(
     // redémarrage (cache de session vide) : sans lui, toute reprise échoue.
     let params = serde_json::json!({
         "source": source.trim(),
-        "mangaUrl": manga_url,
-        "mangaTitle": manga_title.unwrap_or_default(),
+        "mangaUrl": manga_url.trim(),
+        "mangaTitle": titre.as_str(),
     });
     let r = into_result(
         sup.request_avec_transport(&app, source.trim(), "chapters", params, DEEP_TIMEOUT)
             .await?,
     )?;
     meta.ecrire(Genre::Chapters, &cle, &r);
+    meta.indexer_chapitres(source.trim(), manga_url.trim(), &titre, &r);
     Ok(r)
 }
 
@@ -425,6 +431,85 @@ pub fn injecter_dims_et_token(arr: &mut [serde_json::Value], cache: &PageCache, 
         }
         p.as_object_mut()
             .map(|o| o.insert("token".to_string(), serde_json::Value::String(token)));
+    }
+}
+
+/// Marqueur du refus du moteur : sa **session** ne connaît pas encore le
+/// chapitre (elle ne l'apprend que par `chapters`). Le libellé vient de
+/// `engine/…/Server.kt` (« unknown chapter url, call chapters first: … ») — un
+/// test de ce module lit le fichier Kotlin et vérifie que les deux concordent,
+/// parce qu'aucun compilateur ne relie un message Kotlin à une comparaison Rust
+/// (leçon AGENTS.md : une constante partagée entre deux langages a besoin d'un
+/// test qui lit l'autre fichier).
+const REFUS_CHAPTERS_MOTEUR: &str = "unknown chapter url";
+
+/// `pages`, avec l'amorçage que le moteur exige.
+///
+/// **Le défaut mesuré (2026-10-19, session 2 du chantier A).** Le moteur ne
+/// reconnaît un chapitre que si la fiche a été listée **pendant sa session**
+/// (cache en mémoire, `Server.kt`). Quand le cache disque sert `chapters` sans
+/// toucher le moteur, `pages` répond « unknown chapter url » : mesuré, chaque
+/// revalidation d'arrière-plan échouait, et un chapitre non encore mis en cache
+/// aurait été illisible. Quatre parades locales existaient déjà (téléchargeur,
+/// reprise, signet, commentaire de `openReaderAt`) — celle de ce chemin
+/// manquait, et la centraliser ici évite que le prochain flux l'oublie à son
+/// tour.
+///
+/// **La parade.** Sur ce refus précis, et si l'index de session connaît le manga
+/// du chapitre : refaire `chapters` au moteur (la réponse fraîche réécrit
+/// l'entrée disque, donc les prochains `pages` n'ont plus à amorcer), puis
+/// **une seule** nouvelle tentative de `pages`. Toute autre erreur — et le
+/// refus sans manga connu — ressort inchangée.
+///
+/// **Course assumée.** Si le rafraîchissement d'arrière-plan de l'interface
+/// relaie la même fiche en même temps, le moteur sérialise par source et la
+/// fiche est demandée deux fois : une requête de trop sous course, préférée à
+/// un partage de futur en vol pour un chemin rare.
+async fn pages_avec_amorcage(
+    app: &AppHandle,
+    sup: &Supervisor,
+    meta: &MetaCache,
+    source: &str,
+    chapter_url: &str,
+) -> Result<serde_json::Value, String> {
+    let params = serde_json::json!({ "source": source, "chapterUrl": chapter_url });
+    match into_result(
+        sup.request_avec_transport(app, source, "pages", params.clone(), DEEP_TIMEOUT)
+            .await?,
+    ) {
+        Ok(r) => Ok(r),
+        Err(erreur) if erreur.contains(REFUS_CHAPTERS_MOTEUR) => {
+            let Some((manga, titre)) = meta.manga_du_chapitre(source, chapter_url) else {
+                // Jamais vue cette session : rien à amorcer, et inventer un
+                // manga à partir d'une URL serait pire que le refus.
+                return Err(erreur);
+            };
+            tracing::info!(
+                "pages amorcage chapters puis nouvel essai chapitre={}",
+                crate::journal::hachage(chapter_url)
+            );
+            let chapitres = into_result(
+                sup.request_avec_transport(
+                    app,
+                    source,
+                    "chapters",
+                    serde_json::json!({
+                        "source": source,
+                        "mangaUrl": manga.as_str(),
+                        "mangaTitle": titre.as_str(),
+                    }),
+                    DEEP_TIMEOUT,
+                )
+                .await?,
+            )?;
+            meta.ecrire(Genre::Chapters, &format!("{source}|{manga}"), &chapitres);
+            meta.indexer_chapitres(source, &manga, &titre, &chapitres);
+            into_result(
+                sup.request_avec_transport(app, source, "pages", params, DEEP_TIMEOUT)
+                    .await?,
+            )
+        }
+        Err(erreur) => Err(erreur),
     }
 }
 
@@ -459,11 +544,8 @@ pub async fn pages(
             return Ok(marquer_cache(result, at));
         }
     }
-    let params = serde_json::json!({ "source": source.trim(), "chapterUrl": chapter_url });
-    let mut result = into_result(
-        sup.request_avec_transport(&app, source.trim(), "pages", params, DEEP_TIMEOUT)
-            .await?,
-    )?;
+    let mut result =
+        pages_avec_amorcage(&app, &sup, &meta, source.trim(), chapter_url.trim()).await?;
     // Cache la réponse du moteur **avant** l'injection : les jetons et les
     // dimensions vivent dans le registre de session (`pagecache`) et sont
     // refaits à chaque lecture — les figer ici les lierait à cette session.
@@ -476,7 +558,10 @@ pub async fn pages(
 
 #[cfg(test)]
 mod tests {
-    use super::{injecter_dims_et_token, latest_params, marquer_cache, nb_items, requested_rating};
+    use super::{
+        injecter_dims_et_token, into_result, latest_params, marquer_cache, nb_items,
+        requested_rating, REFUS_CHAPTERS_MOTEUR,
+    };
     use crate::pagecache::PageCache;
 
     #[test]
@@ -543,6 +628,49 @@ mod tests {
         assert_eq!(nb_items(&serde_json::json!({ "list": [1, 2, 3] })), 3);
         assert_eq!(nb_items(&serde_json::json!({ "list": [] })), 0);
         assert_eq!(nb_items(&serde_json::json!({ "pages": [1] })), 0);
+    }
+
+    /// Une constante partagée entre deux langages a besoin d'un test qui lit
+    /// l'autre fichier : le jour où `Server.kt` formule le refus autrement,
+    /// l'amorçage de `pages` se désactiverait **en silence** (aucune erreur,
+    /// aucun échec — juste le comportement d'avant le correctif A4).
+    #[test]
+    fn le_marqueur_de_refus_concorde_avec_le_moteur() {
+        let chemin = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../engine/src/main/kotlin/org/tatami/engine/Server.kt"
+        );
+        let source =
+            std::fs::read_to_string(chemin).unwrap_or_else(|e| panic!("lire {chemin}: {e}"));
+        assert!(
+            source.contains(REFUS_CHAPTERS_MOTEUR),
+            "le marqueur {REFUS_CHAPTERS_MOTEUR:?} n'apparaît plus dans Server.kt"
+        );
+        assert!(
+            source.contains("unknown chapter url, call chapters first:"),
+            "le message complet du refus a changé : relire `pages_avec_amorcage`"
+        );
+    }
+
+    /// Le refus doit être reconnu dans la forme réelle de `into_result`
+    /// (« {code}: {message} »), et un échec quelconque ne doit **pas** armer
+    /// l'amorçage — sinon chaque `pages` en panne déclencherait une requête
+    /// `chapters` de plus.
+    #[test]
+    fn le_refus_est_reconnu_dans_la_forme_reelle_du_message() {
+        let refus = serde_json::json!({
+            "ok": false,
+            "error": { "code": "PARSE_ERROR", "message": "unknown chapter url, call chapters first: https://x/ch-1" }
+        });
+        let err = into_result(refus).expect_err("le refus est une erreur");
+        assert!(err.contains(REFUS_CHAPTERS_MOTEUR), "{err}");
+        let reseau = serde_json::json!({
+            "ok": false,
+            "error": { "code": "TIMEOUT", "message": "delai depasse" }
+        });
+        assert!(!into_result(reseau)
+            .expect_err("timeout")
+            .contains(REFUS_CHAPTERS_MOTEUR));
     }
 
     // ---- Tests ADR-0012 : injecter_dims_et_token ----

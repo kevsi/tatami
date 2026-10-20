@@ -34,6 +34,11 @@
     ],
     "resources": {
       "../../../engine/dist/tatami-engine": "engine/tatami-engine"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
     }
   }
 }

@@ -82,3 +82,9 @@ VERIFICATION_REPORT.md
 # Sessions Kotlin du compilateur (Gradle) : `engine/.kotlin/sessions/`.
 # Apparu dans `git status` le 2026-10-15 apres les builds de mesure.
 engine/.kotlin/
+
+# Cles de signature de mise a jour (ADR 0020). Les paires vivent HORS du depot
+# (`C:\Users\<user>\.tatami-keys`), mais un fichier de cle depose ici par erreur
+# doit etre refuse par git, pas seulement par la discipline. Le motif vise la
+# cle privee ; la publique vit dans une configuration test, pas sur le disque.
+*.key

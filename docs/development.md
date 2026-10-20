@@ -151,6 +151,32 @@ ESLint est **épinglé en 9** : `eslint-config-next` déclare un peer `eslint >=
 Ces commandes ne remplacent pas le test de fumée : elles prouvent que le code compile, pas que
 l'application fait ce qu'on croit. Voir [`docs/smoke-test.md`](smoke-test.md).
 
+### 5. Construire un installeur de test signé (updater)
+
+Le build ordinaire (`pnpm tauri build`) n'active **pas** les artefacts de mise à
+jour : `createUpdaterArtifacts` vit dans `src-tauri/tauri.test.conf.json`, qui
+porte aussi la publique de **test** et un endpoint local. Sans cette
+configuration, aucun `.sig` n'est produit — et les builds existants continuent
+de fonctionner sans clé.
+
+```powershell
+$dir = "$env:USERPROFILE\.tatami-keys\test"
+$env:TAURI_SIGNING_PRIVATE_KEY = "$dir\tatami-test.key"
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = (Get-Content "$dir\mot-de-passe.txt" -Raw).Trim()
+pnpm tauri build --config src-tauri/tauri.test.conf.json
+```
+
+La clé privée et son mot de passe vivent **hors du dépôt** (`.gitignore` refuse
+`*.key` en ceinture). La CLI Tauri ne lit **pas** `.env` : les deux variables
+doivent être posées dans le shell du build. Résultat attendu : un `.sig` à côté
+de l'installeur NSIS, dont le contenu va dans
+`platforms.windows-x86_64.signature` du `latest.json` de test.
+
+Le fichier `tauri.test.conf.json` active `dangerousInsecureTransportProtocol`
+**uniquement** parce que son endpoint est en `http://127.0.0.1` : le plugin
+refuse un endpoint non HTTPS en build release (`tauri-plugin-updater` 2.11.0,
+`src/config.rs`). Aucune configuration de production ne doit porter ce drapeau.
+
 ## Documentation
 
 | Document | Contenu |

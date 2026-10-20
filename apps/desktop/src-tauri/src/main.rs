@@ -196,6 +196,11 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // Mise à jour automatique (ADR 0020). Enregistré côté cœur : l'interface
+        // ne parle jamais à l'API JS du plugin, elle appellera nos commandes.
+        // Sans `plugins.updater` dans la configuration, aucun point de
+        // terminaison n'existe et la vérification rend une erreur propre.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(sup.clone())
         .manage(Arc::new(store))
         .manage(cache.clone())

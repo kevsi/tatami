@@ -4943,32 +4943,35 @@ SignPath (5.6) et le passage du dépôt en public.
 
 ### Tâches
 
-#### M1 — Clé, configuration et squelette du plugin
+#### M1 — Clé de test, configuration et enregistrement du plugin
 
-- [ ] Générer la paire minisign de **production** (`pnpm tauri signer generate`)
-  **hors du dépôt** ; consigner l'empreinte de la clé publique, sauvegarder la
-  privée hors ligne, la déposer dans les secrets de l'environnement GitHub
-  `release` (contenu + mot de passe), puis supprimer le fichier local.
-- [ ] Générer une paire de **test** distincte pour M1–M5 (publique dans une
-  configuration de test, privée dans l'environnement `release-test`). La paire
-  de production n'est jamais utilisée pour un build de test.
-- [ ] Ajouter les motifs de clé au `.gitignore` (`*.key`, `*.pem`, au minimum)
-  et vérifier qu'aucun fichier de clé n'apparaît dans `git status`.
-- [ ] Ajouter `tauri-plugin-updater = "2"` dans
+- [x] Générer la paire minisign **de test** (`pnpm tauri signer generate`)
+  **hors du dépôt** — `C:\Users\alexanders\.tatami-keys\test\`, mot de passe
+  aléatoire de 40 caractères dans le même dossier, public relevé. La paire de
+  **production** est reportée en M6 : elle ne sert qu'à la 0.2.0 publique, qui
+  dépend de SignPath (décision D3 du 2026-10-20).
+- [x] Ajouter les motifs de clé au `.gitignore` (`*.key`) et vérifier qu'aucun
+  fichier de clé n'apparaît dans `git status`.
+- [x] Ajouter `tauri-plugin-updater = "2"` dans
   `apps/desktop/src-tauri/Cargo.toml` ; enregistrer le plugin dans `main.rs`
   (`tauri_plugin_updater::Builder::new().build()`).
-- [ ] Renseigner `tauri.conf.json` : `bundle.createUpdaterArtifacts: true`,
-  `plugins.updater.pubkey` (production), `plugins.updater.endpoints`,
-  `plugins.updater.windows.installMode: "passive"`,
-  `bundle.windows.nsis.installMode: "currentUser"`. Le build de test utilise une
-  configuration séparée pour la publique de test et l'endpoint de test.
-- [ ] Créer `src/maj.rs` (types seulement) et le déclarer dans `lib.rs` ; ne pas
-  encore exposer de commande.
-- [ ] **Critère de sortie** : `cargo fmt --check`,
+- [x] Renseigner la configuration : `bundle.windows.nsis.installMode:
+  "currentUser"` dans `tauri.conf.json` (vaut pour tout installeur, pas
+  seulement pour l'updater), et `src-tauri/tauri.test.conf.json` pour le build
+  de test (`createUpdaterArtifacts: true`, publique de test, endpoint
+  `http://127.0.0.1:8799/latest.json`, `dangerousInsecureTransportProtocol:
+  true` — exigé dès que l'endpoint n'est pas HTTPS en build release, vérifié
+  dans `tauri-plugin-updater-2.11.0/src/config.rs`). Les valeurs de production
+  (`pubkey`, endpoint GitHub, `createUpdaterArtifacts`) entrent dans
+  `tauri.conf.json` en M6, quand la clé existe.
+- [x] **Critère de sortie** : `cargo fmt --check`,
   `cargo clippy --all-targets -- -D warnings`, `cargo test` verts ; un
-  `pnpm tauri build` local avec la **clé de test** produit un `.sig` à côté de
-  l'installeur ; `git grep`/gitleaks ne trouve aucune clé privée ; la config de
-  production ne contient pas d'endpoint de test.
+  `tauri build --config src-tauri/tauri.test.conf.json` local avec la **clé de
+  test** produit un `.sig` à côté de l'installeur ; le préfixe base64 d'une clé
+  privée rsign (`dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZWNyZXQga2V5`)
+  ne trouve **aucun** fichier suivi, et le même motif en trouve un dans le
+  fichier de clé (témoin) ; la config de production ne contient pas d'endpoint
+  de test.
 
 #### M2 — Cœur Rust : vérifier, télécharger, installer
 
@@ -4978,11 +4981,16 @@ SignPath (5.6) et le passage du dépôt en public.
   journal, pas à l'écran.
 - [ ] Implémenter `etat_maj` (version courante lue via
   `app.package_info().version`, état, dernier contrôle), `verifier_maj`
-  (`UpdaterExt::check`, stockage de l'objet `Update` dans un état géré) et
-  `installer_maj` (`download_and_install`, événements de progression,
+  (`UpdaterExt::updater()?.check()`) et `installer_maj` (re-contrôle du
+  manifeste puis `download_and_install`, événements de progression,
   `app.restart()`).
-- [ ] Ne jamais tenir un verrou `std::sync::Mutex` sur l'objet `Update` pendant
-  un `await` : sortir l'objet du verrou avant l'appel réseau.
+- [ ] Ne **pas** conserver l'objet `Update` entre deux commandes : il porte le
+  contexte complet du plugin (configuration, client, hooks) et le garder en état
+  géré pour économiser un GET de quelques kilo-octets ajoute une pièce mobile
+  et un manifeste périmé. `installer_maj` refait donc le contrôle, puis installe
+  la version qu'il vient de lire.
+- [ ] Éviter deux installations concurrentes par un drapeau atomique
+  (comparaison-échange), jamais par un verrou tenu au travers d'un `await`.
 - [ ] Brancher `on_before_exit` de l'updater sur l'arrêt propre de la file de
   téléchargements et la journalisation ; ne pas laisser de `.part` ni de
   transaction SQLite ouverte.
@@ -5211,5 +5219,27 @@ SignPath (5.6) et le passage du dépôt en public.
 
 - **2026-10-20** — planification écrite : ADR 0020 (statut `proposée`) et
   présent chantier. **Aucun code, aucune dépendance, aucune clé ajoutée.**
-  Décisions D1–D4 à valider avant M1. Prochaine action : réponse aux quatre
-  décisions, puis M1 (génération de la clé et configuration).
+- **2026-10-20** — D1–D4 validées telles quelles (commandes Rust, vérification
+  automatique activée, 0.2.0 après 5.6, téléchargement et installation en une
+  action) ; ADR 0020 passée en `acceptée`.
+- **2026-10-20** — **M1 livré.** Paire de **test** générée hors du dépôt
+  (`C:\Users\alexanders\.tatami-keys\test\`, mot de passe de 40 caractères dans
+  le même dossier) ; paire de production reportée en M6 (D3).
+  `tauri-plugin-updater 2.11.0` ajouté et enregistré dans `main.rs` ;
+  `bundle.windows.nsis.installMode: currentUser` dans `tauri.conf.json` ;
+  `src-tauri/tauri.test.conf.json` porte `createUpdaterArtifacts`, la publique
+  de test, l'endpoint localhost et `dangerousInsecureTransportProtocol` (exigé
+  hors HTTPS en build release — lu dans `config.rs` du plugin, pas deviné).
+  Preuves : `cargo fmt --check` vert ; `cargo clippy --all-targets -- -D
+  warnings` vert ; `cargo test` **285 tests** (261 + 1 + 23), 0 échec ;
+  `tauri build --config …` écrit `Tatami_0.1.0_x64-setup.exe.sig` (436 o) et
+  `Tatami_0.1.0_x64_en-US.msi.sig` ; l'identifiant de clé de la signature
+  (`5F-8F-C1-90-43-7C-D9-5D`, soit `5DD97C4390C18F5F`) **égale** celui de la
+  publique de test, donc la signature vient bien de cette clé. `.gitignore` :
+  `git check-ignore -v` nomme `*.key` (ligne 90) ; le motif base64 d'une clé
+  privée rsign trouve **1** occurrence dans le fichier de clé (témoin) et **0**
+  dans les fichiers suivis. Aucune permission `updater` n'est accordée à la
+  webview (`capabilities/`). Note de mesure : la CLI a rendu un code 1 alors que
+  les deux bundles et les deux `.sig` étaient écrits — statut du pipeline
+  PowerShell, pas un échec (piège déjà consigné en AGENTS.md §14).
+  Prochaine action : M2 (commandes `etat_maj`, `verifier_maj`, `installer_maj`).

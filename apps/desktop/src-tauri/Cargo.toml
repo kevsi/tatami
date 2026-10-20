@@ -56,6 +56,10 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 # `capabilities/default.json` (ADR 0004).
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
+# Mise à jour automatique (ADR 0020) : plugin officiel Tauri v2, côté Rust
+# seulement. L'interface ne parle pas à l'API JS du plugin ; elle appelle nos
+# commandes (etat_maj, verifier_maj, installer_maj).
+tauri-plugin-updater = "2"
 sha2 = "0.10"
 ed25519-dalek = "3"
 flate2 = "1.1.10"

@@ -4917,27 +4917,29 @@ Empreintes des artefacts :
 
 ## Planification de la mise à jour automatique — 2026-10-20
 
-**Statut : proposé, non implémenté.** ADR :
-`docs/decisions/0020-mise-a-jour-automatique.md` (statut `proposée`). Cette
-planification n'ajoute **aucune** dépendance, **aucune** clé et **aucune** ligne
-de code. Les cases ci-dessous sont volontairement décochées.
+**Statut : planifié, non implémenté.** ADR :
+`docs/decisions/0020-mise-a-jour-automatique.md` (statut `acceptée` depuis le
+2026-10-20). Cette planification n'ajoute **aucune** dépendance, **aucune** clé
+et **aucune** ligne de code. Les cases ci-dessous sont volontairement décochées.
 
 **Demande** : que Tatami recherche et installe ses nouvelles versions sans que
 l'utilisateur retélécharge l'installeur. La mise à jour du **moteur** reste
 distincte (CLI `tatami-moteur`, manifeste signé + archive fournis à la main) et
 n'est pas concernée.
 
-### Décisions à valider avant M1
+### Décisions validées le 2026-10-20
 
-| # | Proposition | Alternative | Conséquence si l'alternative est choisie |
+| # | Décision retenue | Alternative écartée | Raison du choix |
 |---|---|---|---|
-| D1 | Plugin officiel Tauri v2, commandes **Rust** | API JS `@tauri-apps/plugin-updater` + `process` | Moins de code Rust, mais une dépendance JS et des permissions supplémentaires ; l'interface appelle le plugin au lieu de nos commandes. |
-| D2 | Vérification automatique **activée** par défaut, désactivable | Désactivée par défaut, vérification manuelle | Aucune requête au démarrage, mais les utilisateurs ne verront les mises à jour que s'ils ouvrent les réglages. |
-| D3 | 0.2.0 publique **après** 5.6 (installeur signé) | 0.2.0 beta avant 5.6 | Mise à jour disponible plus tôt, mais SmartScreen à chaque installation et politique de confidentialité publiée sans signature. |
-| D4 | **Télécharger + installer** sur un clic | Téléchargement en arrière-plan, installation sur clic | Meilleure perception (le fichier est prêt), mais 56 Mo en mémoire/état et un objet `Update` à garder entre deux commandes. |
+| D1 | Plugin officiel Tauri v2, commandes **Rust** | API JS `@tauri-apps/plugin-updater` + `process` | L'interface ne touche ni au réseau ni à l'installation ; contrat commandes/événements conservé. |
+| D2 | Vérification automatique **activée** par défaut, désactivable | Désactivée par défaut, vérification manuelle | Sans elle, la plupart des utilisateurs ne verraient jamais les mises à jour. |
+| D3 | 0.2.0 publique **après** 5.6 (installeur signé) | 0.2.0 beta avant 5.6 | Pas de SmartScreen à chaque mise à jour, politique de confidentialité publiée avec signature. |
+| D4 | **Télécharger + installer** sur un clic | Téléchargement en arrière-plan, installation sur clic | Un seul geste, aucun état « fichier prêt » à conserver entre deux commandes. |
 
-La recommandation est la première colonne. M1 ne démarre qu'après validation de
-D1–D4 ; les réponses sont à reporter dans l'ADR (statut `acceptée`).
+Les quatre propositions ont été retenues telles quelles ; aucune alternative
+n'est en vigueur. Conséquence sur l'ordre : M1–M5 sont faisables maintenant
+(clé de test, workflow de prérelease), M6 et la 0.2.0 publique attendent
+SignPath (5.6) et le passage du dépôt en public.
 
 ### Tâches
 

@@ -1,7 +1,7 @@
 # 0020 — Mise à jour automatique de l'application
 
 - Date : 2026-10-20
-- Statut : proposée
+- Statut : acceptée (décisions arbitrées le 2026-10-20)
 
 ## Contexte
 
@@ -175,12 +175,21 @@ tag v0.2.0
   avec manifeste signé fourni par l'utilisateur ; elle n'est pas concernée par
   cette décision.
 
-## Décisions ouvertes (à valider)
+## Décisions arbitrées (2026-10-20)
 
-1. Implémentation Rust (recommandée) ou API JS du plugin ?
-2. Vérification automatique activée par défaut (recommandée) ou désactivée par
-   défaut ?
-3. 0.2.0 publique après 5.6 (recommandé) ou avant, en beta/prérelease non
-   signée ?
-4. Téléchargement + installation en une action (recommandé) ou téléchargement
-   en arrière-plan puis installation sur clic ?
+Les quatre propositions de la première rédaction ont été validées telles
+quelles ; aucune alternative n'a été retenue.
+
+1. **Implémentation Rust** : commandes Tauri (`etat_maj`, `verifier_maj`,
+   `installer_maj`) et service testable côté cœur. L'interface ne touche ni au
+   réseau ni à l'installation, et le contrat commandes/événements du projet est
+   conservé.
+2. **Vérification automatique activée par défaut**, désactivable dans les
+   réglages ; au plus une requête HTTPS par 24 h.
+3. **0.2.0 publique après 5.6** : la première version avec updater attend
+   l'installeur signé Authenticode. Aucune 0.2.0 beta intermédiaire n'est
+   publiée ; la chaîne est éprouvée sur des préreleases de test (M4, M5) sans
+   changer le canal stable.
+4. **Télécharger et installer en une seule action**, après confirmation que
+   l'application va se fermer et redémarrer. Pas d'état « fichier téléchargé »
+   à conserver entre deux commandes.

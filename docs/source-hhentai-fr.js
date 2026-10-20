@@ -157,15 +157,20 @@ var SOURCE = {
         var reChap = new RegExp(
             // URL absolue tolérée : le site n'émet que des liens préfixés du
             // domaine. Le groupe 1 reste le **chemin**, que le contrat attend.
-            '<a[^>]+href="[^"]*(\\/manga\\/[a-z0-9-]+\\/chapitre-\\d+\\/)[^"]*"[^>]*>([\\s\\S]*?)</a>',
+            //
+            // Un « oneshot » est un chapitre unique : le site ne lui donne pas
+            // de numéro (`…/oneshot/`), et la fiche n'en affichait **aucun**
+            // (mesuré le 2026-10-20 sur « Est-ce le destin ? », 25 pages
+            // servies). Le numéro 1 est donc une convention, pas une donnée.
+            '<a[^>]+href="[^"]*(\\/manga\\/[a-z0-9-]+\\/(?:chapitre-(\\d+)|oneshot)\\/)[^"]*"[^>]*>([\\s\\S]*?)</a>',
             "gi"
         );
         var c;
         while ((c = reChap.exec(html)) !== null) {
             if (vus[c[1]]) continue;
             vus[c[1]] = true;
-            var num = parseInt(/chapitre-(\d+)/.exec(c[1])[1], 10);
-            var libelle = SOURCE.texte(c[2]);
+            var num = c[2] ? parseInt(c[2], 10) : 1;
+            var libelle = SOURCE.texte(c[3]);
             chapitres.push({
                 id: c[1],
                 title: libelle || "Chapitre " + num,

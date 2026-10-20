@@ -225,24 +225,45 @@ var SOURCE = {
             }
         }
 
-        // Chapitres : les ancres `/read/<slug>/<n>` sont plus fiables qu'un
-        // compteur, et le tableau du payload est fractionné en deux morceaux
-        // par la pagination Next.js.
+        // Chapitres : le HTML ne monte que les dernières ancres (mesuré le
+        // 2026-10-20 sur « Slime » : 21 ancres pour 154 chapitres annoncés),
+        // mais le **JSON-LD** de la même page porte la liste complète en
+        // `ListItem` (154 entrées `url` + `name`). Lire les ancres seules
+        // faisait donc disparaître tous les chapitres anciens, pas seulement
+        // les plus récents. On lit le JSON-LD d'abord, les ancres en repli.
         var vus = {};
         var chapitres = [];
-        var reCh = /href="\/read\/([^"\\/]+)\/([0-9]+)"/g;
-        var m;
-        while ((m = reCh.exec(html)) !== null) {
-            var num = parseInt(m[2], 10);
+        var blocsLd = html.split('"@type":"ListItem"');
+        for (var i = 1; i < blocsLd.length; i++) {
+            var blocLd = blocsLd[i].substring(0, 400);
+            var mUrl = blocLd.match(/"url":"(https?:\/\/[^"]*\/read\/[^"\/]+\/(\d+))"/);
+            if (!mUrl) continue;
+            var num = parseInt(mUrl[2], 10);
             if (isNaN(num) || vus[num]) continue;
             vus[num] = true;
-            var chUrl = SOURCE.baseUrl + "/read/" + m[1] + "/" + num;
+            var mNom = blocLd.match(/"name":"([^"]*)"/);
             chapitres.push({
-                id: chUrl,
-                title: "Chapitre " + num,
+                id: mUrl[1],
+                title: (mNom ? SOURCE.decodeEntites(mNom[1]) : "") || ("Chapitre " + num),
                 number: num,
-                url: chUrl
+                url: mUrl[1]
             });
+        }
+        if (chapitres.length === 0) {
+            var reCh = /href="\/read\/([^"\\/]+)\/([0-9]+)"/g;
+            var m;
+            while ((m = reCh.exec(html)) !== null) {
+                var numAncre = parseInt(m[2], 10);
+                if (isNaN(numAncre) || vus[numAncre]) continue;
+                vus[numAncre] = true;
+                var chUrl = SOURCE.baseUrl + "/read/" + m[1] + "/" + numAncre;
+                chapitres.push({
+                    id: chUrl,
+                    title: "Chapitre " + numAncre,
+                    number: numAncre,
+                    url: chUrl
+                });
+            }
         }
         chapitres.sort(function (a, b) { return a.number - b.number; });
 

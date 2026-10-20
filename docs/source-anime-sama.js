@@ -90,38 +90,41 @@ var SOURCE = {
 
     /** Extrait les fiches d'une page de catalogue. */
     parseListe: function (html) {
-        var morceaux = html.split('class="shrink-0 catalog-card');
+        // Mesuré le 2026-10-20 : le site a quitté `catalog-card` pour
+        // `as-carte as-carte-oeuvre` (`data-url`, `data-nom`, `data-img`).
+        // La division sur l'ancienne classe rendait 0 fiche — `latest`
+        // répondait 200 avec une liste vide, et la source semblait morte.
+        var morceaux = html.split('class="as-carte as-carte-oeuvre');
         var out = [];
         for (var i = 1; i < morceaux.length; i++) {
-            var bloc = morceaux[i].substring(0, 1800);
+            var bloc = morceaux[i].substring(0, 4000);
+            // Une œuvre sans scan n'a pas le badge : la lister ne servirait à
+            // rien, sa fiche n'aurait aucun chapitre.
+            if (bloc.indexOf("as-badge-scan") < 0) continue;
 
-            var mHref = bloc.match(/<a href="(https:\/\/anime-sama\.to\/catalogue\/[^"?#]+)"/);
-            if (!mHref) continue;
+            var mHref = bloc.match(/<a[^>]+class="as-carte-lien"[^>]+href="(https:\/\/anime-sama\.to\/catalogue\/[^"?#]+)"/);
+            var mUrl = bloc.match(/data-url="(\/catalogue\/[^"]+)"/);
+            var url = mHref ? mHref[1] : "";
+            if (!url && mUrl) url = SOURCE.baseUrl + mUrl[1];
+            if (!url) continue;
+            if (url.indexOf("http") !== 0) url = SOURCE.baseUrl + url;
 
-            // La couverture est dans `src` sur ce site. Prendre `data-src`
-            // reviendrait à ne rien trouver — vérifié sur la page réelle.
-            var mCov = bloc.match(/<img[^>]*class="card-image"[^>]*src="([^"]+)"/);
-            if (!mCov) mCov = bloc.match(/<img[^>]*src="([^"]+)"[^>]*class="card-image"/);
+            var mNom = bloc.match(/data-nom="([^"]*)"/);
+            // La couverture est la première image de la carte (vignette
+            // jsdelivr) ; `data-img` est l'original, plus lourd.
+            var mCov = bloc.match(/<img[^>]+src="([^"]+)"/);
+            var mImg = bloc.match(/data-img="([^"]+)"/);
 
-            var mTitre = bloc.match(/<h2 class="card-title">([\s\S]*?)<\/h2>/);
-
-            var titre = "";
-            if (mTitre) {
-                // Le catalogue préfixe le titre d'un `#` : c'est décoratif,
-                // pas une partie du nom.
-                titre = SOURCE.trim(SOURCE.decodeEntites(
-                    mTitre[1].replace(/<[^>]+>/g, "")
-                )).replace(/^#\s*/, "");
-            }
+            var titre = mNom ? SOURCE.trim(SOURCE.decodeEntites(mNom[1])).replace(/^#\s*/, "") : "";
             if (!titre) {
-                titre = mHref[1].replace(/\/$/, "").split("/").pop().replace(/-/g, " ");
+                titre = url.replace(/\/$/, "").split("/").pop().replace(/-/g, " ");
             }
 
             out.push({
-                id: mHref[1],
+                id: url,
                 title: SOURCE.trim(titre),
-                coverUrl: mCov ? SOURCE.trim(mCov[1]) : "",
-                url: mHref[1]
+                coverUrl: mCov ? SOURCE.trim(mCov[1]) : (mImg ? SOURCE.trim(mImg[1]) : ""),
+                url: url
             });
         }
         return out;

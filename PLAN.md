@@ -5344,3 +5344,36 @@ n'a jamais tourné** pendant onze jours.
   mais la porte doit apprendre à ignorer les commentaires (tâche de dette à
   ouvrir, pas corrigée ici pour ne pas mêler un changement de porte à ce lot).
   Prochaine action : M4 (workflow de release en mode test).
+- **2026-10-20 — audit des 15 sources personnalisées : quatre fiches annonçaient
+  des chapitres que la liste ne rendait pas.** Mesure : `chapitres.mjs` sur
+  chaque source (2 séries), puis `sonde-sources.mjs --deep`. Corrigés et
+  revérifiés :
+  - **rimuscan** : le HTML ne monte que 21 ancres `/read/…` pour 154 chapitres ;
+    le **JSON-LD** de la même page porte les 154 `ListItem` (URL + nom). La
+    lecture du JSON-LD (ancres en repli) rend **21 → 154** sur « Slime », 31 sur
+    « Duke's Child », 6 sur « Gallery ». Les écarts 89→91 et 124→128 sont dans
+    le JSON-LD du site, pas dans le parseur.
+  - **bananascans** : deux formes d'URL mesurées, `/manga/<slug>/vol3` (volumes)
+    et `/manga/<slug>/5` (chapitres) ; seule la première était reconnue.
+    « One Hundred Storey Tower » **0 → 5**, « Shiro Madoushi Syrup-san »
+    **0 → 8**, « Harumichi » 3 (inchangé).
+  - **anime-sama** : le catalogue a quitté `catalog-card` pour
+    `as-carte as-carte-oeuvre` (`data-url`/`data-nom`/`data-img`), et les
+    œuvres sans scan n'ont pas le badge `as-badge-scan`. `latest` **0 → 7**
+    fiches ; « 100 Jours Avant Ta Mort » 49 chapitres → 22 pages →
+    `image/jpeg` ; « 20th Century Boys » 205 chapitres. « 07 Ghost » a 0
+    chapitre (œuvre animée, cas documenté) : c'est la **première** fiche, d'où
+    l'`INCERTAIN` de la sonde, qui ne regarde qu'elle.
+  - **hhentai-fr** : les séries « oneshot » n'ont pas de numéro
+    (`/manga/<slug>/oneshot/`) et étaient ignorées par `chapitre-(\d+)`.
+    **0 → 1** chapitre, 25 pages, image OK.
+  - **Non-défauts mesurés** : aniverse (ch. 165 absent du HTML), niadd
+    (13–17 absents du site), lire-manga (« 100% (Pope) » a bien **1** chapitre,
+    `/100-pope-vol-1/`, forme `vol` que ma première recherche ne voyait pas).
+    **scan-manga** : `/liste-mangas` 404 et les pages `/scanlation/*` sont une
+    coquille JS (0 lien de série dans le corps, aucun AJAX visible) : catalogue
+    non récupérable sans exécuter le JS du site, non corrigé.
+  - Les quatre fichiers sont versionnés dans `docs/source-*.js`, **identiques
+    octet pour octet** à `%APPDATA%\Tatami\sources` (SHA-256 comparé) ;
+    `pnpm moteur:check` : 14 sources, 0 virgule finale d'appel. Les relevés
+    temporaires (`mesures-custom-*.json`) sont sortis de la racine.

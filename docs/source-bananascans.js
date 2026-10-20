@@ -139,24 +139,32 @@ var SOURCE = {
         if (brut.indexOf("ongoing") >= 0 || brut.indexOf("en cours") >= 0) statut = "ongoing";
         else if (brut.indexOf("completed") >= 0 || brut.indexOf("termin") >= 0) statut = "finished";
 
-        // Chapitres : `/manga/<slug>/vol<N>`. Le site les présente du plus
-        // récent au plus ancien ; l'application attend l'inverse.
+        // Chapitres : deux formes mesurées le 2026-10-20, et la seconde
+        // n'était pas reconnue — la fiche affichait 0 chapitre pour les séries
+        // découpées en chapitres.
+        //   - `/manga/<slug>/vol3` : série découpée en volumes (Harumichi),
+        //     la page du volume se lit avec `/1` ;
+        //   - `/manga/<slug>/5` : série découpée en chapitres (One Hundred
+        //     Storey Tower), l'URL du chapitre est elle-même la page d'images.
+        // Le site les présente du plus récent au plus ancien ; l'application
+        // attend l'inverse.
         var chapitres = [];
         var vus = {};
         // URL absolue tolérée, comme dans `getList`. Le groupe 1 reste le **chemin**,
         // que le contrat attend.
-        var reChap = /<a[^>]+href="[^"]*(\/manga\/[a-z0-9-]+\/vol(\d+))"[^>]*>([\s\S]*?)<\/a>/gi;
+        var reChap = /<a[^>]+href="[^"]*(\/manga\/[a-z0-9-]+\/(?:vol(\d+)|(\d+)))"[^>]*>([\s\S]*?)<\/a>/gi;
         var m;
         while ((m = reChap.exec(html)) !== null) {
             if (vus[m[1]]) continue;
             vus[m[1]] = true;
-            var vol = parseInt(m[2], 10);
-            var libelle = SOURCE.texte(m[3]);
+            var volume = m[2] ? parseInt(m[2], 10) : null;
+            var numero = volume !== null ? volume : parseInt(m[3], 10);
+            var libelle = SOURCE.texte(m[4]);
             chapitres.push({
-                id: m[1] + "/1",
-                title: libelle || "Vol. " + vol,
-                number: vol,
-                url: m[1] + "/1",
+                id: volume !== null ? m[1] + "/1" : m[1],
+                title: libelle || (volume !== null ? "Vol. " + volume : "Chapitre " + numero),
+                number: numero,
+                url: volume !== null ? m[1] + "/1" : m[1],
             });
         }
         chapitres.reverse();

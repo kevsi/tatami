@@ -4914,3 +4914,300 @@ Empreintes des artefacts :
   `CODE_SIGNING.md` (phrase imposée, rôles, politique de confidentialité) et
   dossier de candidature local `.mesures/signpath/candidature.md`. La 5.6 reste
   ouverte jusqu'au premier build **signé** produit en CI.
+
+## Planification de la mise à jour automatique — 2026-10-20
+
+**Statut : proposé, non implémenté.** ADR :
+`docs/decisions/0020-mise-a-jour-automatique.md` (statut `proposée`). Cette
+planification n'ajoute **aucune** dépendance, **aucune** clé et **aucune** ligne
+de code. Les cases ci-dessous sont volontairement décochées.
+
+**Demande** : que Tatami recherche et installe ses nouvelles versions sans que
+l'utilisateur retélécharge l'installeur. La mise à jour du **moteur** reste
+distincte (CLI `tatami-moteur`, manifeste signé + archive fournis à la main) et
+n'est pas concernée.
+
+### Décisions à valider avant M1
+
+| # | Proposition | Alternative | Conséquence si l'alternative est choisie |
+|---|---|---|---|
+| D1 | Plugin officiel Tauri v2, commandes **Rust** | API JS `@tauri-apps/plugin-updater` + `process` | Moins de code Rust, mais une dépendance JS et des permissions supplémentaires ; l'interface appelle le plugin au lieu de nos commandes. |
+| D2 | Vérification automatique **activée** par défaut, désactivable | Désactivée par défaut, vérification manuelle | Aucune requête au démarrage, mais les utilisateurs ne verront les mises à jour que s'ils ouvrent les réglages. |
+| D3 | 0.2.0 publique **après** 5.6 (installeur signé) | 0.2.0 beta avant 5.6 | Mise à jour disponible plus tôt, mais SmartScreen à chaque installation et politique de confidentialité publiée sans signature. |
+| D4 | **Télécharger + installer** sur un clic | Téléchargement en arrière-plan, installation sur clic | Meilleure perception (le fichier est prêt), mais 56 Mo en mémoire/état et un objet `Update` à garder entre deux commandes. |
+
+La recommandation est la première colonne. M1 ne démarre qu'après validation de
+D1–D4 ; les réponses sont à reporter dans l'ADR (statut `acceptée`).
+
+### Tâches
+
+#### M1 — Clé, configuration et squelette du plugin
+
+- [ ] Générer la paire minisign de **production** (`pnpm tauri signer generate`)
+  **hors du dépôt** ; consigner l'empreinte de la clé publique, sauvegarder la
+  privée hors ligne, la déposer dans les secrets de l'environnement GitHub
+  `release` (contenu + mot de passe), puis supprimer le fichier local.
+- [ ] Générer une paire de **test** distincte pour M1–M5 (publique dans une
+  configuration de test, privée dans l'environnement `release-test`). La paire
+  de production n'est jamais utilisée pour un build de test.
+- [ ] Ajouter les motifs de clé au `.gitignore` (`*.key`, `*.pem`, au minimum)
+  et vérifier qu'aucun fichier de clé n'apparaît dans `git status`.
+- [ ] Ajouter `tauri-plugin-updater = "2"` dans
+  `apps/desktop/src-tauri/Cargo.toml` ; enregistrer le plugin dans `main.rs`
+  (`tauri_plugin_updater::Builder::new().build()`).
+- [ ] Renseigner `tauri.conf.json` : `bundle.createUpdaterArtifacts: true`,
+  `plugins.updater.pubkey` (production), `plugins.updater.endpoints`,
+  `plugins.updater.windows.installMode: "passive"`,
+  `bundle.windows.nsis.installMode: "currentUser"`. Le build de test utilise une
+  configuration séparée pour la publique de test et l'endpoint de test.
+- [ ] Créer `src/maj.rs` (types seulement) et le déclarer dans `lib.rs` ; ne pas
+  encore exposer de commande.
+- [ ] **Critère de sortie** : `cargo fmt --check`,
+  `cargo clippy --all-targets -- -D warnings`, `cargo test` verts ; un
+  `pnpm tauri build` local avec la **clé de test** produit un `.sig` à côté de
+  l'installeur ; `git grep`/gitleaks ne trouve aucune clé privée ; la config de
+  production ne contient pas d'endpoint de test.
+
+#### M2 — Cœur Rust : vérifier, télécharger, installer
+
+- [ ] Définir dans `maj.rs` les types sérialisables `EtatMaj`,
+  `VersionDisponible`, `PhaseMaj` et les codes d'erreur stables (`reseau`,
+  `signature`, `espace`, `droits`, `inconnu`). Le message technique va au
+  journal, pas à l'écran.
+- [ ] Implémenter `etat_maj` (version courante lue via
+  `app.package_info().version`, état, dernier contrôle), `verifier_maj`
+  (`UpdaterExt::check`, stockage de l'objet `Update` dans un état géré) et
+  `installer_maj` (`download_and_install`, événements de progression,
+  `app.restart()`).
+- [ ] Ne jamais tenir un verrou `std::sync::Mutex` sur l'objet `Update` pendant
+  un `await` : sortir l'objet du verrou avant l'appel réseau.
+- [ ] Brancher `on_before_exit` de l'updater sur l'arrêt propre de la file de
+  téléchargements et la journalisation ; ne pas laisser de `.part` ni de
+  transaction SQLite ouverte.
+- [ ] Ajouter les commandes à `generate_handler!` ; vérifier qu'elles sont
+  réellement appelées par le front (la porte `aucune_commande_tauri_nest_morte`
+  le dira en M3).
+- [ ] **Critère de sortie** : tests unitaires des transitions d'état et du
+  mapping d'erreurs ; `cargo fmt --check`,
+  `cargo clippy --all-targets -- -D warnings`, `cargo test` verts ; un appel
+  `verifier_maj` hors ligne rend une erreur propre et ne bloque pas
+  l'application.
+
+#### M3 — Interface, i18n et accessibilité
+
+- [ ] Écrire `apps/desktop/lib/maj.ts` (fonctions pures) :
+  `doitVerifierAuto({ actif, dernier, maintenant })`, `etatAffichage`,
+  `formatProgression`, `cleErreur`. Tests `node:test` dans `lib/`.
+- [ ] Ajouter un panneau **Mises à jour** dans la vue Réglages (`page.tsx`) :
+  version courante, interrupteur de vérification automatique, dernier contrôle,
+  bouton « Rechercher », version disponible + notes, bouton « Télécharger et
+  installer », barre de progression, erreurs traduites.
+- [ ] Vérification automatique : effet de montage, délai de 5 s, au plus une
+  fois par 24 h, silencieux en cas d'échec ; dépendre d'un **primitif**
+  (`langue`, `majAuto`) et jamais de `t` (leçon `hooks:check`). Lire
+  `localStorage` dans un effet de montage, pas dans l'initialiseur de `useState`
+  (leçon hydratation).
+- [ ] Bandeau/toast discret quand une version est disponible ; pas de modale qui
+  interrompt le lecteur. Confirmation avant installation : l'application va se
+  fermer et redémarrer.
+- [ ] Refuser l'installation si la file de téléchargements est active
+  (réutiliser l'état existant, ne pas créer un second compteur) ; afficher la
+  raison.
+- [ ] Accessibilité : `role="progressbar"` + `aria-valuenow/min/max`, statut en
+  `aria-live="polite"`, libellés de boutons explicites, aucun état signalé par
+  la couleur seule. Tokens CSS existants uniquement, aucun `#hex` ni valeur
+  magique.
+- [ ] Ajouter les clés FR/EN (`maj.*`) dans `i18n.ts` ; déclarer les paires de
+  types dans `scripts/check-type-ipc.mjs` pour `EtatMaj` et
+  `VersionDisponible`.
+- [ ] **Critère de sortie** : `pnpm typecheck`, `pnpm lint` (5 avertissements de
+  référence, 0 erreur), `pnpm i18n:check`, `pnpm hooks:check`, `pnpm ipc:check`,
+  `pnpm pages:check`, `pnpm build` verts ; capture Playwright du panneau en
+  clair et en sombre, sans débordement.
+
+#### M4 — Workflow de release en mode test (sans SignPath)
+
+- [ ] Extraire les vérifications de `.github/workflows/ci.yml` dans un workflow
+  réutilisable (`workflow_call`) ou, à défaut, dans
+  `scripts/verifier-tout.ps1` appelé par les deux workflows — sans dupliquer les
+  commandes.
+- [ ] Créer `.github/workflows/release.yml` : déclenchement par tag `v*.*.*` et
+  `workflow_dispatch`, `permissions: contents: write`, environnement
+  `release-test` en mode test (et `release` en production), concurrence pour
+  empêcher deux releases simultanées.
+- [ ] Étape build : JDK 21, Node 22, pnpm, Rust stable,
+  `scripts/build-engine.ps1`, portes du front, `pnpm tauri build` avec la clé de
+  test et son mot de passe.
+- [ ] Mode **test** : pas de SignPath, publication en **prérelease** (jamais
+  `latest`), assets MSI/NSIS + `.sig` + `latest.json` + `SHA256SUMS.txt`. Le
+  `latest.json` contient `version`, `pub_date`,
+  `platforms.windows-x86_64.signature` (contenu du `.sig`) et `.url`.
+- [ ] Vérifier le tag contre `tauri.conf.json` (et `package.json`/`Cargo.toml`) ;
+  refuser un décalage. Vérifier que le `.sig` correspond à l'installeur publié et
+  que le JSON est valide.
+- [ ] **Critère de sortie** : un `workflow_dispatch` sur un tag de test produit
+  une prérelease complète ; les URLs sont accessibles avec le jeton de test ; le
+  `latest.json` est téléchargeable ; aucun secret n'apparaît dans les logs ; une
+  release de test n'est jamais servie par `releases/latest`.
+
+#### M5 — Tests de bout en bout (signature Tauri seule)
+
+- [ ] Utiliser un **compte Windows dédié** (ou une VM) : ne pas toucher
+  `%APPDATA%\Tatami`, la bibliothèque ni les téléchargements de l'utilisateur.
+- [ ] Installer `0.2.0-rc.1` (build de test pointant vers un serveur local ou
+  une prérelease), créer une petite bibliothèque, un historique et un
+  téléchargement ; relever les compteurs et un hash de fichier.
+- [ ] Publier `0.2.0-rc.2` (même clé de test, `.sig` valide) ; lancer la
+  vérification, installer, attendre le redémarrage ; vérifier la version `rc.2`
+  et l'égalité des compteurs/hash.
+- [ ] Tester les refus : octet modifié dans l'installeur, `.sig` modifié, version
+  inférieure dans `latest.json`, endpoint injoignable. Dans les quatre cas :
+  aucune installation, message clair, application toujours utilisable.
+- [ ] Tester la fréquence : compteur du serveur de test ; premier démarrage
+  après 24 h = 1 requête, second démarrage = 0, vérification manuelle = 1,
+  interrupteur désactivé = 0 automatique.
+- [ ] Tester la file active : bouton d'installation désactivé avec la raison ;
+  après la fin, bouton actif ; aucun `.part` ni transaction ouverte après
+  l'installation.
+- [ ] **Critère de sortie** : les six scénarios sont consignés dans le journal
+  avec les commandes, les versions et les résultats ; le test n'a laissé aucune
+  donnée dans la session réelle.
+
+#### M6 — Workflow de production et double signature (bloqué par 5.6)
+
+- [ ] Créer le projet SignPath, la configuration d'artefact et la politique de
+  signature ; installer l'application GitHub SignPath ; renseigner
+  `SIGNPATH_API_TOKEN` et les identifiants de projet/politique dans
+  l'environnement `release`.
+- [ ] Après SignPath : télécharger l'installeur **signé**, vérifier
+  `Get-AuthenticodeSignature`, puis exécuter
+  `pnpm tauri signer sign <installeur-signé>` avec `--app-version` (ou la
+  variable d'environnement équivalente) ; **remplacer** le `.sig` temporaire.
+- [ ] Régénérer `latest.json` et `SHA256SUMS.txt` **après** toutes les
+  signatures ; ne jamais publier un mélange de fichiers d'avant et d'après
+  signature.
+- [ ] Mode **production** : SignPath obligatoire, Authenticode `Valid`,
+  signature Tauri vérifiée par l'application de test, publication en prérelease
+  puis promotion après les contrôles. Une release sans SignPath échoue
+  explicitement.
+- [ ] Re-signer le MSI par cohérence (l'updater utilise le NSIS) ; vérifier les
+  deux signatures et les deux hashes.
+- [ ] **Critère de sortie** : `Get-AuthenticodeSignature` rend `Valid` sur
+  l'installeur **publié** ; l'application de test l'installe ; le `.sig` publié
+  valide ce même fichier ; la promotion ne se fait qu'après ces preuves.
+
+#### M7 — Documentation, confidentialité et runbook
+
+- [ ] `README.md` : section « Mises à jour » (à partir de 0.2.0, vérification au
+  plus une fois par 24 h, interrupteur, 0.1.0 à installer manuellement une fois,
+  aucune télémétrie).
+- [ ] `CODE_SIGNING.md` : ajouter la requête GitHub à la liste des trafics
+  réseau, l'adresse IP et l'agent utilisateur reçus par GitHub, le réglage
+  désactivable, l'absence d'identifiant.
+- [ ] `docs/mise-a-jour.md` : runbook (génération/sauvegarde de clé, secrets,
+  ordre SignPath → re-signature, `latest.json`, vérification, promotion, rotation
+  de clé, conduite à tenir en cas de mauvaise release). Lier depuis
+  `docs/development.md`.
+- [ ] `docs/releases/v0.2.0.md` : notes bilingues, prérequis 0.1.0, signatures,
+  SHA256, limite « 0.1.0 ne s'auto-met pas à jour ».
+- [ ] Mettre à jour `.mesures/signpath/candidature.md` (fichier local ignoré)
+  avec la politique de confidentialité de l'updater.
+- [ ] **Critère de sortie** : les textes sont relus et cohérents avec le
+  comportement réel ; aucune promesse de mise à jour avant la version qui
+  l'embarque ; la politique de confidentialité est publiable pour SignPath.
+
+#### M8 — Release 0.2.0 (ou version validée)
+
+- [ ] Décider D3 : production signée après 5.6, ou beta/prérelease avant. Si
+  beta : marquer la release `prerelease`, afficher l'avertissement SmartScreen
+  dans les notes, ne pas la promouvoir en `latest`.
+- [ ] Synchroniser les versions (`tauri.conf.json` source de vérité,
+  `package.json`, `Cargo.toml`), mettre à jour les notes, créer le tag annoté,
+  lancer le workflow.
+- [ ] Vérifier les artefacts publiés (Authenticode si production, `.sig`,
+  `latest.json`, SHA256) ; installer 0.1.0 puis 0.2.0 **manuellement** dans le
+  compte de test ; vérifier la migration des données.
+- [ ] **Critère de sortie** : la 0.2.0 est publiée avec les assets attendus ;
+  une installation manuelle depuis 0.1.0 fonctionne ; la 0.2.0 contient
+  l'updater et un `latest.json` public (si le dépôt est public).
+
+#### M9 — Première mise à jour réelle et clôture
+
+- [ ] Publier la version suivante (0.2.1 ou 0.3.0) en prérelease, la tester
+  depuis 0.2.0 dans le compte dédié, puis la promouvoir.
+- [ ] Vérifier : détection, téléchargement, signature, installation,
+  redémarrage, version, données et fichiers téléchargés préservés ; logs sans
+  secret.
+- [ ] Mettre à jour `PLAN.md` (cases + journal), le README et les notes ;
+  committer.
+- [ ] **Critère de sortie** : une mise à jour **de production** a été effectuée
+  sans installeur téléchargé à la main ; le chantier peut être déclaré terminé.
+  Tant que M9 n'est pas fait, le mécanisme n'est prouvé qu'en prérelease.
+
+### Chemin critique et blocages
+
+- **Faisable maintenant** : M1–M5 et M7 (la documentation peut être préparée),
+  plus la partie « workflow » de M6.
+- **Bloqué par une action utilisateur** : le dépôt doit être **public** pour que
+  `releases/latest/download/latest.json` soit lisible sans authentification
+  (M8/M9) ; SignPath Foundation doit être obtenu pour M6.
+- **0.1.0 ne peut pas s'auto-mettre à jour** : la première installation de la
+  0.2.0 est manuelle, c'est normal et doit être dit dans les notes.
+- **Sans dépôt public**, les tests de M5 restent possibles avec un serveur local
+  et `dangerousInsecureTransportProtocol: true` dans un **build de test
+  uniquement** ; ce drapeau ne doit jamais apparaître dans la configuration de
+  production (à vérifier par une porte).
+- **Dette constatée, hors chantier** :
+  `docs/decisions/0006-mise-a-jour-moteur.md` fait 4 octets (`utf8`) et est
+  illisible ; à restaurer ou réécrire séparément. La mise à jour du moteur reste
+  la CLI `tatami-moteur`.
+
+### Risques
+
+| Risque | Probabilité | Impact | Mitigation |
+|---|---|---|---|
+| Signature Tauri calculée avant SignPath → `.sig` invalide | élevée si l'ordre n'est pas automatisé | mise à jour refusée | re-signer après SignPath ; porte qui vérifie le `.sig` publié avec l'installeur publié |
+| Perte/compromission de la clé privée | faible | plus de mises à jour | sauvegarde hors ligne, environnement protégé, rotation documentée, version manuelle |
+| Dépôt privé → endpoint 404 | certaine aujourd'hui | fonctionnalité inutilisable | passer public avant M8/M9, ou tester avec un serveur local |
+| Installeur non signé → SmartScreen | élevée avant 5.6 | abandon à l'installation | 0.2.0 beta/prérelease, puis production après 5.6 |
+| Installation pendant un téléchargement → `.part`/données | moyenne | fichiers interrompus | bouton désactivé si file active, `on_before_exit`, test M5 |
+| Mauvaise release sans rollback | moyenne | régression chez l'utilisateur | prérelease + promotion, tests, version supérieure de correction, jamais réutiliser un numéro |
+| Secret exposé dans les logs/PR | faible | compromission | environnement `release`, pas de secret sur PR, actions épinglées, gitleaks |
+| `latest.json` malformé ou `.sig` recopié au mauvais endroit | moyenne | mise à jour refusée | schéma validé, contenu du `.sig` (pas un chemin), test de l'app réelle |
+| Version du tag ≠ version de l'app | moyenne | mauvais manifeste | porte tag/`tauri.conf.json` avant build |
+| GitHub indisponible | faible | vérification en échec | échec silencieux au démarrage, bouton manuel, aucune incidence sur l'usage |
+
+### Fichiers attendus (indicatif)
+
+- **Cœur** : `src-tauri/Cargo.toml`, `Cargo.lock`, `src/lib.rs`, `src/main.rs`,
+  `src/maj.rs`, `tauri.conf.json`.
+- **Interface** : `app/page.tsx`, `app/i18n.ts`, `app/globals.css`, `lib/maj.ts`,
+  `lib/maj.test.ts`, `scripts/check-type-ipc.mjs`.
+- **Release** : `.github/workflows/ci.yml`, `.github/workflows/release.yml`,
+  `scripts/verifier-version.mjs`, `scripts/latest-json.mjs`,
+  `scripts/verifier-tout.ps1` (si le workflow réutilisable n'est pas retenu),
+  `.gitignore`.
+- **Documentation** : `README.md`, `CODE_SIGNING.md`, `docs/development.md`,
+  `docs/mise-a-jour.md`, `docs/releases/v0.2.0.md`,
+  `docs/decisions/0020-mise-a-jour-automatique.md`.
+- **Local, non versionné** : `.mesures/signpath/candidature.md`,
+  `.mesures/maj/` (serveur de test et relevés).
+
+### Définition de « terminé » pour ce chantier
+
+1. D1–D4 validés et ADR 0020 passée en `acceptée`.
+2. M1–M5 et M7 livrés avec leurs critères ; M6 livré pour le canal production
+   (ou explicitement reporté si la 0.2.0 est une beta) ; M8 livré.
+3. M9 prouvé sur une mise à jour de production réelle, dans un compte dédié,
+   avec données préservées.
+4. README, `CODE_SIGNING.md`, runbook et notes de release à jour ; aucune
+   promesse qui précède le code.
+5. Aucun secret, aucune clé privée, aucun fichier de test dans le dépôt ;
+   `git status` propre après le commit de clôture.
+
+### Journal
+
+- **2026-10-20** — planification écrite : ADR 0020 (statut `proposée`) et
+  présent chantier. **Aucun code, aucune dépendance, aucune clé ajoutée.**
+  Décisions D1–D4 à valider avant M1. Prochaine action : réponse aux quatre
+  décisions, puis M1 (génération de la clé et configuration).

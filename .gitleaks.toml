@@ -1,0 +1,33 @@
+# Configuration gitleaks (licence MIT), partagée par la CI et le poste de dev.
+#
+# ## Pourquoi ce fichier existe
+#
+# Mesuré le 2026-10-20 sur l'historique complet (`gitleaks git`, v8.24.3) :
+# 11 alertes, **toutes** de la règle `generic-api-key`, et toutes dans
+# `apps/desktop/app/i18n.ts`. Ce ne sont pas des secrets : la règle générique
+# prend pour une clé les **noms** de clés de traduction du dictionnaire
+# (`telechargements.nouveaux.chapitres.compte1`, `maj.voir.tronque1`), qui sont
+# des identifiants pointés à forte entropie.
+#
+# ## Ce que l'exception couvre, et ce qu'elle ne couvre pas
+#
+# L'autorisation porte sur la **forme du secret** (`regexTarget` par défaut :
+# le secret extrait), pas sur un chemin. Un identifiant en minuscules, chiffres
+# et points est une clé de dictionnaire ; une vraie clé d'API a une autre forme
+# (majuscules, `_`, `+`, `/`, `=`…) et reste donc détectée **même dans
+# `i18n.ts`**. Risque résiduel assumé : une clé qui serait exactement un
+# identifiant pointé en minuscules passerait inaperçue.
+#
+# Ce qui n'est **pas** fait : désactiver des règles, exclure un fichier, ni
+# borner la profondeur du scan. La porte peut donc encore échouer.
+
+title = "Tatami"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Noms de clés du dictionnaire i18n : identifiants pointés en minuscules, jamais des jetons (mesuré le 2026-10-20 : 11 faux positifs `generic-api-key`, tous dans `apps/desktop/app/i18n.ts`)"
+regexes = [
+  '''^[a-z][a-z0-9]*(\.[a-z0-9]+)+$''',
+]

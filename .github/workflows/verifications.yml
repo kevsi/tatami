@@ -94,6 +94,11 @@ jobs:
           # `release.yml` passe le tag : sans cela, un `workflow_dispatch` fait
           # vérifier `master` pendant que le binaire se construit sur le tag.
           ref: ${{ inputs.ref || github.sha }}
+          # Historique complet : gitleaks scanne les commits, et un secret
+          # commis puis supprimé reste lisible dans l'historique. Avec la
+          # profondeur par défaut (1), la porte ne verrait que le dernier
+          # commit — c'est-à-dire presque rien.
+          fetch-depth: 0
 
       # --- Interface (AGENTS.md §8) ---------------------------------------
 
@@ -152,9 +157,34 @@ jobs:
       # que le contexte `github` est toujours celui de l'appelant.
       #
       - name: Secrets (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          # Épinglé : les règles et leurs allowlists changent d'une version à
+          # l'autre, donc la version fait partie du contrat de la porte.
+          GITLEAKS_VERSION: 8.24.3
+        run: |
+          # L'action `gitleaks/gitleaks-action@v2` est cassée depuis le
+          # déplacement de son dépôt : elle télécharge
+          # `zricethezav/gitleaks/..._windows_x64.tar.gz`, une URL qui répond
+          # 404 et une archive qui n'existe plus au format `.tar.gz` (mesuré le
+          # 2026-10-20, run 39422897772, étape 9). La version `@v3` est sous
+          # licence commerciale. On prend donc le binaire officiel (MIT) et on
+          # l'appelle : un intermédiaire de moins, et la version est lisible ici.
+          $zip = Join-Path $env:RUNNER_TEMP 'gitleaks.zip'
+          $dir = Join-Path $env:RUNNER_TEMP 'gitleaks'
+          $url = "https://github.com/gitleaks/gitleaks/releases/download/v$env:GITLEAKS_VERSION/gitleaks_$($env:GITLEAKS_VERSION)_windows_x64.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          Expand-Archive -Path $zip -DestinationPath $dir -Force
+          $exe = Join-Path $dir 'gitleaks.exe'
+          & $exe version
+
+          # `--redact` : le journal d'un run est visible sur un dépôt public, et
+          # un secret recopié dans un journal est un secret fuité une seconde
+          # fois. La configuration `.gitleaks.toml` porte les seules exceptions,
+          # avec la mesure qui les fonde.
+          & $exe git --config .gitleaks.toml --redact --no-banner --verbose .
+          if ($LASTEXITCODE -ne 0) {
+            throw "gitleaks : secret détecté (ou scan impossible). Voir les lignes ci-dessus."
+          }
 
       - name: Rust — dépendances vulnérables (cargo audit)
         uses: rustsec/audit-check@v1

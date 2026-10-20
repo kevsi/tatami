@@ -5061,28 +5061,61 @@ SignPath (5.6) et le passage du dépôt en public.
 
 #### M4 — Workflow de release en mode test (sans SignPath)
 
-- [ ] Extraire les vérifications de `.github/workflows/ci.yml` dans un workflow
+- [x] Extraire les vérifications de `.github/workflows/ci.yml` dans un workflow
   réutilisable (`workflow_call`) ou, à défaut, dans
   `scripts/verifier-tout.ps1` appelé par les deux workflows — sans dupliquer les
-  commandes.
-- [ ] Créer `.github/workflows/release.yml` : déclenchement par tag `v*.*.*` et
+  commandes. → `.github/workflows/verifications.yml` (`on: workflow_call`, entrée
+  `ref` pour vérifier un tag) ; `ci.yml` ne porte plus que les déclencheurs.
+- [x] Créer `.github/workflows/release.yml` : déclenchement par tag `v*.*.*` et
   `workflow_dispatch`, `permissions: contents: write`, environnement
   `release-test` en mode test (et `release` en production), concurrence pour
   empêcher deux releases simultanées.
-- [ ] Étape build : JDK 21, Node 22, pnpm, Rust stable,
+- [x] Étape build : JDK 21, Node 22, pnpm, Rust stable,
   `scripts/build-engine.ps1`, portes du front, `pnpm tauri build` avec la clé de
-  test et son mot de passe.
-- [ ] Mode **test** : pas de SignPath, publication en **prérelease** (jamais
+  test et son mot de passe. → les portes viennent de `verifications.yml` (job
+  `verifications`), le build est un job séparé qui en dépend.
+- [x] Mode **test** : pas de SignPath, publication en **prérelease** (jamais
   `latest`), assets MSI/NSIS + `.sig` + `latest.json` + `SHA256SUMS.txt`. Le
   `latest.json` contient `version`, `pub_date`,
   `platforms.windows-x86_64.signature` (contenu du `.sig`) et `.url`.
-- [ ] Vérifier le tag contre `tauri.conf.json` (et `package.json`/`Cargo.toml`) ;
+  → `scripts/preparer-release.ps1` (6 fichiers, refus d'une sortie périmée).
+- [x] Vérifier le tag contre `tauri.conf.json` (et `package.json`/`Cargo.toml`) ;
   refuser un décalage. Vérifier que le `.sig` correspond à l'installeur publié et
-  que le JSON est valide.
+  que le JSON est valide. → test Rust `tests/signature_installeur.rs`
+  (`minisign-verify`, même crate et même séquence que `verify_signature`),
+  exécuté deux fois : sur le build local, puis sur les assets **téléchargés
+  depuis la release**.
 - [ ] **Critère de sortie** : un `workflow_dispatch` sur un tag de test produit
   une prérelease complète ; les URLs sont accessibles avec le jeton de test ; le
   `latest.json` est téléchargeable ; aucun secret n'apparaît dans les logs ; une
   release de test n'est jamais servie par `releases/latest`.
+
+**Preuves locales du 2026-10-20** (avant le premier run) :
+
+- `actionlint` : **0 erreur** sur les 5 fichiers de workflow.
+- Build signé réel (`pnpm tauri build --config src-tauri/tauri.test.conf.json`,
+  clé de test) : MSI **60,4 Mo**, NSIS **54,7 Mo**, deux `.sig` de 436 o.
+- `scripts/preparer-release.ps1` sur ce build : 6 fichiers dans `dist-release`,
+  `latest.json` de 880 o, signature = contenu exact du `.sig`.
+- Test Rust sur signature **factice** : `la_signature_correspond_a_l_installeur`
+  **échoue** (la porte mord) ; le test de manifeste passe. Sur le build réel :
+  **2 passed**. C'est la paire rouge/vert qui prouve la porte.
+
+#### M4 bis — La CI n'avait jamais tourné
+
+Découvert en préparant M4 : `timeout-minutes` était posé en **clé de premier
+niveau** dans `ci.yml` et `amont.yml`, ce qui rend les deux fichiers invalides.
+GitHub créait un run à chaque poussée, avec **0 job et 0 s**, `conclusion:
+failure`, aucun message lisible. Mesuré : **88 runs consécutifs** en échec depuis
+le 2026-10-09 (date d'ajout de la clé), donc **aucune vérification automatique
+n'a jamais tourné** pendant onze jours.
+
+- [x] Clé déplacée dans le job (les deux fichiers) ; `actionlint` propre.
+- [x] Porte séparée `.github/workflows/portes-workflows.yml` : elle ne lit que
+  `.github/workflows/**` et tourne sur `ubuntu-latest`, donc elle peut crier même
+  quand un autre workflow est invalide. Une porte placée dans le fichier qu'elle
+  vérifie ne peut pas s'exécuter quand ce fichier est cassé.
+- [x] `actionlint` ajouté aux commandes de vérification (`AGENTS.md` §8).
 
 #### M5 — Tests de bout en bout (signature Tauri seule)
 

@@ -177,6 +177,63 @@ Le fichier `tauri.test.conf.json` active `dangerousInsecureTransportProtocol`
 refuse un endpoint non HTTPS en build release (`tauri-plugin-updater` 2.11.0,
 `src/config.rs`). Aucune configuration de production ne doit porter ce drapeau.
 
+### 6. Publier une prérelease de test (workflow)
+
+Le workflow `.github/workflows/release.yml` construit, signe et publie une
+**prérelease** GitHub. Il ne modifie aucune version : il vérifie que le tag
+annonce la même chose que les trois fichiers qui en portent une.
+
+```powershell
+# 1. Bumper la version aux trois endroits (le workflow refuse un décalage).
+#    apps/desktop/package.json, apps/desktop/src-tauri/tauri.conf.json,
+#    apps/desktop/src-tauri/Cargo.toml
+# 2. Commiter, puis taguer et pousser le tag.
+git tag -a v0.2.0-rc.1 -m "Tatami 0.2.0-rc.1 (test)"
+git push origin v0.2.0-rc.1
+```
+
+Une prérelease n'est **jamais** servie par `releases/latest` : GitHub l'en
+exclut, et le job le vérifie explicitement après publication. Ses assets
+restent téléchargeables par l'URL du tag, qui est l'endpoint inscrit dans le
+binaire de test par le workflow lui-même (configuration générée, jamais
+commitée).
+
+Les deux secrets de signature vivent dans l'environnement GitHub
+`release-test` (Settings → Environments), pas au niveau du dépôt : une
+prérelease de test ne doit pas pouvoir signer avec la clé de production. Le
+job échoue en nommant le secret absent s'il manque.
+
+Ce que le workflow prouve, dans l'ordre : les portes du dépôt (workflow
+réutilisable `verifications.yml`) ; la concordance tag/versions ; la
+construction du moteur ; le build signé (NSIS + MSI + `.sig`) ; `latest.json`
+et `SHA256SUMS.txt` (`scripts/preparer-release.ps1`) ; la **correspondance
+cryptographique** entre le `.sig` et l'installeur, par le test Rust
+`signature_installeur` (même crate `minisign-verify` que le plugin) ; la
+publication en brouillon puis en prérelease ; l'absence de service par
+`releases/latest`.
+
+La même préparation peut être rejouée à la main après un build local :
+
+```powershell
+.\scripts\preparer-release.ps1 -Version 0.1.0 -Tag v0.1.0 -Depot kevsi/tatami
+$env:TATAMI_INSTALLEUR = (Resolve-Path "dist-release\Tatami_0.1.0_x64-setup.exe").Path
+$env:TATAMI_INSTALLEUR_SIG = "$env:TATAMI_INSTALLEUR.sig"
+$env:TATAMI_MANIFESTE = (Resolve-Path "dist-release\latest.json").Path
+$env:TATAMI_CLE_PUBLIQUE = (Get-Content apps\desktop\src-tauri\tauri.test.conf.json -Raw |
+  ConvertFrom-Json).plugins.updater.pubkey
+cargo test --manifest-path apps\desktop\src-tauri\Cargo.toml `
+  --test signature_installeur -- --ignored --nocapture
+```
+
+Limite connue : sur un dépôt **privé**, l'application ne peut pas télécharger
+un asset de release sans authentification (`404` anonyme). Le test de bout en
+bout de M5 se fait donc avec le binaire de test et un manifeste servi
+localement, ou après passage du dépôt en public (décision utilisateur, D3).
+
+Les fichiers de workflow se vérifient avec `actionlint` (voir `AGENTS.md` §8) :
+une clé mal placée y rend le fichier invalide, et GitHub ne crée alors **aucun
+job** — le run échoue en 0 s sans message lisible.
+
 ## Documentation
 
 | Document | Contenu |

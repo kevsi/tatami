@@ -88,3 +88,8 @@ engine/.kotlin/
 # doit etre refuse par git, pas seulement par la discipline. Le motif vise la
 # cle privee ; la publique vit dans une configuration test, pas sur le disque.
 *.key
+
+# Sortie de `scripts/preparer-release.ps1` : les installeurs signes (~115 Mo),
+# leurs signatures, `latest.json` et les sommes. Regenerable, et un binaire
+# commite est interdit (AGENTS.md 13).
+/dist-release/

@@ -1,6 +1,6 @@
 [package]
 name = "tatami-desktop"
-version = "0.1.0"
+version = "0.2.0-rc.1"
 edition = "2021"
 # `default-run` est **indispensable** dès qu'il y a deux binaires : sans lui,
 # `cargo run` (donc `tauri dev`, et la CI) refuse de démarrer en demandant
@@ -72,6 +72,11 @@ dirs-next = "2"
 
 [dev-dependencies]
 proptest = "1.11.0"
+# Même crate que `tauri-plugin-updater` (2.11.0) vérifie au moment d'installer,
+# et même version résolue (0.3.0 dans Cargo.lock). Elle sert au test
+# `signature_installeur`, qui prouve qu'un `.sig` publié correspond à
+# l'installeur publié — le plugin ne peut le faire qu'après téléchargement.
+minisign-verify = "0.3"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"

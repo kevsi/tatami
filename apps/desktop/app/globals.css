@@ -726,7 +726,7 @@ button:disabled {
 }
 
 .slot-pin:hover {
-  color: var(--text-1);
+  color: var(--text);
   background: var(--surface-3);
 }
 

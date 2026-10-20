@@ -1,0 +1,46 @@
+# Les fichiers de workflow sont-ils valides ?
+#
+# Mesuré le 2026-10-20 : `timeout-minutes` posé à la racine de `ci.yml` et
+# `amont.yml` rendait les deux fichiers **invalides**. GitHub créait bien un run
+# à chaque poussée, mais avec **0 job et 0 s** : dans l'API, un `conclusion:
+# failure`, aucun message, aucune annotation. Résultat, 88 runs consécutifs en
+# échec depuis le 2026-10-09 sans qu'une seule vérification n'ait tourné — et
+# rien dans le dépôt ne pouvait le dire, puisque la porte qui aurait dû crier
+# était justement celle qui ne démarrait pas.
+#
+# D'où ce workflow **séparé** : une porte qui vit dans le fichier qu'elle
+# vérifie ne peut pas s'exécuter quand ce fichier est invalide. Celle-ci ne lit
+# que des fichiers, ne dépend d'aucun autre job, et ne tourne que si un fichier
+# de `.github/workflows/` change (ou sur demande).
+
+name: portes-workflows
+
+on:
+  push:
+    paths:
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dépôt
+        uses: actions/checkout@v4
+
+      - name: Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      # Version épinglée, comme les autres outils du dépôt : une porte qui
+      # change de comportement toute seule n'est pas une porte.
+      - name: actionlint
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12

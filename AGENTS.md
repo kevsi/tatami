@@ -212,7 +212,21 @@ cd engine
 gradle test             # PAS ./gradlew : il n'y a pas de gradlew.bat dans le dépôt.
                        # Vérifié le 2026-10-05 : `Get-ChildItem gradlew*` ne renvoie rien,
                        # donc la commande écrite ici avant le 2026-10-05 ne pouvait pas tourner.
+
+# Workflows GitHub — racine du dépôt (`scoop install actionlint`)
+actionlint              # 0 erreur ; voir la leçon « un run à 0 job » ci-dessous
 ```
+
+**`actionlint` n'est pas une commodité.** Mesuré le 2026-10-20 : `timeout-minutes`
+posé à la **racine** de `ci.yml` et `amont.yml` rendait les deux fichiers
+invalides. GitHub créait bien un run à chaque poussée, mais avec **0 job et 0 s**,
+`conclusion: failure` et aucun message lisible. **88 runs consécutifs** en échec
+depuis le 2026-10-09 (date d'ajout de la clé) — donc **aucune vérification n'a
+jamais tourné** pendant onze jours, et rien dans le dépôt ne pouvait le dire : la
+porte qui aurait dû crier était précisément celle qui ne démarrait pas. La porte
+vit désormais dans un workflow **séparé** (`.github/workflows/portes-workflows.yml`,
+déclenché par les changements de `.github/workflows/**`) : une porte placée dans le
+fichier qu'elle vérifie ne peut pas s'exécuter quand ce fichier est invalide.
 
 **Le dossier compte.** Depuis `apps\desktop`, `cargo` ne trouve pas le manifeste et
 `gradle` ne trouve pas le moteur ; depuis la racine, `pnpm` ne trouve pas

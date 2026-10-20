@@ -37,11 +37,12 @@ on:
     - cron: '17 6 * * 1'
   workflow_dispatch:
 
-timeout-minutes: 10
-
 jobs:
   epingle-a-t-elle-bouge:
     runs-on: ubuntu-latest
+    # Clé de job : à la racine, elle invalide le fichier (mesuré le
+    # 2026-10-20, 88 runs à 0 job depuis le 2026-10-09).
+    timeout-minutes: 10
     steps:
       - name: Dépôt
         uses: actions/checkout@v4

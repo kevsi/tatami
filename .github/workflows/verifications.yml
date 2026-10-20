@@ -1,0 +1,298 @@
+# Tatami — vérifications
+#
+# Cette CI exécute **toute** la liste de vérifications du dépôt : les quatre
+# commandes de base de l'interface, ses **tests unitaires**, ses **douze portes**,
+# puis Rust et le moteur.
+#
+# ## Ce qui manquait avant le 2026-10-15
+#
+# Sur les quinze scripts de `apps/desktop/package.json`, la CI en exécutait trois :
+# `typecheck`, `lint` et `i18n:check`. Donc **les 128 tests unitaires du front et
+# onze des douze portes n'étaient jamais exécutés** automatiquement. Ce n'est pas
+# une question de rigueur : c'est la cause directe de deux portes mortes. La
+# mesure : `francais:check` annonçait « aucun libellé en dur » avec vingt
+# libellés français réellement affichés, et une règle d'`i18n:check` ne pouvait
+# structurellement pas crier parce que son motif cherchait des guillemets simples
+# dans un dictionnaire écrit en guillemets doubles. Une porte qu'on ne lance
+# jamais ne peut pas crier ; une porte qui ne peut pas crier donne une confiance
+# fausse sur tout le reste.
+#
+# La liste ci-dessous est donc **vérifiable** : le récapitulatif nomme ce qui a
+# tourné, et une porte qui n'aurait rien trouvé depuis des mois est traitée comme
+# un défaut, pas comme une bonne nouvelle.
+#
+# ## Pourquoi `windows-latest` et pas `ubuntu-latest`
+#
+# 1. Le projet est Windows-first (AGENTS.md §1), la machine de développement
+#    est un portable Windows 10, et `gradle test` y est la commande de §8.
+# 2. `cargo test` sur Linux exige les bibliothèques système de Tauri
+#    (`libwebkit2gtk-4.1-dev`, `librsvg2-dev`, `libappindicator3-dev`… pour
+#    lier la crate `tauri`). Ce sont plusieurs paquets apt qui cassent, pour une
+#    cible qui n'est pas encore supportée (§3 : macOS/Linux hors v1).
+# 3. Un seul job, donc un seul checkout et **un seul espace disque** : le moteur
+#    construit (`engine/dist/`) est réutilisé par `pnpm build` et par les tests
+#    Kotlin, au lieu d'être reconstruit ou passé en artifact.
+#
+# ## Un job unique, et pas trois en parallèle
+#
+# AGENTS.md §3 documente une machine à 12 Go où `next dev`, `cargo build`,
+# Gradle et la JVM ne doivent pas tourner ensemble. La CI reproduit cette
+# contrainte volontairement : étapes **séquentielles**, une brique à la fois.
+#
+# ## Le risque honnête : 4 tests Kotlin dépendent du réseau
+#
+# `ParserPoolPaginationTest` (3 tests) et `ZenMangaInterceptionTest`
+# (`le parcours de l application sert des images lisibles`) interrogent de
+# **vrais sites de manga**. Ils ont réussi le 2026-10-05 depuis cette machine,
+# mais ils peuvent échouer en CI pour une raison qui n'a rien à voir avec le
+# code : IP de runner reputationnelle, limitation de débit, site indisponible.
+#
+# On n'a donc **pas** réduit la couverture pour faire passer : `gradle test`
+# lance tout. Le correctif durable (marquer ces tests `@Tag("reseau")` et les
+# exclure du job courant, avec un job planifié qui les garde) est un point
+# ouvert de 5.3, pas une astuce de workflow.
+#
+# Preuve d'exécution : Gradle peut répondre `UP-TO-DATE` ou `FROM-CACHE` sans
+# lancer un seul test (mesuré le 2026-10-05). Sur un checkout neuf ce n'est pas
+# censé arriver, mais le job **compte** les tests exécutés et échoue sinon —
+# une porte verte qui n'a rien vérifié n'est pas une porte.
+
+name: verifications
+
+# Workflow **réutilisable** : il ne porte aucun déclencheur propre. `ci.yml`
+# l'appelle à chaque poussée sur `master` et à chaque PR ; `release.yml`
+# l'appelle aussi avant de publier, pour qu'une release ne puisse pas partir
+# sur un commit que les portes refusent. Une seule copie des commandes : deux
+# listes de vérifications finissent toujours par diverger, et c'est la plus
+# courte qu'on lit.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Commit ou tag à vérifier (défaut : celui de l''appelant)'
+        required: false
+        type: string
+
+jobs:
+  verifications:
+    runs-on: windows-latest
+    # `timeout-minutes` est une clé de **job**, jamais de workflow. Posée au
+    # niveau racine, elle rend le fichier invalide : GitHub crée alors un run à
+    # 0 job et 0 s, sans message lisible dans l'API. Mesuré le 2026-10-20 :
+    # 88 runs consécutifs en échec depuis le 2026-10-09 — date d'ajout de la
+    # clé — et **aucune** vérification n'avait jamais tourné. `actionlint`
+    # nomme l'erreur en une ligne.
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Dépôt
+        uses: actions/checkout@v4
+        with:
+          # `release.yml` passe le tag : sans cela, un `workflow_dispatch` fait
+          # vérifier `master` pendant que le binaire se construit sur le tag.
+          ref: ${{ inputs.ref || github.sha }}
+
+      # --- Interface (AGENTS.md §8) ---------------------------------------
+
+      - name: pnpm (version épinglée par package.json)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.1
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          # Next 16 exige >= 20.9.0 (mesuré dans son package.json). La machine
+          # de développement tourne en 26.x ; le CI est volontairement sur la
+          # LTS 22, la plus largement déployée qui satisfasse l'exigence.
+          node-version: '22'
+          cache: pnpm
+
+      # --- Moteur JVM (AGENTS.md §8 : `gradle test`) ----------------------
+      #
+      # Le dépôt n'a **pas** de wrapper Gradle (`gradlew`/`gradlew.bat`
+      # absents, vérifié le 2026-10-05) : AGENTS.md §13 interdit de committer
+      # le `gradle-wrapper.jar`. On installe donc Gradle par l'action officielle.
+
+      - name: JDK 21 (exigé par `jvmToolchain(21)`)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Gradle (version mesurée sur la machine de développement)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.8.0
+
+      - name: Rust (binaire + bibliothèque, cf. Cargo.toml)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      # --- Sécurité (ajout 2026-10-15 : item 2 des 6 restants) --------------
+      #
+      # `cargo audit` et gitleaks ne sont pas des portes de correction : ce
+      # sont des conditions de **sortie du risque**. Une dépendance Rust avec
+      # un advisory, ou un secret commis par erreur, ne casse pas le build ;
+      # ils cassent la confiance. D'où leur présence comme étapes séparées
+      # — un échec de dépendance se lit distinctement d'un échec de
+      # compilation.
+      #
+      # `github.token` et non `secrets.GITHUB_TOKEN` : dans un workflow appelé
+      # (`workflow_call`), le secret n'est pas transmis automatiquement, alors
+      # que le contexte `github` est toujours celui de l'appelant.
+      #
+      - name: Secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Rust — dépendances vulnérables (cargo audit)
+        uses: rustsec/audit-check@v1
+        with:
+          token: ${{ github.token }}
+
+      - name: Dépendances npm
+        run: pnpm install --frozen-lockfile
+
+      # `pnpm build` déclenche `prebuild`, qui appelle build-engine.ps1 si le
+      # moteur n'est pas construit. On le construit donc ici, une seule fois :
+      # c'est le même `engine/dist/` que réutilisent `pnpm build` et les tests
+      # Kotlin. Échouer ici signifie « les deps du moteur (jitpack) sont
+      # injoignables », pas « l'interface est cassée ».
+      - name: Construction du moteur (installDist + runtime jlink)
+        run: powershell -ExecutionPolicy Bypass -File scripts/build-engine.ps1
+
+      - name: Interface — typecheck
+        working-directory: apps/desktop
+        run: pnpm typecheck
+
+      - name: Interface — lint
+        working-directory: apps/desktop
+        run: pnpm lint
+
+      - name: Interface — tests unitaires
+        working-directory: apps/desktop
+        run: pnpm test
+
+      # Les douze portes `check-*.mjs`.
+      #
+      # Elles n'étaient **pas** dans la CI : mesuré le 2026-10-15, sur les quinze
+      # scripts de `apps/desktop/package.json`, la CI en exécutait trois
+      # (`typecheck`, `lint`, `i18n:check`) — donc **les 128 tests unitaires du
+      # front et onze portes n'étaient jamais exécutés automatiquement**. C'est ce
+      # qui a laissé vivre deux portes mortes (`francais:check` et une règle
+      # d'`i18n:check`) : une porte qu'on ne lance jamais ne peut pas crier, et une
+      # porte qui ne peut pas crier donne une confiance fausse.
+      #
+      # Chaque porte est nommée dans le journal : un `run: pnpm <toutes>` ne dit
+      # pas laquelle a échoué.
+      - name: Interface — portes
+        working-directory: apps/desktop
+        run: |
+          $portes = @(
+            'i18n:check', 'hooks:check', 'chemins:check', 'libelles:check',
+            'francais:check', 'styles:check', 'pages:check', 'perso:check',
+            'lecteur:check', 'arrondi:check', 'ipc:check', 'moteur:check'
+          )
+          foreach ($p in $portes) {
+            Write-Host "--- pnpm $p"
+            & pnpm $p
+            if ($LASTEXITCODE -ne 0) { throw "porte en echec : $p" }
+          }
+          Write-Host "$($portes.Count) portes executees, toutes vertes."
+
+      - name: Interface — build
+        working-directory: apps/desktop
+        run: pnpm build
+
+      # --- Cœur Rust (AGENTS.md §8) ---------------------------------------
+
+      # `cargo clippy --all-targets` et non la forme courte de §8 : sans
+      # `--all-targets`, clippy **ne regarde pas** `tests/`, donc le test de
+      # contrat de la tâche 5.3 ne serait jamais linté. C'est un sur-ensemble
+      # strict de la commande de §8, pas un remplacement.
+      - name: Rust — format
+        working-directory: apps/desktop/src-tauri
+        run: cargo fmt --check
+
+      - name: Rust — clippy
+        working-directory: apps/desktop/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      # `cargo test` inclut le test de contrat : c'est lui qui rejoue les
+      # réponses enregistrées du moteur. `cargo test --test contrat_moteur`
+      # est relancé **seulement** pour afficher son nom dans le journal de la
+      # CI : sinon rien ne dit que la porte de 5.3 tourne.
+      - name: Rust — tests (dont le test de contrat)
+        working-directory: apps/desktop/src-tauri
+        run: cargo test
+
+      - name: Rust — test de contrat, en clair
+        working-directory: apps/desktop/src-tauri
+        run: cargo test --test contrat_moteur -- --nocapture
+
+      # --- Moteur JVM (AGENTS.md §8) --------------------------------------
+
+      # `--no-build-cache` : Gradle peut sinon répondre `FROM-CACHE` sans
+      # exécuter un seul test (mesuré le 2026-10-05). Un cache de build serait
+      # un gain de temps, mais la porte doit exécutor.
+      - name: Moteur — tests
+        working-directory: engine
+        run: gradle test --no-build-cache
+
+      # La porte doit avoir **exécuté** des tests, pas juste rendu 0.
+      # `build/test-results/test/*.xml` est le seul endroit qui prouve ça.
+      - name: Moteur — les tests ont-ils vraiment tourné ?
+        working-directory: engine
+        run: |
+          $fichiers = Get-ChildItem build/test-results/test/*.xml
+          if (-not $fichiers) {
+            Write-Error "Aucun résultat de test : la porte `gradle test` est verte sans avoir rien vérifié."
+            exit 1
+          }
+          $total = 0; $echecs = 0
+          foreach ($f in $fichiers) {
+            [xml]$d = Get-Content $f.FullName
+            $total += [int]$d.testsuite.tests
+            $echecs += [int]$d.testsuite.failures + [int]$d.testsuite.errors
+          }
+          Write-Host "moteur : $($fichiers.Count) classes, $total tests, $echecs échec(s)"
+          if ($total -lt 10) {
+            Write-Error " Seulement $total tests moteur : le nombre a chuté, la porte ne couvre plus rien."
+            exit 1
+          }
+          if ($echecs -gt 0) { exit 1 }
+
+      # --- Récapitulatif --------------------------------------------------
+
+      - name: Récapitulatif
+        run: |
+          Write-Host "Vérifications de l'interface et du dépôt :"
+          Write-Host "  apps\desktop        : pnpm typecheck | pnpm lint | pnpm test | 12 portes | pnpm build"
+          Write-Host "  apps\desktop\src-tauri : cargo fmt --check | cargo clippy --all-targets -D warnings | cargo test"
+          Write-Host "  engine              : gradle test --no-build-cache"
+
+      # Une porte qui n'a pas trouvé de faute depuis des mois n'est pas une porte :
+      # c'est un motif qui peut s'être cassé. Mesuré le 2026-10-15, deux portes
+      # n'avaient jamais rien trouvé parce qu'elles ne pouvaient rien voir. On
+      # exige donc un **compte** de vérifications, pas seulement un code de sortie.
+      # Même leçon que le garde Gradle ci-dessus : une porte verte qui n'a rien
+      # exécuté est indiscernable d'une porte verte qui a tout vérifié.
+      - name: Les tests du moteur et du front ont-ils vraiment tourné ?
+        run: |
+          $x = Get-ChildItem engine/build/test-results/test/*.xml
+          if (-not $x) { Write-Error "moteur : aucun resultat de test"; exit 1 }
+          $t = 0
+          foreach ($i in $x) { [xml]$d = Get-Content $i.FullName; $t += [int]$d.testsuite.tests }
+          Write-Host "moteur : $($t) tests"
+          if ($t -lt 100) { Write-Error "seulement $t tests moteur : la couverture a chute"; exit 1 }

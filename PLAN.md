@@ -4857,3 +4857,50 @@ Décision : **retenue** — `CONCURRENCE = 6`, `LIMITES_IMAGES = 6`,
   0 échec (XML frais) ; cœur `cargo fmt --check` / `cargo clippy --all-targets
   -- -D warnings` / `cargo test` → 285 tests, 0 échec.
 - **2026-10-20 — commit** : `5116987` (code + ADR 0019), puis ce journal.
+
+## Build de release 2026-10-20 (perf incluses)
+
+Mini-plan :
+1. Reconstruire le moteur (`scripts\build-engine.ps1`) : `dist/` doit porter la
+   concurrence 6 (le `dist/` courant vient de la variante mesurée ; on repart des
+   sources actuelles pour le build final).
+2. `pnpm tauri build` : exécute `pnpm build` (export `out/`), compile en release et
+   produit les paquets MSI + NSIS.
+3. Vérifier les artefacts (horodatage, taille) puis lancer le binaire release en
+   CDP 9225 : `tauri.localhost`, titre, accueil, catalogue (moteur embarqué vivant),
+   0 erreur console.
+4. Journaliser les preuves ici et committer. La signature des installeurs (5.6)
+   reste hors périmètre : elle exige un certificat de signature de code.
+
+### Résultat
+
+- Moteur : `scripts\build-engine.ps1` → `dist\tatami-engine` (68,9 Mo), 4 tâches
+  Gradle **à jour** (arbre propre ⇒ classes compilées = sources actuelles) ;
+  démon Gradle arrêté avant la compilation release.
+- `pnpm tauri build` : **exit 0** — export `out/` (11,0 s), release cargo 4 min 11 s,
+  MSI à 01:28:18 et NSIS à 01:29:28 (journal : `.mesures/build-release-2026-10-20.log`).
+- Binaire release vérifié en CDP 9225 (`.mesures/verif-release-2026-10-20.cjs` →
+  `.mesures/verif-release-2026-10-20.json`) : `http://tauri.localhost/`, titre
+  `Tatami`, 4 onglets, 3 bandes d'accueil, **1388 sources** via l'IPC réel,
+  **0 erreur console** — verdict `OK`.
+- Journal de l'app release (`rel-rel1-stdout.log`) : `sidecar java=…\engine\dist\…`,
+  `tatami-engine serve protocol=0.2 engine=0.1.0-SNAPSHOT parsers=b4df40e9`,
+  **`tatami-engine workers=6`** (plafond `MAX_WORKERS` de la variante),
+  `list_sources: 1388 sources`.
+- MSI = moteur embarqué, prouvé par extraction administrative (`msiexec /a`) :
+  184 fichiers, dont `PFiles\Tatami\engine\tatami-engine\runtime\bin\java.exe` ;
+  jar `tatami-engine-0.1.0-SNAPSHOT.jar` **sha256 identique** au `dist` utilisé en
+  vol (`1DA7F504…4359A`).
+
+Empreintes des artefacts :
+
+| Artefact | Taille | SHA-256 |
+|---|---|---|
+| `msi\Tatami_0.1.0_x64_en-US.msi` | 58,83 MiB | `32EB7F351E691650D4B08DDFC587783F2C25968559EA62D7EAC61C1B2C8C6749` |
+| `nsis\Tatami_0.1.0_x64-setup.exe` | 53,60 MiB | `781F07563D82E5660CE16D02783D7C4DBD3B2EF9EDAF4BFE0B942F5DEA3AE93C` |
+
+### Journal
+
+- **2026-10-20** — build de release OK et vérifié ; app fermée, aucun java
+  orphelin. Signature des installeurs (5.6) toujours hors périmètre : certificat
+  de signature de code non fourni, build **non signé** comme celui du 2026-10-18.

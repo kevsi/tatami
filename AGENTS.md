@@ -2312,3 +2312,12 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   avertissements (0 erreur), mesuré le 2026-10-19 — §8 corrigé (4 → 5), et
   `i18n:check` passe de 152 à **410** clés. Corollaire : ce compteur est une
   porte ; le jour où il change, on met à jour §8 **avec sa raison**.
+
+- **Un binaire release lancé depuis `target\release` n'utilise pas les resources
+  du paquet.** Tauri résout `bundle.resources` relativement au dossier de la
+  config (`src-tauri`), donc vers l'arbre de développement — mesuré le
+  2026-10-20 : le sidecar java sortait de `…\src-tauri\..\..\..\engine\dist\…`.
+  « L'exe release vérifié en CDP 9225 » prouve donc le binaire **et** le `dist`
+  de l'arbre, **pas** la copie du MSI — le pont entre les deux est l'**égalité
+  sha256** du jar extrait (`msiexec /a <msi> /qn TARGETDIR=…` → 184 fichiers,
+  `PFiles\Tatami\engine\…`), jamais « un fichier du même nom ».

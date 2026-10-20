@@ -4982,8 +4982,10 @@ SignPath (5.6) et le passage du dépôt en public.
 - [ ] Implémenter `etat_maj` (version courante lue via
   `app.package_info().version`, état, dernier contrôle), `verifier_maj`
   (`UpdaterExt::updater()?.check()`) et `installer_maj` (re-contrôle du
-  manifeste puis `download_and_install`, événements de progression,
-  `app.restart()`).
+  manifeste puis `download_and_install`, événements de progression). Pas
+  d'`app.restart()` ni de `tauri-plugin-process` : sous Windows le plugin ferme
+  l'application après avoir lancé l'installeur, et NSIS la relance
+  (`restart_after_install` vaut `true` par défaut).
 - [ ] Ne **pas** conserver l'objet `Update` entre deux commandes : il porte le
   contexte complet du plugin (configuration, client, hooks) et le garder en état
   géré pour économiser un GET de quelques kilo-octets ajoute une pièce mobile
@@ -4991,12 +4993,15 @@ SignPath (5.6) et le passage du dépôt en public.
   la version qu'il vient de lire.
 - [ ] Éviter deux installations concurrentes par un drapeau atomique
   (comparaison-échange), jamais par un verrou tenu au travers d'un `await`.
-- [ ] Brancher `on_before_exit` de l'updater sur l'arrêt propre de la file de
-  téléchargements et la journalisation ; ne pas laisser de `.part` ni de
-  transaction SQLite ouverte.
-- [ ] Ajouter les commandes à `generate_handler!` ; vérifier qu'elles sont
-  réellement appelées par le front (la porte `aucune_commande_tauri_nest_morte`
-  le dira en M3).
+- [ ] Brancher `on_before_exit` de l'updater sur la journalisation du nombre de
+  téléchargements actifs ; il n'y a **pas** de file côté cœur à vider (le front
+  pilote les chapitres un par un), donc la garde « pas d'installation pendant un
+  téléchargement » vit dans l'interface (M3). Ne pas laisser de transaction
+  SQLite ouverte.
+- [ ] Ajouter les commandes à `generate_handler!` et les appeler depuis le front
+  **dans le même lot** : la porte `aucune_commande_tauri_nest_morte` échoue dès
+  qu'une commande est enregistrée sans appelant. M2 et le câblage de M3 se
+  livrent donc ensemble.
 - [ ] **Critère de sortie** : tests unitaires des transitions d'état et du
   mapping d'erreurs ; `cargo fmt --check`,
   `cargo clippy --all-targets -- -D warnings`, `cargo test` verts ; un appel

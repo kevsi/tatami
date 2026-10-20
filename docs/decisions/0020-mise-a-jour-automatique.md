@@ -42,9 +42,12 @@ Mesures et vérifications au 2026-10-20 :
    l'interface des commandes Tauri (`etat_maj`, `verifier_maj`,
    `installer_maj`), plus des événements de progression. L'interface ne parle
    pas directement au plugin JS ; elle reste sur le contrat commandes/événements
-   du projet. Le redémarrage se fait par `app.restart()` côté Rust, sans
-   `tauri-plugin-process`. L'alternative API JS est étudiée plus bas ; elle
-   reste possible si le coût Rust se révèle disproportionné.
+   du projet. Sous Windows, `download_and_install` **ferme l'application**
+   lui-même après avoir lancé l'installeur (documenté dans le plugin), et
+   `restart_after_install` vaut `true` par défaut : `app.restart()` n'est pas
+   appelé et `tauri-plugin-process` reste inutile. L'alternative API JS est
+   étudiée plus bas ; elle reste possible si le coût Rust se révèle
+   disproportionné.
 
 2. **Deux signatures, dans cet ordre.** Build → installeurs non signés →
    **SignPath** (Authenticode) → **`tauri signer sign`** sur l'installeur
@@ -129,8 +132,10 @@ tag v0.2.0
 - NSIS en mode `currentUser` (défaut confirmé) pour éviter UAC ; le fixer
   explicitement et le tester.
 - Sous Windows, l'updater ferme l'application avant d'installer. Le hook
-  `on_before_exit` vide la file de téléchargements et journalise ; l'interface
-  refuse l'installation si la file est active.
+  `on_before_exit` **journalise** le nombre de téléchargements actifs ; il n'y a
+  pas de file côté cœur (l'interface pilote les chapitres un par un), donc rien
+  à vider — c'est l'interface qui refuse de lancer une installation pendant un
+  téléchargement.
 - Pas de rollback automatique : si l'installation échoue, l'utilisateur
   réinstalle la version précédente ; les données `%APPDATA%\Tatami` sont
   séparées. Une version fautive se corrige par une version **supérieure** ; on

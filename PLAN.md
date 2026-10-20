@@ -5349,10 +5349,12 @@ n'a jamais tourné** pendant onze jours.
   chaque source (2 séries), puis `sonde-sources.mjs --deep`. Corrigés et
   revérifiés :
   - **rimuscan** : le HTML ne monte que 21 ancres `/read/…` pour 154 chapitres ;
-    le **JSON-LD** de la même page porte les 154 `ListItem` (URL + nom). La
-    lecture du JSON-LD (ancres en repli) rend **21 → 154** sur « Slime », 31 sur
-    « Duke's Child », 6 sur « Gallery ». Les écarts 89→91 et 124→128 sont dans
-    le JSON-LD du site, pas dans le parseur.
+    le **JSON-LD** de la même page porte les 154 `ListItem` (URL + nom). Mais
+    il est **incomplet** sur « Got a Gallery » (6 contre 9 ancres) : lire le
+    JSON-LD seul faisait régresser 9 → 6. La version livrée **unit** les deux
+    sources, filtrées sur le slug de la série : **9 / 154 / 31** sur Gallery,
+    Slime, Duke's Child. Les écarts 89→91 et 124→128 de Slime sont absents des
+    deux sources du site, pas du parseur.
   - **bananascans** : deux formes d'URL mesurées, `/manga/<slug>/vol3` (volumes)
     et `/manga/<slug>/5` (chapitres) ; seule la première était reconnue.
     « One Hundred Storey Tower » **0 → 5**, « Shiro Madoushi Syrup-san »

@@ -227,43 +227,38 @@ var SOURCE = {
 
         // Chapitres : le HTML ne monte que les dernières ancres (mesuré le
         // 2026-10-20 sur « Slime » : 21 ancres pour 154 chapitres annoncés),
-        // mais le **JSON-LD** de la même page porte la liste complète en
-        // `ListItem` (154 entrées `url` + `name`). Lire les ancres seules
-        // faisait donc disparaître tous les chapitres anciens, pas seulement
-        // les plus récents. On lit le JSON-LD d'abord, les ancres en repli.
+        // et le JSON-LD porte parfois la liste complète (154 `ListItem`).
+        // Mais il est **incomplet** ailleurs : sur « Got a Gallery », il n'en
+        // liste que 6 alors que les ancres en portent 9. On lit donc les deux
+        // et on **unit** par numéro. Les deux sources sont filtrées sur le
+        // slug de la série (`mangaSlug` ou l'URL) : une page peut recommander
+        // les chapitres d'une autre œuvre — mesuré sur lire-manga.
         var vus = {};
         var chapitres = [];
+        var ajouterChapitre = function (chSlug, num, chUrl, titre) {
+            if (chSlug !== slugPropre || isNaN(num) || vus[num]) return;
+            var abs = chUrl.indexOf("http") === 0 ? chUrl : SOURCE.baseUrl + chUrl;
+            vus[num] = true;
+            chapitres.push({
+                id: abs,
+                title: titre || ("Chapitre " + num),
+                number: num,
+                url: abs
+            });
+        };
         var blocsLd = html.split('"@type":"ListItem"');
         for (var i = 1; i < blocsLd.length; i++) {
             var blocLd = blocsLd[i].substring(0, 400);
-            var mUrl = blocLd.match(/"url":"(https?:\/\/[^"]*\/read\/[^"\/]+\/(\d+))"/);
+            var mUrl = blocLd.match(/"url":"(https?:\/\/[^"]*\/read\/([^"\/]+)\/(\d+))"/);
             if (!mUrl) continue;
-            var num = parseInt(mUrl[2], 10);
-            if (isNaN(num) || vus[num]) continue;
-            vus[num] = true;
             var mNom = blocLd.match(/"name":"([^"]*)"/);
-            chapitres.push({
-                id: mUrl[1],
-                title: (mNom ? SOURCE.decodeEntites(mNom[1]) : "") || ("Chapitre " + num),
-                number: num,
-                url: mUrl[1]
-            });
+            ajouterChapitre(mUrl[2], parseInt(mUrl[3], 10), mUrl[1],
+                mNom ? SOURCE.decodeEntites(mNom[1]) : "");
         }
-        if (chapitres.length === 0) {
-            var reCh = /href="\/read\/([^"\\/]+)\/([0-9]+)"/g;
-            var m;
-            while ((m = reCh.exec(html)) !== null) {
-                var numAncre = parseInt(m[2], 10);
-                if (isNaN(numAncre) || vus[numAncre]) continue;
-                vus[numAncre] = true;
-                var chUrl = SOURCE.baseUrl + "/read/" + m[1] + "/" + numAncre;
-                chapitres.push({
-                    id: chUrl,
-                    title: "Chapitre " + numAncre,
-                    number: numAncre,
-                    url: chUrl
-                });
-            }
+        var reCh = /href="\/read\/([^"\\/]+)\/([0-9]+)"/g;
+        var m;
+        while ((m = reCh.exec(html)) !== null) {
+            ajouterChapitre(m[1], parseInt(m[2], 10), "/read/" + m[1] + "/" + m[2], "");
         }
         chapitres.sort(function (a, b) { return a.number - b.number; });
 

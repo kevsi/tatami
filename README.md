@@ -1,218 +1,88 @@
-# Tatami (nom provisoire)
+# Tatami
 
-Client desktop de lecture de manga pour Windows (Linux/macOS plus tard), écrit pour faire sur PC
-ce que fait l'application mobile **Kotatsu-Redo** sur Android.
+Client desktop de lecture de manga pour Windows.
 
-Le principe directeur : **séparer ce qui casse tout le temps de ce qui doit rester stable.** Les
-sites de manga changent chaque semaine ; le moteur qui les interroge est donc un processus
-séparable, mis à jour sans republier l'application.
+Tatami réunit un catalogue de plus de 1 370 sources, un lecteur vertical, une bibliothèque et le
+téléchargement hors ligne dans une seule application. Aucun compte, aucune télémétrie.
 
-> **Avertissement.** Tatami est un navigateur. L'application n'héberge, ne stocke et ne
+> **Avertissement.** Tatami fonctionne comme un navigateur : l'application n'héberge et ne
 > distribue aucun contenu protégé. Les sources sont des sites tiers consultés à la demande de
 > l'utilisateur, comme un navigateur web.
 
-## État du projet
+## ⬇️ Télécharger
 
-| Domaine | État au 2026-10-18 |
-|---|---|
-| Sources, recherche, filtres, tri | livré — 1370+ sources natives + sources personnalisées scriptées, recherche globale |
-| Fiche série, chapitres, dates de publication | livré |
-| Favoris, historique, reprise exacte, incognito | livré |
-| Signets (page précise) | livré |
-| Lecteur : webtoon virtualisé, saut de page, zoom, clavier | livré (`PLAN.md` 1.8, 1.9) |
-| Téléchargement : `.cbz`, file d'attente, reprise, hors ligne | livré (`PLAN.md` 2.1, 2.2, 2.3) |
-| Catégories de favoris | livré |
-| Thèmes clair/sombre, i18n français/anglais | livré (409 clés FR = 409 EN) |
-| Notifications, planificateur | livré |
-| Mise à jour du moteur signée | livré (manifeste `moteur-0.2.0.json`) |
-| Installeurs (Windows) | livré non signé (`target/release/bundle/`) |
-| Suivi AniList / MAL / Shikimori / Kitsu, synchronisation | **reporté en v1.1** (ADR 0015) |
+[**Dernière version pour Windows**](https://github.com/kevsi/tatami/releases/latest)
 
-La feuille de route complète est dans [`PLAN.md`](PLAN.md). Le test de fumée à exécuter avant
-chaque jalon est dans [`docs/smoke-test.md`](docs/smoke-test.md).
+Deux installateurs sont proposés : `.msi` (Windows Installer) et `-setup.exe` (NSIS). Windows 10
+ou 11, 64 bits. Le moteur et son runtime Java sont inclus : aucune installation de Java n'est
+nécessaire.
 
-## Architecture
+> **Version non signée.** SmartScreen peut afficher « Windows a protégé votre PC » : cliquez sur
+> « Informations complémentaires », puis « Exécuter quand même ». Comparez l'empreinte SHA-256
+> publiée dans la release avec celle du fichier téléchargé.
 
-| Couche | Techno | Rôle |
-|---|---|---|
-| Interface | Next.js 16 (export statique) + TypeScript, dans la webview Tauri | Affichage uniquement |
-| Cœur | Rust, Tauri 2 | Données, téléchargements, cache d'images, sync, suivi, supervision du moteur |
-| Moteur de sources | Kotlin/JVM, sidecar | Charge `kotatsu-parsers-redo`, interroge les sites |
+## ✨ Fonctionnalités
 
-```
-Interface (Next.js statique)
-        │  commandes / événements Tauri uniquement
-        ▼
-Cœur Rust (Tauri)  ── SQLite, téléchargements, cache tatami://, planificateur, sync, suivi
-        │  contrat versionné (NDJSON sur stdio, aucun port ouvert)
-        ▼
-Moteur JVM (sidecar) ── kotatsu-parsers-redo ──► sites de manga
-```
+- **Catalogue** — plus de 1 370 sources, recherche globale, filtres par langue et tri.
+- **Lecteur** — défilement vertical virtualisé, saut de page, zoom, raccourcis clavier et reprise
+  à la page exacte.
+- **Bibliothèque** — favoris, catégories, historique, signets à la page et masquage du contenu
+  adulte sur l'accueil (incognito).
+- **Hors ligne** — téléchargement des chapitres en `.cbz`, file d'attente et reprise.
+- **Nouveautés** — chapitres récents et notifications pour les favoris.
+- **Interface** — français et anglais, thèmes clair et sombre.
 
-Quatre règles structurantes, détaillées dans [`AGENTS.md`](AGENTS.md) §4 :
+## 🚀 Premier lancement
 
-1. l'interface ne parle qu'à Rust, jamais au sidecar ni au réseau des sources ;
-2. Rust est le seul client du sidecar — il le lance, le supervise, le relance après un crash ;
-3. le sidecar est sans état persistant, toute donnée utilisateur vit dans SQLite côté Rust ;
-4. les images passent par le moteur, sont mises en cache par Rust et servies via le protocole
-   `tatami://` — jamais d'appel direct à un hôte d'images depuis la webview.
+1. Choisir une langue, puis une source dans le catalogue.
+2. Chercher une série, ouvrir sa fiche et cliquer sur un chapitre.
+3. Pour lire hors ligne, télécharger un chapitre depuis sa fiche.
 
-## Dépendances amont
+Les téléchargements sont enregistrés dans `%APPDATA%\Tatami\downloads` (dossier modifiable dans
+les réglages), au format `.cbz` : une archive d'images par chapitre.
 
-| Composant | Provenance | Version |
-|---|---|---|
-| `kotatsu-parsers-redo` | [Kotatsu-Redo/kotatsu-parsers-redo](https://github.com/Kotatsu-Redo/kotatsu-parsers-redo), via JitPack | **commit `b4df40e9`** (2026-10-16, aucun tag ni release) |
-| Kotlin | Gradle | 2.2.10, `jvmToolchain(21)` |
-| OkHttp / Okio | `gradle/libs.versions.toml` du fork | 5.1.0 / 3.16.0 |
-| Nashorn | `org.openjdk.nashorn:nashorn-core` | 15.6 — le JDK 21 ne fournit plus de moteur JS |
-| Tauri | crates.io | 2.12.1 |
+## 🔒 Données et confidentialité
 
-Le commit est **épinglé** parce que le fork n'a ni tag ni release : sans épinglage, le build
-changerait de sources à chaque résolution. Voir [`docs/notes/loader-context.md`](docs/notes/loader-context.md)
-pour les coordonnées exactes et les 5 points durs desktop de `MangaLoaderContext`.
-
-## Structure du dépôt
-
-```
-tatami/
-  AGENTS.md          directives de travail de l'agent
-  PLAN.md            feuille de route vivante (phases, journal, blocages)
-  README.md          ce fichier
-  LICENSE            GPLv3
-  apps/desktop/      Next.js (export statique) + src-tauri (Rust)
-  engine/            projet Gradle Kotlin : le sidecar JVM
-  contract/          protocole.json : schéma du contrat Rust ↔ moteur
-  scripts/           build-engine.ps1 (installDist + jlink + lanceur)
-  docs/              smoke-test.md, decisions/ (ADR), notes/, rapport-session-docs.md
-```
-
-Chemins de données à l'exécution (Windows) :
+Tout reste sur votre machine. Aucune télémétrie, aucun compte, aucune donnée envoyée à l'éditeur.
 
 | Donnée | Emplacement |
 |---|---|
-| Base utilisateur | `%APPDATA%\Tatami\tatami.db` |
-| Sauvegardes avant migration | `%APPDATA%\Tatami\tatami-v<N>-<horodatage>.db` |
-| Cache d'images (`tatami://`) | `%APPDATA%\Tatami\cache\` |
-| Téléchargements | `%APPDATA%\Tatami\downloads\<source>\<webtoon>\*.cbz` |
+| Bibliothèque, favoris, historique | `%APPDATA%\Tatami\tatami.db` |
+| Cache d'images | `%APPDATA%\Tatami\cache\` |
+| Téléchargements | `%APPDATA%\Tatami\downloads\` |
 
-## Construire et lancer
+Le réseau n'est utilisé que pour :
 
-### Prérequis
+- les sources que vous consultez ;
+- la vérification des favoris par le planificateur, désactivable dans les réglages ;
+- la résolution DNS en DNS-over-HTTPS via Cloudflare ;
+- une mise à jour du moteur, uniquement si vous fournissez vous-même le manifeste signé.
 
-Installés avec Scoop (winget ne fonctionne pas sur la machine cible) :
+## 🩺 Problèmes courants
 
-```powershell
-scoop bucket add java
-scoop install temurin21-jdk gradle rustup
-```
+| Symptôme | Solution |
+|---|---|
+| SmartScreen bloque l'installation | Version non signée : « Informations complémentaires » → « Exécuter quand même », après vérification du SHA-256. |
+| Une fenêtre de vérification s'ouvre | La source demande un contrôle Cloudflare. Résolvez-le dans la fenêtre : Tatami réutilise ensuite les cookies. |
+| Une source renvoie une erreur | Le site est peut-être indisponible ou bloqué. Essayez une autre source ; les journaux de diagnostic donnent le détail. |
+| Une page reste vide | La source ne sert pas cette page ; le lecteur l'indique au lieu d'afficher une image cassée. |
 
-Node via nvm4w, gestionnaire JS pnpm. Versions utilisées pendant le développement : Temurin
-21.0.12.1 LTS, Gradle 9.8.0, rustc 1.99.0, Node 26.10.0, pnpm 12.8.1.
+## 📄 Licence
 
-Deux pièges d'environnement mesurés sur cette machine :
+**GPLv3** — voir [`LICENSE`](LICENSE). La licence est imposée par `kotatsu-parsers-redo`, dont le
+moteur JVM dépend.
 
-- les **shims Scoop** ne sont pas dans le PATH du shell → préfixer `$env:USERPROFILE\scoop\shims` ;
-- `link.exe` (MSVC) est hors PATH → **charger `vcvars64.bat` avant tout `cargo`**.
+Tatami s'appuie sur [Kotatsu](https://github.com/KotatsuApp/Kotatsu),
+[Kotatsu-Redo](https://github.com/Kotatsu-Redo/Kotatsu-Redo) et
+[kotatsu-parsers-redo](https://github.com/Kotatsu-Redo/kotatsu-parsers-redo). Aucun code de ces
+projets n'est recopié : le moteur charge la librairie publiée via JitPack.
 
-### 1. Dépendances JS
-
-```powershell
-pnpm install
-```
-
-### 2. Moteur (obligatoire avant de lancer l'application)
-
-```powershell
-pnpm engine
-```
-
-`scripts/build-engine.ps1` enchaîne `gradle installDist`, `jdeps`, puis `jlink` pour produire un
-runtime réduit dans `engine/dist/tatami-engine/` avec un lanceur `tatami-engine.bat`
-(`-Xmx256m -XX:+UseSerialGC`). Taille mesurée : **64,1 Mo** (runtime 47,2 + 18 JAR 16,8),
-démarrage à froid **1 576 ms** jusqu'à `hello`, mémoire privée au repos 231,7 Mo, pic à
-256 Mo pendant une recherche. Le script affiche `OK: <chemin> (<taille> MB)` en fin de course.
-
-> Le runtime et les JAR **ne sont pas commités** (`.gitignore` : `dist/`, `build/`). Il faut donc
-> cette étape sur chaque poste, après chaque changement de moteur.
-
-Contrôle du moteur sans l'application :
-
-```powershell
-engine\dist\tatami-engine\tatami-engine.bat list-sources        # attendu : sources: 1374
-engine\dist\tatami-engine\tatami-engine.bat search MANGADEX naruto
-```
-
-### 3. Lancer l'application
-
-```powershell
-pnpm tauri dev
-```
-
-`tauri dev` démarre le serveur Next sur `http://localhost:3001` puis ouvre la fenêtre (1280 × 800).
-
-Le moteur est **empaqueté avec l'application** depuis le 2026-10-20 : `tauri.conf.json` déclare
-`bundle.resources` (`engine/dist/tatami-engine` → `engine/tatami-engine`). Le MSI 0.1.0 contient
-le moteur (extraction par `msiexec /a` : 184 fichiers, dont `PFiles\Tatami\engine\tatami-engine\`)
-et le `sha256` du JAR du paquet est identique à celui du `dist` utilisé en vol — voir `PLAN.md`,
-journal du 2026-10-20. Un binaire release lancé depuis `target\release` lit, lui, l'arbre du
-dépôt (Tauri résout `bundle.resources` relativement à `src-tauri`) : c'est ce binaire-là que
-pilote la vérification CDP.
-
-### 4. Vérifications
-
-Les commandes `cargo` sont lancées depuis la **racine du dépôt** avec le chemin du manifeste :
-`apps/desktop/src-tauri` n'est pas membre d'un workspace Cargo racine.
-
-```powershell
-pnpm lint          # ESLint 9 flat config (next lint n'existe plus en Next 16)
-pnpm typecheck     # tsc --noEmit
-pnpm build         # export statique -> apps/desktop/out
-cargo fmt --check --manifest-path apps\desktop\src-tauri\Cargo.toml
-cargo clippy --manifest-path apps\desktop\src-tauri\Cargo.toml --all-targets -- -D warnings
-cargo test  --manifest-path apps\desktop\src-tauri\Cargo.toml
-```
-
-ESLint est **épinglé en 9** : `eslint-config-next` déclare un peer `eslint >= 9`, mais son
-`eslint-plugin-react@7.37.5` plante sur ESLint 10.
-
-Ces commandes ne remplacent pas le test de fumée : elles prouvent que le code compile, pas que
-l'application fait ce qu'on croit. Voir [`docs/smoke-test.md`](docs/smoke-test.md).
-
-## Code signing policy
+## 🔏 Code signing policy
 
 Free code signing provided by [SignPath.io](https://signpath.io/), certificate by
-[SignPath Foundation](https://signpath.org/). Les rôles de l'équipe et la politique de
-confidentialité sont dans [`CODE_SIGNING.md`](CODE_SIGNING.md).
+[SignPath Foundation](https://signpath.org/). Les rôles et la politique de confidentialité sont
+dans [`CODE_SIGNING.md`](CODE_SIGNING.md).
 
-## Licence
+## 🛠️ Développement
 
-**GPLv3** — voir [`LICENSE`](LICENSE). Cette licence n'est pas un choix : elle est imposée par
-`kotatsu-parsers-redo`, dont le moteur JVM s'est lié. L'ensemble du dépôt doit donc rester sous
-GPLv3, et les trois projets amont doivent être crédités dans toute redistribution.
-
-## Crédits
-
-Tatami n'existerait pas sans ces trois projets ; ils sont crédités ici et doivent l'être dans
-toute redistribution.
-
-| Projet | Rôle |
-|---|---|
-| [Kotatsu](https://github.com/KotatsuApp/Kotatsu) | lecteur de manga Android d'origine, auteur de l'API `MangaParser` sur laquelle repose le moteur. |
-| [Kotatsu-Redo](https://github.com/Kotatsu-Redo/Kotatsu-Redo) | fork maintenu dont l'application reprend la parité fonctionnelle. |
-| [kotatsu-parsers-redo](https://github.com/Kotatsu-Redo/kotatsu-parsers-redo) | librairie de sources (1 374 sources embarquées) chargée par le sidecar JVM. |
-
-Aucun code de ces projets n'est recopié dans ce dépôt : le moteur **charge** la librairie
-published via JitPack. Les noms de sources appartiennent à leurs sites respectifs ; Tatami ne
-fournit pas de source et n'en réécrit aucune.
-
-## Documentation
-
-| Document | Contenu |
-|---|---|
-| [`AGENTS.md`](AGENTS.md) | règles de travail, architecture, sécurité, leçons de session |
-| [`PLAN.md`](PLAN.md) | phases, critères de sortie, questions ouvertes, journal |
-| [`docs/smoke-test.md`](docs/smoke-test.md) | test de fumée manuel, exécuté avant chaque jalon |
-| [`docs/notes/loader-context.md`](docs/notes/loader-context.md) | ce qu'exige `MangaLoaderContext` sur desktop |
-| [`contract/README.md`](contract/README.md) | les 10 méthodes du contrat et les 7 codes d'erreur |
-| [`docs/decisions/`](docs/decisions) | ADR : transport du sidecar, schéma SQLite, protocole d'images, permissions Tauri |
-| [`docs/rapport-session-docs.md`](docs/rapport-session-docs.md) | dernier rapport de session documentation |
+Construire depuis les sources, architecture et vérifications : [`docs/development.md`](docs/development.md).

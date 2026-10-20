@@ -191,7 +191,7 @@ précise son dossier, parce que la plupart échouent depuis la racine :
 cd apps\desktop
 pnpm typecheck          # tsc --noEmit
 pnpm lint               # eslint ; 5 warnings exhaustive-deps connus, 0 erreur
-pnpm i18n:check         # aucune clé morte ni manquante (410 clés)
+pnpm i18n:check         # aucune clé morte ni manquante (430 clés)
 pnpm hooks:check        # aucune dépendance d'effet recréée à chaque rendu
 pnpm chemins:check      # aucun chemin affiché sans cheminLisible(…)
 pnpm pages:check        # le <img> du lecteur gère l'échec et le dit
@@ -2321,3 +2321,30 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   de l'arbre, **pas** la copie du MSI — le pont entre les deux est l'**égalité
   sha256** du jar extrait (`msiexec /a <msi> /qn TARGETDIR=…` → 184 fichiers,
   `PFiles\Tatami\engine\…`), jamais « un fichier du même nom ».
+
+- **Une section de configuration de plugin peut être obligatoire même quand on
+  ne s'en sert pas — et le commentaire qui affirmait le contraire était une
+  supposition.** Mesuré le 2026-10-20 : `tauri-plugin-updater` sans
+  `plugins.updater` dans `tauri.conf.json` reçoit `null` et l'application
+  **meurt au démarrage** — `PluginInitialization("updater", "invalid type:
+  null, expected struct Config")` — parce que `pubkey` n'a pas de valeur par
+  défaut (`tauri-plugin-updater-2.11.0/src/config.rs`). `cargo test` ne l'avait
+  jamais vu : il ne démarre pas la webview. La section existe donc avec
+  `pubkey: ""` et `endpoints: []`, ce qui rend `EmptyEndpoints`
+  (`updater.rs:371`), classé `inconnu` et non `reseau`. Corollaires : lire le
+  `config.rs` du plugin avant d'écrire « sans configuration, ça se dégrade
+  proprement » ; et une fonctionnalité **branchée** se prouve en **lançant
+  l'application**, pas en compilant.
+- **Deux instances de la même application ne peuvent pas ouvrir deux ports CDP
+  sur le même dossier de profil WebView2.** Mesuré le même jour : la troisième
+  instance (le build de dev) a échoué à créer sa webview —
+  `HRESULT(0x8007139F)` « le groupe ou la ressource n'est pas dans l'état
+  correct » — parce que les deux instances installées tournaient déjà sur
+  `%LOCALAPPDATA%\app.tatami.desktop` et que WebView2 partage son processus
+  navigateur par dossier de profil. Fix mesuré : lancer le build de dev avec
+  `WEBVIEW2_USER_DATA_FOLDER` pointant sur un dossier temporaire **et**
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9225` ; les
+  instances de l'utilisateur restent intactes (ne pas les tuer pour mesurer).
+  Corollaire : le port 9223 peut déjà appartenir à une instance installée —
+  vérifier `GET /json/list` (une URL `tauri.localhost` = app installée, pas le
+  dev).

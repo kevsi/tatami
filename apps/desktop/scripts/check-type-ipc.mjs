@@ -53,6 +53,9 @@ const PAIRES = [
   ['PlanReglages', 'ReglagesVue', 'scheduler.rs'],
   ['Progress', 'Progress', 'download.rs'],
   ['ResumeRecherche', 'Resume', 'recherche.rs'],
+  ['EtatMaj', 'EtatMaj', 'maj.rs'],
+  ['VersionDisponible', 'VersionDisponible', 'maj.rs'],
+  ['ProgressionMaj', 'Progression', 'maj.rs'],
 ];
 
 /** Champs d'un `type X = { … }` de `page.tsx`, dans l'ordre. */

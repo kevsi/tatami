@@ -21,6 +21,14 @@ import { sourceDeLaFiche } from '../lib/source-fiche';
 import { attenteDepasseLeSeuil } from '../lib/chargement-long';
 import { cartesAFaire, entreesFraiches, type EntreeRecent } from '../lib/cartes-recentes';
 import { ciblePrechargement } from '../lib/prechargement';
+import {
+  codeErreurMaj,
+  doitVerifierAuto,
+  horodatage,
+  phaseMaj,
+  pourcentRecu,
+  type CodeErreurMaj,
+} from '../lib/maj';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   isPermissionGranted,
@@ -487,6 +495,41 @@ function repriseUtile(p: Progression | null): p is Progression {
   return !!p && !!p.chapter_url;
 }
 
+/** Charge utile de `etat_maj` / `verifier_maj` / `installer_maj` (`maj.rs`). */
+type VersionDisponible = {
+  version: string;
+  versionCourante: string;
+  /** Notes du manifeste, texte brut ou Markdown : affichées telles quelles. */
+  notes: string | null;
+  dateMs: number | null;
+};
+
+type EtatMaj = {
+  versionCourante: string;
+  disponible: VersionDisponible | null;
+  derniereVerificationMs: number | null;
+  installationEnCours: boolean;
+};
+
+/** Charge utile de `mise-a-jour://progression`. */
+type ProgressionMaj = {
+  recu: number;
+  /** `null` quand le serveur n'annonce pas de `Content-Length`. */
+  total: number | null;
+};
+
+/** Codes d'erreur du cœur → clés de traduction.
+ *
+ *  Une table et non un `t(`maj.erreur.${code}`)` : `pnpm i18n:check` lit les
+ *  littéraux, donc un gabarit ferait passer les cinq clés pour mortes. */
+const MAJ_ERREUR_CLE: Record<CodeErreurMaj, MessageKey> = {
+  reseau: 'maj.erreur.reseau',
+  signature: 'maj.erreur.signature',
+  espace: 'maj.erreur.espace',
+  droits: 'maj.erreur.droits',
+  inconnu: 'maj.erreur.inconnu',
+};
+
 const PAGE = 24;
 // Une source peut renvoyer plusieurs centaines de chapitres : on n'en rend
 // qu'une tranche a la fois (le reste est derriere « Afficher plus »).
@@ -548,6 +591,16 @@ const RATINGS = [
 const TIMEOUTS = [30, 60, 120] as const;
 
 const INCOGNITO_KEY = 'tatami.incognito';
+// Préférences de la mise à jour **de l'application** (ADR 0020).
+//
+// `tatami.maj` désigne déjà les **chapitres** nouveaux du planificateur : le
+// préfixe `updater` évite deux significations pour une même famille de clés.
+// Ce sont des préférences d'affichage et de fréquence, pas une donnée que le
+// cœur applique — d'où `localStorage` (AGENTS.md §6).
+const MAJ_AUTO_KEY = 'tatami.updater.auto';
+const MAJ_DERNIER_KEY = 'tatami.updater.dernier';
+/** Nom de l'événement de progression, tenu de `maj::EVT_PROGRESSION`. */
+const EVT_MAJ_PROGRESSION = 'mise-a-jour://progression';
 const RECENT_LIMIT = 24;
 
 function loadPrefs(): {
@@ -1348,6 +1401,16 @@ export default function Home() {
   const [reveal, setReveal] = useState(0);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
+  // Mise à jour de l'application (ADR 0020). `majApp` et non `maj` : `maj`
+  // désigne déjà les nouveaux chapitres du planificateur (voir `MAJ_KEY`).
+  const [majApp, setMajApp] = useState<EtatMaj | null>(null);
+  /** Un contrôle a abouti : `disponible: null` veut alors dire « à jour ». */
+  const [majLue, setMajLue] = useState(false);
+  const [majAuto, setMajAuto] = useState(true);
+  const [majDernier, setMajDernier] = useState<number | null>(null);
+  const [majOccupe, setMajOccupe] = useState<'verification' | 'installation' | null>(null);
+  const [majProgression, setMajProgression] = useState<ProgressionMaj | null>(null);
+  const [majErreur, setMajErreur] = useState<CodeErreurMaj | null>(null);
   // File d'attente des telechargements demandes pendant qu'un autre est en cours :
   // un clic sur « telecharger » n'echoue plus en silence (« deja en cours »),
   // il est mis en file et demarre a la fin de l'actuel.
@@ -1851,6 +1914,20 @@ export default function Home() {
     setRating(prefs.rating);
     setListTimeout(prefs.listTimeout);
     setHealth(loadHealth());
+    // Mise à jour de l'application : la préférence et la date du dernier
+    // contrôle sont des préférences d'affichage, donc dans `localStorage`.
+    // Lues ici et non dans un initialiseur de `useState`, pour la même raison
+    // que ci-dessus : le HTML est produit au build.
+    setMajAuto(window.localStorage.getItem(MAJ_AUTO_KEY) !== '0');
+    setMajDernier(horodatage(window.localStorage.getItem(MAJ_DERNIER_KEY)));
+    // Instantané : donne la version installée tout de suite, et récupère une
+    // version trouvée plus tôt dans la session (le cœur garde le disponible
+    // tant que l'application tourne). Ne touche pas au réseau.
+    void invoke<EtatMaj>('etat_maj')
+      .then((etat) => setMajApp(etat))
+      .catch(() => {
+        /* l'écran affiche « … » ; la vérification manuelle dira pourquoi */
+      });
     // Dossier de téléchargement : lu au démarrage, car Rust l'a déjà appliqué
     // avant même que la fenêtre s'affiche.
     void invoke<{ chemin: string; parDefaut: boolean }>('get_downloads_dir')
@@ -2067,7 +2144,47 @@ export default function Home() {
       if (lot.list.length === 0) return;
       setRechResultats((prec) => [...prec, ...lot.list]);
     });
+    // Mise à jour de l'application : progression du téléchargement de
+    // l'installeur. Nom distinct de `maj://nouveaux-chapitres`, où `maj`
+    // désigne les chapitres (ADR 0020).
+    const unlistenProgressionMaj = listen<ProgressionMaj>(EVT_MAJ_PROGRESSION, (event) => {
+      setMajProgression(event.payload);
+    });
+    // Vérification automatique (décision D2) : 5 s après le montage, au plus
+    // une par 24 h. Le délai laisse passer le démarrage — moteur et
+    // bibliothèque — une requête partie en même temps retarderait le premier
+    // écran utile. La décision elle-même est dans `lib/maj.ts`, testée.
+    let minuterieMaj: number | null = null;
+    if (
+      doitVerifierAuto({
+        actif: window.localStorage.getItem(MAJ_AUTO_KEY) !== '0',
+        dernier: horodatage(window.localStorage.getItem(MAJ_DERNIER_KEY)),
+        maintenant: Date.now(),
+      })
+    ) {
+      minuterieMaj = window.setTimeout(() => {
+        // Relu au moment de partir : la case a pu être décochée dans les 5 s,
+        // et un refus explicite doit gagner sur une minuterie déjà posée.
+        if (window.localStorage.getItem(MAJ_AUTO_KEY) === '0') return;
+        void invoke<EtatMaj>('verifier_maj')
+          .then((etat) => {
+            setMajApp(etat);
+            setMajLue(true);
+            setMajDernier(etat.derniereVerificationMs ?? Date.now());
+            window.localStorage.setItem(MAJ_DERNIER_KEY, String(Date.now()));
+            if (etat.disponible) {
+              // Discret : un toast, pas de modale qui interrompt la lecture.
+              setNotice(tCourant.current('maj.toast', { version: etat.disponible.version }));
+            }
+          })
+          .catch(() => {
+            // Silencieux : une vérification automatique qui échoue ne doit pas
+            // déranger. Le bouton « Rechercher » affiche l'erreur, lui.
+          });
+      }, 5000);
+    }
     return () => {
+      if (minuterieMaj !== null) window.clearTimeout(minuterieMaj);
       unlisten.then((off) => off()).catch(() => {});
       unlistenVerif.then((off) => off()).catch(() => {});
       unlistenFermee.then((off) => off()).catch(() => {});
@@ -2075,6 +2192,7 @@ export default function Home() {
       unlistenResolu.then((off) => off()).catch(() => {});
       unlistenMaj.then((off) => off()).catch(() => {});
       unlistenRecherche.then((off) => off()).catch(() => {});
+      unlistenProgressionMaj.then((off) => off()).catch(() => {});
     };
     // Montage uniquement : rejouer cet effet à chaque changement de
     // `refreshDownloads` réabonnerait l'écouteur d'événements.
@@ -2098,6 +2216,50 @@ export default function Home() {
     setDemarrage('inconnu');
     setDemarrage(await reglerDemarrage(actif));
   }, []);
+
+  /** Recherche une mise à jour, à la demande de l'utilisateur.
+   *
+   *  Contraste voulu avec la vérification automatique : ici l'échec est
+   *  **affiché**. Un utilisateur qui clique a demandé une réponse, pas un
+   *  silence. */
+  async function lancerVerificationMaj() {
+    setMajOccupe('verification');
+    setMajErreur(null);
+    setMajProgression(null);
+    try {
+      const etat = await invoke<EtatMaj>('verifier_maj');
+      setMajApp(etat);
+      setMajLue(true);
+      setMajDernier(etat.derniereVerificationMs ?? Date.now());
+      window.localStorage.setItem(MAJ_DERNIER_KEY, String(Date.now()));
+    } catch (e) {
+      setMajErreur(codeErreurMaj(e));
+    } finally {
+      setMajOccupe(null);
+    }
+  }
+
+  /** Télécharge **et** installe en une action (décision D4), après confirmation.
+   *
+   *  Sous Windows, le cœur ferme l'application au moment d'installer : la
+   *  promesse ne se résout donc pas, et le `finally` ne sert qu'au cas d'échec.
+   *  C'est pour cela qu'aucun délai de sécurité ne remet l'état à zéro — il
+   *  ferait réapparaître un bouton actif pendant que l'installeur travaille. */
+  async function lancerInstallationMaj(version: string) {
+    if (!window.confirm(t('maj.confirmer', { version }))) return;
+    setMajOccupe('installation');
+    setMajErreur(null);
+    setMajProgression(null);
+    try {
+      const etat = await invoke<EtatMaj>('installer_maj');
+      setMajApp(etat);
+    } catch (e) {
+      setMajErreur(codeErreurMaj(e));
+    } finally {
+      setMajOccupe(null);
+      setMajProgression(null);
+    }
+  }
 
   /** Tâche 5.5 — ce que l'écran affiche **après** l'action.
    *
@@ -5210,6 +5372,21 @@ useEffect(() => {
   // n'est jamais atteint depuis une vue qui a déjà rendu son `return`, et le
   // clic « Lire » sur un webtoon téléchargé ne fait strictement rien
   // (mesuré : aucun message, aucune erreur, lecteur absent).
+  //
+  // Dérivés du panneau « Mises à jour » : une fonction pure, aucun état
+  // intermédiaire à maintenir — la leçon du `setState` dans un effet pour
+  // recopier une valeur dérivable (AGENTS.md §14).
+  const majDispo = majApp?.disponible ?? null;
+  const majPhase = phaseMaj({
+    lue: majLue,
+    occupe: majOccupe,
+    disponible: majDispo !== null,
+    progression: majProgression !== null,
+    erreur: majErreur !== null,
+  });
+  const majPourcent = majProgression
+    ? pourcentRecu(majProgression.recu, majProgression.total)
+    : null;
   if (tab === 'settings' && !reader) {
     return (
       <main>
@@ -5568,6 +5745,106 @@ useEffect(() => {
           {demarrage === 'indisponible' && <p className="error">{t('demarrage.indisponible')}</p>}
           {demarrage === 'inconnu' && <p className="muted">{t('demarrage.lecture')}</p>}
           <p className="muted">{t('demarrage.note')}</p>
+        </section>
+
+        {/* Mise à jour **de l'application** (ADR 0020), à ne pas confondre avec
+         *  les nouveaux chapitres, qui ont leur propre panneau.
+         *
+         *  Trois informations sont volontairement visibles : la version
+         *  installée, la date du dernier contrôle (sinon « à jour » ne dit pas
+         *  si on a cherché aujourd'hui ou il y a trois mois), et la raison d'un
+         *  bouton désactivé — un bouton grisé sans explication se lit comme une
+         *  panne. Le restant est **dérivé** par `phaseMaj`, jamais maintenu à la
+         *  main.
+         *
+         *  Le remplacement d'un chapitre en cours de téléchargement n'est pas
+         *  lancé : l'installeur ferme l'application, donc la file serait perdue.
+         *  `downloading` et `queueCount` sont l'état existant, il n'y a pas de
+         *  second compteur.
+         */}
+        <section className="panel">
+          <h2>{t('maj.titre')}</h2>
+          <label className="switch-row">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={majAuto}
+              onChange={(e) => {
+                const v = e.target.checked;
+                setMajAuto(v);
+                window.localStorage.setItem(MAJ_AUTO_KEY, v ? '1' : '0');
+              }}
+            />
+            <span>{t('maj.auto')}</span>
+          </label>
+          <p className="muted">{t('maj.auto.note')}</p>
+          <p className="muted">
+            {t('maj.version', { version: majApp?.versionCourante ?? '…' })}
+          </p>
+          {majDernier !== null && (
+            <p className="muted">
+              {t('maj.dernier', { date: new Date(majDernier).toLocaleString(langue) })}
+            </p>
+          )}
+
+          <div className="chips">
+            <button
+              className="btn"
+              disabled={majOccupe !== null}
+              onClick={() => void lancerVerificationMaj()}
+            >
+              {majOccupe === 'verification' ? t('maj.verification') : t('maj.verifier')}
+            </button>
+            {majDispo && (
+              <button
+                className="btn btn-primary"
+                disabled={majOccupe !== null || downloading || queueCount > 0}
+                onClick={() => void lancerInstallationMaj(majDispo.version)}
+              >
+                {t('maj.installer', { version: majDispo.version })}
+              </button>
+            )}
+          </div>
+          {(downloading || queueCount > 0) && majDispo && (
+            <p className="muted">{t('maj.file.active')}</p>
+          )}
+
+          {majPhase === 'disponible' && majDispo && (
+            <>
+              <p className="note-ok">
+                {t('maj.disponible', { version: majDispo.version })}
+              </p>
+              {majDispo.notes && <p className="muted">{majDispo.notes}</p>}
+            </>
+          )}
+          {majPhase === 'a_jour' && <p className="muted">{t('maj.a.jour')}</p>}
+          {majPhase === 'telechargement' &&
+            (majPourcent === null ? (
+              <p className="muted" aria-live="polite">
+                {t('maj.telechargement')}
+              </p>
+            ) : (
+              <>
+                <div
+                  className="progress"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={majPourcent}
+                  aria-label={t('maj.telechargement')}
+                >
+                  <div className="progress-bar" style={{ width: `${majPourcent}%` }} />
+                </div>
+                <p className="muted" aria-live="polite">
+                  {t('maj.progression', { p: majPourcent })}
+                </p>
+              </>
+            ))}
+          {majErreur && (
+            <p className="error" role="status">
+              {t(MAJ_ERREUR_CLE[majErreur])}
+            </p>
+          )}
         </section>
 
         {/* Tâche 5.5 — journaux de diagnostic.

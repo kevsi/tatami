@@ -123,6 +123,34 @@ const FR = {
   "demarrage.note":
     "Indépendant de « fermer met dans la zone » : les deux réglages n’ont pas la même conséquence.",
 
+  // --- Mise à jour de l'application (ADR 0020) ---
+  "maj.titre": "Mises à jour",
+  "maj.auto": "Rechercher les mises à jour au démarrage",
+  "maj.auto.note":
+    "Au plus une vérification toutes les 24 heures. La requête interroge la page des versions publiées sur GitHub, qui voit votre adresse IP ; rien d’autre n’est transmis.",
+  "maj.version": "Version installée : {version}",
+  "maj.dernier": "Dernière recherche : {date}",
+  "maj.verifier": "Rechercher des mises à jour",
+  "maj.verification": "Recherche en cours…",
+  "maj.disponible": "La version {version} est disponible.",
+  "maj.a.jour": "Tatami est à jour.",
+  "maj.installer": "Télécharger et installer {version}",
+  "maj.confirmer":
+    "Tatami va se fermer, installer la version {version}, puis redémarrer. Continuer ?",
+  "maj.telechargement": "Téléchargement de la mise à jour…",
+  "maj.progression": "Téléchargement : {p} %",
+  "maj.toast": "Mise à jour {version} disponible dans les Paramètres.",
+  "maj.file.active":
+    "Un téléchargement de chapitre est en cours : terminez-le avant d’installer une mise à jour, sinon la file serait perdue.",
+  "maj.erreur.reseau":
+    "La page des versions est injoignable. Vérifiez la connexion, puis réessayez.",
+  "maj.erreur.signature":
+    "La mise à jour n’a pas pu être vérifiée (signature absente ou invalide). Rien n’a été installé.",
+  "maj.erreur.espace": "Il n’y a pas assez d’espace disque pour télécharger l’installeur.",
+  "maj.erreur.droits":
+    "Windows a refusé l’écriture du fichier téléchargé. Vérifiez les droits du dossier de téléchargement.",
+  "maj.erreur.inconnu": "La vérification a échoué. Réessayez plus tard.",
+
   // --- Zone de notification (tâche 3.4) ---
   //
   // Ces libellés sont **appliqués par Rust** via `set_libelles` : le menu est
@@ -707,6 +735,33 @@ const EN: Record<Cle, string> = {
     "The system refuses to register an autostart entry; the option stays unavailable.",
   "demarrage.note":
     "Independent from “closing hides to the notification area”: the two settings do not have the same consequence.",
+
+  // --- Application updates (ADR 0020) ---
+  "maj.titre": "Updates",
+  "maj.auto": "Check for updates on startup",
+  "maj.auto.note":
+    "At most one check every 24 hours. The request reads the published releases page on GitHub, which sees your IP address; nothing else is sent.",
+  "maj.version": "Installed version: {version}",
+  "maj.dernier": "Last check: {date}",
+  "maj.verifier": "Check for updates",
+  "maj.verification": "Checking…",
+  "maj.disponible": "Version {version} is available.",
+  "maj.a.jour": "Tatami is up to date.",
+  "maj.installer": "Download and install {version}",
+  "maj.confirmer":
+    "Tatami will close, install version {version}, then restart. Continue?",
+  "maj.telechargement": "Downloading the update…",
+  "maj.progression": "Downloading: {p}%",
+  "maj.toast": "Update {version} available in Settings.",
+  "maj.file.active":
+    "A chapter download is in progress: finish it before installing an update, or the queue would be lost.",
+  "maj.erreur.reseau": "The releases page is unreachable. Check your connection, then try again.",
+  "maj.erreur.signature":
+    "The update could not be verified (missing or invalid signature). Nothing was installed.",
+  "maj.erreur.espace": "There is not enough disk space to download the installer.",
+  "maj.erreur.droits":
+    "Windows refused to write the downloaded file. Check the permissions of the download folder.",
+  "maj.erreur.inconnu": "The check failed. Try again later.",
 
   // --- Notification area (task 3.4) ---
   "zone.ouvrir": "Open Tatami",

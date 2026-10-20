@@ -4964,6 +4964,15 @@ SignPath (5.6) et le passage du dépôt en public.
   dans `tauri-plugin-updater-2.11.0/src/config.rs`). Les valeurs de production
   (`pubkey`, endpoint GitHub, `createUpdaterArtifacts`) entrent dans
   `tauri.conf.json` en M6, quand la clé existe.
+- [x] **Prémisse corrigée le 2026-10-20.** Cette tâche supposait qu'une
+  configuration **absente** suffisait. Faux, et mesuré : sans section
+  `plugins.updater`, l'application **meurt au démarrage** —
+  `PluginInitialization("updater", "invalid type: null, expected struct Config")`
+  — parce que `pubkey` n'a pas de valeur par défaut dans
+  `tauri-plugin-updater-2.11.0/src/config.rs`. `tauri.conf.json` porte donc
+  désormais `plugins.updater = { pubkey: "", endpoints: [] }` : aucun réseau,
+  et `check()` rend `EmptyEndpoints` (lu dans `updater.rs:371`), classé
+  `inconnu`. M6 remplace ces deux valeurs.
 - [x] **Critère de sortie** : `cargo fmt --check`,
   `cargo clippy --all-targets -- -D warnings`, `cargo test` verts ; un
   `tauri build --config src-tauri/tauri.test.conf.json` local avec la **clé de
@@ -4975,67 +4984,77 @@ SignPath (5.6) et le passage du dépôt en public.
 
 #### M2 — Cœur Rust : vérifier, télécharger, installer
 
-- [ ] Définir dans `maj.rs` les types sérialisables `EtatMaj`,
-  `VersionDisponible`, `PhaseMaj` et les codes d'erreur stables (`reseau`,
-  `signature`, `espace`, `droits`, `inconnu`). Le message technique va au
-  journal, pas à l'écran.
-- [ ] Implémenter `etat_maj` (version courante lue via
+- [x] Définir dans `maj.rs` les types sérialisables `EtatMaj`,
+  `VersionDisponible` et les codes d'erreur stables (`reseau`, `signature`,
+  `espace`, `droits`, `inconnu`). Le message technique va au journal, pas à
+  l'écran. **Écart assumé** : `PhaseMaj` côté Rust a été abandonné — sans
+  producteur, le type aurait été du code mort ; la phase est **dérivée** par
+  `phaseMaj(...)` dans `lib/maj.ts`, où elle est testée.
+- [x] Implémenter `etat_maj` (version courante lue via
   `app.package_info().version`, état, dernier contrôle), `verifier_maj`
   (`UpdaterExt::updater()?.check()`) et `installer_maj` (re-contrôle du
   manifeste puis `download_and_install`, événements de progression). Pas
   d'`app.restart()` ni de `tauri-plugin-process` : sous Windows le plugin ferme
   l'application après avoir lancé l'installeur, et NSIS la relance
   (`restart_after_install` vaut `true` par défaut).
-- [ ] Ne **pas** conserver l'objet `Update` entre deux commandes : il porte le
+- [x] Ne **pas** conserver l'objet `Update` entre deux commandes : il porte le
   contexte complet du plugin (configuration, client, hooks) et le garder en état
   géré pour économiser un GET de quelques kilo-octets ajoute une pièce mobile
   et un manifeste périmé. `installer_maj` refait donc le contrôle, puis installe
   la version qu'il vient de lire.
-- [ ] Éviter deux installations concurrentes par un drapeau atomique
+- [x] Éviter deux installations concurrentes par un drapeau atomique
   (comparaison-échange), jamais par un verrou tenu au travers d'un `await`.
-- [ ] Brancher `on_before_exit` de l'updater sur la journalisation du nombre de
+- [x] Brancher `on_before_exit` de l'updater sur la journalisation du nombre de
   téléchargements actifs ; il n'y a **pas** de file côté cœur à vider (le front
   pilote les chapitres un par un), donc la garde « pas d'installation pendant un
   téléchargement » vit dans l'interface (M3). Ne pas laisser de transaction
   SQLite ouverte.
-- [ ] Ajouter les commandes à `generate_handler!` et les appeler depuis le front
+- [x] Ajouter les commandes à `generate_handler!` et les appeler depuis le front
   **dans le même lot** : la porte `aucune_commande_tauri_nest_morte` échoue dès
   qu'une commande est enregistrée sans appelant. M2 et le câblage de M3 se
-  livrent donc ensemble.
-- [ ] **Critère de sortie** : tests unitaires des transitions d'état et du
-  mapping d'erreurs ; `cargo fmt --check`,
-  `cargo clippy --all-targets -- -D warnings`, `cargo test` verts ; un appel
-  `verifier_maj` hors ligne rend une erreur propre et ne bloque pas
-  l'application.
+  livrent donc ensemble. **Limite mesurée de la porte** : elle cherche le nom
+  de la commande dans **tout** le texte de `app/` et `lib/`, commentaires
+  compris — un commentaire citant `etat_maj` la satisfaisait alors que la
+  commande n'était pas appelée. À resserrer (retirer les commentaires) dans une
+  tâche de dette.
+- [x] **Critère de sortie** : tests unitaires des transitions d'état et du
+  mapping d'erreurs (6) ; `cargo fmt --check`,
+  `cargo clippy --all-targets -- -D warnings`, `cargo test` verts (267 tests
+  dans la bibliothèque, 1 porte de commandes mortes, 23 tests de contrat) ; un
+  appel `verifier_maj` sans endpoint rend `inconnu` — `EmptyEndpoints` mesuré
+  en lançant l'application — et ne bloque pas l'application.
 
 #### M3 — Interface, i18n et accessibilité
 
-- [ ] Écrire `apps/desktop/lib/maj.ts` (fonctions pures) :
-  `doitVerifierAuto({ actif, dernier, maintenant })`, `etatAffichage`,
-  `formatProgression`, `cleErreur`. Tests `node:test` dans `lib/`.
-- [ ] Ajouter un panneau **Mises à jour** dans la vue Réglages (`page.tsx`) :
+- [x] Écrire `apps/desktop/lib/maj.ts` (fonctions pures) :
+  `doitVerifierAuto({ actif, dernier, maintenant })`, `phaseMaj`,
+  `pourcentRecu`, `codeErreurMaj`, `horodatage`. Tests `node:test` dans
+  `lib/maj.test.ts` (9). La phase est calculée **côté interface** : voir
+  l'écart assumé de M2.
+- [x] Ajouter un panneau **Mises à jour** dans la vue Réglages (`page.tsx`) :
   version courante, interrupteur de vérification automatique, dernier contrôle,
   bouton « Rechercher », version disponible + notes, bouton « Télécharger et
   installer », barre de progression, erreurs traduites.
-- [ ] Vérification automatique : effet de montage, délai de 5 s, au plus une
+- [x] Vérification automatique : effet de montage, délai de 5 s, au plus une
   fois par 24 h, silencieux en cas d'échec ; dépendre d'un **primitif**
   (`langue`, `majAuto`) et jamais de `t` (leçon `hooks:check`). Lire
   `localStorage` dans un effet de montage, pas dans l'initialiseur de `useState`
   (leçon hydratation).
-- [ ] Bandeau/toast discret quand une version est disponible ; pas de modale qui
+- [x] Bandeau/toast discret quand une version est disponible ; pas de modale qui
   interrompt le lecteur. Confirmation avant installation : l'application va se
   fermer et redémarrer.
-- [ ] Refuser l'installation si la file de téléchargements est active
+- [x] Refuser l'installation si la file de téléchargements est active
   (réutiliser l'état existant, ne pas créer un second compteur) ; afficher la
   raison.
-- [ ] Accessibilité : `role="progressbar"` + `aria-valuenow/min/max`, statut en
+- [x] Accessibilité : `role="progressbar"` + `aria-valuenow/min/max`, statut en
   `aria-live="polite"`, libellés de boutons explicites, aucun état signalé par
   la couleur seule. Tokens CSS existants uniquement, aucun `#hex` ni valeur
   magique.
-- [ ] Ajouter les clés FR/EN (`maj.*`) dans `i18n.ts` ; déclarer les paires de
-  types dans `scripts/check-type-ipc.mjs` pour `EtatMaj` et
-  `VersionDisponible`.
-- [ ] **Critère de sortie** : `pnpm typecheck`, `pnpm lint` (5 avertissements de
+- [x] Ajouter les clés FR/EN (`maj.*`) dans `i18n.ts` (20 clés, 430 au total) ;
+  déclarer les paires de types dans `scripts/check-type-ipc.mjs` pour `EtatMaj`,
+  `VersionDisponible` et la progression d'événement (`ProgressionMaj` ↔
+  `maj::Progression`).
+- [x] **Critère de sortie** : `pnpm typecheck`, `pnpm lint` (5 avertissements de
   référence, 0 erreur), `pnpm i18n:check`, `pnpm hooks:check`, `pnpm ipc:check`,
   `pnpm pages:check`, `pnpm build` verts ; capture Playwright du panneau en
   clair et en sombre, sans débordement.
@@ -5248,3 +5267,47 @@ SignPath (5.6) et le passage du dépôt en public.
   les deux bundles et les deux `.sig` étaient écrits — statut du pipeline
   PowerShell, pas un échec (piège déjà consigné en AGENTS.md §14).
   Prochaine action : M2 (commandes `etat_maj`, `verifier_maj`, `installer_maj`).
+- **2026-10-20** — **M2 et M3 livrés ensemble** (la porte
+  `aucune_commande_tauri_nest_morte` l'exige). Cœur : `src-tauri/src/maj.rs`
+  (`EtatMaj`, `VersionDisponible`, progression, `classer`, `etat_maj`,
+  `verifier_maj`, `installer_maj`, drapeau atomique, `on_before_exit`), module
+  déclaré dans `lib.rs`, état géré et trois commandes enregistrées dans
+  `main.rs`. Interface : `lib/maj.ts` (+ `lib/maj.test.ts`, 9 tests),
+  panneau « Mises à jour » dans Réglages, 20 clés FR/EN (`maj.*`), paires de
+  types dans `check-type-ipc.mjs`. `PhaseMaj` côté Rust **abandonné** (aucun
+  producteur : la phase est dérivée par `phaseMaj(...)`, testée).
+- **2026-10-20** — **défaut trouvé en lançant l'application, invisible à
+  `cargo test`.** Sans section `plugins.updater`, le plugin reçoit `null` et
+  l'application meurt au démarrage :
+  `PluginInitialization("updater", "invalid type: null, expected struct
+  Config")` — `pubkey` n'a pas de valeur par défaut
+  (`tauri-plugin-updater-2.11.0/src/config.rs`). Le commentaire de M1
+  (« sans configuration, la vérification rend une erreur propre ») était faux.
+  `tauri.conf.json` porte donc `plugins.updater = { pubkey: "", endpoints: [] }` ;
+  `check()` rend `EmptyEndpoints` (`updater.rs:371`), classé `inconnu`.
+  Corollaire appliqué : `installer_maj` remet `disponible` à zéro quand le
+  manifeste ne propose plus rien, sinon l'écran continuerait d'annoncer une
+  mise à jour installable.
+- **2026-10-20** — preuves M2/M3. Front : `typecheck` vert ; `lint` **5
+  avertissements, 0 erreur** (compte de référence tenu) ; `i18n:check` **430
+  clés** FR/EN, 0 morte ; `hooks:check`, `chemins:check`, `pages:check`,
+  `perso:check`, `moteur:check`, `ipc:check` (13 paires) verts ; `test` **167
+  tests, 0 échec** (dont les 9 de `maj.test.ts`) ; `build` vert. Cœur :
+  `fmt --check`, `clippy --all-targets -- -D warnings`, `cargo test` **267 +
+  1 + 23**, 0 échec. Application réelle (build de dev, CDP 9225 via
+  `WEBVIEW2_USER_DATA_FOLDER` pour ne pas toucher aux instances de
+  l'utilisateur) : captures `.mesures/maj-panneau-clair.png` et
+  `-sombre.png`, panneau `scrollWidth = clientWidth = 1206`, **0
+  débordement** mesuré élément par élément, **0 erreur de console**. La version
+  affichée `0.1.0` vient de `etat_maj` (aller-retour IPC réel) ; un clic sur
+  « Rechercher » affiche « La vérification a échoué » (`maj.erreur.inconnu`),
+  et le journal du cœur écrit `mise a jour (verifier) : Updater does not have
+  any endpoints set.` à **11:43:08.622**, soit **+5,3 s** après le démarrage
+  (11:43:03.3) : la vérification automatique de D2 fonctionne.
+- **2026-10-20** — dette consignée : `aucune_commande_tauri_nest_morte`
+  cherche le nom de la commande dans **tout** le texte de `app/` et `lib/`,
+  commentaires compris. `etat_maj` a passé la porte alors qu'il n'était cité
+  que dans un commentaire ; il est maintenant réellement appelé au montage,
+  mais la porte doit apprendre à ignorer les commentaires (tâche de dette à
+  ouvrir, pas corrigée ici pour ne pas mêler un changement de porte à ce lot).
+  Prochaine action : M4 (workflow de release en mode test).

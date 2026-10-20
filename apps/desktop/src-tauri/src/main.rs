@@ -20,8 +20,8 @@ use tauri::Manager;
 // chemin de `generate_handler!` ne se résout pas.
 use tatami_desktop::pagecache::PageRef;
 use tatami_desktop::{
-    challenge, commands, custom_source, download, journal, library, metacache, moteur, pagecache,
-    recherche, scheduler, shelf, store, tray,
+    challenge, commands, custom_source, download, journal, library, maj, metacache, moteur,
+    pagecache, recherche, scheduler, shelf, store, tray,
 };
 
 fn not_found() -> tauri::http::Response<Vec<u8>> {
@@ -198,8 +198,15 @@ fn main() {
         ))
         // Mise à jour automatique (ADR 0020). Enregistré côté cœur : l'interface
         // ne parle jamais à l'API JS du plugin, elle appellera nos commandes.
-        // Sans `plugins.updater` dans la configuration, aucun point de
-        // terminaison n'existe et la vérification rend une erreur propre.
+        //
+        // **`plugins.updater` est obligatoire même vide.** Mesuré le 2026-10-20 :
+        // sans cette section, le plugin reçoit `null` et l'application meurt au
+        // démarrage (`invalid type: null, expected struct Config`), parce que
+        // `pubkey` n'a pas de valeur par défaut. La section existe donc dans
+        // `tauri.conf.json` avec `pubkey: ""` et `endpoints: []` : aucun réseau
+        // n'est tenté, et la vérification rend `EmptyEndpoints`, classé
+        // `inconnu` (ce n'est pas une panne réseau). M6 y mettra les valeurs de
+        // production.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(sup.clone())
         .manage(Arc::new(store))
@@ -209,6 +216,10 @@ fn main() {
         // commande à l'autre — une commande Tauri est sans état, donc la passe
         // en cours vit ici (cf. `recherche::PasseEnCours`).
         .manage(Arc::new(recherche::PasseEnCours::default()))
+        // Mise à jour de l'application (ADR 0020) : le disponible et l'horodatage
+        // survivent d'un appel de commande à l'autre, sinon `etat_maj` oublierait
+        // qu'une version a été trouvée. Aucun objet `Update` n'y est conservé.
+        .manage(maj::EtatPartage::default())
         .register_asynchronous_uri_scheme_protocol("tatami", move |ctx, request, responder| {
             // La poignée de l'application, lue sur le contexte du gestionnaire
             // de protocole (`UriSchemeContext::app_handle`, vérifié dans la
@@ -317,6 +328,9 @@ fn main() {
             custom_source::importer_source,
             custom_source::lister_sources_custom,
             custom_source::supprimer_source_custom,
+            maj::etat_maj,
+            maj::verifier_maj,
+            maj::installer_maj,
         ])
         .manage(download::DownloadState::default())
         .setup(|app| {

@@ -4904,3 +4904,13 @@ Empreintes des artefacts :
 - **2026-10-20** — build de release OK et vérifié ; app fermée, aucun java
   orphelin. Signature des installeurs (5.6) toujours hors périmètre : certificat
   de signature de code non fourni, build **non signé** comme celui du 2026-10-18.
+- **2026-10-20** — release **v0.1.0** publiée sur le distant : tag annoté `v0.1.0`
+  (commit `13b6cf3`), assets `Tatami_0.1.0_x64_en-US.msi`,
+  `Tatami_0.1.0_x64-setup.exe` et `SHA256SUMS.txt` ; les digests calculés par
+  GitHub (`sha256:32eb7f35…`, `sha256:781f0756…`) sont identiques aux empreintes
+  locales. Dépôt encore **privé** : la release ne sera lisible par un tiers
+  qu'après changement de visibilité (action utilisateur — le jeton de l'agent n'a
+  pas le droit Administration). Candidature **SignPath Foundation** préparée :
+  `CODE_SIGNING.md` (phrase imposée, rôles, politique de confidentialité) et
+  dossier de candidature local `.mesures/signpath/candidature.md`. La 5.6 reste
+  ouverte jusqu'au premier build **signé** produit en CI.

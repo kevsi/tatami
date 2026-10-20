@@ -701,8 +701,42 @@ button:disabled {
 .slot > .card {
   flex: 1;
   min-width: 0;
-  /* Laisse la place à l'interrupteur posé en haut à droite. */
+  /* Laisse la place à l'interrupteur (à droite) et à l'épingle (à gauche). */
   padding-right: 44px;
+  padding-left: 34px;
+}
+
+.slot-pin {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  translate: 0 -50%;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.slot-pin:hover {
+  color: var(--text-1);
+  background: var(--surface-3);
+}
+
+.slot-pin[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.slot-pin:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .slot-switch {

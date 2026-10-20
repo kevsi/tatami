@@ -1,0 +1,18 @@
+{
+  "sources": [
+    { "fichier": "anime-sama.js", "lang": "fr", "actif": true },
+    { "fichier": "aniverse.js", "lang": "fr", "actif": true },
+    { "fichier": "bananascans.js", "lang": "en", "actif": true },
+    { "fichier": "hentai-scantrad.js", "lang": "fr", "actif": true },
+    { "fichier": "hhentai-fr.js", "lang": "fr", "actif": true },
+    { "fichier": "lire-manga.js", "lang": "fr", "actif": true },
+    { "fichier": "mangadex-api.js", "lang": "ja", "actif": true },
+    { "fichier": "mangadexFr.js", "lang": "fr", "actif": true },
+    { "fichier": "niadd-fr.js", "lang": "fr", "actif": true },
+    { "fichier": "ortega-scans.js", "lang": "fr", "actif": true },
+    { "fichier": "pantheon-scan.js", "lang": "fr", "actif": true },
+    { "fichier": "rimuscan.js", "lang": "fr", "actif": true },
+    { "fichier": "scan-manga.js", "lang": "fr", "actif": false },
+    { "fichier": "sushiscan.js", "lang": "fr", "actif": true }
+  ]
+}

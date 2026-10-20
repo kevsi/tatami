@@ -12,6 +12,7 @@
 //! - `dunce::canonicalize` est utilisé pour éviter le préfixe `\\?\` sur
 //!   Windows, cohérent avec le reste du codebase.
 
+use serde::Deserialize;
 use std::{fs, path::Path, path::PathBuf, sync::Arc};
 
 use tauri::State;
@@ -198,7 +199,251 @@ fn supprimer_source_custom_impl(
                 .map_err(|e| format!("suppression du fichier impossible : {e}"))?;
         }
     }
-    store.remove_custom_source(id)
+    store.remove_custom_source(id)?;
+    // Si la source venait du bundle, sa suppression doit être définitive : le
+    // semis du prochain démarrage la verrait sinon comme « fichier manquant »
+    // et la recopierait. `mark` ne touche qu'une ligne existante, donc une
+    // source importée par l'utilisateur n'est pas concernée.
+    if let Err(e) = store.mark_bundled_source_deleted(id) {
+        tracing::warn!("source livrée {id} : pierre tombale impossible : {e}");
+    }
+    Ok(())
+}
+
+// ---------- Sources livrées avec l'application ----------
+
+#[derive(Debug, Deserialize)]
+struct ManifesteSources {
+    sources: Vec<EntreeSourceEmbarquee>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EntreeSourceEmbarquee {
+    fichier: String,
+    #[serde(default)]
+    lang: String,
+    #[serde(default = "actif_par_defaut")]
+    actif: bool,
+}
+
+fn actif_par_defaut() -> bool {
+    true
+}
+
+/// Dossier des sources livrées : celui des ressources installées, avec un repli
+/// sur l'arbre de développement (`cargo test`, `tauri dev` avant copie des
+/// ressources).
+fn dossier_sources_embarquees(resource_dir: Option<&Path>) -> Option<PathBuf> {
+    let mut candidats = Vec::new();
+    if let Some(rd) = resource_dir {
+        candidats.push(rd.join("sources"));
+    }
+    candidats.push(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("sources"),
+    );
+    candidats
+        .into_iter()
+        .find(|d| d.join("manifest.json").is_file())
+}
+
+/// Valide le nom d'un fichier livré. Rend l'identifiant (nom sans `.js`) si le
+/// nom est sûr, `None` sinon : le manifeste est une donnée du paquet, mais une
+/// entrée `../x.js` ne doit jamais pouvoir écrire hors du dossier des sources.
+fn identifiant_embarque(fichier: &str) -> Option<String> {
+    if !fichier.ends_with(".js") || fichier.len() <= 3 {
+        return None;
+    }
+    if fichier.contains('/')
+        || fichier.contains('\\')
+        || fichier.contains(':')
+        || fichier.contains("..")
+    {
+        return None;
+    }
+    fichier
+        .strip_suffix(".js")
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+}
+
+fn empreinte(chemin: &Path) -> Result<String, String> {
+    crate::moteur::empreinte_fichier(chemin)
+        .map_err(|e| format!("empreinte de {} : {e}", chemin.display()))
+}
+
+/// Écrit un fichier par `tmp` + `rename`, comme le reste du dépôt : un arrêt
+/// au milieu ne laisse jamais un script tronqué que le moteur lirait.
+fn ecrire_atomique(dest: &Path, octets: &[u8]) -> Result<(), String> {
+    let tmp = dest.with_extension("js.tmp");
+    fs::write(&tmp, octets).map_err(|e| format!("écriture de {} : {e}", tmp.display()))?;
+    if dest.exists() {
+        fs::remove_file(dest).map_err(|e| format!("remplacement de {} : {e}", dest.display()))?;
+    }
+    fs::rename(&tmp, dest).map_err(|e| format!("renommage de {} : {e}", tmp.display()))
+}
+
+/// Recopie les sources livrées dans le dossier que lit le moteur.
+///
+/// Règles, toutes dictées par un défaut mesuré :
+/// - un fichier **modifié** par l'utilisateur n'est jamais écrasé (on compare
+///   l'empreinte présente à celle que nous avions écrite) ;
+/// - une source **supprimée** par l'utilisateur ne revient pas (pierre tombale
+///   en base, posée par `supprimer_source_custom`) ;
+/// - une version livrée **plus récente** remplace une copie restée intacte,
+///   sans quoi un correctif de parseur ne partirait jamais dans une mise à jour ;
+/// - `actif: false` désactive la source **à la première rencontre** seulement :
+///   un utilisateur qui la réactive ensuite n'est pas contredit au démarrage
+///   suivant.
+///
+/// Rend le nombre de fichiers écrits (copies et mises à jour).
+pub fn semer_sources_embarquees(
+    store: &Store,
+    resource_dir: Option<&Path>,
+) -> Result<usize, String> {
+    semer_sources_dans(store, resource_dir, &sources_dir())
+}
+
+/// Même semis, avec le dossier de destination paramétré : les tests écrivent
+/// dans un dossier temporaire, jamais dans les sources réelles de la machine
+/// (leçon AGENTS.md §14 : `cargo test` écrivait dans la bibliothèque de
+/// l'utilisateur).
+fn semer_sources_dans(
+    store: &Store,
+    resource_dir: Option<&Path>,
+    dest_dir: &Path,
+) -> Result<usize, String> {
+    let Some(src_dir) = dossier_sources_embarquees(resource_dir) else {
+        tracing::info!("sources embarquées : aucun manifeste, rien à semer");
+        return Ok(0);
+    };
+    let manifeste = fs::read_to_string(src_dir.join("manifest.json"))
+        .map_err(|e| format!("lecture du manifeste des sources : {e}"))?;
+    let manifeste: ManifesteSources = serde_json::from_str(&manifeste)
+        .map_err(|e| format!("manifeste des sources invalide : {e}"))?;
+
+    fs::create_dir_all(dest_dir).map_err(|e| format!("création du dossier des sources : {e}"))?;
+
+    let mut ecrits = 0usize;
+    for entree in manifeste.sources {
+        let Some(id) = identifiant_embarque(&entree.fichier) else {
+            tracing::warn!(
+                "manifeste des sources : nom de fichier refusé ({:?})",
+                entree.fichier
+            );
+            continue;
+        };
+        let src = src_dir.join(&entree.fichier);
+        if !src.is_file() {
+            tracing::warn!("source embarquée {id} : fichier absent du paquet");
+            continue;
+        }
+        let empreinte_livree = match empreinte(&src) {
+            Ok(h) => h,
+            Err(e) => {
+                tracing::warn!("{e}");
+                continue;
+            }
+        };
+        let etat = match store.bundled_source_state(&id) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!("source embarquée {id} : état illisible : {e}");
+                continue;
+            }
+        };
+        if etat.as_ref().is_some_and(|e| e.deleted) {
+            tracing::info!("source embarquée {id} : supprimée par l'utilisateur, non recopiée");
+            continue;
+        }
+
+        let dest = dest_dir.join(&entree.fichier);
+        let existait = dest.is_file();
+        let mut action = "inchangée";
+        let mut ecrit = false;
+
+        if existait {
+            let empreinte_presente = match empreinte(&dest) {
+                Ok(h) => h,
+                Err(e) => {
+                    tracing::warn!("{e}");
+                    continue;
+                }
+            };
+            // « Intacte » veut dire : identique à ce que NOUS avions écrit.
+            // Une base migrée n'a pas encore d'état : on laisse alors le
+            // fichier tel quel (il peut être une version utilisateur), et on
+            // mémorise seulement l'empreinte livrée.
+            let intacte = etat
+                .as_ref()
+                .is_some_and(|e| e.sha256 == empreinte_presente);
+            if intacte && empreinte_presente != empreinte_livree {
+                let octets = match fs::read(&src) {
+                    Ok(o) => o,
+                    Err(e) => {
+                        tracing::warn!("lecture de {} : {e}", src.display());
+                        continue;
+                    }
+                };
+                if let Err(e) = ecrire_atomique(&dest, &octets) {
+                    tracing::warn!("{e}");
+                    continue;
+                }
+                action = "mise à jour";
+                ecrit = true;
+            } else if !intacte {
+                action = "conservée (modifiée par l'utilisateur)";
+            }
+        } else {
+            let octets = match fs::read(&src) {
+                Ok(o) => o,
+                Err(e) => {
+                    tracing::warn!("lecture de {} : {e}", src.display());
+                    continue;
+                }
+            };
+            if let Err(e) = ecrire_atomique(&dest, &octets) {
+                tracing::warn!("{e}");
+                continue;
+            }
+            action = "copiée";
+            ecrit = true;
+        }
+
+        let Some(dest_str) = dest.to_str() else {
+            tracing::warn!("source embarquée {id} : chemin de destination non UTF-8");
+            continue;
+        };
+        let lang = if entree.lang.trim().is_empty() {
+            "fr"
+        } else {
+            entree.lang.as_str()
+        };
+        if let Err(e) = store.ensure_custom_source(&id, &id, lang, dest_str) {
+            tracing::warn!("source embarquée {id} : enregistrement impossible : {e}");
+            continue;
+        }
+        // Désactivation par défaut, une seule fois : à la première rencontre
+        // de cette entrée (installation neuve OU mise à jour d'une base qui
+        // n'a pas encore d'état). Réactivée par l'utilisateur, elle reste
+        // active aux démarrages suivants puisque l'état existe.
+        if etat.is_none() && !entree.actif {
+            let cle = format!("custom:{id}");
+            match store.set_source_enabled(&cle, false) {
+                Ok(()) => tracing::info!("source embarquée {id} : désactivée par défaut"),
+                Err(e) => tracing::warn!("source embarquée {id} : désactivation : {e}"),
+            }
+        }
+        if let Err(e) = store.record_bundled_source(&id, &empreinte_livree, false) {
+            tracing::warn!("source embarquée {id} : état non mémorisé : {e}");
+        }
+        if ecrit {
+            ecrits += 1;
+        }
+        tracing::info!("source embarquée {id} : {action}");
+    }
+    Ok(ecrits)
 }
 
 // ---------- Tests ----------
@@ -399,5 +644,167 @@ mod tests {
 
         supprimer_source_custom_impl(&store, "absente", root).unwrap();
         assert!(store.list_custom_sources().unwrap().is_empty());
+    }
+
+    // ---------- Semis des sources livrées ----------
+
+    /// Fabrique un faux paquet de ressources : `<racine>/sources/<fichiers>` +
+    /// `manifest.json`. Le dossier est effacé par le garde.
+    fn paquet(fichiers: &[(&str, &str)], manifeste: &str) -> (PathBuf, DossierGarde) {
+        let racine = std::env::temp_dir().join(format!(
+            "tatami-emb-{}-{}",
+            std::process::id(),
+            COMPTEUR.fetch_add(1, Ordering::Relaxed)
+        ));
+        let sources = racine.join("sources");
+        fs::create_dir_all(&sources).unwrap();
+        for (nom, contenu) in fichiers {
+            fs::write(sources.join(nom), contenu).unwrap();
+        }
+        fs::write(sources.join("manifest.json"), manifeste).unwrap();
+        (racine.clone(), DossierGarde(racine))
+    }
+
+    fn destination() -> (PathBuf, DossierGarde) {
+        let racine = std::env::temp_dir().join(format!(
+            "tatami-emb-dest-{}-{}",
+            std::process::id(),
+            COMPTEUR.fetch_add(1, Ordering::Relaxed)
+        ));
+        (racine.clone(), DossierGarde(racine))
+    }
+
+    #[test]
+    fn semis_copie_les_sources_et_desactive_scan_manga_une_seule_fois() {
+        let store = store_memoire();
+        let (pack, _gpack) = paquet(
+            &[("bon.js", "// bon"), ("scan-manga.js", "// scan")],
+            r#"{"sources":[
+                 {"fichier":"bon.js","lang":"fr","actif":true},
+                 {"fichier":"scan-manga.js","lang":"fr","actif":false}
+               ]}"#,
+        );
+        let (dest_root, _gdest) = destination();
+        let dest = dest_root.join("sources");
+
+        let n = semer_sources_dans(&store, Some(pack.as_path()), &dest).unwrap();
+        assert_eq!(n, 2, "les deux fichiers doivent être copiés");
+        assert!(dest.join("bon.js").is_file());
+        assert!(dest.join("scan-manga.js").is_file());
+        assert_eq!(store.list_custom_sources().unwrap().len(), 2);
+        assert_eq!(
+            store.disabled_sources().unwrap(),
+            vec!["custom:scan-manga".to_string()],
+            "le manifeste doit la désactiver à la première rencontre"
+        );
+
+        // L'utilisateur la réactive : le démarrage suivant ne doit pas la
+        // re-désactiver (l'état de semis existe désormais).
+        store.set_source_enabled("custom:scan-manga", true).unwrap();
+        let n2 = semer_sources_dans(&store, Some(pack.as_path()), &dest).unwrap();
+        assert_eq!(n2, 0, "aucune écriture au second démarrage");
+        assert!(
+            store.disabled_sources().unwrap().is_empty(),
+            "un choix explicite de l'utilisateur ne doit pas être contredit"
+        );
+    }
+
+    #[test]
+    fn semis_preserve_un_fichier_modifie_et_met_a_jour_un_fichier_intact() {
+        let store = store_memoire();
+        let (pack, _gpack) = paquet(
+            &[("modifie.js", "// v1"), ("intact.js", "// v1")],
+            r#"{"sources":[
+                 {"fichier":"modifie.js","lang":"fr","actif":true},
+                 {"fichier":"intact.js","lang":"fr","actif":true}
+               ]}"#,
+        );
+        let (dest_root, _gdest) = destination();
+        let dest = dest_root.join("sources");
+        semer_sources_dans(&store, Some(pack.as_path()), &dest).unwrap();
+
+        fs::write(dest.join("modifie.js"), "// version utilisateur").unwrap();
+        fs::write(pack.join("sources").join("modifie.js"), "// v2").unwrap();
+        fs::write(pack.join("sources").join("intact.js"), "// v2").unwrap();
+
+        let n = semer_sources_dans(&store, Some(pack.as_path()), &dest).unwrap();
+        assert_eq!(n, 1, "seul le fichier intact doit être mis à jour");
+        assert_eq!(
+            fs::read_to_string(dest.join("modifie.js")).unwrap(),
+            "// version utilisateur",
+            "un fichier modifié par l'utilisateur ne doit jamais être écrasé"
+        );
+        assert_eq!(
+            fs::read_to_string(dest.join("intact.js")).unwrap(),
+            "// v2",
+            "une copie intacte doit recevoir la version livrée plus récente"
+        );
+    }
+
+    #[test]
+    fn semis_ne_ressuscite_pas_une_source_supprimee() {
+        let store = store_memoire();
+        let (pack, _gpack) = paquet(
+            &[("bon.js", "// bon")],
+            r#"{"sources":[{"fichier":"bon.js","lang":"fr","actif":true}]}"#,
+        );
+        let (dest_root, _gdest) = destination();
+        let dest = dest_root.join("sources");
+        semer_sources_dans(&store, Some(pack.as_path()), &dest).unwrap();
+
+        supprimer_source_custom_impl(&store, "bon", &dest).unwrap();
+        assert!(!dest.join("bon.js").exists());
+        assert!(store.list_custom_sources().unwrap().is_empty());
+
+        let n = semer_sources_dans(&store, Some(pack.as_path()), &dest).unwrap();
+        assert_eq!(n, 0);
+        assert!(
+            !dest.join("bon.js").exists(),
+            "une source supprimée par l'utilisateur ne doit pas revenir"
+        );
+        assert!(store.list_custom_sources().unwrap().is_empty());
+    }
+
+    #[test]
+    fn semis_preserve_un_fichier_preexistant_sans_etat() {
+        // Cas de la mise à jour d'une installation existante : le fichier est
+        // là, la base n'a pas encore d'état de semis. On ne peut pas savoir
+        // s'il vient de nous ou de l'utilisateur, donc on ne l'écrase pas.
+        let store = store_memoire();
+        let (pack, _gpack) = paquet(
+            &[("bon.js", "// officiel")],
+            r#"{"sources":[{"fichier":"bon.js","lang":"fr","actif":true}]}"#,
+        );
+        let (dest_root, _gdest) = destination();
+        let dest = dest_root.join("sources");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("bon.js"), "// deja la").unwrap();
+
+        let n = semer_sources_dans(&store, Some(pack.as_path()), &dest).unwrap();
+        assert_eq!(n, 0, "aucune copie : le fichier préexiste");
+        assert_eq!(
+            fs::read_to_string(dest.join("bon.js")).unwrap(),
+            "// deja la"
+        );
+        assert_eq!(store.list_custom_sources().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn semis_refuse_un_nom_de_fichier_hors_du_dossier() {
+        let store = store_memoire();
+        let (pack, _gpack) = paquet(
+            &[("bon.js", "// bon")],
+            r#"{"sources":[
+                 {"fichier":"../evil.js","lang":"fr","actif":true},
+                 {"fichier":"bon.js","lang":"fr","actif":true}
+               ]}"#,
+        );
+        let (dest_root, _gdest) = destination();
+        let dest = dest_root.join("sources");
+        let n = semer_sources_dans(&store, Some(pack.as_path()), &dest).unwrap();
+        assert_eq!(n, 1, "seule l'entrée valide est copiée");
+        assert!(!dest_root.join("evil.js").exists());
+        assert!(!dest.join("evil.js").exists());
+        assert_eq!(store.list_custom_sources().unwrap().len(), 1);
     }
 }

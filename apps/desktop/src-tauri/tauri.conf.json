@@ -33,7 +33,8 @@
       "icons/icon.icns"
     ],
     "resources": {
-      "../../../engine/dist/tatami-engine": "engine/tatami-engine"
+      "../../../engine/dist/tatami-engine": "engine/tatami-engine",
+      "resources/sources": "sources"
     },
     "windows": {
       "nsis": {

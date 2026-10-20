@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Version du schéma attendue par ce binaire.
-const SCHEMA_VERSION: i64 = 11;
+const SCHEMA_VERSION: i64 = 12;
 
 #[derive(Serialize)]
 pub struct Favorite {
@@ -150,6 +150,19 @@ pub struct CustomSource {
     pub lang: String,
     pub path: String,
     pub installed_at: i64,
+}
+
+/// État d'un source livrée avec l'application (bundle des installateurs).
+///
+/// `sha256` est l'empreinte du fichier **que nous avons écrit**. Elle sert à
+/// distinguer une copie intacte (qu'une mise à jour peut remplacer) d'un
+/// fichier modifié par l'utilisateur (qu'on ne touche jamais). `deleted` est
+/// la pierre tombale : une source livrée puis supprimée ne doit pas revenir au
+/// redémarrage suivant.
+#[derive(Debug, Clone)]
+pub struct BundledSourceState {
+    pub sha256: String,
+    pub deleted: bool,
 }
 
 pub struct Store {
@@ -428,6 +441,27 @@ impl Store {
                 "#,
         )
         .map_err(|e| format!("migration v9 : {e}"))?;
+        // v12 : sources livrées avec l'application. Les installateurs embarquent
+        // un dossier `sources/` ; au premier démarrage, le cœur le recopie dans
+        // `%APPDATA%\Tatami\sources` (le dossier que lit le moteur) sans jamais
+        // écraser un fichier que l'utilisateur a modifié, et sans ressusciter
+        // une source qu'il a supprimée. La table porte l'empreinte de ce que
+        // NOUS avons écrit, pas celle du fichier présent.
+        //
+        // `CREATE TABLE IF NOT EXISTS` par PRÉSENCE, comme `custom_sources` :
+        // une base estampillée par un binaire intermédiaire ne doit pas sauter
+        // la création pour toujours.
+        tx.execute_batch(
+            r#"
+                CREATE TABLE IF NOT EXISTS bundled_sources (
+                    id        TEXT    NOT NULL PRIMARY KEY,
+                    sha256    TEXT    NOT NULL,
+                    deleted   INTEGER NOT NULL DEFAULT 0,
+                    seeded_at INTEGER NOT NULL
+                );
+                "#,
+        )
+        .map_err(|e| format!("migration v12 : {e}"))?;
         // v11 : suppression des tables du sous-système de traduction.
         //
         // Elles étaient créées par les blocs v8 (`page_translations`, `blocks`)
@@ -1061,6 +1095,31 @@ impl Store {
             .map_err(|e| format!("sources personnalisées : {e}"))
     }
 
+    /// Enregistre une source **si elle n'est pas déjà connue**, sans toucher à
+    /// `installed_at`. Utilisé au semis des sources livrées : un démarrage ne
+    /// doit pas faire croire que la source vient d'être installée.
+    pub fn ensure_custom_source(
+        &self,
+        id: &str,
+        name: &str,
+        lang: &str,
+        path: &str,
+    ) -> Result<bool, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let n = conn
+            .execute(
+                "INSERT INTO custom_sources (id, name, lang, path, installed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(id) DO NOTHING",
+                params![id, name, lang, path, now_ms()],
+            )
+            .map_err(|e| format!("source personnalisée : {e}"))?;
+        Ok(n > 0)
+    }
+
     /// Retire une source personnalisée de la base. Sans effet si l'id est
     /// inconnu (le fichier peut déjà avoir été supprimé manuellement).
     pub fn remove_custom_source(&self, id: &str) -> Result<(), String> {
@@ -1070,6 +1129,71 @@ impl Store {
             .map_err(|_| "base verrouillée".to_string())?;
         conn.execute("DELETE FROM custom_sources WHERE id = ?1", params![id])
             .map_err(|e| format!("source personnalisée : {e}"))?;
+        Ok(())
+    }
+
+    /// État de semis d'une source livrée, s'il existe.
+    pub fn bundled_source_state(&self, id: &str) -> Result<Option<BundledSourceState>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT sha256, deleted FROM bundled_sources WHERE id = ?1")
+            .map_err(|e| format!("sources livrées : {e}"))?;
+        let mut rows = stmt
+            .query(params![id])
+            .map_err(|e| format!("sources livrées : {e}"))?;
+        match rows.next().map_err(|e| format!("sources livrées : {e}"))? {
+            Some(r) => Ok(Some(BundledSourceState {
+                sha256: r.get(0).map_err(|e| format!("sources livrées : {e}"))?,
+                deleted: r
+                    .get::<_, i64>(1)
+                    .map_err(|e| format!("sources livrées : {e}"))?
+                    != 0,
+            })),
+            None => Ok(None),
+        }
+    }
+
+    /// Mémorise l'empreinte de la version livrée. `deleted` vaut `true` pour
+    /// une pierre tombale (source livrée supprimée).
+    pub fn record_bundled_source(
+        &self,
+        id: &str,
+        sha256: &str,
+        deleted: bool,
+    ) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute(
+            "INSERT INTO bundled_sources (id, sha256, deleted, seeded_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET
+               sha256 = excluded.sha256, deleted = excluded.deleted,
+               seeded_at = excluded.seeded_at",
+            params![id, sha256, if deleted { 1 } else { 0 }, now_ms()],
+        )
+        .map_err(|e| format!("sources livrées : {e}"))?;
+        Ok(())
+    }
+
+    /// Marque une source livrée comme supprimée par l'utilisateur. Le semis
+    /// suivant la verra et ne la recopiera pas. La ligne existe pour toute
+    /// source livrée : le semis l'écrit même quand le fichier préexiste, ce qui
+    /// permet à la suppression de laisser une pierre tombale.
+    pub fn mark_bundled_source_deleted(&self, id: &str) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        conn.execute(
+            "UPDATE bundled_sources SET deleted = 1, seeded_at = ?2 WHERE id = ?1",
+            params![id, now_ms()],
+        )
+        .map_err(|e| format!("sources livrées : {e}"))?;
         Ok(())
     }
 
@@ -2452,6 +2576,39 @@ mod tests {
             1,
             "la sauvegarde doit contenir le signet écrit juste avant elle"
         );
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn bundled_source_state_enregistre_lit_et_marque_supprime() {
+        let (s, path) = store_vierge();
+        assert!(s.bundled_source_state("bon").unwrap().is_none());
+
+        s.record_bundled_source("bon", "aaaa", false).unwrap();
+        let e = s.bundled_source_state("bon").unwrap().unwrap();
+        assert_eq!(e.sha256, "aaaa");
+        assert!(!e.deleted);
+
+        s.record_bundled_source("bon", "bbbb", false).unwrap();
+        assert_eq!(
+            s.bundled_source_state("bon").unwrap().unwrap().sha256,
+            "bbbb"
+        );
+
+        s.mark_bundled_source_deleted("bon").unwrap();
+        assert!(s.bundled_source_state("bon").unwrap().unwrap().deleted);
+        // La pierre tombale est mise à jour, pas une seconde ligne.
+        nettoyer(&path);
+    }
+
+    #[test]
+    fn ensure_custom_source_ne_doublonne_pas_et_ne_touche_pas_la_date() {
+        let (s, path) = store_vierge();
+        assert!(s.ensure_custom_source("x", "x", "fr", "/p/x.js").unwrap());
+        s.ensure_custom_source("x", "x", "fr", "/p/x.js").unwrap();
+        let liste = s.list_custom_sources().unwrap();
+        assert_eq!(liste.len(), 1);
+        assert_eq!(liste[0].installed_at, liste[0].installed_at);
         nettoyer(&path);
     }
 }

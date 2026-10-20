@@ -183,6 +183,17 @@ fn main() {
     tracing::info!("telechargements : {}", racine.display());
     download::definir_racine_telechargements(racine.clone());
 
+    // Sources livrées avec l'application. **Avant `Builder::run`**, donc avant
+    // que le superviseur ne lance le moteur : le `ScriptedSourceLoader` scanne
+    // le dossier des sources à son démarrage, et un fichier copié après ne
+    // serait vu qu'au prochain lancement. Les règles (fichier modifié jamais
+    // écrasé, suppression définitive, `scan-manga` désactivée par défaut) sont
+    // dans `semer_sources_embarquees`.
+    match custom_source::semer_sources_embarquees(&store, resource_dir.as_deref()) {
+        Ok(n) => tracing::info!("sources embarquées : {n} fichier(s) écrit(s)"),
+        Err(e) => tracing::warn!("sources embarquées : semis impossible : {e}"),
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         // Tâche 3.3. L'enregistrement est indispensable même si l'envoi part de

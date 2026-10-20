@@ -7,6 +7,13 @@ import { bandeVirtualisableEst, decalageAncrage, fenetreBande, hauteurRendueMesu
 import { refusMoteur } from '../lib/scripts-refuses';
 import { reconcilierListeBlanche } from '../lib/liste-blanche';
 import {
+  EPINGLES_KEY,
+  lireEpingles,
+  basculerEpingle,
+  estEpinglee,
+  separerEpinglees,
+} from '../lib/sources-epinglees';
+import {
   enregistrerEchecChallenge,
   reinitialiserChallenge,
   type TentativesChallenge,
@@ -1515,6 +1522,7 @@ export default function Home() {
   // préférence d'affichage : elle vit en base, cf. AGENTS.md §6).
   const [sourcesOff, setSourcesOff] = useState<string[]>([]);
   const [voirDesactives, setVoirDesactives] = useState(false);
+  const [epingles, setEpingles] = useState<string[]>([]);
   // Phase S, S2.1 : sources personnalisées (scripts `.js` importés par
   // l'utilisateur). Liste vide au premier rendu — le panneau des réglages la
   // charge à son ouverture (effet sur `tab`).
@@ -1914,6 +1922,7 @@ export default function Home() {
     setRating(prefs.rating);
     setListTimeout(prefs.listTimeout);
     setHealth(loadHealth());
+    setEpingles(lireEpingles(window.localStorage.getItem(EPINGLES_KEY)));
     // Mise à jour de l'application : la préférence et la date du dernier
     // contrôle sont des préférences d'affichage, donc dans `localStorage`.
     // Lues ici et non dans un initialiseur de `useState`, pour la même raison
@@ -2881,6 +2890,61 @@ export default function Home() {
     }
   }
 
+  function basculerEpingleSource(nom: string) {
+    const nouvelle = basculerEpingle(epingles, nom);
+    setEpingles(nouvelle);
+    try {
+      window.localStorage.setItem(EPINGLES_KEY, JSON.stringify(nouvelle));
+    } catch {
+      // `localStorage` peut être indisponible en mode privé ; l'état de la
+      // session reste correct, il sera perdu à la fermeture — acceptable.
+    }
+  }
+
+  function renderSourceSlot(s: Source) {
+    const dead = health[s.name];
+    const off = estDesactivee(s.name);
+    const pinned = estEpinglee(epingles, s.name);
+    const nom = s.displayName ?? s.name;
+    return (
+      <div key={s.name + '-' + s.lang} className={`slot${off ? ' off' : ''}`}>
+        <button
+          className={`card${dead ? ' dead' : ''}`}
+          onClick={() => openSource(s)}
+          title={dead ? `${t('catalogue.hors.service')} : ${dead.message}` : undefined}
+          aria-label={t('catalogue.ouvrir', { nom: s.name })}
+        >
+          <span className="name">{nom}</span>
+          {dead ? <span className="badge dead-badge">{t('catalogue.hors.service')}</span> : null}
+          {lang === 'all' && <span className="badge">{s.lang}</span>}
+          {s.custom ? <span className="badge custom-badge">{t('catalogue.perso')}</span> : null}
+        </button>
+        <button
+          className="slot-pin"
+          type="button"
+          aria-pressed={pinned}
+          aria-label={t(pinned ? 'catalogue.desespingler' : 'catalogue.epingler', { nom: s.name })}
+          title={t(pinned ? 'catalogue.desespingler' : 'catalogue.epingler', { nom: s.name })}
+          onClick={() => basculerEpingleSource(s.name)}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+          </svg>
+        </button>
+        <button
+          className="slot-switch"
+          role="switch"
+          aria-checked={!off}
+          aria-label={t(off ? 'catalogue.reactiver' : 'catalogue.desactiver', { nom: s.name })}
+          title={t(off ? 'catalogue.reactiver' : 'catalogue.desactiver', { nom: s.name })}
+          onClick={() => void basculerSource(s.name, off)}
+        >
+          <span className="slot-knob" />
+        </button>
+      </div>
+    );
+  }
+
   async function reactiverToutes() {
     const avant = sourcesOff;
     setSourcesOff([]);
@@ -2996,6 +3060,8 @@ export default function Home() {
     // (le chip actif passait à aucun) mais la grille restait affichée — donc la
     // tuile ne menait nulle part.
   const enTiles = lang === 'all' && nameFilter.trim().length === 0;
+  const { epinglees: filteredEpinglees, autres: filteredAutres } = separerEpinglees(filtered, epingles);
+  const epingleesTiles = separerEpinglees(visibleSources, epingles).epinglees;
 
   // **Dédoublonnage avant filtre.** Mesuré le 2026-10-15 sur la fiche « One
   // Piece » (SCANVF) : la source rend des URL de chapitre en double, donc la
@@ -8229,6 +8295,17 @@ if (reader) {
               C'est un <section> et non une tuile <button> : elle contient des
               boutons (ouvrir une source, importer), et deux <button> imbriqués
               seraient du HTML invalide — cf. AGENTS.md §14. */}
+          {epingleesTiles.length > 0 && (
+            <>
+              <div className="band">
+                {t('catalogue.epinglees')}
+                <span className="muted">{epingleesTiles.length}</span>
+              </div>
+              <div className="grid">
+                {epingleesTiles.map(renderSourceSlot)}
+              </div>
+            </>
+          )}
           <div className="lang-grid">
             <button
               className="lang-tile import-card"
@@ -8327,6 +8404,17 @@ if (reader) {
             </div>
           ) : (
             <>
+              {filteredEpinglees.length > 0 && (
+                <>
+                  <div className="band">
+                    {t('catalogue.epinglees')}
+                    <span className="muted">{filteredEpinglees.length}</span>
+                  </div>
+                  <div className="grid">
+                    {filteredEpinglees.map(renderSourceSlot)}
+                  </div>
+                </>
+              )}
               <div className="band">
                 {lang === 'all'
                   ? t('catalogue.bandeau.langues')
@@ -8335,52 +8423,7 @@ if (reader) {
               </div>
 
               <div className="grid">
-            {filtered.slice(0, shownSources).map((s) => {
-              const dead = health[s.name];
-              const off = estDesactivee(s.name);
-              // Deux boutons ne peuvent pas s'imbriquer (HTML invalide, cf.
-              // AGENTS.md §14) : la tuile est un `<div>` qui contient le bouton
-              // d'ouverture et, à côté, l'interrupteur d'activation.
-              return (
-                <div key={s.name + '-' + s.lang} className={`slot${off ? ' off' : ''}`}>
-                  <button
-                    className={`card${dead ? ' dead' : ''}`}
-                    onClick={() => openSource(s)}
-                    title={dead ? `${t('catalogue.hors.service')} : ${dead.message}` : undefined}
-                    aria-label={t('catalogue.ouvrir', { nom: s.name })}
-                  >
-                    {/* Le moteur nomme une source perso `custom:<id>` (Server.kt) :
-                        c'est `displayName` qui porte le nom lisible. La clé de
-                        désactivation reste `s.name` — c'est cet identifiant que
-                        le moteur attend. */}
-                    <span className="name">{s.displayName ?? s.name}</span>
-                    {dead ? (
-                      <span className="badge dead-badge">{t('catalogue.hors.service')}</span>
-                    ) : null}
-                    {lang === 'all' && <span className="badge">{s.lang}</span>}
-                    {/* S2.2 — source importée par l'utilisateur. La
-                        désactivation ci-dessous est la même que pour les sources
-                        natives : elle est indexée sur le nom, donc sans cas
-                        particulier. */}
-                    {s.custom ? <span className="badge custom-badge">{t('catalogue.perso')}</span> : null}
-                  </button>
-                  <button
-                    className="slot-switch"
-                    role="switch"
-                    aria-checked={!off}
-                    aria-label={t(off ? 'catalogue.reactiver' : 'catalogue.desactiver', {
-                      nom: s.name,
-                    })}
-                    title={t(off ? 'catalogue.reactiver' : 'catalogue.desactiver', {
-                      nom: s.name,
-                    })}
-                    onClick={() => void basculerSource(s.name, off)}
-                  >
-                    <span className="slot-knob" />
-                  </button>
-                </div>
-              );
-            })}
+                {filteredAutres.slice(0, shownSources).map(renderSourceSlot)}
               </div>
 
               {filtered.length > shownSources && (

@@ -262,6 +262,9 @@ const FR = {
   "catalogue.ouvrir": "Ouvrir la source {nom}",
   "catalogue.desactiver": "Désactiver la source {nom}",
   "catalogue.reactiver": "Réactiver la source {nom}",
+  "catalogue.epingler": "Épingler la source {nom}",
+  "catalogue.desespingler": "Ne plus épingler la source {nom}",
+  "catalogue.epinglees": "Sources épinglées",
 
   // --- Recherche globale (2026-10-15) ---
   // Un titre cherché sur TOUTES les sources actives, depuis le catalogue.
@@ -855,6 +858,9 @@ const EN: Record<Cle, string> = {
   "catalogue.ouvrir": "Open source {nom}",
   "catalogue.desactiver": "Disable source {nom}",
   "catalogue.reactiver": "Enable source {nom}",
+  "catalogue.epingler": "Pin source {nom}",
+  "catalogue.desespingler": "Unpin source {nom}",
+  "catalogue.epinglees": "Pinned sources",
 
   // --- Global search (2026-10-15) ---
   // A title searched across ALL active sources, from the catalogue. The summary

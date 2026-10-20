@@ -5379,3 +5379,21 @@ n'a jamais tourné** pendant onze jours.
     octet pour octet** à `%APPDATA%\Tatami\sources` (SHA-256 comparé) ;
     `pnpm moteur:check` : 14 sources, 0 virgule finale d'appel. Les relevés
     temporaires (`mesures-custom-*.json`) sont sortis de la racine.
+
+## 2026-10-20 — Sources livrées + épinglage
+
+- **Sources embarquées** : les 14 scripts uniques de `%APPDATA%\\Tatami\\sources`
+  sont copiés dans `apps/desktop/src-tauri/resources/sources/` (+ `manifest.json`),
+  déclarés via `bundle.resources` dans `tauri.conf.json`, et semés au démarrage
+  dans `custom_source::semer_sources_embarquees` (avant `Builder::run`), avec
+  table `bundled_sources` (SCHEMA_VERSION 11 → 12) : jamais écraser un fichier
+  modifié, ne jamais ressusciter une source supprimée, mise à jour d'une copie
+  intacte. `scan-manga` est désactivé par défaut (`actif: false`), une seule
+  fois. Portes : `cargo clippy --all-targets` + `cargo test` (13 tests custom_source
+  + 2 tests store), `pnpm typecheck/lint/i18n:check/hooks/chemins/pages/perso/ipc/
+  moteur/build`.
+- **Épinglage** : `lib/sources-epinglees.ts` + tests (8), état dans `localStorage`,
+  bouton épingle sur chaque tuile, section « Sources épinglées » en tête des vues
+  tuiles et grille. i18n FR/EN. Portes vertes (175 tests front).
+- Décision : `scan-manga` reste désactivé (option A) jusqu'à ce que son catalogue
+  soit paginable.

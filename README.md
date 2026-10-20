@@ -13,7 +13,7 @@ séparable, mis à jour sans republier l'application.
 
 ## État du projet
 
-<|end|> Domaine | État au 2026-10-18 |
+| Domaine | État au 2026-10-18 |
 |---|---|
 | Sources, recherche, filtres, tri | livré — 1370+ sources natives + sources personnalisées scriptées, recherche globale |
 | Fiche série, chapitres, dates de publication | livré |
@@ -148,11 +148,15 @@ engine\dist\tatami-engine\tatami-engine.bat search MANGADEX naruto
 pnpm tauri dev
 ```
 
-`tauri dev` démarre le serveur Next sur `http://localhost:3000` puis ouvre la fenêtre (1280 × 800).
+`tauri dev` démarre le serveur Next sur `http://localhost:3001` puis ouvre la fenêtre (1280 × 800).
 
-L'application **résout toujours son moteur depuis `engine/dist/tatami-engine`**, y compris en
-build : le packaging du runtime en `resources` n'est pas fait (tâche 5.6). Une application
-publiée aujourd'hui démarrerait sans moteur — c'est connu et non contourné.
+Le moteur est **empaqueté avec l'application** depuis le 2026-10-20 : `tauri.conf.json` déclare
+`bundle.resources` (`engine/dist/tatami-engine` → `engine/tatami-engine`). Le MSI 0.1.0 contient
+le moteur (extraction par `msiexec /a` : 184 fichiers, dont `PFiles\Tatami\engine\tatami-engine\`)
+et le `sha256` du JAR du paquet est identique à celui du `dist` utilisé en vol — voir `PLAN.md`,
+journal du 2026-10-20. Un binaire release lancé depuis `target\release` lit, lui, l'arbre du
+dépôt (Tauri résout `bundle.resources` relativement à `src-tauri`) : c'est ce binaire-là que
+pilote la vérification CDP.
 
 ### 4. Vérifications
 

@@ -187,9 +187,36 @@ jobs:
           }
 
       - name: Rust — dépendances vulnérables (cargo audit)
-        uses: rustsec/audit-check@v1
-        with:
-          token: ${{ github.token }}
+        working-directory: apps/desktop/src-tauri
+        env:
+          # Épinglé : les avis et le format de sortie changent d'une version à
+          # l'autre, donc la version de l'outil fait partie du contrat.
+          CARGO_AUDIT_VERSION: 0.22.2
+        run: |
+          # `rustsec/audit-check@v1` ne connaît pas de dossier de travail : il
+          # lance `cargo generate-lockfile` à la racine du dépôt, où il n'y a
+          # pas de `Cargo.toml` (mesuré le 2026-10-20, run 39425232777 : « could
+          # not find `Cargo.toml` in D:\a\tatami\tatami »). Il compile aussi
+          # `cargo-audit` à chaque run (4 min 11 s mesurées). Le binaire
+          # officiel est publié par `rustsec/rustsec` : on l'épingle et on
+          # l'appelle, et le dossier audité devient explicite.
+          $zip = Join-Path $env:RUNNER_TEMP 'cargo-audit.zip'
+          $url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv$env:CARGO_AUDIT_VERSION/cargo-audit-x86_64-pc-windows-msvc-v$env:CARGO_AUDIT_VERSION.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          Expand-Archive -Path $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'cargo-audit') -Force
+          $exe = Join-Path $env:RUNNER_TEMP "cargo-audit\cargo-audit-x86_64-pc-windows-msvc-v$env:CARGO_AUDIT_VERSION\cargo-audit.exe"
+          & $exe --version
+
+          # Par défaut, l'échec porte sur les **vulnérabilités** ; les avis
+          # « unmaintained »/« unsound » restent des avertissements. Mesuré le
+          # 2026-10-20 : 0 vulnérabilité, 6 avertissements qui viennent de la
+          # pile GTK/glib que Tauri tire pour Linux, hors v1 (Windows). Les
+          # rendre bloquants bloquerait les publications pour une plateforme
+          # qu'on ne livre pas encore.
+          & $exe audit
+          if ($LASTEXITCODE -ne 0) {
+            throw "cargo audit : vulnérabilité détectée (ou base d'avis inaccessible). Voir les lignes ci-dessus."
+          }
 
       - name: Dépendances npm
         run: pnpm install --frozen-lockfile

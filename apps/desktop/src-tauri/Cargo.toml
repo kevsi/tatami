@@ -59,12 +59,23 @@ tauri-plugin-notification = "2"
 # Mise à jour automatique (ADR 0020) : plugin officiel Tauri v2, côté Rust
 # seulement. L'interface ne parle pas à l'API JS du plugin ; elle appelle nos
 # commandes (etat_maj, verifier_maj, installer_maj).
-tauri-plugin-updater = "2"
+#
+# `default-features = false` : la feature `zip` du plugin (activée par défaut)
+# tire `zip 4.6.1`, qui porte trois avis RUSTSEC-2026-0367/0368/0369 dont le
+# correctif n'existe qu'à partir de `zip 9`. Or ce chemin n'est **jamais**
+# atteint ici : `install_inner` ne décompresse que si la charge utile est une
+# archive ZIP, et nous publions l'installeur NSIS `.exe` (voir
+# `scripts/preparer-release.ps1`). Mesuré le 2026-10-20 : sans la feature,
+# `cargo tree -i zip` ne trouve plus le crate et `cargo audit` ne rend plus
+# aucune vulnérabilité. À réactiver si un jour on publie un `.zip`.
+tauri-plugin-updater = { version = "2", default-features = false, features = [
+    "rustls-tls",
+    "system-proxy",
+] }
 sha2 = "0.10"
 ed25519-dalek = "3"
 flate2 = "1.1.10"
 thiserror = "1"
-jsonschema = "0.17"
 # Transitives de Tauri rendues explicites pour la canonicalisation de chemins
 # (`custom_source.rs`) : dunce canonicalise sans préfixe `\\?\` sur Windows.
 dunce = "1"

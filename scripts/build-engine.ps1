@@ -30,8 +30,18 @@ Write-Host "JDK: $JavaHome"
 
 Push-Location $engine
 try {
-    & gradle installDist 2>&1 | Select-Object -Last 3 | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw 'gradle installDist a échoué.' }
+    # `--console=plain` + `Tee-Object` : la sortie complète va à l'écran **et**
+    # dans un journal. Le `Select-Object -Last 3` d'avant avalait tout jusqu'à
+    # la fin, donc une exécution bloquée ne disait pas où elle en était —
+    # mesuré le 2026-10-20 : 44 min de silence sur le runner avant l'annulation
+    # du job, sans un octet pour nommer la dépendance en cause.
+    $journal = Join-Path $engine 'build\installDist.log'
+    New-Item -ItemType Directory -Force -Path (Split-Path $journal) | Out-Null
+    & gradle installDist --console=plain --stacktrace 2>&1 | Tee-Object -FilePath $journal | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        Get-Content $journal -Tail 30 | Out-Host
+        throw "gradle installDist a échoué (journal : $journal)."
+    }
 } finally { Pop-Location }
 
 $installLib = Join-Path $engine 'build\install\tatami-engine\lib'

@@ -30,18 +30,24 @@ Write-Host "JDK: $JavaHome"
 
 Push-Location $engine
 try {
-    # `--console=plain` + `Tee-Object` : la sortie complète va à l'écran **et**
-    # dans un journal. Le `Select-Object -Last 3` d'avant avalait tout jusqu'à
-    # la fin, donc une exécution bloquée ne disait pas où elle en était —
-    # mesuré le 2026-10-20 : 44 min de silence sur le runner avant l'annulation
-    # du job, sans un octet pour nommer la dépendance en cause.
+    # La sortie de Gradle va dans un **fichier**, via `cmd /c`, et non par un
+    # pipeline PowerShell. Mesuré le 2026-10-20 (run 39437468129) : le build
+    # s'est terminé — « BUILD SUCCESSFUL in 2m 47s » écrit dans le journal — et
+    # le script est resté bloqué **17 min de plus** parce que
+    # `Tee-Object | Out-Host` attend la fin du flux, qu'un processus enfant
+    # (le démon Gradle) tenait encore ouvert. Le job a été annulé à son délai
+    # alors que le travail était fait. `cmd /c` rend la main quand le client
+    # Gradle sort, et un fichier n'a pas de fin de flux à attendre.
     $journal = Join-Path $engine 'build\installDist.log'
     New-Item -ItemType Directory -Force -Path (Split-Path $journal) | Out-Null
-    & gradle installDist --console=plain --stacktrace 2>&1 | Tee-Object -FilePath $journal | Out-Host
+    Write-Host "gradle installDist : sortie dans $journal"
+    $ligne = 'gradle installDist --console=plain --stacktrace > "{0}" 2>&1' -f $journal
+    cmd /c $ligne
     if ($LASTEXITCODE -ne 0) {
-        Get-Content $journal -Tail 30 | Out-Host
+        Get-Content $journal -Tail 40 | Out-Host
         throw "gradle installDist a échoué (journal : $journal)."
     }
+    Get-Content $journal -Tail 4 | Out-Host
 } finally { Pop-Location }
 
 $installLib = Join-Path $engine 'build\install\tatami-engine\lib'

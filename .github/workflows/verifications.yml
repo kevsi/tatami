@@ -253,8 +253,13 @@ jobs:
           foreach ($u in $urls) {
             $sw = [Diagnostics.Stopwatch]::StartNew()
             try {
-              $r = Invoke-WebRequest -Uri $u -Method Head -TimeoutSec 30 -UseBasicParsing
-              Write-Host ("OK    {0} -> {1} en {2:N1} s" -f $u, $r.StatusCode, $sw.Elapsed.TotalSeconds)
+              # `GET` et non `HEAD` : mesuré le 2026-10-20, JitPack a répondu
+              # **500** à un `HEAD` sur le POM des parseurs depuis le runner
+              # pendant qu'un `GET` le servait (le build Gradle a réussi
+              # derrière). Une sonde qui interroge autrement que le client
+              # fabrique une panne qui n'existe pas.
+              $r = Invoke-WebRequest -Uri $u -Method Get -TimeoutSec 30 -UseBasicParsing
+              Write-Host ("OK    {0} -> {1}, {2} o en {3:N1} s" -f $u, $r.StatusCode, $r.RawContentLength, $sw.Elapsed.TotalSeconds)
             } catch {
               Write-Host ("ECHEC {0} -> {1} apres {2:N1} s" -f $u, $_.Exception.Message, $sw.Elapsed.TotalSeconds)
             }

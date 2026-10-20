@@ -178,6 +178,12 @@ ESLint est **épinglé en 9** : `eslint-config-next` déclare un peer `eslint >=
 Ces commandes ne remplacent pas le test de fumée : elles prouvent que le code compile, pas que
 l'application fait ce qu'on croit. Voir [`docs/smoke-test.md`](docs/smoke-test.md).
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io/), certificate by
+[SignPath Foundation](https://signpath.org/). Les rôles de l'équipe et la politique de
+confidentialité sont dans [`CODE_SIGNING.md`](CODE_SIGNING.md).
+
 ## Licence
 
 **GPLv3** — voir [`LICENSE`](LICENSE). Cette licence n'est pas un choix : elle est imposée par

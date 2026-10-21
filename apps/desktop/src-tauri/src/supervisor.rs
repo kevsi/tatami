@@ -1226,8 +1226,13 @@ mod tests {
     /// pas le moteur, seulement le canal.
     fn spawn_silent_process() -> tokio::process::Child {
         let mut cmd = if cfg!(windows) {
-            let mut c = TestCommand::new("cmd.exe");
-            c.args(["/c", "ping -n 30 127.0.0.1 > nul"]);
+            // `cmd.exe` engendre `ping.exe` comme enfant : la poignée stdout est
+            // héritée par cet enfant, qui survit à la mort de `cmd.exe` et garde
+            // le pipe ouvert — le lecteur attend alors EOF jusqu'à la fin des
+            // 30 pings, ce qui fige le harnais de tests. On spawne `ping`
+            // directement pour que `kill()` le tue et ferme le pipe aussitôt.
+            let mut c = TestCommand::new("ping");
+            c.args(["-n", "30", "127.0.0.1"]);
             c
         } else {
             let mut c = TestCommand::new("sh");

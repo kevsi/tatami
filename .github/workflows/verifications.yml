@@ -88,7 +88,7 @@ jobs:
     # plus que le travail lui-même ; les caches des actions prennent le relais
     # aux exécutions suivantes. Le pas du moteur garde son propre délai de
     # 20 min, plus court, pour qu'une socket muette ne consomme pas ce budget.
-    timeout-minutes: 60
+    timeout-minutes: 120
     defaults:
       run:
         shell: pwsh
@@ -330,9 +330,10 @@ jobs:
       # réponses enregistrées du moteur. `cargo test --test contrat_moteur`
       # est relancé **seulement** pour afficher son nom dans le journal de la
       # CI : sinon rien ne dit que la porte de 5.3 tourne.
-      - name: Rust — tests (dont le test de contrat)
+      - name: Rust - tests (dont le test de contrat)
         working-directory: apps/desktop/src-tauri
-        run: cargo test
+        timeout-minutes: 20
+        run: cargo test -- --nocapture
 
       - name: Rust — test de contrat, en clair
         working-directory: apps/desktop/src-tauri

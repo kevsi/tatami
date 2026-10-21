@@ -333,7 +333,7 @@ jobs:
       - name: Rust - tests (dont le test de contrat)
         working-directory: apps/desktop/src-tauri
         timeout-minutes: 20
-        run: cargo test -- --nocapture
+        run: cargo test -- --test-threads=1 --nocapture
 
       - name: Rust — test de contrat, en clair
         working-directory: apps/desktop/src-tauri

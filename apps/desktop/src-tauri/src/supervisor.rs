@@ -1226,13 +1226,12 @@ mod tests {
     /// pas le moteur, seulement le canal.
     fn spawn_silent_process() -> tokio::process::Child {
         let mut cmd = if cfg!(windows) {
-            // `cmd.exe` engendre `ping.exe` comme enfant : la poignée stdout est
-            // héritée par cet enfant, qui survit à la mort de `cmd.exe` et garde
-            // le pipe ouvert — le lecteur attend alors EOF jusqu'à la fin des
-            // 30 pings, ce qui fige le harnais de tests. On spawne `ping`
-            // directement pour que `kill()` le tue et ferme le pipe aussitôt.
-            let mut c = TestCommand::new("ping");
-            c.args(["-n", "30", "127.0.0.1"]);
+            // `ping` dépend du réseau/ICMP : sur un runner Windows Server, ICMP
+            // peut être bloqué et `ping` se comporte différemment (hang possible).
+            // `powershell.exe` est un processus unique (pas d'enfant qui hérite
+            // du pipe) et `Start-Sleep` ne dépend d'aucune ressource externe.
+            let mut c = TestCommand::new("powershell");
+            c.args(["-NoProfile", "-Command", "Start-Sleep 30"]);
             c
         } else {
             let mut c = TestCommand::new("sh");

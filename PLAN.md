@@ -5397,3 +5397,29 @@ n'a jamais tourné** pendant onze jours.
   tuiles et grille. i18n FR/EN. Portes vertes (175 tests front).
 - Décision : `scan-manga` reste désactivé (option A) jusqu'à ce que son catalogue
   soit paginable.
+
+## 2026-10-22 — CI verte : la vraie cause du blocage était un écho de 2 Mio sur stdout
+
+- **Symptôme** : le run `39640769129` (commit `a428b9b`) s'arrêtait après
+  **79 tests**, dont **1 seul** de `journal`, puis plus rien pendant 20 min
+  (étape tuée). Les autres modules avaient tous fini — le harnais était figé,
+  pas lent.
+- **Cause** : `journal::tests::la_bascule_borne_la_taille` écrit
+  `TAILLE_MAX + 1 Kio` (2 Mio) à travers `Ecrivain`, qui **recopiait chaque
+  tampon sur stdout**. Sur le runner, cette ligne unique de 2 Mio remplit le
+  tube du collecteur et bloque le verrou global de `stdout` ; tous les fils du
+  harnais qui impriment un résultat se bloquent derrière. Preuve : aucun
+  `x{20,}` dans le log téléchargé — l'écriture n'a jamais abouti.
+- **Correctif** (`de43596`) : `Ecrivain` porte un champ `echo` ; `false` dans
+  les tests, `true` en production (`pnpm tauri dev` garde son écho). Aucun
+  changement du chemin d'écriture fichier, donc la rotation reste testée à
+  l'identique.
+- **Preuves locales** : `cargo fmt --check` 0, `cargo clippy --all-targets --
+  -D warnings` 0, `cargo test -- --test-threads=1` → 274 + 1 + 23 passés,
+  2 ignorés.
+- **Preuve CI** : run `39762869696` (commit `de43596`) → `conclusion: success`
+  en 13 min. Étapes « Rust - tests » : 274 + 1 + 23 + 23 (contrat) passés,
+  0 échec ; moteur `BUILD SUCCESSFUL` ; les deux étapes « les tests ont-ils
+  vraiment tourné ? » vertes. Aucune étape n'a consommé son délai.
+- **Déblocage** : le tag `v0.2.0-rc.1` peut être poussé ; `release.yml` publiera
+  une **prérelease** (jamais `latest`), après vérification `minisign-verify`.

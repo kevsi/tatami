@@ -5423,3 +5423,40 @@ n'a jamais tourné** pendant onze jours.
   vraiment tourné ? » vertes. Aucune étape n'a consommé son délai.
 - **Déblocage** : le tag `v0.2.0-rc.1` peut être poussé ; `release.yml` publiera
   une **prérelease** (jamais `latest`), après vérification `minisign-verify`.
+
+## 2026-10-22 — prérelease 0.2.0-rc.1 publiée (NSIS seule)
+
+- **Premier échec, et sa cause exacte** : run `39785715116`, étape 14 →
+  `optional pre-release identifier in app version must be numeric-only and cannot
+  be greater than 65535 for msi target`. WiX ne sait pas représenter
+  `0.2.0-rc.1` : **aucun MSI n'est possible pour une prérelease non numérique**.
+  Ce n'est pas un réglage à trouver, c'est une contrainte du format MSI.
+- **Décision** : `tauri.test.conf.json` porte `"targets": ["nsis"]` (le schéma
+  Tauri accepte une liste ; sous Windows les types valides sont MSI + NSIS, donc
+  la liste filtre à NSIS). `scripts/preparer-release.ps1` rend le MSI
+  **facultatif seulement** si la version porte un suffixe, et **obligatoire**
+  pour une version stable ; sa signature reste vérifiée quand il existe.
+  `release.yml` attend **4** assets au lieu de 6. Le MSI revient avec `0.2.0`.
+- **Preuves locales** (fixtures dans `%TEMP%\tatami-prep-test`) : prérelease sans
+  MSI → exit 0, 4 fichiers ; stable sans MSI → exit 1 nommant le MSI ; stable
+  avec MSI → exit 0, 6 fichiers. `actionlint` 0 en local **et** en CI
+  (`portes-workflows` `39791486094`). Parseur PowerShell 5.1 : 810 jetons, 0
+  erreur.
+- **Preuve CI** : run `39791486134` (commit `20195a7`, tag `v0.2.0-rc.1`) →
+  `success`, 20 étapes vertes, dont « Signature et manifeste » et « Les assets
+  publiés se valident après publication » (les deux tests Rust
+  `signature_installeur` passent sur les octets **publiés**).
+- **État publié, vérifié depuis cette machine** :
+  - 4 assets : NSIS 57 364 518 o, sa `.sig` 448 o, `latest.json` 988 o,
+    `SHA256SUMS.txt` 281 o ; `draft=false`, `prerelease=true` ;
+  - `latest.json` : `version=0.2.0-rc.1`, URL =
+    `…/releases/download/v0.2.0-rc.1/Tatami_0.2.0-rc.1_x64-setup.exe`, et sa
+    `signature` est **identique** au `.sig` publié (c'est ce que le plugin
+    compare) ;
+  - les **digests SHA-256 de l'API GitHub** des trois assets concordent avec
+    `SHA256SUMS.txt` (aucun téléchargement de 57 Mo nécessaire pour le prouver) ;
+  - `releases/latest` répond toujours **`v0.1.0`** : la prérelease n'est pas
+    servie aux installations stables.
+- **Suite** : M5 (installation réelle, mise à jour, retour arrière) peut
+  maintenant s'exécuter contre ce tag ; il reste à le faire sur le compte
+  Windows dédié. M6 (SignPath) est inchangé.

@@ -317,7 +317,15 @@ impl VersFichier {
 }
 
 /// Le poste d'écriture remis à `tracing`.
-pub struct Ecrivain(Etat);
+///
+/// `echo` est faux dans les tests : un test de rotation écrit 2 Mio d'un coup,
+/// et recopier ce tampon sur stdout remplit le tube du runner, ce qui bloque le
+/// verrou global de `stdout` et fige **tous** les fils du harnais (mesuré le
+/// 2026-10-21 : plus aucune ligne de test après `journal`, étape tuée à 20 min).
+pub struct Ecrivain {
+    etat: Etat,
+    echo: bool,
+}
 
 impl Write for Ecrivain {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -327,7 +335,7 @@ impl Write for Ecrivain {
         let consommes = buf.len();
         {
             let mut garde = self
-                .0
+                .etat
                 .lock()
                 .map_err(|_| io::Error::other("verrou du journal empoisonne"))?;
             if let Some(cible) = garde.as_mut() {
@@ -346,13 +354,15 @@ impl Write for Ecrivain {
         // Écriture sur stdout **en plus**, jamais à la place : c'est là que
         // regarde un `pnpm tauri dev`. Sur une app installée, stdout n'a pas de
         // destination et l'écriture est simplement perdue, sans bruit.
-        let _ = io::stdout().write_all(buf);
+        if self.echo {
+            let _ = io::stdout().write_all(buf);
+        }
         Ok(consommes)
     }
 
     fn flush(&mut self) -> io::Result<()> {
         let mut garde = self
-            .0
+            .etat
             .lock()
             .map_err(|_| io::Error::other("verrou du journal empoisonne"))?;
         if let Some(cible) = garde.as_mut() {
@@ -368,7 +378,10 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for VersFichier {
     type Writer = Ecrivain;
 
     fn make_writer(&'a self) -> Self::Writer {
-        Ecrivain(Arc::clone(&self.0))
+        Ecrivain {
+            etat: Arc::clone(&self.0),
+            echo: true,
+        }
     }
 }
 
@@ -670,7 +683,10 @@ mod tests {
         let dir = dossier_unique("tatami-bascule");
         let courant = dir.join("tatami.log");
         let destination = VersFichier::nouveau(Some(courant.clone()));
-        let mut e = Ecrivain(Arc::clone(&destination.0));
+        let mut e = Ecrivain {
+            etat: Arc::clone(&destination.0),
+            echo: false,
+        };
 
         // Une ligne de plus que le plafond, pour forcer la bascule au milieu.
         let bloc = vec![b'x'; (TAILLE_MAX + 1024) as usize];
@@ -699,7 +715,10 @@ mod tests {
         let destination = VersFichier::nouveau(Some(PathBuf::from(
             "Z:\\chemin\\qui\\n_existe_pas\\tatami.log",
         )));
-        let mut e = Ecrivain(Arc::clone(&destination.0));
+        let mut e = Ecrivain {
+            etat: Arc::clone(&destination.0),
+            echo: false,
+        };
         // `write` et non `write_all` : c'est le seul des deux qui rende le compte
         // d'octets, et c'est exactement ce qu'on vérifie — un journal absent ne
         // doit pas faire rendre une erreur à `tracing`, sinon chaque site de log

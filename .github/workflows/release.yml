@@ -216,7 +216,12 @@ jobs:
           Write-Host "Endpoint : https://github.com/$env:DEPOT/releases/download/$env:TAG/latest.json"
           "overlay=$chemin" >> $env:GITHUB_OUTPUT
 
-      - name: Build signé (NSIS + MSI, artefacts d'updater)
+      # Pas de MSI ici : WiX refuse un identifiant de prérelease non numérique
+      # (« optional pre-release identifier in app version must be numeric-only »,
+      # mesuré le 2026-10-22, run 39785715116). `0.2.0-rc.1` est donc une
+      # prérelease **NSIS seule** ; le MSI revient avec une version stable, et
+      # c'est le NSIS que `tauri-plugin-updater` installe sous Windows.
+      - name: Build signé (NSIS, artefacts d'updater)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -263,8 +268,11 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          # 4 au minimum : NSIS + sa `.sig`, `latest.json`, `SHA256SUMS.txt`.
+          # Le MSI et sa `.sig` s'y ajoutent pour une version stable, et c'est
+          # `scripts/preparer-release.ps1` qui exige alors les deux installeurs.
           $assets = @(Get-ChildItem dist-release -File | ForEach-Object { $_.FullName })
-          if ($assets.Count -lt 6) { throw "Attendu 6 fichiers dans dist-release, trouvé $($assets.Count)." }
+          if ($assets.Count -lt 4) { throw "Attendu au moins 4 fichiers dans dist-release, trouvé $($assets.Count)." }
           $assets | ForEach-Object { Write-Host "  asset : $_" }
 
           gh release view $env:TAG --json isDraft 2>$null | Out-Null
@@ -348,7 +356,7 @@ jobs:
             "",
             "- tag : ``$env:TAG``",
             "- release : https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:TAG",
-            "- assets : MSI, NSIS, leurs ``.sig``, ``latest.json``, ``SHA256SUMS.txt``",
+            "- assets : NSIS, sa ``.sig``, ``latest.json``, ``SHA256SUMS.txt`` (un MSI et sa ``.sig`` s'y ajoutent pour une version stable)",
             "- signature : vérifiée par ``signature_installeur`` (minisign-verify, même crate que le plugin)",
             "- ``releases/latest`` : non servie (prérelease, vérifié)",
             "",

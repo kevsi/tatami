@@ -21,8 +21,9 @@ Ce qui est vérifié ici, et ce qui ne l'est pas :
   crate que le plugin (`minisign-verify`) et les mêmes étapes que
   `verify_signature`. Le workflow le lance juste après ce script.
 
-Sortie : `-Sortie` contient les 4 fichiers de l'installeur (MSI + NSIS et leurs
-`.sig`), `latest.json` et `SHA256SUMS.txt`.
+Sortie : `-Sortie` contient l'installeur NSIS et sa `.sig`, le MSI et sa `.sig`
+quand il a pu être construit (une prérelease non numérique ne peut pas l'être,
+cf. plus bas), `latest.json` et `SHA256SUMS.txt`.
 
 .EXAMPLE
   .\scripts\preparer-release.ps1 -Version 0.2.0-rc.1 -Tag v0.2.0-rc.1 `
@@ -57,6 +58,15 @@ if ($Depot -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
 }
 
 # --- Les artefacts existent, une seule fois chacun --------------------------
+#
+# WiX refuse un identifiant de prérelease non numérique : `0.2.0-rc.1` ne peut
+# donc **pas** produire de MSI (mesuré le 2026-10-22, run 39785715116 :
+# « optional pre-release identifier in app version must be numeric-only »). Une
+# version stable exige les deux installeurs ; une prérelease n'en exige qu'un,
+# et `latest.json` ne cite de toute façon que le NSIS : c'est lui que
+# `tauri-plugin-updater` installe sous Windows.
+
+$estPrerelease = $Version.Contains('-')
 
 $nsis = @(Get-ChildItem (Join-Path $BundleDir 'nsis\*-setup.exe') -ErrorAction SilentlyContinue)
 $msi = @(Get-ChildItem (Join-Path $BundleDir 'msi\*.msi') -ErrorAction SilentlyContinue)
@@ -64,11 +74,17 @@ $msi = @(Get-ChildItem (Join-Path $BundleDir 'msi\*.msi') -ErrorAction SilentlyC
 if ($nsis.Count -ne 1) {
     Echec "Attendu un installeur NSIS dans '$BundleDir\nsis', trouvé $($nsis.Count). Lancer 'pnpm tauri build --config src-tauri/tauri.test.conf.json'."
 }
-if ($msi.Count -ne 1) {
-    Echec "Attendu un installeur MSI dans '$BundleDir\msi', trouvé $($msi.Count)."
+if ($msi.Count -gt 1) {
+    Echec "Attendu au plus un installeur MSI dans '$BundleDir\msi', trouvé $($msi.Count)."
+}
+if (-not $estPrerelease -and $msi.Count -ne 1) {
+    Echec "Attendu un installeur MSI dans '$BundleDir\msi' pour une version stable, trouvé $($msi.Count)."
 }
 
-foreach ($f in @($nsis[0], $msi[0])) {
+$installateurs = @($nsis[0])
+if ($msi.Count -eq 1) { $installateurs += $msi[0] }
+
+foreach ($f in $installateurs) {
     if ($f.Name -notlike "*$Version*") {
         Echec "L'artefact '$($f.Name)' ne porte pas la version '$Version' : la sortie de build est périmée (target/ n'est pas nettoyé entre deux versions)."
     }
@@ -107,7 +123,11 @@ function Lire-Signature([System.IO.FileInfo]$fichier) {
 }
 
 $signatureNsis = Lire-Signature $nsis[0]
-$signatureMsi = Lire-Signature $msi[0]
+if ($msi.Count -eq 1) {
+    # On exige une signature valide quand le MSI existe : un installeur publié
+    # sans `.sig` serait un fichier que personne ne peut vérifier.
+    $null = Lire-Signature $msi[0]
+}
 
 # --- latest.json -----------------------------------------------------------
 #
@@ -146,7 +166,7 @@ New-Item -ItemType Directory -Path $Sortie -Force | Out-Null
 
 $encoder = New-Object System.Text.UTF8Encoding($false)
 
-foreach ($f in @($nsis[0], $msi[0])) {
+foreach ($f in $installateurs) {
     Copy-Item $f.FullName (Join-Path $Sortie $f.Name) -Force
     Copy-Item "$($f.FullName).sig" (Join-Path $Sortie "$($f.Name).sig") -Force
 }
@@ -169,7 +189,11 @@ $cheminSommes = Join-Path (Resolve-Path $Sortie).Path 'SHA256SUMS.txt'
 
 Write-Host "Release préparée : $Tag ($Version), dépôt $Depot"
 Write-Host "  NSIS  : $($nsis[0].Name) ($([math]::Round($nsis[0].Length / 1MB, 1)) Mo)"
-Write-Host "  MSI   : $($msi[0].Name) ($([math]::Round($msi[0].Length / 1MB, 1)) Mo)"
+if ($msi.Count -eq 1) {
+    Write-Host "  MSI   : $($msi[0].Name) ($([math]::Round($msi[0].Length / 1MB, 1)) Mo)"
+} else {
+    Write-Host "  MSI   : absent (WiX exige un identifiant de prérelease numérique, donc une prérelease est NSIS seule)."
+}
 Write-Host "  URL   : $urlNsis"
 Write-Host "  Sortie: $((Resolve-Path $Sortie).Path)"
 Get-ChildItem $Sortie -File | ForEach-Object { Write-Host "    $($_.Name) ($($_.Length) o)" }

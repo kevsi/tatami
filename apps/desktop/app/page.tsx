@@ -4599,6 +4599,18 @@ function preparerLecture(nbPages: number, position: number) {
   setPagesEnErreur(new Set());
   setDimsPages({});
   setPagesDecodees(new Set());
+  // **L'état de défilement appartient au chapitre qui s'ouvre.** Mesuré le
+  // 2026-10-23 (reprise d'un webtoon depuis l'accueil) : `scrollY` survivait à
+  // la fermeture du lecteur avec la valeur de la session précédente
+  // (~12 000 px). La fenêtre se calculait donc autour de la page 12-18, alors
+  // que `admis` contenait les pages 0-5 — intersection **vide**, aucun `src`,
+  // 0 requête, écran figé en haut pendant toute l'observation : le compteur
+  // disait « 13 / 19 », l'écran montrait le haut d'une bande vide. Le
+  // positionnement de reprise (plus bas) remet `scrollY` à la bonne valeur,
+  // mais seulement quand la bande devient virtualisable — trop tard pour la
+  // première fenêtre. Remettre à zéro ici couvre tous les chemins d'ouverture.
+  dernierScroll.current = 0;
+  setScrollY(0);
   // Les premières pages sont admises d'emblée : le quota est une **file**, pas
   // une privation — sans cela le lecteur attendrait le premier crédit, et aucun
   // téléchargement en cours ne pourrait le libérer.
@@ -5438,6 +5450,16 @@ useEffect(() => {
     setScrollY(0);
     return;
   }
+  // **La géométrie doit exister.** Mesuré le 2026-10-23 (reprise d'un webtoon,
+  // page 19/19) : l'effet tournait au premier rendu avec `largeurBande` encore
+  // à 0 — le repli dégénéré vaut alors ~2 px par page (`hauteurPage` divise par
+  // la largeur), donc `offsets[18]` ≈ 34 px : le « saut » posait `scrollTop` à
+  // ~26 px, consommait `aPositionner`, et l'observateur ramenait le compteur à
+  // 1 — la reprise écrasait même la position mémorisée (`save_progress` suit
+  // l'écran). Le `ResizeObserver` mesure `largeurBande` un rendu plus tard ;
+  // les offsets réels arrivent avec lui, et l'effet rejoue (dépendance
+  // `largeurBande`) avec une géométrie qui vaut quelque chose.
+  if (largeurBande === 0) return;
   // On ne positionne QUE dans le bandeau virtualisé : c'est le seul cas où
   // l'offset calculé est juste. En flux normal, `offsetTop` d'une image dépend
   // de la hauteur réelle de celles qui la précèdent, connue seulement une fois
@@ -6809,6 +6831,20 @@ if (reader) {
                 l'écran, soit parcourir 650 000 px sur un chapitre de 303
                 pages. */}
             <div className="seg" role="group" aria-label={t('lecteur.navigation')}>
+              {/* Retour au début du chapitre. Demande du 2026-10-23 : sur une
+                  bande de plusieurs milliers de pixels, remonter à la main
+                  revient à défiler tout le chapitre. `scrollToPage(0)` couvre
+                  les deux modes (offset calculé en virtualisé, géométrie DOM
+                  en flux). Inactif sur la page 1, comme « ← ». */}
+              <button
+                className="seg-btn"
+                disabled={index === 0}
+                onClick={() => scrollToPage(0)}
+                aria-label={t('lecteur.haut')}
+                title={t('lecteur.haut')}
+              >
+                {'⤒'}
+              </button>
               <button
                 className="seg-btn"
                 disabled={index === 0}
@@ -7259,14 +7295,22 @@ if (reader) {
               // mais le type de la charge utile reste `string | null`.
               const cibleUrl = progression.chapter_url;
               if (!cibleUrl) return;
+              // **La page mémorisée fait partie de la reprise.** Mesuré le
+              // 2026-10-23 : ce bouton appelait `openReader(c)`, soit
+              // `openReaderAt(c, 0)` — le bon chapitre, toujours à la page 1,
+              // alors que la carte de l'accueil (`resumeReading`) reprenait
+              // bien à `h.page_index`. L'utilisateur relisait depuis le début
+              // en croyant « reprendre ». Le pli (`Math.min` dans
+              // `openReaderAt`) borne déjà un index qui dépasserait.
+              const ciblePage = progression.page_index;
               const c = chapters.find((x) => x.url === cibleUrl);
               if (c) {
-                void openReader(c);
+                void openReaderAt(c, ciblePage);
                 return;
               }
               void (async () => {
                 const retrouve = await chapitreParUrlFrais(fiche, cibleUrl);
-                if (retrouve) void openReader(retrouve);
+                if (retrouve) void openReaderAt(retrouve, ciblePage);
                 else setError(t('erreur.reprise.introuvable'));
               })();
             }}

@@ -1856,6 +1856,90 @@ button:disabled {
   outline-offset: -1px;
 }
 
+/* Rail d'aperçus des pages (demandé le 2026-10-23). Il vit DANS le flux de
+   `.reader` (`.reader-corps`), pas par-dessus la bande : la page n'est jamais
+   recouverte, et la largeur de lecture se recalcule toute seule via le
+   ResizeObserver déjà posé sur `.webtoon`. Toute la GÉOMÉTRIE (hauteur de
+   tuile, pas, hauteur totale du contenu) vient de `page.tsx` en style inline —
+   aucune taille n'est écrite ici, donc les deux fichiers ne peuvent pas
+   diverger (même leçon que la constante partagée entre deux langages). */
+.reader-corps {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: var(--s2);
+}
+
+.rail-pages {
+  flex: none;
+  width: 78px;
+  overflow-y: auto;
+  /* Même visibilité que la bande (mesure du 2026-10-10 : un pouce
+     `--surface-3` sur le fond du lecteur faisait 1,43:1 — une commande
+     invisible). `--text-3` est le seul jeton qui passe 3:1 dans les deux
+     thèmes. */
+  scrollbar-width: auto;
+  scrollbar-color: var(--text-3) transparent;
+  background: var(--surface-2);
+  border-left: 1px solid var(--line-soft);
+}
+
+.rail-inner {
+  position: relative;
+  width: 100%;
+}
+
+.rail-tuile {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.rail-tuile.active {
+  border: 2px solid var(--accent);
+}
+
+/* Page que la source ne sert pas : le même langage que `.sheet-indisponible`
+   dans la bande — des pointillés, pas une image cassée muette. */
+.rail-tuile.indisponible {
+  border-style: dashed;
+}
+
+.rail-tuile img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* `cover` + `top` : une page de webtoon mesure plusieurs fois la hauteur de
+     la tuile ; on montre le haut de la page, c'est-à-dire exactement ce que
+     l'utilisateur voit quand cette page commence. `contain` rendrait la tuile
+     vide — une bande de 64 px pour une page de 8 000 px. */
+  object-fit: cover;
+  object-position: top;
+}
+
+.rail-tuile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.rail-num {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  font-size: var(--t-sm);
+  line-height: 1.4;
+  text-align: center;
+  color: var(--text);
+  background: var(--reader-bg);
+}
+
 .reader-stage {
   flex: 1;
   min-height: 0;

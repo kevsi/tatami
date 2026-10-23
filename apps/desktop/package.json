@@ -29,7 +29,7 @@
     "@tauri-apps/plugin-autostart": "~2.7.0",
     "@tauri-apps/plugin-dialog": "^2.4.0",
     "@tauri-apps/plugin-notification": "~2.5.1",
-    "next": "16.4.0",
+    "next": "16.4.2",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
@@ -40,7 +40,7 @@
     "@types/react": "^19.0.0",
     "ajv": "^8.20.0",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.4.0",
+    "eslint-config-next": "16.4.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.0"
   }

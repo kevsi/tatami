@@ -5,6 +5,13 @@ const internalHost = process.env.TAURI_DEV_HOST || 'localhost';
 const nextConfig = {
   // Export statique : Tauri ne fait pas de SSR (cf. docs Tauri v2 Next.js).
   output: 'export',
+  // Posé par l'upgrade agentique 16.4.0 → 16.4.2 (nudge `SecurityFatalError`,
+  // 2026-10-23) : l'option existe dans le schéma de la version installée
+  // (`config-shared.d.ts:367`, valeurs `'security' | 'latest' | … | false`).
+  // C'est le mode que `next upgrade --agent=security` a documenté lui-même.
+  experimental: {
+    agentUpgrade: 'security',
+  },
   images: {
     unoptimized: true,
   },

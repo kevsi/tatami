@@ -5538,3 +5538,43 @@ n'a jamais tourné** pendant onze jours.
   (`internal report-agent-upgrade … success`, exit 0).
 - **Reste** : le worktree `next-upgrade` peut être supprimé (branche fusionnée) ;
   l'instance de l'utilisateur n'a jamais été touchée.
+
+## 2026-10-23 — reprise : « Reprendre » retombait à la page 1
+
+- **Trois défauts en chaîne, tous mesurés** (marche CDP, `reprise-walk.json`,
+  `probe-reprise.json`, `reprise-verif.json`) :
+  1. **Fiche** : le bouton appelait `openReader(c)` = `openReaderAt(c, 0)` — le
+     bon chapitre, toujours page 1, alors que la carte de l'accueil passait
+     `h.page_index`. Corrigé : `openReaderAt(c, progression.page_index)` sur les
+     deux branches (liste servie et recherche fraîche).
+  2. **Fenêtre périmée** : `preparerLecture` remettait cinq états à zéro mais
+     pas `scrollY` — la fenêtre se calculait autour de la position de la
+     session précédente (mesuré : DOM réduit aux pages 12-18) pendant que
+     `admis` contenait les pages 0-5 : intersection **vide**, aucun `src`,
+     0 requête, écran figé. Corrigé : `dernierScroll` + `setScrollY(0)` dans
+     `preparerLecture` (couvre tous les chemins d'ouverture).
+  3. **Saut consommé trop tôt** : l'effet de positionnement tournait au premier
+     rendu avec `largeurBande` encore à 0 — repli dégénéré ~2 px/page, donc
+     `offsets[18]` ≈ 34 px : le « saut » posait ~26 px, consommait
+     `aPositionner`, et l'observateur ramenait le compteur à 1 — **écrasant au
+     passage la position mémorisée** (`save_progress` suit l'écran). Corrigé :
+     ne consommer `aPositionner` qu'une fois `largeurBande` mesurée.
+- **Après correctif** (chapitre « 2 - 13 », 19 pages) : carte « page 3/19 » →
+  reprise accueil = compteur **3/19**, page à hauteur d'œil **3**, `y = 3371`,
+  stable 8 s ; fiche « Reprendre » → **3/19**, hauteur d'œil **3**. 0 erreur
+  console.
+- **Piège de mesure au passage** : le test du bouton ⤒ **réécrit** la position
+  (page 1) avant le test de la fiche — la fiche « ouvrait page 1 » non pas par
+  défaut mais parce que la dernière position *enregistrée* était la page 1.
+  Ordre des mesures = partie du verdict ; `fiche-propres.cjs` refait le
+  parcours sans ⤒.
+- **Bouton ⤒** (demandé) : dans le groupe de navigation du lecteur, retour au
+  début du chapitre (`scrollToPage(0)`), inactif page 1 — mesuré `y` 3371 → 0,
+  compteur 1/19.
+- **Scroll page à page** (plainte du même jour) : mesuré sur un chapitre neuf,
+  chaque pas de 800 px décode en **5-179 ms** (fenêtre déjà pré-chargée) ; la
+  lenteur restante est la première page froide (1,4 s — réseau + moteur), pas
+  le défilement.
+- **Portes** : typecheck 0, lint 0 erreur / 5 avertissements connus, i18n,
+  hooks, chemins, pages, perso, ipc, moteur 0, test 175/175, build écrit
+  `out/` du premier coup.

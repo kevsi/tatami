@@ -6844,23 +6844,6 @@ if (reader) {
                   // F1), et sans clé l'identité d'une page est perdue quand la
                   // fenêtre virtuelle se déplace.
                   <Fragment key={p.token}>
-                    {/* Placeholder tant que la page n'est pas décodée.
-                        Même position, même largeur et même hauteur que
-                        l'image : sinon la page arrive en décalant la bande, ce
-                        qui se voit plus que le chargement lui-même. `aria-hidden`
-                        car il ne décrit rien — c'est un état, pas un contenu. */}
-                    {!pagesDecodees.has(i) && (
-                      <div
-                        className="feuille"
-                        aria-hidden="true"
-                        style={{
-                          ...styleImage,
-                          // Sans hauteur mesurée, on prend la place réservée :
-                          // c'est elle qui Connait la page.
-                          height: `${hauteurCss ?? hauteur}px`,
-                        }}
-                      />
-                    )}
                     <img
                       key={p.token}
                       ref={(el) => {
@@ -6878,14 +6861,22 @@ if (reader) {
                     // le 404 de MangaDex s'affiche en image cassee muette :
                     // l'utilisateur lit « la source ne sert pas cette page »
                     // comme « l'application est cassee ».
-                    onError={() =>
+                    onError={() => {
                       setPagesEnErreur((prec) => {
                         if (prec.has(i)) return prec;
                         const suivant = new Set(prec);
                         suivant.add(i);
                         return suivant;
-                      })
-                    }
+                      });
+                      // Le crédit se libère aussi sur un échec. Le commentaire
+                      // de `FENETRE_TELECHARGEMENT` l'annonçait, mais seul
+                      // `onLoad` rappelait `admettreUne` : une page que la
+                      // source ne sert pas gardait son crédit pour toujours et
+                      // six échecs suffisaient à bloquer la file.
+                      if (!bandeVirtualisable) {
+                        setAdmis((prec) => admettreUne(prec, fenetre));
+                      }
+                    }}
                     // `lazy` **inconditionnel**, et non `lazy` seulement quand la
                     // bande est virtualisable.
                     //
@@ -6899,8 +6890,12 @@ if (reader) {
                     // `lazy` règle la rafale **sans dépendre** de la
                     // virtualisation, donc y compris quand elle est inactive :
                     // c'est le navigateur qui ne descend que le voisinage de la
-                    // fenêtre. La page courante est dans le champ, donc elle
-                    // reste prioritaire — rien ne se perd sur le premier écran.
+                    // fenêtre. La page courante doit donc être **dans le champ**
+                    // pour être prioritaire — et le 2026-10-23 elle ne l'était
+                    // pas : le placeholder la précédait de 2 249 px, d'où
+                    // l'écran vide mesuré à l'ouverture (cf. l'ordre corrigé
+                    // plus bas). Ce commentaire décrivait l'intention, pas le
+                    // comportement.
                     loading="lazy"
                     decoding="async"
                     data-index={i}
@@ -6927,6 +6922,32 @@ if (reader) {
                     }}
                     onDoubleClick={() => changeZoom(zoom >= ZOOM_MAX ? 100 : ZOOM_MAX)}
                   />
+                  {/* Placeholder tant que la page n'est pas décodée.
+                      Il vient **après** l'image, pas avant. Mesuré le
+                      2026-10-23 : en mode flux, l'ancien ordre plaçait le
+                      placeholder de 2 249 px avant l'image, donc la première
+                      page se trouvait à y = 2 314 dans une fenêtre de 749 px —
+                      hors du seuil de `loading="lazy"`. Aucune requête n'était
+                      émise, donc aucune dimension n'arrivait, donc la bande
+                      n'entrait jamais en virtualisation : écran vide pendant
+                      les 25 s d'observation, et il fallait défiler de 2 400 px
+                      pour que la première image parte. L'ordre inverse ne
+                      change pas la hauteur réservée (placeholder = repli +
+                      image = 0), mais met la page dans le champ.
+                      `aria-hidden` car il ne décrit rien — c'est un état, pas
+                      un contenu. */}
+                  {!pagesDecodees.has(i) && (
+                    <div
+                      className="feuille"
+                      aria-hidden="true"
+                      style={{
+                        ...styleImage,
+                        // Sans hauteur mesurée, on prend la place réservée :
+                        // c'est elle qui connaît la page.
+                        height: `${hauteurCss ?? hauteur}px`,
+                      }}
+                    />
+                  )}
                   </Fragment>
                 );
               })}

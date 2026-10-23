@@ -5485,6 +5485,32 @@ n'a jamais tourné** pendant onze jours.
 - **À décider** : `next build` s'arrête **une fois** sur un `SecurityFatalError`
   émis par `next/dist/lib/upgrade/nudge.js` (Next 16.4.0) ; la relance passe et
   écrit `out/`. L'upgrade de Next est une décision de dépendance, non exécutée.
-- **Reste à planifier** : rail de vignettes des pages à côté du lecteur (petit,
-  virtualisé, requêtes limitées aux vignettes visibles) — avis donné, aucun
-  travail commencé.
+
+## 2026-10-23 — lecteur : rail d'aperçus des pages
+
+- **Demandé** le même jour, à côté du lecteur ; **livré** : panneau de 78 px à
+  droite de la bande (dans le flux, `.reader-corps` — la page n'est jamais
+  recouverte, la largeur de lecture se recalcule par le `ResizeObserver`
+  existant), tuiles 64×80 `cover` + haut de page, bouton de bascule dans la
+  barre (souvenir `localStorage`, lu au montage).
+- **Virtualisé** : `railFenetre` (fenêtre de tuiles montées depuis le
+  défilement du rail, seuil 60 px + rAF) ; un chapitre de 17 pages monte 12
+  tuiles, la hauteur totale (17 × 88 px) reste exacte. La géométrie vit dans
+  les constantes `RAIL_*` de `page.tsx` et part en style inline — le CSS n'écrit
+  **aucune** taille, donc rien ne peut diverger entre les deux fichiers.
+- **Zéro requête propre** : une vignette n'a de `src` que si sa page est
+  **déjà décodée** par la bande (`pagesDecodees`) — le rail est un miroir du
+  cache, jamais un concurrent de la file. Marche sur un chapitre froid (ch. 10,
+  jamais vu dans ce profil) : **6 requêtes `/page/`**, exactement le compte du
+  lecteur seul ; 0 vignette dont la `src` échappe aux pages décodées ; première
+  page décodée **1 795 ms** (référence ch. 5 froid du matin : 1 756 ms).
+- **Comportement vérifié** (marche CDP, 3 captures, `rail-walk.json`) : clic
+  tuile 11 → bande à 18 497 px, compteur 11/17, rail recalé sur la tuile
+  active ; flèche → → tuile active 12 ; bascule → rail absent, bande 1177 →
+  1265 px ; aucun recouvrement (bord droit image 1177 < bord gauche rail
+  1202) ; **0 erreur console**.
+- **Portes** : typecheck, lint (**5** avertissements connus — un 6ᵉ apparu puis
+  corrigé : l'effet de suivi lisait `reader` entier, il lit `indexLecture`),
+  i18n:check, hooks:check, chemins:check, pages:check, perso:check, ipc:check,
+  moteur:check, test **175/175**, build (relance unique `SecurityFatalError`
+  connue).

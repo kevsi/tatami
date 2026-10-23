@@ -5460,3 +5460,31 @@ n'a jamais tourné** pendant onze jours.
 - **Suite** : M5 (installation réelle, mise à jour, retour arrière) peut
   maintenant s'exécuter contre ce tag ; il reste à le faire sur le compte
   Windows dédié. M6 (SignPath) est inchangé.
+
+## 2026-10-23 — lecteur : la première page s'affiche sans défiler
+
+- **Défaut mesuré** (export `out/` servi sur 3001, profil cloné, CDP 9225) :
+  ouvrir un chapitre réseau froid laissait un écran vide, **0 requête**
+  `tatami.localhost/page/` et 0 image décodée pendant 5,6 à 25 s ; il fallait
+  défiler ~2 400 px. Le premier `<img>` était à `y = 2 314` dans une fenêtre de
+  684-749 px : en mode flux, le placeholder de 2 249 px le précédait, donc
+  `loading="lazy"` ne voyait rien — et sans décodage, aucune dimension,
+  donc `bandeVirtualisable` restait faux (cercle vicieux).
+- **Correctif** : en mode flux, l'image précède le placeholder (hauteur réservée
+  inchangée) ; `onError` libère aussi un crédit de la file, comme `onLoad`
+  (six pages refusées bloquaient la file autrement).
+- **Mesure après** (sans jamais défiler) : ch. 5 froid **116 ms** barre /
+  **1 756 ms** première page / `y = 65` / 6 requêtes, 5 pages décodées à 2 s ;
+  ch. 6 froid **40 ms** / **1 205 ms** / `y = 65` / 2 requêtes ; réouverture
+  ch. 5 **62 ms** (2 entrées de cache à 2 ms, 0 appel moteur) ; lecture locale
+  `.cbz` **70 ms**, `h = 1 842` pour 1 842 px attendus (pas de déformation).
+  0 erreur console.
+- **Portes** : typecheck, lint (5 avertissements connus), pages:check,
+  hooks:check, i18n:check, chemins:check, perso:check, ipc:check, moteur:check,
+  test (175/175) — toutes à 0. Commit `c81e81c`.
+- **À décider** : `next build` s'arrête **une fois** sur un `SecurityFatalError`
+  émis par `next/dist/lib/upgrade/nudge.js` (Next 16.4.0) ; la relance passe et
+  écrit `out/`. L'upgrade de Next est une décision de dépendance, non exécutée.
+- **Reste à planifier** : rail de vignettes des pages à côté du lecteur (petit,
+  virtualisé, requêtes limitées aux vignettes visibles) — avis donné, aucun
+  travail commencé.

@@ -2362,3 +2362,15 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   Corollaire : le port 9223 peut déjà appartenir à une instance installée —
   vérifier `GET /json/list` (une URL `tauri.localhost` = app installée, pas le
   dev).
+- **Un commentaire qui décrit l'intention ne prouve pas le comportement : il
+  faut mesurer la position.** Mesuré le 2026-10-23 : le code affirmait « la page
+  courante est dans le champ, donc elle reste prioritaire ». Or, en mode flux,
+  le placeholder de 2 249 px précédait l'image : la première page était à
+  `y = 2 314` dans une fenêtre de 749 px, donc hors du seuil de
+  `loading="lazy"` — **0 requête, 0 décodage, écran vide pendant 25 s**, et il
+  fallait défiler de ~2 400 px. Aucune dimension n'arrivant, `bandeVirtualisable`
+  restait faux : cercle vicieux. Corollaire : quand un commentaire justifie une
+  garantie par une position (« dans le champ »), la vérifier au
+  `getBoundingClientRect()`. Ici l'ordre des deux frères suffisait — image avant
+  placeholder —, sans toucher au CSS ni aux données (mesure après : `y = 65`,
+  première page à 1 756 ms sur un chapitre froid).

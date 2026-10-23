@@ -5514,3 +5514,27 @@ n'a jamais tourné** pendant onze jours.
   i18n:check, hooks:check, chemins:check, pages:check, perso:check, ipc:check,
   moteur:check, test **175/175**, build (relance unique `SecurityFatalError`
   connue).
+
+## 2026-10-23 — Next.js 16.4.0 → 16.4.2 (avis de sécurité)
+
+- **Déclencheur mesuré** : `next build` s'arrêtait **une fois** sur
+  `SecurityFatalError` (`next/dist/lib/upgrade/nudge.js`) ; la relance passait,
+  mais le message revenait à chaque build.
+- **Méthode** : `next upgrade --agent=security` exécuté dans un **arbre de
+  travail séparé** (`next-upgrade`), jamais dans le checkout courant. L'outil
+  remet un protocole (`shared.md` + `same-major.md`) : vérification de doublons
+  (`gh pr list` → 0 PR ouverte), version **exacte** 16.4.2 pour `next` et
+  `eslint-config-next` (même majeur, aucune codemod), puis
+  `experimental.agentUpgrade: 'security'` dans `next.config.mjs` — option
+  **vérifiée dans le schéma installé** (`config-shared.d.ts:367`) avant d'être
+  posée, pas copiée sur la foi du message.
+- **Vérifié dans le worktree** (commit `cc47b0a`, branche
+  `upgrade/next-16.4.2`) : install 0, typecheck 0, lint 0 erreur / 5
+  avertissements connus, test **175/175**, `pnpm build` exit 0 **dès le premier
+  passage** — le `SecurityFatalError` n'apparaît plus.
+- **Fusionné en avance rapide dans master**, puis `pnpm install` + re-vérification
+  sur place : `next --version` = 16.4.2, typecheck 0, test **175/175**,
+  build exit 0 sans le nudge, `out/` écrit. Rapport d'upgrade envoyé
+  (`internal report-agent-upgrade … success`, exit 0).
+- **Reste** : le worktree `next-upgrade` peut être supprimé (branche fusionnée) ;
+  l'instance de l'utilisateur n'a jamais été touchée.

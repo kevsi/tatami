@@ -2374,3 +2374,21 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   `getBoundingClientRect()`. Ici l'ordre des deux frères suffisait — image avant
   placeholder —, sans toucher au CSS ni aux données (mesure après : `y = 65`,
   première page à 1 756 ms sur un chapitre froid).
+
+- **La marge d'une fenêtre virtualisée doit couvrir le seuil du défilement qui
+  l'alimente.** Mesuré le 2026-10-23 (rail d'aperçus) : `railFenetre` est
+  recalculé depuis un état mis à jour avec un **seuil** (60 px), mais une
+  écriture directe de `rail.scrollTop` (l'effet qui suit la page courante)
+  déplace la vue **sans passer par ce seuil**. Une marge plus étroite que le
+  seuil laisserait la tuile active, juste hors fenêtre, jamais montée — un vide
+  blanc exactement où l'utilisateur regarde. La marge (−2 tuiles au-dessus,
+  +4 en dessous, soit 176/352 px contre 60 px de seuil) couvre l'écart ; elle se
+  choisit en comparant les deux nombres, pas « large ».
+- **`!reader` dans un effet compte comme une lecture de l'objet entier, même
+  avec `reader?.index` en dépendance.** Mesuré le 2026-10-23 : `pnpm lint` est
+  passé de 5 à 6 avertissements le temps du rail (`missing dependency:
+  'reader'`). La convention du dépôt est de lire le primitif **avant** l'effet
+  (`const indexLecture = reader?.index;`) et de le mettre en dépendance —
+  l'optional chain ne couvre que la propriété, pas la véracité de l'objet.
+  Corollaire : le compteur d'avertissements est une porte ; un 6ᵉ se corrige, il
+  ne se documente pas.

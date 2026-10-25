@@ -363,6 +363,7 @@ const FR = {
   "catalogue.compte.langues":
     "{n} sources réparties en {langs} langues. Choisissez une langue pour parcourir ses sources.",
   "catalogue.chargement": "Chargement des séries…",
+  "catalogue.chargement.sources": "Chargement des catalogues…",
   "chapitres.chargement": "Chargement des chapitres…",
   "accueil.chargement": "Chargement de votre bibliothèque…",
   "telechargements.chargement": "Chargement de la bibliothèque téléchargée…",
@@ -928,6 +929,7 @@ const EN: Record<Cle, string> = {
   "catalogue.compte.langues":
     "{n} sources across {langs} languages. Pick a language to browse its sources.",
   "catalogue.chargement": "Loading series…",
+  "catalogue.chargement.sources": "Loading catalogues…",
   "chapitres.chargement": "Loading chapters…",
   "accueil.chargement": "Loading your library…",
   "telechargements.chargement": "Loading the downloaded library…",

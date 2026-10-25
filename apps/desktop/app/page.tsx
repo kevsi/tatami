@@ -1369,6 +1369,11 @@ export default function Home() {
   const { t, lang: langue, setLang: setLangue } = useI18n();
   const [apparence, setApparence] = useApparence();
   const [sources, setSources] = useState<Source[]>([]);
+  /** Vrai tant que `list_sources` n'a pas répondu. Demande du 2026-10-25 :
+   *  « à l'affichage je vois rien puis quelques secondes plus tard les sources
+   *  s'affichent » — le catalogue montre des squelettes plutôt qu'un écran
+   *  quasi vide (« 0 sources disponibles »), qui se lit comme une panne. */
+  const [sourcesChargement, setSourcesChargement] = useState(true);
   const [lang, setLang] = useState('all');
   const [nameFilter, setNameFilter] = useState('');
   const [shownSources, setShownSources] = useState(48);
@@ -1913,6 +1918,7 @@ export default function Home() {
    *  §14 sur les dépendances d'effet recréées).
    */
   const chargerSources = useCallback((): Promise<void> => {
+    setSourcesChargement(true);
     return invoke<{ sources: Source[] }>('list_sources')
       .then((r) => {
         const recues = r.sources ?? [];
@@ -1941,7 +1947,8 @@ export default function Home() {
         }
         setSources(recues);
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(String(e)))
+      .finally(() => setSourcesChargement(false));
   }, []);
 
   /*
@@ -6951,23 +6958,29 @@ if (reader) {
               />
             </label>
             {chapters.length > 0 && (
-              <select
-                className="chapter-select"
-                aria-label={t('lecteur.chapitre')}
-                title={t('lecteur.chapitre.raccourci')}
-                value={chapter.url}
-                disabled={readerLoading}
-                onChange={(e) => {
-                  const target = chapters.find((c) => c.url === e.target.value);
-                  if (target) void openReader(target);
-                }}
-              >
-                {chapters.map((c) => (
-                  <option key={c.url} value={c.url}>
-                    {chapterLabel(c)}
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  className="chapter-select"
+                  aria-label={t('lecteur.chapitre')}
+                  title={t('lecteur.chapitre.raccourci')}
+                  value={chapter.url}
+                  disabled={readerLoading}
+                  onChange={(e) => {
+                    const target = chapters.find((c) => c.url === e.target.value);
+                    if (target) void openReader(target);
+                  }}
+                >
+                  {chapters.map((c) => (
+                    <option key={c.url} value={c.url}>
+                      {chapterLabel(c)}
+                    </option>
+                  ))}
+                </select>
+                {/* Demande du 2026-10-25 : le raccourci n'était qu'une
+                    info-bulle sur le sélecteur — personne ne la voit. Il est
+                    donc lisible en permanence à côté de lui. */}
+                <span className="raccourci-clavier">{t('lecteur.chapitre.raccourci')}</span>
+              </>
             )}
             <form
               className="page-jump"
@@ -8420,6 +8433,10 @@ if (reader) {
   const rechActif = rechBusy || rechResultats.length > 0 || rechResume !== null;
 
   // ---------- Vue : catalogue ----------
+  // Le squelette ne s'affiche que si aucune source n'est encore arrivée : les
+  // relances de fond (1,5 s / 4 s) remettent le drapeau à vrai sans rien
+  // montrer, la liste étant déjà là.
+  const chargementCatalogue = sourcesChargement && sources.length === 0;
   return (
     <main>
       <AppBar tab={tab} onTab={goTab} />{renderSuperpositions()}
@@ -8427,8 +8444,10 @@ if (reader) {
       <header className="page-head">
         <h1>{t('nav.catalogues')}</h1>
         <span className="sub">
-          {t('catalogue.sources.disponibles', { n: visibleSources.length })}
-          {sourcesOff.length > 0
+          {chargementCatalogue
+            ? t('catalogue.chargement.sources')
+            : t('catalogue.sources.disponibles', { n: visibleSources.length })}
+          {!chargementCatalogue && sourcesOff.length > 0
             ? ` · ${t('catalogue.sources.desactivees', {
                 n: sourcesOff.length,
                 // `{s}` porte le pluriel, comme les deux autres appels de la même
@@ -8635,10 +8654,12 @@ if (reader) {
       {enTiles ? (
         <>
           <p className="count">
-            {t('catalogue.compte.langues', {
-              n: visibleSources.length,
-              langs: langCounts.length,
-            })}
+            {chargementCatalogue
+              ? t('catalogue.chargement.sources')
+              : t('catalogue.compte.langues', {
+                  n: visibleSources.length,
+                  langs: langCounts.length,
+                })}
           </p>
 
           {/* S2.3 — card « Sources importées », AVANT les tuiles de langues.
@@ -8661,7 +8682,7 @@ if (reader) {
               </div>
             </>
           )}
-          <div className="lang-grid">
+          <div className="lang-grid" aria-busy={chargementCatalogue || undefined}>
             <button
               className="lang-tile import-card"
               data-card-perso=""
@@ -8680,7 +8701,19 @@ if (reader) {
               </span>
             </button>
 
-            {langCounts.map(([code, n]) => (
+            {chargementCatalogue
+              ? // Squelettes : 19 tuiles, le compte mesuré (19 langues + la card
+                // perso ci-dessus). Mêmes classes que la tuile réelle — la
+                // géométrie vient du même CSS et ne peut pas diverger (leçon
+                // AGENTS.md §14 sur le squelette).
+                Array.from({ length: 19 }, (_, i) => (
+                  <div key={`sq-${i}`} className="lang-tile squelette" aria-hidden="true">
+                    <span className="skeleton-row" />
+                    <span className="skeleton-row demi" />
+                    <span className="skeleton-row fin" />
+                  </div>
+                ))
+              : langCounts.map(([code, n]) => (
               <button
                 key={code}
                 className="lang-tile"
@@ -8702,12 +8735,18 @@ if (reader) {
       ) : (
         <>
           <p className="count">
-            {filtered.length === 1
-              ? t('catalogue.source1', { n: filtered.length })
-              : t('catalogue.source', { n: filtered.length })}
-            {nameFilter ? ` pour « ${nameFilter} »` : ''}
-            {lang === 'perso' ? ` · ${t('sources.perso.titre')}` : ''}
-            {lang !== 'all' && lang !== 'perso' ? ` · langue ${lang.toUpperCase()}` : ''}
+            {chargementCatalogue ? (
+              t('catalogue.chargement.sources')
+            ) : (
+              <>
+                {filtered.length === 1
+                  ? t('catalogue.source1', { n: filtered.length })
+                  : t('catalogue.source', { n: filtered.length })}
+                {nameFilter ? ` pour « ${nameFilter} »` : ''}
+                {lang === 'perso' ? ` · ${t('sources.perso.titre')}` : ''}
+                {lang !== 'all' && lang !== 'perso' ? ` · langue ${lang.toUpperCase()}` : ''}
+              </>
+            )}
           </p>
 
           {/* Vue des sources personnalisées : le bouton « importer » vit ici,
@@ -8734,7 +8773,17 @@ if (reader) {
             </div>
           )}
 
-          {filtered.length === 0 ? (
+          {chargementCatalogue ? (
+            <div className="grid" aria-busy="true" aria-label={t('catalogue.chargement')}>
+              {Array.from({ length: 48 }, (_, i) => (
+                <div key={`sq-${i}`} className="slot" aria-hidden="true">
+                  <span className="card squelette">
+                    <span className="skeleton-row" />
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="empty">
               <p className="empty-title">{t('catalogue.vide.titre')}</p>
               <p className="muted">

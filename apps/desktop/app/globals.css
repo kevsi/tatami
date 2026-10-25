@@ -1772,6 +1772,17 @@ button:disabled {
   max-width: 210px;
 }
 
+/* Raccourci N/P lisible en permanence à côté du sélecteur de chapitre
+   (demande du 2026-10-25 : il n'était qu'une info-bulle sur le sélecteur,
+   personne ne la voyait). `--text-3`/`--t-sm` : présent sans concurrencer le
+   sélecteur. */
+.raccourci-clavier {
+  color: var(--text-3);
+  font-size: var(--t-sm);
+  white-space: nowrap;
+  align-self: center;
+}
+
 .page-jump {
   display: flex;
   align-items: center;
@@ -2960,6 +2971,38 @@ button:disabled {
   background: linear-gradient(100deg, var(--surface) 30%, var(--surface-2) 50%, var(--surface) 70%);
   background-size: 200% 100%;
   animation: shimmer 1.5s linear infinite;
+}
+
+/* Squelettes du catalogue pendant le chargement de `list_sources` (demande du
+   2026-10-25 : l'écran restait vide puis les sources apparaissaient d'un
+   coup). `.skeleton-row` vaut 44 px pour les lignes de chapitres ; ici il
+   reprend les hauteurs du texte réel des tuiles et des cartes. */
+.lang-tile.squelette {
+  cursor: default;
+}
+
+.lang-tile.squelette .skeleton-row {
+  height: 22px; /* le code de langue : --t-tuile 26 px, interligne compris */
+  width: 56%;
+}
+
+.lang-tile.squelette .skeleton-row.demi {
+  height: 14px; /* .lang-nom : --t-base */
+  width: 72%;
+}
+
+.lang-tile.squelette .skeleton-row.fin {
+  height: 12px; /* .muted : --t-sm */
+  width: 40%;
+}
+
+.slot .card.squelette {
+  pointer-events: none;
+}
+
+.slot .card.squelette .skeleton-row {
+  height: 20px;
+  width: 70%;
 }
 
 @keyframes shimmer {

@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { bandeVirtualisableEst, decalageAncrage, fenetreBande, hauteurRendueMesuree, hauteursBande, largeurImagePx, offsetsBande, pasDeDefilement } from '../lib/bande-hauteurs';
@@ -808,6 +808,55 @@ function Vignette({
       loading="lazy"
       onError={() => setCassee(jeton)}
     />
+  );
+}
+
+/**
+ * Retour en haut des longues listes. Demandé le 2026-10-25 : « l'icône
+ * revenir en haut quand je suis trop en bas dans la liste des webtoons ».
+ *
+ * Rendu dans `renderSuperpositions()`, donc sur **toutes** les vues à
+ * défilement (accueil, catalogue, fiche, téléchargements) et pas dans le
+ * lecteur — qui a déjà le sien dans sa barre et n'appelle pas
+ * `renderSuperpositions()`. Une seule insertion : chaque vue à sa liste, un
+ * bouton par vue aurait fait sept copies.
+ *
+ * `useSyncExternalStore` plutôt qu'un `useEffect` + `setState` : la valeur est
+ * juste au montage (une liste rouverte déjà défilée l'affiche tout de suite) et
+ * `react-hooks/set-state-in-effect` refuse le motif « setState dans l'effet ».
+ *
+ * Seuil à 400 px — mesuré le 2026-10-25 : avec 600 px, la liste des sources ne
+ * l'affichait jamais (défilement maximal 458 px dans une fenêtre de 745 px) ;
+ * la moitié d'un écran suffit pour « je suis trop en bas ».
+ */
+const SEUIL_RETOUR_HAUT_PX = 400;
+
+function abonnerAuDefilement(prevenir: () => void): () => void {
+  window.addEventListener('scroll', prevenir, { passive: true });
+  return () => window.removeEventListener('scroll', prevenir);
+}
+
+function RetourHaut() {
+  const { t } = useI18n();
+  const defile = useSyncExternalStore(
+    abonnerAuDefilement,
+    () => window.scrollY > SEUIL_RETOUR_HAUT_PX,
+    () => false,
+  );
+  if (!defile) return null;
+  return (
+    <button
+      className="retour-haut"
+      type="button"
+      onClick={() => {
+        const reduire = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.scrollTo({ top: 0, behavior: reduire ? 'auto' : 'smooth' });
+      }}
+      aria-label={t('liste.haut')}
+      title={t('liste.haut')}
+    >
+      {'⤒'}
+    </button>
   );
 }
 
@@ -4755,6 +4804,7 @@ function renderSuperpositions() {
       {renderChargement()}
       <Toaster toasts={toasts} onClose={fermerToast} />
       <BaseMemoireBanner visible={baseEnMemoire} />
+      <RetourHaut />
     </>
   );
 }

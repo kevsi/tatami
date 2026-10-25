@@ -5640,3 +5640,13 @@ n'a jamais tourné** pendant onze jours.
 - **Portes** : typecheck 0, lint 0 erreur / 5 avertissements connus, i18n,
   hooks, chemins, pages, perso, ipc, moteur 0, test 0 échec, build statique
   `out/` (exit 0), app vérifiée en CDP après le build.
+- **Publication** : bump `0.2.0-rc.3` (commit `01a1353`), tag poussé, run
+  `40184287155` vert en 27 min (vérifications 7:09, publication 16:40), 4
+  assets validés après téléchargement. À la demande de l'utilisateur, la
+  release a ensuite été **marquée Latest** et sortie du statut prérelease
+  (`gh release edit --latest --prerelease=false`, notes réécrites) :
+  `/releases/latest` sert désormais `v0.2.0-rc.3`. À noter : le binaire reste
+  un build « mode test » du workflow (clé minisign de test, NSIS seul, pas de
+  SignPath), et ses mises à jour automatiques pointent le `latest.json` du
+  **tag** rc.3 — la prochaine version exigera une réinstallation ou un
+  manifeste mis à jour.

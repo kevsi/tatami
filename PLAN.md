@@ -5605,3 +5605,38 @@ n'a jamais tourné** pendant onze jours.
   l'origine de l'app installée : `localStorage` est **par origine**, donc le
   dev part d'une page blanche.
 - **Portes** : typecheck 0, lint 0 erreur / 5 avertissements connus.
+
+## 2026-10-25 — bouton « retour en haut » des longues listes
+
+- **Demande** : « l'icône revenir en haut quand je suis trop en bas dans la
+  liste des webtoons ». Le lecteur avait déjà le sien dans sa barre ; une liste
+  n'a pas de barre → bouton flottant, rendu dans `renderSuperpositions()`
+  (accueil, catalogue, fiche, téléchargements) et pas dans le lecteur, qui
+  n'appelle pas cette fonction — une seule insertion pour toutes les vues.
+- **Deux mesures ont corrigé le premier jet** :
+  - **Seuil** : 600 px → la liste des sources ne l'affichait **jamais**,
+    défilement maximal mesuré **458 px** dans une fenêtre de 745 px. Ramené à
+    **400 px** (environ un demi-écran).
+  - **Coin** : posé en bas à droite — le même que `.toaster` (`fixed`,
+    `z-index: 90`) : chaque toast le recouvrait pendant ses 3 s. Déplacé en
+    **bas à gauche**.
+- **Marche CDP** (`walk-retour-haut-vues.cjs`) : catalogue (48 sources) présent
+  à `scrollY = 458` (coin `x=30 y=671, 44×44`), clic → `scrollY = 0`, absent ;
+  accueil présent à 412 ; téléchargements présent à 1 424 ; fiche courte
+  (max 223 px) absente — correct. Contraste glyphe 15,9:1 ; `aria-label` et
+  `title` « Revenir en haut de la liste » (`liste.haut`, fr/en).
+- **Implémentation** : `useSyncExternalStore` sur le défilement — valeur juste
+  au montage, pas de `setState` dans un effet (refusé par
+  `react-hooks/set-state-in-effect`) ; défilement doux sauf
+  `prefers-reduced-motion` ; cible 44 px ; tokens des cartes.
+- **Recherche globale mesurée au passage** : « dragon » → 3 résultats, « the »
+  → 5, page non défilable (hauteur 745 = viewport). La liste de résultats ne
+  peut donc pas encore être longue ; le besoin de l'utilisateur est couvert
+  par les listes de l'accueil et des sources. Un 404 de couverture pendant la
+  marche (géré par le `onError` de `Vignette`), sans rapport avec le bouton.
+- **Piège de marche** : un clic lancé juste après `domcontentloaded` est avalé
+  en silence (hydratation pas finie) — attendre l'onglet + 1,2 s avant de
+  cliquer, sinon le parcours échoue pour une raison absente du code.
+- **Portes** : typecheck 0, lint 0 erreur / 5 avertissements connus, i18n,
+  hooks, chemins, pages, perso, ipc, moteur 0, test 0 échec, build statique
+  `out/` (exit 0), app vérifiée en CDP après le build.

@@ -2413,3 +2413,16 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   s'arrêtent à `--s5`, et la déclaration est ignorée sans message ; (c) la
   séparation entre **deux** grilles s'écrit en règle de paire (`.a + .b`),
   comme `.lang-grid + .lang-grid`, jamais en marge sur l'une des deux.
+
+- **Un élément `fixed` se pose après avoir cherché les autres, et un seuil
+  d'apparition se mesure contre le défilement maximal réel.** Mesuré le
+  2026-10-25 sur le bouton « retour en haut » : première version en bas à
+  droite — le coin du toast (`z-index: 90`), qui le recouvrait 3 s à chaque
+  action — puis seuil de 600 px qui ne l'affichait **jamais**, parce que la
+  liste des sources défile au maximum 458 px dans une fenêtre de 745 px.
+  Corollaires : `Select-String 'position: fixed'` sur la feuille de style
+  avant de poser un flottant, et un seuil se calcule sur
+  `scrollHeight - innerHeight` de la liste la plus courte visée, pas sur une
+  intuition de « assez défilé ». (Au passage : un clic lancé juste après
+  `domcontentloaded` est avalé en silence tant que l'hydratation n'est pas
+  finie — attendre l'onglet, puis cliquer.)

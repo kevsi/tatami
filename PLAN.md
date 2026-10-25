@@ -5578,3 +5578,30 @@ n'a jamais tourné** pendant onze jours.
 - **Portes** : typecheck 0, lint 0 erreur / 5 avertissements connus, i18n,
   hooks, chemins, pages, perso, ipc, moteur 0, test 175/175, build écrit
   `out/` du premier coup.
+
+## 2026-10-25 — catalogue : « les sources épinglées sont collées à ce qui suit »
+
+- **Cause mesurée** : en mode tuiles, le `.grid` des sources épinglées est suivi
+  directement par `.lang-grid`, et `gap` ne s'applique qu'entre les enfants
+  d'une même grille. Écart relevé en CDP (`ecart-epinglees.cjs`) : **0 px** —
+  bas de la grille épinglée `600`, haut des tuiles de langues `600`.
+- **Preuve rouge → vert** : règle forcée à `margin-top: 0` → écart **0 px** ;
+  avec `margin-top: var(--s5)` → **30 px** (même page, même épingle, deux
+  rechargements). Le mode liste était déjà à 30 px (marge haute du `.band`
+  « AR — Arabe »), donc la règle aligne les deux modes au lieu d'inventer un
+  espacement.
+- **Correctif** : règle de paire `.grid + .lang-grid { margin-top: var(--s5) }`
+  posée à côté de `.lang-grid + .lang-grid` — pas une marge générale sur
+  `.grid`, qui déplacerait aussi le bouton « voir plus » et la fin de liste.
+- **Deux pièges dans la première tentative, tous deux silencieux** : (a)
+  `var(--s6)` **n'existe pas** (les tokens s'arrêtent à `--s5`) → déclaration
+  ignorée sans message ; (b) un **second bloc `.grid`** ajouté alors qu'il en
+  existait déjà un (l. 670) → il écrasait la géométrie réelle
+  (`minmax(230px)`/`gap: var(--s2)` devenus `260px`/`--s3`), régression
+  qu'aucune porte du dépôt ne voit. Les deux sont retirés.
+- **État de mesure** : 3 sources épinglées dans l'origine **dev**
+  (`localhost:3001`) le temps du relevé, puis `tatami.pinnedSources` remis à
+  sa valeur initiale (`null`). Les épingles de l'utilisateur vivent dans
+  l'origine de l'app installée : `localStorage` est **par origine**, donc le
+  dev part d'une page blanche.
+- **Portes** : typecheck 0, lint 0 erreur / 5 avertissements connus.

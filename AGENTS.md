@@ -2392,3 +2392,24 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   l'optional chain ne couvre que la propriété, pas la véracité de l'objet.
   Corollaire : le compteur d'avertissements est une porte ; un 6ᵉ se corrige, il
   ne se documente pas.
+- **La position mémorisée suit l'écran : un test de reprise qui bouge l'écran
+  écrase sa propre donnée.** Mesuré le 2026-10-23 : le bouton ⤒ testé AVANT le
+  bouton « Reprendre » de la fiche a fait écrire `save_progress` à la page 1 —
+  la fiche « ouvrait page 1 non pas par défaut mais parce que la dernière
+  position enregistrée était la page 1 ». Corollaire : sur tout état persistant
+  qui se met à jour depuis l'UI, l'ordre des mesures fait partie du verdict ;
+  poser la position, tester, et ne jamais intercaler une action qui écrit entre
+  la pose et la lecture.
+
+- **Une marge posée sur une grille ne sépare pas de la grille suivante, et un
+  second bloc de la même classe écrase le premier sans bruit.** Mesuré le
+  2026-10-25 sur le catalogue : `.grid` suivi de `.lang-grid` donnait **0 px**
+  (le `gap` ne s'applique qu'aux enfants d'une même grille), et le bloc `.grid`
+  que j'ai ajouté pour ça a silencieusement remplacé celui de la ligne 670
+  (`minmax(230px)`/`gap: --s2` devenus `260px`/`--s3`) — aucune porte du dépôt
+  ne voit une règle CSS en double. Corollaires : (a) avant d'écrire une règle,
+  la chercher (`Select-String '^\.classe'`) ; (b) vérifier que chaque
+  `var(--…)` existe dans `:root` — ici `--s6` n'existe pas, les tokens
+  s'arrêtent à `--s5`, et la déclaration est ignorée sans message ; (c) la
+  séparation entre **deux** grilles s'écrit en règle de paire (`.a + .b`),
+  comme `.lang-grid + .lang-grid`, jamais en marge sur l'une des deux.

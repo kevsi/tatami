@@ -673,6 +673,14 @@ button:disabled {
   gap: var(--s2);
 }
 
+/* Espace après la grille des sources épinglées, en mode tuiles : la grille des
+   langues la suit directement, et le `gap` ne s'applique qu'entre les enfants
+   d'une même grille. Même raison que `.lang-grid + .lang-grid` plus haut.
+   Mesuré le 2026-10-25 : 0 px entre les deux avant cette règle. */
+.grid + .lang-grid {
+  margin-top: var(--s5);
+}
+
 .card {
   display: flex;
   align-items: center;

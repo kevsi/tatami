@@ -1416,6 +1416,11 @@ export default function Home() {
   // plus à l'écran. Les caches mémoire, eux, sont toujours écrits — leurs clés
   // nomment ce qu'ils contiennent (même règle que `rafraichirChapitres`).
   const ficheOuverte = useRef<string | null>(null);
+  // Génération de la **liste de chapitres du webtoon lu** (pas de la fiche).
+  // Deux ouvertures successives de webtoons différents lancent deux requêtes ;
+  // sans ce compteur, la réponse du premier écraserait la liste du second.
+  // Même famille que la file d'analyse de traduction (AGENTS.md §14).
+  const chapitresLecteurGen = useRef(0);
   useEffect(() => {
     ficheOuverte.current = openManga ? `${openManga.source}|${openManga.url}` : null;
   }, [openManga]);
@@ -2566,20 +2571,16 @@ export default function Home() {
 
   /** S2.1 — importe un script `.js` choisi par le dialogue natif.
    *
-   *  Le dialogue ne fait que choisir un chemin : c'est Rust qui valide la
-   *  taille (256 Ko), assainit le nom et décide de la destination — même
-   *  contrat que l'import de dossiers `.cbz` ci-dessus.
+   *  Le dialogue est ouvert par **Rust** : la commande ne reçoit aucun chemin,
+   *  donc la page ne peut pas désigner un fichier arbitraire du disque. Elle
+   *  valide la taille (256 Ko), assainit le nom et décide de la destination,
+   *  même contrat que l'import de dossiers `.cbz` ci-dessus. `null` = annulé.
    */
   async function importerSourcePerso() {
     setImportPersoEnCours(true);
     try {
-      const choisi = await open({
-        multiple: false,
-        title: t('sources.perso.importer'),
-        filters: [{ name: 'JavaScript', extensions: ['js'] }],
-      });
-      if (typeof choisi !== 'string') return; // annulé
-      const cs = await invoke<CustomSource>('importer_source', { path: choisi });
+      const cs = await invoke<CustomSource | null>('importer_source');
+      if (!cs) return; // annulé dans le sélecteur natif
       setNotice(t('sources.perso.ok', { nom: cs.name }));
       chargerSourcesPerso();
       // Le moteur ne voit pas le fichier dès la fin de la copie : le
@@ -4675,6 +4676,47 @@ function preparerLecture(nbPages: number, position: number) {
 }
 
 /**
+ * Charge, en arrière-plan, la liste des chapitres du webtoon **lu**.
+ *
+ * Deux chemins posent un lecteur sans passer par une fiche : la vue
+ * Téléchargements (`openLocalChapter`) et un chapitre ouvert depuis le lecteur
+ * lui-même. Tant que `chapters` ne décrit pas ce webtoon, le sélecteur de
+ * chapitre (rendu seulement si `chapters.length > 0`) et les boutons
+ * « précédent / suivant » n'existent pas : le lecteur est un cul-de-sac, on ne
+ * peut en sortir qu'en le fermant. Mesuré le 2026-10-26 : un `.cbz` ouvert
+ * depuis Téléchargements n'affichait aucun sélecteur, et `save_progress`
+ * recevait `chapterIndex = -1` (la liste était vide).
+ *
+ * La liste est un **confort** : un échec reste silencieux, le chapitre déjà
+ * ouvert n'en dépend pas. Elle est écrite dans le cache mémoire sous la même
+ * clé que `loadChapters` (`source|url`), donc ouvrir la fiche ensuite ne
+ * redemande rien.
+ */
+function assurerChapitresLecteur(src: string, mangaUrl: string, titre: string) {
+  const generation = ++chapitresLecteurGen.current;
+  const cle = `${src}|${mangaUrl}`;
+  const enCache = cacheChapitres.current.get(cle);
+  if (enCache) {
+    setChapters(enCache);
+    return;
+  }
+  invoke<{ chapters: Chapter[] }>('chapters', {
+    source: src,
+    mangaUrl,
+    mangaTitle: titre,
+  })
+    .then((r) => {
+      const liste = r.chapters ?? [];
+      cacheChapitres.current.set(cle, liste);
+      // Réponse d'un webtoon qu'on ne lit plus : utile au cache, pas à l'écran.
+      if (chapitresLecteurGen.current === generation) setChapters(liste);
+    })
+    .catch(() => {
+      /* confort : le chapitre déjà ouvert se lit sans la liste */
+    });
+}
+
+/**
  * Ouvre un chapitre à une page donnée.
  *
  * `mangaTitre` est un **paramètre**, pas une lecture de `openManga`. Mesuré le
@@ -4780,14 +4822,19 @@ async function openReaderAt(c: Chapter, startIndex: number, sourceName?: string,
       mangaUrl: openManga?.url,
       coverUrl: openManga?.coverUrl ?? null,
     });
-    // TODO(P3): si chapters.length === 0 après l'ouverture (chemin direct sans
-    // loadChapters, ouvrirSignet ou resumeReading), charger les chapitres en
-    // arrière-plan : invoke('chapters', { source: src, mangaUrl, mangaTitle })
-    //   .then((r) => setChapters(r.chapters ?? []))
-    //   .catch(console.error)
-    // Pré-requis : vérifier que `openManga?.url` est disponible dans ce contexte
-    // (mesuré : peut valoir `undefined` si appelé depuis le sélecteur de chapitres
-    // du lecteur). Voir analyse-lecteur.md §2.3 pour le diagnostic complet.
+    // **Le lecteur est le dernier endroit où la liste des chapitres peut
+    // manquer.** Ouvert depuis un signet ou une reprise, ou depuis la fiche,
+    // `chapters` est déjà rempli : ces trois chemins appellent `chapters` avant
+    // d'ouvrir. Reste le chapitre ouvert sans fiche — la liste est alors vide,
+    // et le lecteur se retrouve sans sélecteur ni navigation.
+    //
+    // L'URL du webtoon n'est pas toujours dans `openManga` : ouverte depuis le
+    // sélecteur du lecteur, la fiche peut être fermée. Le lecteur, lui, la
+    // porte depuis le 2026-10-19 — c'est le repli qui débloque ce cas.
+    const mangaUrlLecteur = openManga?.url ?? reader?.mangaUrl;
+    if (chapters.length === 0 && mangaUrlLecteur) {
+      assurerChapitresLecteur(src, mangaUrlLecteur, mangaTitre);
+    }
   } catch (e) {
     setError(t('erreur.lecture', { raison: String(e) }));
   } finally {
@@ -4893,6 +4940,14 @@ async function openLocalChapter(item: LibraryItem, chapter: LibraryItem['chapter
       mangaUrl: item.url,
       coverUrl: item.coverUrl ?? null,
     });
+    // Un `.cbz` n'a pas de fiche ouverte : `chapters` portait donc encore la
+    // liste du **webtoon précédent** (le sélecteur proposait les chapitres
+    // d'une autre série, et cliquer l'un d'eux ouvrait un chapitre étranger
+    // avec la source de celui-ci), ou rien du tout (aucun sélecteur). Le vider
+    // est ce qui rend le changement exact ; si ce webtoon a déjà sa liste en
+    // cache mémoire, elle est reposée dans le même tour de rendu.
+    setChapters([]);
+    assurerChapitresLecteur(item.source, item.url, item.title);
   } catch (e) {
     setError(t('erreur.lecture', { raison: String(e) }));
   } finally {

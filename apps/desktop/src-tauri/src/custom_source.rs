@@ -116,15 +116,12 @@ pub fn importer_source_impl(
     // TODO S2 : ajouter un paramètre `lang: Option<String>` à la commande
     // `importer_source` et le propager ici. Sans ce paramètre, toutes les
     // sources personnalisées importées avant S2 auront `lang = "fr"` en base.
-    // NOTE SÉCURITÉ (À VÉRIFIER, tracé dans PLAN.md) : `importer_source`
-    // prend un **chemin** en texte. Rien dans la chaîne ne prouve que ce
-    // chemin vienne d'un vrai dialogue natif `tauri-plugin-dialog` : l'appel
-    // `invoke('importer_source', { path })` est possible depuis la webview.
-    // CA N'EST PAS ENCORE EXPOSÉ — la recherche dans `apps/desktop/app/` du
-    // 2026-10-15 ne trouve aucune invocation — mais la surface existe et la
-    // `Capability` fait confiance au webview. Au moment de brancher S2, exiger
-    // un *handle* de dialogue (ou restreindre le chemin aux dossiers
-    // utilisateur documentés par l'utilisateur lui-même) plutôt qu'une chaîne.
+    // NOTE SÉCURITÉ (résolue le 2026-10-26) : la commande `importer_source`
+    // prenait un **chemin** en texte, donc `invoke('importer_source', { path })`
+    // était possible depuis la webview. Elle ouvre désormais le sélecteur natif
+    // elle-même et ne reçoit plus aucun chemin de la page : cf. sa
+    // documentation, et `ScriptedParser` pour ce que le moteur protège (et ne
+    // protège pas) une fois le script chargé.
     // Le filtrage sur l'extension `.js` et l'anti-traversal portent jusqu'ici.
     store.add_custom_source(&id, &id, "fr", &dest_str)?;
 
@@ -142,14 +139,43 @@ pub fn importer_source_impl(
 /// Importe un script `.js` local comme source personnalisée.
 ///
 /// Valide la taille, le nom, copie dans `%APPDATA%\Tatami\sources\` et
-/// enregistre en base. Renvoie le `CustomSource` créé.
+/// enregistre en base. Renvoie le `CustomSource` créé, ou `None` si
+/// l'utilisateur annule le dialogue.
+///
+/// **Le dialogue est ouvert ici, pas par l'interface** : aucun chemin ne
+/// traverse l'IPC. L'ancienne signature prenait `path: String`, donc
+/// `invoke('importer_source', { path: "C:\\…\\x.js" })` suffisait depuis la
+/// webview — une compromission du rendu pouvait faire exécuter au moteur
+/// n'importe quel `.js` du disque. Le moteur évalue ces scripts dans Nashorn
+/// avec `--no-java` (barrière principale) et une liste noire de globaux, mais
+/// `HttpBridge` documente lui-même que « le sandbox des scripts reste
+/// contournable » : le choix du fichier ne doit donc pas être une chaîne
+/// fournie par la page. Ici, la seule action possible est celle que
+/// l'utilisateur voit et confirme dans le sélecteur natif.
 #[tauri::command]
 pub async fn importer_source(
+    app: tauri::AppHandle,
     store: State<'_, Arc<Store>>,
-    path: String,
-) -> Result<CustomSource, String> {
-    let dest_dir = sources_dir();
-    importer_source_impl(&store, &path, &dest_dir)
+) -> Result<Option<CustomSource>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    // `blocking_pick_file` n'est pas appelé sur le fil principal : la macro du
+    // plugin poste la boîte sur ce fil et attend la réponse sur un canal.
+    let choisi = app
+        .dialog()
+        .file()
+        .set_title("Importer une source (.js)")
+        .add_filter("JavaScript", &["js"])
+        .blocking_pick_file();
+    let Some(chemin) = choisi else {
+        return Ok(None);
+    };
+    let chemin = chemin
+        .into_path()
+        .map_err(|e| format!("chemin choisi illisible : {e}"))?;
+    let chemin = chemin
+        .to_str()
+        .ok_or_else(|| "chemin choisi non UTF-8".to_string())?;
+    importer_source_impl(&store, chemin, &sources_dir()).map(Some)
 }
 
 /// Liste les sources personnalisées installées.

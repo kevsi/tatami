@@ -5,7 +5,11 @@
 # - `test` : prérelease GitHub signée avec la clé de **test**, aucun SignPath.
 #   C'est le mode de M4/M5. Il produit de vrais installeurs et un vrai
 #   `latest.json`, mais `releases/latest` ne le sert jamais : GitHub exclut les
-#   préreleases de cette route, et le job le vérifie explicitement.
+#   préreleases de cette route, et le job le vérifie explicitement. Le binaire
+#   construit ici interroge donc le **canal** (`releases/download/canal-rc/
+#   latest.json`), une release à tag fixe qui ne porte que le manifeste — sans
+#   quoi il se comparerait à son propre manifeste et ne verrait jamais la
+#   version suivante (mesuré le 2026-10-25 sur rc.4).
 # - `production` : prévu en M6 (SignPath). Il est **refusé** ici tant que la
 #   tâche n'est pas livrée. Publier aujourd'hui produirait un binaire non signé
 #   présenté comme signé — un échec explicite vaut mieux.
@@ -189,8 +193,20 @@ jobs:
       #
       # `tauri.test.conf.json` porte la clé **publique de test**, l'endpoint
       # local et `createUpdaterArtifacts`. On le superpose avec un fichier
-      # **généré** qui ne change que l'endpoint : le manifeste est celui de la
-      # prérelease de ce tag, et aucun fichier du dépôt ne dépend du tag.
+      # **généré** qui ne change que l'endpoint : aucun fichier du dépôt ne
+      # dépend du tag.
+      #
+      # **L'endpoint d'une prérelease est le canal, jamais son propre tag.**
+      # Mesuré le 2026-10-25 : rc.4 interrogeait
+      # `…/releases/download/v0.2.0-rc.4/latest.json`, c'est-à-dire un manifeste
+      # qui annonce `0.2.0-rc.4` — elle se croyait donc à jour et n'aurait
+      # jamais vu rc.5. Le canal est une release à **tag fixe** (`canal-rc`) qui
+      # ne porte que `latest.json`, réécrit à chaque build ; son URL est stable
+      # pour toutes les versions à venir.
+      #
+      # Le mode stable garde l'endpoint de l'ADR 0020
+      # (`releases/latest/download/latest.json`) : il n'est atteignable qu'en
+      # production, refusée plus haut tant que M6 n'est pas livré.
       #
       # `dangerousInsecureTransportProtocol` repasse à `false` : l'endpoint est
       # en HTTPS, et un binaire publié ne doit pas garder l'autorisation HTTP
@@ -199,13 +215,18 @@ jobs:
       - name: Configuration de l'endpoint
         id: config
         env:
-          TAG: ${{ steps.version.outputs.tag }}
           DEPOT: ${{ github.repository }}
+          MODE: ${{ inputs.mode || 'test' }}
         run: |
+          $endpoint = if ($env:MODE -eq 'production') {
+            "https://github.com/$env:DEPOT/releases/latest/download/latest.json"
+          } else {
+            "https://github.com/$env:DEPOT/releases/download/canal-rc/latest.json"
+          }
           $overlay = [ordered]@{
             plugins = [ordered]@{
               updater = [ordered]@{
-                endpoints = @("https://github.com/$env:DEPOT/releases/download/$env:TAG/latest.json")
+                endpoints = @($endpoint)
                 dangerousInsecureTransportProtocol = $false
               }
             }
@@ -213,8 +234,9 @@ jobs:
           $chemin = Join-Path $env:RUNNER_TEMP 'tatami-release.conf.json'
           $json = $overlay | ConvertTo-Json -Depth 6
           [IO.File]::WriteAllText($chemin, $json, (New-Object System.Text.UTF8Encoding($false)))
-          Write-Host "Endpoint : https://github.com/$env:DEPOT/releases/download/$env:TAG/latest.json"
+          Write-Host "Endpoint ($env:MODE) : $endpoint"
           "overlay=$chemin" >> $env:GITHUB_OUTPUT
+          "endpoint=$endpoint" >> $env:GITHUB_OUTPUT
 
       # Pas de MSI ici : WiX refuse un identifiant de prérelease non numérique
       # (« optional pre-release identifier in app version must be numeric-only »,
@@ -346,10 +368,73 @@ jobs:
           }
           Write-Host "Assets publiés : signature valide, manifeste identique octet pour octet."
 
+      # --- Le canal : la seule adresse que le binaire interroge --------------
+      #
+      # Publié **après** la vérification ci-dessus : on n'annonce jamais un
+      # installeur dont la signature n'a pas été vérifiée sur les octets
+      # réellement téléchargés.
+      #
+      # La release du canal ne porte aucun binaire — seulement `latest.json`.
+      # Elle est marquée prérelease pour ne pas voler « Latest » à la version
+      # publiée, et son tag ne bouge jamais.
+      - name: Publier le manifeste sur le canal
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release view canal-rc --json isDraft 2>$null | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create canal-rc --target $env:GITHUB_SHA --prerelease `
+              --title "Canal de prérelease (manifeste)" `
+              --notes "Release technique : elle ne porte que ``latest.json``, le manifeste que les applications de test interrogent. Réécrite à chaque build."
+            if ($LASTEXITCODE -ne 0) { throw "création de la release du canal échouée" }
+          }
+          gh release upload canal-rc dist-release/latest.json --clobber
+          if ($LASTEXITCODE -ne 0) { throw "envoi du manifeste sur le canal échoué" }
+          Write-Host "Canal : https://github.com/$env:GITHUB_REPOSITORY/releases/download/canal-rc/latest.json ($env:VERSION)"
+
+      - name: Le canal sert ce manifeste, sans authentification
+        env:
+          DEPOT: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # La preuve qui compte est **anonyme** : c'est exactement la requête
+          # que fera l'application. Un `gh api` authentifié prouverait seulement
+          # que le fichier existe pour nous.
+          $url = "https://github.com/$env:DEPOT/releases/download/canal-rc/latest.json"
+          $local = (Get-FileHash 'dist-release/latest.json' -Algorithm SHA256).Hash
+          $attendu = (Get-Content 'dist-release/latest.json' -Raw | ConvertFrom-Json).version
+          if ($attendu -ne $env:VERSION) {
+            throw "Le manifeste local annonce '$attendu' et la release '$env:VERSION'."
+          }
+          # Propagation du CDN : quelques secondes après un envoi --clobber.
+          $dir = Join-Path $env:RUNNER_TEMP 'canal'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          $fichier = Join-Path $dir 'latest.json'
+          $ok = $false
+          for ($i = 1; $i -le 10; $i++) {
+            Remove-Item $fichier -ErrorAction SilentlyContinue
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $fichier -UseBasicParsing -TimeoutSec 30 | Out-Null
+            } catch {
+              Write-Host "  essai $i : $($_.Exception.Message)"
+              Start-Sleep -Seconds 3
+              continue
+            }
+            if ((Get-FileHash $fichier -Algorithm SHA256).Hash -eq $local) { $ok = $true; break }
+            Write-Host "  essai $i : contenu différent du manifeste local (propagation en cours)"
+            Start-Sleep -Seconds 3
+          }
+          if (-not $ok) { throw "Le canal ne sert pas le manifeste de $env:VERSION après 10 essais." }
+          $lu = (Get-Content $fichier -Raw | ConvertFrom-Json)
+          $installeur = [IO.Path]::GetFileName(([uri]$lu.platforms.'windows-x86_64'.url).AbsolutePath)
+          Write-Host "Canal vérifié sans authentification : version $($lu.version), installeur $installeur."
+
       - name: Récapitulatif
         env:
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
+          ENDPOINT: ${{ steps.config.outputs.endpoint }}
         run: |
           $lignes = @(
             "### Tatami $env:VERSION (test)",
@@ -358,10 +443,10 @@ jobs:
             "- release : https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:TAG",
             "- assets : NSIS, sa ``.sig``, ``latest.json``, ``SHA256SUMS.txt`` (un MSI et sa ``.sig`` s'y ajoutent pour une version stable)",
             "- signature : vérifiée par ``signature_installeur`` (minisign-verify, même crate que le plugin)",
+            "- endpoint du binaire : ``$env:ENDPOINT``",
             "- ``releases/latest`` : non servie (prérelease, vérifié)",
             "",
-            "Le fichier ``latest.json`` de cette prérelease n'est installable que par une"
-            "application dont l'endpoint pointe ce tag (build de test) : c'est ce que M5"
-            "exerce sur un compte Windows dédié."
+            "Le canal ``canal-rc`` sert ce manifeste sans authentification : une"
+            "application construite à partir de rc.5 peut donc découvrir rc.6."
           )
           $lignes | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

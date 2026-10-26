@@ -194,9 +194,20 @@ git push origin v0.2.0-rc.1
 
 Une prérelease n'est **jamais** servie par `releases/latest` : GitHub l'en
 exclut, et le job le vérifie explicitement après publication. Ses assets
-restent téléchargeables par l'URL du tag, qui est l'endpoint inscrit dans le
-binaire de test par le workflow lui-même (configuration générée, jamais
-commitée).
+restent téléchargeables par l'URL du tag.
+
+**Le binaire de test n'interroge pas le tag de sa propre version**, mais le
+canal : `https://github.com/kevsi/tatami/releases/download/canal-rc/latest.json`.
+Le canal est une release à tag fixe qui ne porte qu'un fichier, `latest.json`,
+réécrit à chaque build. Un endpoint figé sur son propre tag se comparerait à son
+propre manifeste et se croirait à jour pour toujours — mesuré le 2026-10-25 sur
+rc.4, qui annonçait `0.2.0-rc.4` et n'aurait jamais vu rc.5. L'endpoint du mode
+stable reste celui de l'ADR 0020 (`releases/latest/download/latest.json`).
+
+Le manifeste du canal n'est pas signé, et ce n'est pas ce qui protège : chaque
+entrée porte la signature minisign de son installeur, vérifiée par le plugin
+avec la clé publique compilée dans le binaire **avant** toute exécution. Un
+manifeste altéré ne peut donc désigner qu'un installeur déjà signé par nous.
 
 Les deux secrets de signature vivent dans l'environnement GitHub
 `release-test` (Settings → Environments), pas au niveau du dépôt : une

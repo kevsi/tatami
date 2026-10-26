@@ -76,6 +76,16 @@ Mesures et vérifications au 2026-10-20 :
    est un asset de la release publiée ; GitHub `releases/latest` ignore les
    préreleases, ce qui permet de tester une version avant de la promouvoir.
 
+   **Amendement du 2026-10-26 — canal de test.** Le mode `test` ne peut pas
+   utiliser cette route (une prérelease n'y figure jamais) et un endpoint figé
+   sur le tag de sa propre version ne voit jamais la suivante : mesuré le
+   2026-10-25, rc.4 interrogeait son propre `latest.json`, qui annonce
+   `0.2.0-rc.4`, et se déclarait à jour. Les binaires de test pointent donc
+   `https://github.com/kevsi/tatami/releases/download/canal-rc/latest.json`,
+   une release à tag fixe qui ne porte que le manifeste, réécrit à chaque build.
+   Le canal stable de la décision 4 reste inchangé ; les deux diffèrent par un
+   seul champ de configuration généré par le workflow, jamais commité.
+
 5. **Recherche automatique, installation consentie.** Au plus une vérification
    automatique par 24 h, 5 s après l'affichage de l'accueil, si le réglage
    (proposé activé par défaut) le permet. Un bouton « Rechercher des mises à

@@ -1599,6 +1599,15 @@ export default function Home() {
       setToasts((precedent) => precedent.filter((x) => x.id !== id));
     }, TOAST_DUREE_MS);
   }, []);
+  // Premier lancement : informer l'utilisateur que le moteur s'initialise
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      if (window.localStorage.getItem('tatami.firstLaunchDone')) return;
+      window.localStorage.setItem('tatami.firstLaunchDone', '1');
+      setNotice('Premier lancement : initialisation du moteur en cours, le catalogue peut prendre un peu de temps à se charger...');
+    } catch {}
+  }, [setNotice]);
   const [error, setError] = useState<string | null>(null);
   const fermerToast = useCallback((id: number) => {
     setToasts((precedent) => precedent.filter((x) => x.id !== id));

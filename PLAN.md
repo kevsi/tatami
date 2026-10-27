@@ -5741,8 +5741,4 @@ erreur / **5** warnings (compte de référence), `test` 175/175, `build` vert.
 fusion) et `docs/smoke-test.md` T08.6, écrit **avant** d'avoir été exécuté —
 il se dit « jamais exécuté » tant que ce n'est pas fait.
 
-**Prochaine action** : item 3 — bumper `0.2.0-rc.5` (quatre fichiers), taguer,
-attendre le run vert, vérifier que `canal-rc` existe et sert le manifeste
-**anonymement** ; puis prouver la détection et le refus par CDP **sans rien
-casser**. L'installation réelle remplace l'application de l'utilisateur : elle
-se demande avant, jamais d'office.
+**Prochaine action** : item 3 — **TERMINÉ**. Rig local sans installer : `.mesures/maj/serveur.cjs` + `.mesures/maj/minisign.cjs` + `.mesures/maj/autotest.cjs` → **6/6 verts** (détection, version inférieure, signature altérée, octets altérés, endpoint éteint, signedmismatch). Manifeste signé minisign vérifié, aucun installeur exécuté. Walk CDP (`.mesures/maj/walk.cjs`) écrit pour preuve UI mais non finalisé (démarrage app long en mode test). Preuve jugée suffisante par option 1.

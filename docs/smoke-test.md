@@ -627,6 +627,11 @@ pas toucher l'historique (tests `un_signet_ne_touche_pas_l_historique`,
 > Sources personnalisées. (Mesuré 2026-10-10 après stabilisation du nombre de
 > panneaux ; la première mesure a rendu 8 puis 14 sur le même écran, parce que
 > certains panneaux arrivent après une commande — attendre la stabilisation.)
+> **Complété le 2026-10-27** : le bloc Réglages de `page.tsx` porte **16**
+> `<h2>` — s'y ajoutent « Sauvegarde de la bibliothèque » (T08.6) et
+> « Mises à jour ». Ce compte est lu **dans le source**, pas à l'écran : il dit
+> ce que le rendu peut montrer, pas ce qu'il montre (plusieurs panneaux sont
+> conditionnels). Compter à l'écran si le nombre exact importe.
 > L'**import de dossier `.cbz`** n'est pas ici : il est dans l'onglet
 > Téléchargements. Seuls les panneaux couverts ci-dessous sont testés.
 
@@ -681,6 +686,41 @@ source retentera la requête.
 **Bonus à vérifier** : le tableau `table.etat-table` liste source / code d'erreur /
 date du dernier signalement, et un résumé **regroupé par code** (`ul.code-list`) —
 1 200 sources en `CHALLENGE_REQUIRED` sont un problème de Cloudflare, pas 1 200 pannes.
+
+### T08.6 — Sauvegarde de la bibliothèque (2026-10-27)
+
+> **Jamais exécuté** (écrit le 2026-10-27 avec la fonctionnalité). Cocher les
+> cinq mesures ci-dessous et consigner les comptes relevés.
+
+Panneau **Sauvegarde de la bibliothèque** (entre « Dossier de téléchargement »
+et « Réseau »), deux boutons : `Exporter…` et `Importer…`. Les comptes sont
+l'information utile, pas la couleur du bouton.
+
+**Mesures à faire, dans cet ordre** (l'ordre compte : importer écrit dans la
+base, exporter la lit) :
+
+1. **Exporter** sur une bibliothèque non vide → le dialogue natif s'ouvre, le
+   nom proposé est `tatami-sauvegarde-AAAA-MM-JJ.json` du **jour** ; après
+   validation, la notice nomme le fichier choisi et quatre comptes
+   (favoris, chapitres lus, signets, catégories).
+2. Le fichier existe, est du JSON lisible, et sa `version` vaut `1` :
+   `Get-Content <fichier> | ConvertFrom-Json | Select-Object version, exported_at`.
+3. **Importer ce même fichier tout de suite** → les quatre comptes valent
+   **0** : rien n'a changé, et c'est vrai (la fusion est idempotente). Un compte
+   non nul ici signalerait une date qui remonte ou un signet dupliqué.
+4. **Annuler** un des deux dialogues → aucune notice, aucune erreur, aucune
+   écriture (le fichier précédent garde son `LastWriteTime`).
+5. **Refus** : importer un JSON dont `version` vaut `2` → message nommant la
+   version, bibliothèque **inchangée** (recompter favoris et signets avant/après).
+
+**Régression à surveiller** : l'import ne doit **jamais** remonter la position
+de lecture. Ouvrir une série après l'import et vérifier que « Reprendre » mène
+à la page de la lecture la plus récente, pas à celle du fichier si elle est plus
+ancienne (test Rust `restaurer_ne_remonte_jamais_l_historique`).
+
+**Hors périmètre, ne pas le reporter comme un bug** : les téléchargements, les
+réglages et les scripts de sources personnalisées ne sont pas dans le fichier
+(cf. `docs/development.md` §7).
 
 ---
 

@@ -5085,10 +5085,18 @@ SignPath (5.6) et le passage du dépôt en public.
   (`minisign-verify`, même crate et même séquence que `verify_signature`),
   exécuté deux fois : sur le build local, puis sur les assets **téléchargés
   depuis la release**.
-- [ ] **Critère de sortie** : un `workflow_dispatch` sur un tag de test produit
+- [x] **Critère de sortie** : un `workflow_dispatch` sur un tag de test produit
   une prérelease complète ; les URLs sont accessibles avec le jeton de test ; le
   `latest.json` est téléchargeable ; aucun secret n'apparaît dans les logs ; une
   release de test n'est jamais servie par `releases/latest`.
+  → **Atteint le 2026-10-20/25** (runs rc.1 → rc.4, le dernier `40227189159` en
+  27 min, 4 assets relus après téléchargement, `releases/latest` servant alors
+  rc.4). **Réserve écrite le 2026-10-27** : rc.3 puis rc.4 ont ensuite été
+  marquées **Latest** à la main (`gh release edit --latest`), sur demande
+  explicite de l'utilisateur — donc le dépôt *sert* aujourd'hui une release de
+  test depuis `/releases/latest`, alors que le **workflow**, lui, ne le fait
+  jamais et le vérifie. La clause porte sur le workflow ; l'état du dépôt est
+  une décision humaine, tracée ici plutôt que corrigée en silence.
 
 **Preuves locales du 2026-10-20** (avant le premier run) :
 
@@ -5650,3 +5658,91 @@ n'a jamais tourné** pendant onze jours.
   SignPath), et ses mises à jour automatiques pointent le `latest.json` du
   **tag** rc.3 — la prochaine version exigera une réinstallation ou un
   manifeste mis à jour.
+
+## 2026-10-27 — canal de mise à jour figé, deux dettes, sauvegarde de la bibliothèque
+
+Trois manques choisis par l'utilisateur, traités dans l'ordre où ils se
+gênaient : le canal d'abord (sans lui, aucun binaire ne peut se mettre à jour),
+les dettes ensuite, la sauvegarde en dernier. La signature Authenticode reste
+**hors périmètre** sur décision explicite (« l'app ne sera pas signée pour
+l'instant »), donc M6 est inchangé.
+
+### 1. Le binaire de test interrogeait son propre tag (`fa46daf`)
+
+**Défaut mesuré** : l'endpoint d'une prérelease était
+`…/releases/download/<tag>/latest.json`, c'est-à-dire le manifeste **de la
+version en cours**. rc.4 s'y comparait à rc.4 et se croyait à jour pour
+toujours — une seule release aurait donc pu sortir sans que personne ne puisse
+la recevoir.
+
+**Correctif, dans le workflow seulement** : une release à **tag fixe**
+`canal-rc` ne porte qu'un fichier, `latest.json`, réécrit à chaque build. Le
+mode `production` garde l'endpoint de l'ADR 0020
+(`releases/latest/download/latest.json`) — l'ADR est **amendée**, pas
+remplacée : la décision de fond (un manifeste non signé suffit, chaque entrée
+porte la signature de son installeur) n'a pas bougé.
+
+`release.yml` vérifie les assets **avant** de publier le manifeste sur le canal,
+puis le relit **anonymement** (10 tentatives × 3 s, sha256 comparé) : une
+release dont le canal ne sert pas le bon fichier ne passe pas. `actionlint` : 0
+erreur. `docs/development.md` §6 porte l'explication et la raison.
+
+**Ce qui reste vrai et qu'il faut dire** : les binaires d'avant rc.5 pointent
+leur propre tag et ne peuvent **jamais** se mettre à jour. Le premier binaire
+réellement testable est donc la prochaine release — pas celle-ci.
+
+### 2. Deux dettes mineures (`50f5d81`)
+
+- **L'import d'une source personnalisée ne reçoit plus de chemin.** Le
+  sélecteur natif s'ouvre **dans Rust** (`Option<CustomSource>`) : aucune
+  commande n'accepte plus un chemin venu de la page. C'est la même famille que
+  la leçon du 2026-10-09 (une voix d'écriture dans la webview qui n'a pas à
+  exister), et c'est le patron repris pour la sauvegarde.
+- **La liste de chapitres du lecteur n'était pas rechargée** quand on ouvrait un
+  chapitre depuis la bibliothèque : `assurerChapitresLecteur` +
+  `chapitresLecteurGen` (garde de génération, pour ne pas appliquer la réponse
+  d'un chapitre déjà remplacé), et `openLocalChapter` vide `chapters` puis
+  recharge. Sans la garde, une réponse tardive repeuplait la liste du chapitre
+  précédent.
+
+### 3. Sauvegarde et restauration de la bibliothèque (`930ea3f`)
+
+**Le manque** : rien ne sortait la bibliothèque de la base. Une réinstallation,
+un profil Windows neuf ou une base abîmée perdaient favoris, catégories,
+positions de lecture et signets — sans recours.
+
+- **Format** `version: 1` (`store::VERSION_SAUVEGARDE`), refusé s'il est
+  inconnu. Les favoris référencent leur catégorie **par nom** : deux bases n'ont
+  jamais les mêmes `category_id`, un id dans le fichier serait faux ailleurs.
+  Périmètre : catégories, favoris, historique, signets. **Exclus** parce que ce
+  sont des chemins ou des fichiers de cette machine : téléchargements (`.cbz`),
+  réglages (`dossier_telechargements`), scripts de sources perso.
+- **Fusion non destructive** : classification connue jamais écrasée par
+  `UNKNOWN` (l'incognito en dépend), historique qui ne remonte jamais
+  (`read_at`), date d'ajout d'un favori = la plus **ancienne**, catégorie
+  recréée par nom avec la couleur locale gagnante, signet déjà présent ignoré.
+- **Comptes = deltas réels**, pas des décomptes du fichier : la condition
+  `WHERE` de chaque `DO UPDATE` **répète les expressions du `SET`**. Prédire le
+  changement en Rust aurait fait deux implémentations qui divergent — et c'est
+  précisément le genre d'écart qu'on ne voit qu'après coup.
+- **Dialogue dans Rust** (`backup.rs`), garde de 25 Mo à l'import avant lecture,
+  nom par défaut `tatami-sauvegarde-AAAA-MM-JJ.json` (`date_iso`,
+  civil-from-days, testé sur 5 instants).
+
+**Preuves** : `cargo test` **309** tests (dont 9 de sauvegarde) ; rouge prouvé
+en retirant `WHERE excluded.read_at > history.read_at` — le test nomme « le
+fichier est plus ancien : rien à appliquer » (left 1 / right 0), puis retour au
+vert ; `cargo fmt --check` et `cargo clippy --all-targets -- -D warnings` = 0 ;
+front `typecheck`, `i18n:check`, `ipc:check`, `hooks:check`, `chemins:check`,
+`pages:check`, `perso:check`, `lecteur:check`, `moteur:check` = 0, `lint` 0
+erreur / **5** warnings (compte de référence), `test` 175/175, `build` vert.
+
+**Documentation** : `docs/development.md` §7 (format, tableau des règles de
+fusion) et `docs/smoke-test.md` T08.6, écrit **avant** d'avoir été exécuté —
+il se dit « jamais exécuté » tant que ce n'est pas fait.
+
+**Prochaine action** : item 3 — bumper `0.2.0-rc.5` (quatre fichiers), taguer,
+attendre le run vert, vérifier que `canal-rc` existe et sert le manifeste
+**anonymement** ; puis prouver la détection et le refus par CDP **sans rien
+casser**. L'installation réelle remplace l'application de l'utilisateur : elle
+se demande avant, jamais d'office.

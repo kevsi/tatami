@@ -245,6 +245,42 @@ Les fichiers de workflow se vérifient avec `actionlint` (voir `AGENTS.md` §8) 
 une clé mal placée y rend le fichier invalide, et GitHub ne crée alors **aucun
 job** — le run échoue en 0 s sans message lisible.
 
+### 7. Sauvegarde de la bibliothèque
+
+Deux boutons dans **Paramètres → Sauvegarde de la bibliothèque** :
+`Exporter…` écrit un fichier JSON, `Importer…` le fusionne dans la base
+courante. Les deux dialogues sont ouverts **par Rust** (`backup.rs`), donc aucun
+chemin ne traverse l'IPC — même raison que l'import d'une source personnalisée.
+
+Ce qui voyage : catégories, favoris, historique, signets. Ce qui ne voyage
+**pas**, et c'est un choix : les téléchargements (des `.cbz` sur le disque, pas
+des lignes), les réglages (`dossier_telechargements` pointe vers un chemin de
+**cette** machine) et les scripts de sources personnalisées (des fichiers `.js`).
+
+Le format porte `version: 1` (`store::VERSION_SAUVEGARDE`) et `restaurer`
+**refuse** une version qu'il ne connaît pas — jamais « au mieux ». Les favoris
+référencent leur catégorie **par nom**, parce que deux bases n'ont jamais les
+mêmes `category_id`.
+
+L'import ne supprime rien et ne remonte jamais dans le temps :
+
+| Donnée | Règle de fusion |
+|---|---|
+| Favori | date d'ajout la plus **ancienne** (`MIN`), classification connue non écrasée par `UNKNOWN`, couverture gardée si le fichier n'en a pas |
+| Historique | `read_at` le plus récent gagne ; une ligne du fichier plus ancienne est ignorée |
+| Signet | `INSERT OR IGNORE` sur la clé primaire (source, manga, chapitre, page) |
+| Catégorie | recréée par nom si absente ; couleur et place locales conservées sinon |
+
+Les comptes affichés à l'import sont des **deltas** : restaurer deux fois la
+même sauvegarde rend zéro la seconde fois. C'est `Store::restaurer` qui les
+calcule, pas une prédiction en Rust — la condition `WHERE` de chaque
+`DO UPDATE` répète les expressions du `SET`, donc c'est la même formule qui
+décide du changement et qui l'écrit.
+
+Preuves : `cargo test` (9 tests de sauvegarde, dont
+`restaurer_ne_remonte_jamais_l_historique`, prouvé rouge en retirant la garde
+`WHERE`) ; côté écran, T08.6 de [`smoke-test.md`](smoke-test.md).
+
 ## Documentation
 
 | Document | Contenu |

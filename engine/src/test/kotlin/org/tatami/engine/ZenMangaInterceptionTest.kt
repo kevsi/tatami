@@ -11,6 +11,7 @@ import org.koitharu.kotatsu.parsers.model.MangaParserSource
 import java.util.Base64
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -54,19 +55,39 @@ class ZenMangaInterceptionTest {
 
         val liste = requete(
             ctx, pool, cache, "latest",
-            JSONObject().put("source", "ZENMANGA").put("limit", 3),
+            JSONObject().put("source", "ZENMANGA").put("limit", 5),
         ).getJSONArray("list")
         assertTrue(liste.length() > 0, "ZENMANGA doit renvoyer des titres")
 
-        val m = liste.getJSONObject(0)
-        val ch = requete(
-            ctx, pool, cache, "chapters",
-            JSONObject()
-                .put("source", "ZENMANGA")
-                .put("mangaUrl", m.getString("url"))
-                .put("mangaTitle", m.getString("title")),
-        ).getJSONArray("chapters")
-        assertTrue(ch.length() > 0, "le manga doit avoir des chapitres")
+        // Mesuré le 2026-10-27 (run v0.2.0-rc.5 en échec) : la **première**
+        // entrée de `latest` (« Клюква горькая », /content/bitterside-cranberries)
+        // est servie **sans chapitres** — un manga ajouté au catalogue avant que
+        // sa liste soit peuplée — et les quatre suivantes en ont (15, 5, 18, 4).
+        // Ce test prouve le déchiffrement des images, pas la complétude du
+        // catalogue : il cherche donc la première entrée *qui a des chapitres*
+        // parmi les cinq, au lieu de supposer que la première en a.
+        var mangaChoisi: JSONObject? = null
+        var chapitresChoisis: org.json.JSONArray? = null
+        for (i in 0 until minOf(5, liste.length())) {
+            val candidat = liste.getJSONObject(i)
+            val reponse = requete(
+                ctx, pool, cache, "chapters",
+                JSONObject()
+                    .put("source", "ZENMANGA")
+                    .put("mangaUrl", candidat.getString("url"))
+                    .put("mangaTitle", candidat.getString("title")),
+            ).getJSONArray("chapters")
+            if (reponse.length() > 0) {
+                mangaChoisi = candidat
+                chapitresChoisis = reponse
+                break
+            }
+        }
+        val m = assertNotNull(mangaChoisi) {
+            "aucune des 5 premières entrées de latest n'a de chapitres — le catalogue " +
+                "a changé de côté, relire la mesure (sonde ZENMANGA) avant de corriger le code"
+        }
+        val ch = assertNotNull(chapitresChoisis)
 
         val pages = requete(
             ctx, pool, cache, "pages",

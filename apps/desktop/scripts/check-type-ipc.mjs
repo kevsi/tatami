@@ -56,6 +56,7 @@ const PAIRES = [
   ['EtatMaj', 'EtatMaj', 'maj.rs'],
   ['VersionDisponible', 'VersionDisponible', 'maj.rs'],
   ['ProgressionMaj', 'Progression', 'maj.rs'],
+  ['RapportSauvegarde', 'RapportSauvegarde', 'backup.rs'],
 ];
 
 /** Champs d'un `type X = { … }` de `page.tsx`, dans l'ordre. */

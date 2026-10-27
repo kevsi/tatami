@@ -471,6 +471,18 @@ const FR = {
     "Dossier changé. Les prochains téléchargements iront là.",
   "telechargements.dossier.retour": "Retour au dossier {chemin}",
   "telechargements.dossier.erreur": "Dossier de téléchargement : {raison}",
+  "sauvegarde.titre": "Sauvegarde de la bibliothèque",
+  "sauvegarde.note":
+    "Enregistre favoris, catégories, position de lecture et signets dans un fichier JSON. Les fichiers téléchargés restent où ils sont.",
+  "sauvegarde.exporter": "Exporter…",
+  "sauvegarde.importer": "Importer…",
+  "sauvegarde.export.ok":
+    "Sauvegarde écrite dans {chemin} — favoris : {favoris} · chapitres lus : {historique} · signets : {signets} · catégories : {categories}",
+  "sauvegarde.import.ok":
+    "Bibliothèque mise à jour depuis {chemin} — favoris : {favoris} · chapitres lus : {historique} · signets : {signets} · catégories : {categories}",
+  "sauvegarde.fusion":
+    "L’import ajoute et met à jour, jamais l’inverse : rien de ce que vous avez déjà n’est supprimé ni remis en arrière.",
+  "sauvegarde.erreur": "Sauvegarde : {raison}",
   "telechargements.pause": "Mettre en pause",
   "telechargements.pause.note":
     "Le chapitre en cours est terminé, puis la file s’arrête. Reprendre la reprendra où elle s’est arrêtée.",
@@ -1056,6 +1068,18 @@ const EN: Record<Cle, string> = {
     "Folder changed. New downloads will go there.",
   "telechargements.dossier.retour": "Back to {chemin}",
   "telechargements.dossier.erreur": "Downloads folder: {raison}",
+  "sauvegarde.titre": "Library backup",
+  "sauvegarde.note":
+    "Saves favourites, categories, reading positions and bookmarks into a JSON file. Downloaded files stay where they are.",
+  "sauvegarde.exporter": "Export…",
+  "sauvegarde.importer": "Import…",
+  "sauvegarde.export.ok":
+    "Backup written to {chemin} — favourites: {favoris} · read chapters: {historique} · bookmarks: {signets} · categories: {categories}",
+  "sauvegarde.import.ok":
+    "Library updated from {chemin} — favourites: {favoris} · read chapters: {historique} · bookmarks: {signets} · categories: {categories}",
+  "sauvegarde.fusion":
+    "Importing only adds and updates, never the opposite: nothing you already have is removed or moved back.",
+  "sauvegarde.erreur": "Backup: {raison}",
   "telechargements.pause": "Pause",
   "telechargements.pause.note":
     "The current chapter finishes, then the queue stops. Resuming continues where it left off.",

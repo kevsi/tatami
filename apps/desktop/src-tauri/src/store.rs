@@ -165,6 +165,94 @@ pub struct BundledSourceState {
     pub deleted: bool,
 }
 
+// ---------- Sauvegarde de la bibliothèque ----------
+//
+// Le format est un JSON **notre** : il ne décrit que ce que la base contient,
+// et c'est `restaurer` qui décide de la fusion. Les ids ne voyagent pas — deux
+// bases n'ont jamais les mêmes `category_id` — donc les favoris référencent
+// leur catégorie **par nom**, recréée au besoin à la restauration.
+
+/// Version du format de sauvegarde écrit et lu par ce binaire. Toute évolution
+/// incrémente ce nombre, et `restaurer` refuse ce qu'il ne sait pas lire —
+/// jamais « au mieux ».
+pub const VERSION_SAUVEGARDE: u32 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SauvegardeCategorie {
+    pub name: String,
+    /// Index de palette (1..=8), comme `Category` : jamais une valeur CSS.
+    pub color: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SauvegardeFavori {
+    pub source: String,
+    pub manga_url: String,
+    pub title: String,
+    pub cover_url: Option<String>,
+    pub content_rating: Option<String>,
+    pub added_at: i64,
+    /// Nom de la catégorie, pas son id (cf. l'en-tête de la section).
+    pub categorie: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SauvegardeHistorique {
+    pub source: String,
+    pub manga_url: String,
+    pub title: String,
+    pub cover_url: Option<String>,
+    pub content_rating: Option<String>,
+    pub chapter_url: Option<String>,
+    pub chapter_title: Option<String>,
+    pub chapter_index: i64,
+    pub page_index: i64,
+    pub page_count: i64,
+    pub read_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SauvegardeSignet {
+    pub source: String,
+    pub manga_url: String,
+    pub chapter_url: String,
+    pub title: String,
+    pub cover_url: Option<String>,
+    pub chapter_title: Option<String>,
+    pub page_index: u16,
+    pub page_count: u16,
+    pub created_at: i64,
+}
+
+/// Toutes les données utilisateur qui voyagent dans un fichier de sauvegarde.
+/// Hors périmètre, choisi en lisant le code : les téléchargements (des fichiers
+/// `.cbz` sur le disque, pas des lignes en base), les réglages
+/// (`dossier_telechargements` pointe vers un chemin **de cette machine**) et
+/// les scripts de sources personnalisées (des fichiers `.js`, pas des lignes).
+/// Restaurer ces trois-là depuis une autre machine écrirait des chemins faux.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sauvegarde {
+    pub version: u32,
+    pub exported_at: i64,
+    pub categories: Vec<SauvegardeCategorie>,
+    pub favoris: Vec<SauvegardeFavori>,
+    pub historique: Vec<SauvegardeHistorique>,
+    pub signets: Vec<SauvegardeSignet>,
+}
+
+/// Ce qu'une restauration a réellement changé. Chaque compte est un **delta**,
+/// pas un décompte du fichier : une entrée identique à ce que la base porte
+/// déjà ne compte pas, et une entrée d'historique plus ancienne que la locale
+/// non plus. Restaurer deux fois la même sauvegarde rend donc les mêmes
+/// chiffres que la seconde — zéro —, ce qui est vrai.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ComptesRestauration {
+    pub categories: u32,
+    pub favoris: u32,
+    pub historique: u32,
+    pub signets: u32,
+}
+
 pub struct Store {
     conn: Mutex<Connection>,
     path: PathBuf,
@@ -1409,6 +1497,290 @@ impl Store {
             .map_err(|e| format!("historique : {e}"))?;
         Ok(())
     }
+
+    // ---------- Sauvegarde / restauration ----------
+
+    /// Lit toute la bibliothèque dans une valeur `Sauvegarde`, prête à être
+    /// sérialisée par la couche commande. L'ordre est déterministe (date puis
+    /// titre) : deux exports de la même base donnent deux fichiers identiques,
+    /// donc comparables.
+    pub fn sauvegarde(&self) -> Result<Sauvegarde, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+
+        let mut req = conn
+            .prepare("SELECT name, color FROM categories ORDER BY position, name")
+            .map_err(|e| format!("sauvegarde (catégories) : {e}"))?;
+        let categories = req
+            .query_map([], |r| {
+                Ok(SauvegardeCategorie {
+                    name: r.get(0)?,
+                    color: r.get::<_, i64>(1)? as u8,
+                })
+            })
+            .map_err(|e| format!("sauvegarde (catégories) : {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("sauvegarde (catégories) : {e}"))?;
+
+        // La catégorie du favori voyage par son **nom** : le `LEFT JOIN` rend
+        // `NULL` pour un favori sans catégorie, exactement le champ écrit.
+        let mut req = conn
+            .prepare(
+                "SELECT f.source, f.manga_url, f.title, f.cover_url, f.content_rating,
+                        f.added_at, c.name
+                 FROM favorites f
+                 LEFT JOIN categories c ON c.id = f.category_id
+                 ORDER BY f.added_at, f.title",
+            )
+            .map_err(|e| format!("sauvegarde (favoris) : {e}"))?;
+        let favoris = req
+            .query_map([], |r| {
+                Ok(SauvegardeFavori {
+                    source: r.get(0)?,
+                    manga_url: r.get(1)?,
+                    title: r.get(2)?,
+                    cover_url: r.get(3)?,
+                    content_rating: r.get(4)?,
+                    added_at: r.get(5)?,
+                    categorie: r.get(6)?,
+                })
+            })
+            .map_err(|e| format!("sauvegarde (favoris) : {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("sauvegarde (favoris) : {e}"))?;
+
+        let mut req = conn
+            .prepare(
+                "SELECT source, manga_url, title, cover_url, content_rating, chapter_url,
+                        chapter_title, chapter_index, page_index, page_count, read_at
+                 FROM history
+                 ORDER BY read_at DESC",
+            )
+            .map_err(|e| format!("sauvegarde (historique) : {e}"))?;
+        let historique = req
+            .query_map([], |r| {
+                Ok(SauvegardeHistorique {
+                    source: r.get(0)?,
+                    manga_url: r.get(1)?,
+                    title: r.get(2)?,
+                    cover_url: r.get(3)?,
+                    content_rating: r.get(4)?,
+                    chapter_url: r.get(5)?,
+                    chapter_title: r.get(6)?,
+                    chapter_index: r.get(7)?,
+                    page_index: r.get(8)?,
+                    page_count: r.get(9)?,
+                    read_at: r.get(10)?,
+                })
+            })
+            .map_err(|e| format!("sauvegarde (historique) : {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("sauvegarde (historique) : {e}"))?;
+
+        let mut req = conn
+            .prepare(
+                "SELECT source, manga_url, chapter_url, title, cover_url, chapter_title,
+                        page_index, page_count, created_at
+                 FROM bookmarks
+                 ORDER BY created_at DESC",
+            )
+            .map_err(|e| format!("sauvegarde (signets) : {e}"))?;
+        let signets = req
+            .query_map([], |r| {
+                Ok(SauvegardeSignet {
+                    source: r.get(0)?,
+                    manga_url: r.get(1)?,
+                    chapter_url: r.get(2)?,
+                    title: r.get(3)?,
+                    cover_url: r.get(4)?,
+                    chapter_title: r.get(5)?,
+                    page_index: r.get::<_, i64>(6)? as u16,
+                    page_count: r.get::<_, i64>(7)? as u16,
+                    created_at: r.get(8)?,
+                })
+            })
+            .map_err(|e| format!("sauvegarde (signets) : {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("sauvegarde (signets) : {e}"))?;
+
+        Ok(Sauvegarde {
+            version: VERSION_SAUVEGARDE,
+            exported_at: now_ms(),
+            categories,
+            favoris,
+            historique,
+            signets,
+        })
+    }
+
+    /// Fusionne une sauvegarde dans la base courante. **Jamais destructrice** :
+    /// rien n'est supprimé, et les règles de fusion sont celles déjà posées par
+    /// les écritures quotidiennes —
+    ///
+    /// - une classification connue n'est jamais écrasée par `UNKNOWN` (règle de
+    ///   `save_progress` / `note_content_rating`) ;
+    /// - l'historique ne remonte jamais : la ligne la plus récente gagne ;
+    /// - un favori garde sa date d'ajout la plus ancienne ;
+    /// - les catégories sont recréées par **nom** si absentes, la couleur
+    ///   locale gagne sinon ;
+    /// - un signet déjà présent est ignoré tel quel.
+    ///
+    /// La condition `WHERE` de chaque `DO UPDATE` **répète les expressions du
+    /// `SET`** : c'est la même formule qui décide du changement et qui
+    /// l'écrit. Recopier la logique en Rust pour « prédire » le changement
+    /// ferait deux implémentations qui divergent.
+    pub fn restaurer(&self, sauvegarde: &Sauvegarde) -> Result<ComptesRestauration, String> {
+        if sauvegarde.version != VERSION_SAUVEGARDE {
+            return Err(format!(
+                "version de sauvegarde inconnue : {} (ce binaire lit la version {VERSION_SAUVEGARDE})",
+                sauvegarde.version
+            ));
+        }
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| "base verrouillée".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("restauration : {e}"))?;
+
+        // 1. Les catégories d'abord : les favoris qui suivent les référencent
+        //    par nom. `INSERT OR IGNORE` respecte le `UNIQUE` de `name` — une
+        //    catégorie déjà connue garde sa couleur et sa place.
+        let mut nb_categories = 0u32;
+        for c in &sauvegarde.categories {
+            let inserees = tx
+                .execute(
+                    "INSERT OR IGNORE INTO categories (name, color, position)
+                     VALUES (?1, ?2, (SELECT COALESCE(MAX(position), -1) + 1 FROM categories))",
+                    params![c.name, c.color as i64],
+                )
+                .map_err(|e| format!("restauration (catégories) : {e}"))?;
+            nb_categories += inserees as u32;
+        }
+
+        // 2. Favoris. Sur conflit, une classification connue gagne (`NULLIF`),
+        //    la date d'ajout la plus ancienne reste, la catégorie du fichier ne
+        //    remplace celle de la base que si le fichier en porte une qui
+        //    résout ; `?7` vaut `NULL` sinon, et `COALESCE` garde la locale.
+        let mut nb_favoris = 0u32;
+        for f in &sauvegarde.favoris {
+            let classement = f
+                .content_rating
+                .as_deref()
+                .filter(|r| !r.eq_ignore_ascii_case("UNKNOWN"))
+                .map(str::to_string)
+                .or_else(|| classement_adulte(&f.source, &f.title).map(str::to_string));
+            let modifiees = tx
+                .execute(
+                    "INSERT INTO favorites (source, manga_url, title, cover_url, content_rating,
+                                           added_at, category_id)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, (SELECT id FROM categories WHERE name = ?7))
+                     ON CONFLICT(source, manga_url) DO UPDATE SET
+                        title = excluded.title,
+                        cover_url = COALESCE(excluded.cover_url, favorites.cover_url),
+                        content_rating = COALESCE(NULLIF(excluded.content_rating, 'UNKNOWN'),
+                                                  favorites.content_rating),
+                        added_at = MIN(favorites.added_at, excluded.added_at),
+                        category_id = COALESCE((SELECT id FROM categories WHERE name = ?7),
+                                               favorites.category_id)
+                     WHERE title IS NOT excluded.title
+                        OR cover_url IS NOT COALESCE(excluded.cover_url, favorites.cover_url)
+                        OR content_rating IS NOT COALESCE(NULLIF(excluded.content_rating, 'UNKNOWN'),
+                                                          favorites.content_rating)
+                        OR added_at != MIN(favorites.added_at, excluded.added_at)
+                        OR category_id IS NOT COALESCE((SELECT id FROM categories WHERE name = ?7),
+                                                       favorites.category_id)",
+                    params![f.source, f.manga_url, f.title, f.cover_url, classement, f.added_at,
+                            f.categorie],
+                )
+                .map_err(|e| format!("restauration (favoris) : {e}"))?;
+            nb_favoris += modifiees as u32;
+        }
+
+        // 3. Historique. Le `WHERE` porte sur `read_at` : une ligne du fichier
+        //    plus ancienne que celle de la base est **ignorée**, jamais
+        //    réécrite — on ne remonte pas dans le temps d'une lecture.
+        let mut nb_historique = 0u32;
+        for h in &sauvegarde.historique {
+            let classement = h
+                .content_rating
+                .as_deref()
+                .filter(|r| !r.eq_ignore_ascii_case("UNKNOWN"))
+                .map(str::to_string)
+                .or_else(|| classement_adulte(&h.source, &h.title).map(str::to_string));
+            let modifiees = tx
+                .execute(
+                    "INSERT INTO history (source, manga_url, title, cover_url, content_rating,
+                                          chapter_url, chapter_title, chapter_index,
+                                          page_index, page_count, read_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                     ON CONFLICT(source, manga_url) DO UPDATE SET
+                        title = excluded.title,
+                        cover_url = COALESCE(excluded.cover_url, history.cover_url),
+                        content_rating = COALESCE(NULLIF(excluded.content_rating, 'UNKNOWN'),
+                                                  history.content_rating),
+                        chapter_url = excluded.chapter_url,
+                        chapter_title = excluded.chapter_title,
+                        chapter_index = excluded.chapter_index,
+                        page_index = excluded.page_index,
+                        page_count = excluded.page_count,
+                        read_at = excluded.read_at
+                     WHERE excluded.read_at > history.read_at",
+                    params![
+                        h.source,
+                        h.manga_url,
+                        h.title,
+                        h.cover_url,
+                        classement,
+                        h.chapter_url,
+                        h.chapter_title,
+                        h.chapter_index,
+                        h.page_index,
+                        h.page_count,
+                        h.read_at
+                    ],
+                )
+                .map_err(|e| format!("restauration (historique) : {e}"))?;
+            nb_historique += modifiees as u32;
+        }
+
+        // 4. Signets. La clé primaire porte la page, donc `OR IGNORE` suffit :
+        //    un signet déjà là est exactement ce signet.
+        let mut nb_signets = 0u32;
+        for b in &sauvegarde.signets {
+            let inseres = tx
+                .execute(
+                    "INSERT OR IGNORE INTO bookmarks
+                         (source, manga_url, chapter_url, title, cover_url, chapter_title,
+                          page_index, page_count, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    params![
+                        b.source,
+                        b.manga_url,
+                        b.chapter_url,
+                        b.title,
+                        b.cover_url,
+                        b.chapter_title,
+                        b.page_index,
+                        b.page_count,
+                        b.created_at
+                    ],
+                )
+                .map_err(|e| format!("restauration (signets) : {e}"))?;
+            nb_signets += inseres as u32;
+        }
+
+        tx.commit().map_err(|e| format!("restauration : {e}"))?;
+        Ok(ComptesRestauration {
+            categories: nb_categories,
+            favoris: nb_favoris,
+            historique: nb_historique,
+            signets: nb_signets,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -2610,5 +2982,405 @@ mod tests {
         assert_eq!(liste.len(), 1);
         assert_eq!(liste[0].installed_at, liste[0].installed_at);
         nettoyer(&path);
+    }
+
+    // ---------- Sauvegarde / restauration de la bibliothèque ----------
+
+    /// Une donnée de chaque table, catégorie liée incluse. Toutes les dates
+    /// valent `now_ms()` — les tests de fusion ci-dessous contrôlent le
+    /// comportement en écrivant des dates **explicites** dans le fichier.
+    fn bibliotheque_de_reference(s: &Store) {
+        let lus = s.add_category("Lus ensemble", 3).unwrap();
+        s.add_category("À finir", 5).unwrap();
+        s.set_favorite(
+            "SRC",
+            "/m/1",
+            "Premier",
+            Some("http://c1"),
+            Some("SAFE"),
+            true,
+        )
+        .unwrap();
+        s.set_favorite("SRC", "/m/2", "Deuxième", None, None, true)
+            .unwrap();
+        // La fiche a appris le classement après l'ajout : c'est le cas courant.
+        s.note_content_rating("SRC", "/m/2", "ADULT").unwrap();
+        s.set_favorite_category("SRC", "/m/1", Some(lus.id))
+            .unwrap();
+        s.save_progress(
+            "SRC",
+            "/m/1",
+            "Premier",
+            Some("http://c1"),
+            Some("SAFE"),
+            Some("/c/2"),
+            Some("Chapitre 2"),
+            1,
+            4,
+            63,
+        )
+        .unwrap();
+        s.add_bookmark(
+            "SRC",
+            "/m/1",
+            "/c/2",
+            "Premier",
+            Some("http://c1"),
+            Some("Chapitre 2"),
+            4,
+            12,
+        )
+        .unwrap();
+    }
+
+    fn favori_fichier(url: &str, titre: &str, added_at: i64) -> SauvegardeFavori {
+        SauvegardeFavori {
+            source: "SRC".into(),
+            manga_url: url.into(),
+            title: titre.into(),
+            cover_url: None,
+            content_rating: None,
+            added_at,
+            categorie: None,
+        }
+    }
+
+    fn historique_fichier(url: &str, read_at: i64, page: i64) -> SauvegardeHistorique {
+        SauvegardeHistorique {
+            source: "SRC".into(),
+            manga_url: url.into(),
+            title: "Premier".into(),
+            cover_url: None,
+            content_rating: None,
+            chapter_url: Some("/c/1".into()),
+            chapter_title: Some("Chapitre 1".into()),
+            chapter_index: 0,
+            page_index: page,
+            page_count: 20,
+            read_at,
+        }
+    }
+
+    fn sauvegarde_une_entree() -> Sauvegarde {
+        // `exported_at` ne participe à aucune règle de fusion : 0 suffit ici,
+        // seules les dates **par ligne** décident.
+        Sauvegarde {
+            version: VERSION_SAUVEGARDE,
+            exported_at: 0,
+            categories: vec![],
+            favoris: vec![favori_fichier("/m/1", "Premier", 1_000_000_000_000)],
+            historique: vec![historique_fichier("/m/1", 1_000_000_000_000, 2)],
+            signets: vec![],
+        }
+    }
+
+    #[test]
+    fn une_sauvegarde_contient_toute_la_bibliotheque() {
+        let s = Store::open_in_memory().expect("base en mémoire");
+        bibliotheque_de_reference(&s);
+        let sv = s.sauvegarde().expect("sauvegarde");
+        assert_eq!(sv.version, VERSION_SAUVEGARDE);
+        assert!(sv.exported_at > 0, "exported_at doit être horodaté");
+
+        assert_eq!(sv.categories.len(), 2);
+        assert_eq!(sv.categories[0].name, "Lus ensemble");
+        assert_eq!(sv.categories[0].color, 3);
+
+        assert_eq!(sv.favoris.len(), 2);
+        let premier = sv
+            .favoris
+            .iter()
+            .find(|f| f.manga_url == "/m/1")
+            .expect("favori /m/1");
+        assert_eq!(premier.categorie.as_deref(), Some("Lus ensemble"));
+        assert_eq!(premier.content_rating.as_deref(), Some("SAFE"));
+        let deuxieme = sv
+            .favoris
+            .iter()
+            .find(|f| f.manga_url == "/m/2")
+            .expect("favori /m/2");
+        // `note_content_rating` a appris ADULT après l'ajout : c'est cette
+        // valeur apprise qui voyage, pas le `NULL` d'origine.
+        assert_eq!(deuxieme.content_rating.as_deref(), Some("ADULT"));
+
+        assert_eq!(sv.historique.len(), 1);
+        assert_eq!(sv.historique[0].chapter_url.as_deref(), Some("/c/2"));
+        assert_eq!(sv.historique[0].page_index, 4);
+
+        assert_eq!(sv.signets.len(), 1);
+        assert_eq!(sv.signets[0].page_index, 4);
+    }
+
+    #[test]
+    fn une_restauration_sur_base_vide_reproduit_la_bibliotheque() {
+        let a = Store::open_in_memory().expect("base en mémoire");
+        bibliotheque_de_reference(&a);
+        let sv = a.sauvegarde().expect("sauvegarde");
+
+        let b = Store::open_in_memory().expect("base vide");
+        let comptes = b.restaurer(&sv).expect("restauration");
+        // Base vide : chaque entrée du fichier est un vrai changement.
+        assert_eq!(comptes.categories, 2);
+        assert_eq!(comptes.favoris, 2);
+        assert_eq!(comptes.historique, 1);
+        assert_eq!(comptes.signets, 1);
+
+        let favoris = b.list_favorites(false).expect("favoris");
+        assert_eq!(favoris.len(), 2);
+        let premier = favoris.iter().find(|f| f.manga_url == "/m/1").unwrap();
+        // La catégorie est reliée par son nom : l'id de B n'est pas celui de A,
+        // mais la couleur de « Lus ensemble » (3) doit suivre le favori.
+        assert_eq!(premier.category_color, Some(3));
+        let noms: Vec<String> = b
+            .list_categories()
+            .expect("catégories")
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        assert_eq!(noms, vec!["Lus ensemble", "À finir"]);
+
+        let recents = b.list_recent(10, false).expect("historique");
+        assert_eq!(recents.len(), 1);
+        assert_eq!(recents[0].chapter_url.as_deref(), Some("/c/2"));
+        assert_eq!(recents[0].page_index, 4);
+
+        let signets = b.list_bookmarks(50, None, false).expect("signets");
+        assert_eq!(signets.len(), 1);
+        assert_eq!(signets[0].page_index, 4);
+    }
+
+    /// La règle de fusion la plus importante : une restauration ne ramène jamais
+    /// la lecture en arrière. Mesurée sur les trois directions — insertion,
+    /// fichier plus ancien ignoré, fichier plus récent appliqué.
+    #[test]
+    fn restaurer_ne_remonte_jamais_l_historique() {
+        let s = Store::open_in_memory().expect("base en mémoire");
+        let ancien = 1_000_000_000_000_i64;
+        let nouveau = 2_500_000_000_000_i64;
+
+        // 1. Base vide : la ligne du fichier est insérée telle quelle.
+        let comptes = s.restaurer(&sauvegarde_une_entree()).expect("restauration");
+        assert_eq!(comptes.historique, 1);
+        assert_eq!(
+            s.derniere_lecture("SRC", "/m/1").unwrap().unwrap().read_at,
+            ancien
+        );
+
+        // 2. Lecture locale plus récente (`save_progress` horodate à maintenant,
+        //     largement après 2001) : rejouer le même fichier ne change rien.
+        s.save_progress(
+            "SRC",
+            "/m/1",
+            "Premier",
+            None,
+            None,
+            Some("/c/9"),
+            None,
+            0,
+            9,
+            20,
+        )
+        .unwrap();
+        let comptes = s.restaurer(&sauvegarde_une_entree()).expect("restauration");
+        assert_eq!(
+            comptes.historique, 0,
+            "le fichier est plus ancien : rien à appliquer"
+        );
+        let relue = s.derniere_lecture("SRC", "/m/1").unwrap().unwrap();
+        assert!(relue.read_at > ancien, "la position ne doit pas remonter");
+        assert_eq!(
+            relue.page_index, 9,
+            "la page locale reste celle de la lecture locale"
+        );
+
+        // 3. Fichier plus récent : la ligne locale est remplacée, c'est le but.
+        let sv = Sauvegarde {
+            historique: vec![historique_fichier("/m/1", nouveau, 17)],
+            ..sauvegarde_une_entree()
+        };
+        let comptes = s.restaurer(&sv).expect("restauration");
+        assert_eq!(comptes.historique, 1);
+        let relue = s.derniere_lecture("SRC", "/m/1").unwrap().unwrap();
+        assert_eq!(relue.read_at, nouveau);
+        assert_eq!(relue.page_index, 17);
+    }
+
+    /// Un favori garde sa date d'ajout la plus ancienne : c'est « depuis quand
+    /// on le lit », pas « depuis quand la sauvegarde existe ».
+    #[test]
+    fn restaurer_garde_la_date_dajout_la_plus_ancienne() {
+        let s = Store::open_in_memory().expect("base en mémoire");
+        let t0 = 1_000_000_000_000_i64;
+        let t1 = 2_000_000_000_000_i64;
+
+        let comptes = s.restaurer(&sauvegarde_une_entree()).expect("restauration");
+        assert_eq!(comptes.favoris, 1);
+
+        // Fichier plus récent : MIN garde t0, donc rien ne change.
+        let sv = Sauvegarde {
+            favoris: vec![favori_fichier("/m/1", "Premier", t1)],
+            ..sauvegarde_une_entree()
+        };
+        let comptes = s.restaurer(&sv).expect("restauration");
+        assert_eq!(
+            comptes.favoris, 0,
+            "rien ne change, la date locale est plus ancienne"
+        );
+        assert_eq!(s.list_favorites(false).unwrap()[0].added_at, t0);
+
+        // Fichier plus ancien : la date descend jusqu'à la plus ancienne connue.
+        let sv = Sauvegarde {
+            favoris: vec![favori_fichier("/m/1", "Premier", t0 - 1)],
+            ..sauvegarde_une_entree()
+        };
+        let comptes = s.restaurer(&sv).expect("restauration");
+        assert_eq!(comptes.favoris, 1);
+        assert_eq!(s.list_favorites(false).unwrap()[0].added_at, t0 - 1);
+    }
+
+    /// Une classification connue n'est jamais écrasée par `UNKNOWN` — la règle
+    /// des écritures quotidiennes (`save_progress`, `note_content_rating`),
+    /// appliquée à la restauration. L'incognito dépend de cette colonne.
+    #[test]
+    fn restaurer_garde_une_classification_deja_connue() {
+        let s = Store::open_in_memory().expect("base en mémoire");
+        s.set_favorite("SRC", "/m/1", "Premier", None, Some("ADULT"), true)
+            .unwrap();
+        // Le fichier porte le même favori sans classification (UNKNOWN) :
+        // l'ADULT local doit rester, donc rien ne change.
+        let sv = Sauvegarde {
+            favoris: vec![SauvegardeFavori {
+                content_rating: Some("UNKNOWN".into()),
+                ..favori_fichier("/m/1", "Premier", now_ms())
+            }],
+            ..sauvegarde_une_entree()
+        };
+        let comptes = s.restaurer(&sv).expect("restauration");
+        assert_eq!(comptes.favoris, 0);
+        assert_eq!(
+            s.list_favorites(false).unwrap()[0]
+                .content_rating
+                .as_deref(),
+            Some("ADULT"),
+            "une classification connue ne doit pas être écrasée par UNKNOWN"
+        );
+
+        // Sens inverse : la base ne sait pas, le fichier si — il comble.
+        let s2 = Store::open_in_memory().expect("base en mémoire");
+        s2.set_favorite("SRC", "/m/1", "Premier", None, None, true)
+            .unwrap();
+        let sv2 = Sauvegarde {
+            favoris: vec![SauvegardeFavori {
+                content_rating: Some("SAFE".into()),
+                ..favori_fichier("/m/1", "Premier", now_ms())
+            }],
+            ..sauvegarde_une_entree()
+        };
+        let comptes = s2.restaurer(&sv2).expect("restauration");
+        assert_eq!(comptes.favoris, 1);
+        assert_eq!(
+            s2.list_favorites(false).unwrap()[0]
+                .content_rating
+                .as_deref(),
+            Some("SAFE")
+        );
+    }
+
+    /// La catégorie est reliée par son **nom** : déjà connue localement, elle
+    /// n'est pas recréée et la couleur locale gagne.
+    #[test]
+    fn restaurer_retrouve_une_categorie_existante_par_nom() {
+        let s = Store::open_in_memory().expect("base en mémoire");
+        s.add_category("Rer", 2).unwrap();
+        let sv = Sauvegarde {
+            categories: vec![SauvegardeCategorie {
+                name: "Rer".into(),
+                color: 7,
+            }],
+            favoris: vec![SauvegardeFavori {
+                categorie: Some("Rer".into()),
+                ..favori_fichier("/m/9", "Autre", now_ms())
+            }],
+            ..sauvegarde_une_entree()
+        };
+        let comptes = s.restaurer(&sv).expect("restauration");
+        assert_eq!(
+            comptes.categories, 0,
+            "la catégorie existe déjà : rien à créer"
+        );
+        assert_eq!(comptes.favoris, 1);
+        let favoris = s.list_favorites(false).unwrap();
+        let autre = favoris.iter().find(|f| f.manga_url == "/m/9").unwrap();
+        assert_eq!(
+            autre.category_color,
+            Some(2),
+            "la couleur locale reste la bonne"
+        );
+    }
+
+    #[test]
+    fn restaurer_deux_fois_ne_duplique_pas_les_signets() {
+        let s = Store::open_in_memory().expect("base en mémoire");
+        let sv = Sauvegarde {
+            signets: vec![SauvegardeSignet {
+                source: "SRC".into(),
+                manga_url: "/m/1".into(),
+                chapter_url: "/c/1".into(),
+                title: "Premier".into(),
+                cover_url: None,
+                chapter_title: Some("Chapitre 1".into()),
+                page_index: 7,
+                page_count: 20,
+                created_at: 1_000_000_000_000,
+            }],
+            ..sauvegarde_une_entree()
+        };
+        let comptes = s.restaurer(&sv).expect("restauration");
+        assert_eq!(comptes.signets, 1);
+        let comptes = s.restaurer(&sv).expect("seconde restauration");
+        assert_eq!(
+            comptes.signets, 0,
+            "le même signet ne doit pas se dupliquer"
+        );
+        assert_eq!(s.list_bookmarks(50, None, false).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn une_sauvegarde_dune_version_inconnue_est_refusee() {
+        let s = Store::open_in_memory().expect("base en mémoire");
+        let sv = Sauvegarde {
+            version: VERSION_SAUVEGARDE + 1,
+            ..sauvegarde_une_entree()
+        };
+        let err = s
+            .restaurer(&sv)
+            .expect_err("une version inconnue doit être refusée");
+        assert!(
+            err.contains("version"),
+            "le refus doit nommer la version : {err}"
+        );
+        // Refusée avant toute écriture : la base reste vide.
+        assert!(s.list_favorites(false).unwrap().is_empty());
+    }
+
+    /// Le JSON est un **format de fichier** : ce qu'on écrit aujourd'hui doit se
+    /// relire tel quel demain. Le test passe par la sérialisation réelle, pas
+    /// par une fixture réécrite à la main.
+    #[test]
+    fn le_format_de_sauvegarde_est_reversible_en_json() {
+        let a = Store::open_in_memory().expect("base en mémoire");
+        bibliotheque_de_reference(&a);
+        let sv = a.sauvegarde().expect("sauvegarde");
+        let json = serde_json::to_string_pretty(&sv).expect("sérialisation");
+        let relu: Sauvegarde = serde_json::from_str(&json).expect("désérialisation");
+        assert_eq!(
+            relu, sv,
+            "le format sur disque doit être fidèle au format en mémoire"
+        );
+
+        let b = Store::open_in_memory().expect("base vide");
+        b.restaurer(&relu).expect("restauration");
+        assert_eq!(b.list_favorites(false).unwrap().len(), sv.favoris.len());
+        assert_eq!(b.list_categories().unwrap().len(), sv.categories.len());
     }
 }

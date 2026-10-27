@@ -72,6 +72,17 @@ type CustomSource = {
   path: string;
   installed_at: number;
 };
+/** Reflète `RapportSauvegarde` de `backup.rs`. Retourné par
+ *  `exporter_sauvegarde` et `importer_sauvegarde` — `null` si le dialogue a
+ *  été annulé. Les comptes sont des décomptes du fichier à l'export, des
+ *  **deltas** à l'import (une entrée déjà identique ne compte pas). */
+type RapportSauvegarde = {
+  chemin: string;
+  categories: number;
+  favoris: number;
+  historique: number;
+  signets: number;
+};
 type Manga = {
   url: string;
   title: string;
@@ -4368,6 +4379,53 @@ function nomSource(s: Source): string {
     }
   }
 
+  // ---------- Sauvegarde de la bibliothèque ----------
+
+  /** Écrit la bibliothèque dans un fichier JSON choisi par l'utilisateur.
+   *  Le dialogue est ouvert par Rust : le chemin ne traverse jamais l'IPC
+   *  (même raison que l'import d'une source personnalisée). */
+  async function exporterSauvegarde() {
+    try {
+      const r = await invoke<RapportSauvegarde | null>('exporter_sauvegarde');
+      if (!r) return; // dialogue annulé : rien à dire, rien à faire
+      // Valeurs nommées une à une : la porte i18n vérifie les placeholders,
+      // et un objet passé entier lui cache quels champs les portent.
+      setNotice(
+        t('sauvegarde.export.ok', {
+          chemin: cheminLisible(r.chemin),
+          favoris: r.favoris,
+          historique: r.historique,
+          signets: r.signets,
+          categories: r.categories,
+        }),
+      );
+    } catch (e) {
+      setError(t('sauvegarde.erreur', { raison: String(e) }));
+    }
+  }
+
+  /** Fusionne un fichier de sauvegarde dans la bibliothèque. La fusion ne
+   *  supprime jamais rien (côté Rust) ; ici, on relit les listes de l'accueil
+   *  pour que ce qui revient apparaisse sans changer d'onglet. */
+  async function importerSauvegarde() {
+    try {
+      const r = await invoke<RapportSauvegarde | null>('importer_sauvegarde');
+      if (!r) return; // dialogue annulé
+      setNotice(
+        t('sauvegarde.import.ok', {
+          chemin: cheminLisible(r.chemin),
+          favoris: r.favoris,
+          historique: r.historique,
+          signets: r.signets,
+          categories: r.categories,
+        }),
+      );
+      await Promise.allSettled([refreshShelf(), refreshSignets(), refreshDownloads()]);
+    } catch (e) {
+      setError(t('sauvegarde.erreur', { raison: String(e) }));
+    }
+  }
+
   async function removeDownload(item: LibraryItem) {
     try {
       const n = await invoke<number>('remove_download', {
@@ -5924,6 +5982,24 @@ useEffect(() => {
               </button>
             )}
           </div>
+        </section>
+
+        {/* Sauvegarde de la bibliothèque : exporter une copie, importer pour
+            récupérer. La fusion est non destructive (`Store::restaurer` ne
+            supprime jamais rien) et le panneau le dit : la première peur de
+            quelqu'un qui restaure est d'écraser ses données actuelles. */}
+        <section className="panel">
+          <h2>{t('sauvegarde.titre')}</h2>
+          <p className="muted">{t('sauvegarde.note')}</p>
+          <div className="row-actions">
+            <button className="btn btn-primary" onClick={() => void exporterSauvegarde()}>
+              {t('sauvegarde.exporter')}
+            </button>
+            <button className="btn btn-ghost" onClick={() => void importerSauvegarde()}>
+              {t('sauvegarde.importer')}
+            </button>
+          </div>
+          <p className="muted">{t('sauvegarde.fusion')}</p>
         </section>
 
         <section className="panel">

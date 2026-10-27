@@ -35,6 +35,7 @@
 //! que ça peut servir » est exactement ce qui a produit les commandes mortes
 //! supprimées le 2026-10-04.
 
+pub mod backup;
 pub mod cbz;
 pub mod challenge;
 pub mod commands;

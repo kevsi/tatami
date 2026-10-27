@@ -20,7 +20,7 @@ use tauri::Manager;
 // chemin de `generate_handler!` ne se résout pas.
 use tatami_desktop::pagecache::PageRef;
 use tatami_desktop::{
-    challenge, commands, custom_source, download, journal, library, maj, metacache, moteur,
+    backup, challenge, commands, custom_source, download, journal, library, maj, metacache, moteur,
     pagecache, recherche, scheduler, shelf, store, tray,
 };
 
@@ -342,6 +342,8 @@ fn main() {
             maj::etat_maj,
             maj::verifier_maj,
             maj::installer_maj,
+            backup::exporter_sauvegarde,
+            backup::importer_sauvegarde,
         ])
         .manage(download::DownloadState::default())
         .setup(|app| {

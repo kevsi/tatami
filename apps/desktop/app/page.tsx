@@ -1605,7 +1605,10 @@ export default function Home() {
       if (typeof window === 'undefined') return;
       if (window.localStorage.getItem('tatami.firstLaunchDone')) return;
       window.localStorage.setItem('tatami.firstLaunchDone', '1');
-      setNotice('Premier lancement : initialisation du moteur en cours, le catalogue peut prendre un peu de temps à se charger...');
+      const id = setTimeout(() => {
+        setNotice('Premier lancement : initialisation du moteur en cours, le catalogue peut prendre un peu de temps à se charger...');
+      }, 0);
+      return () => clearTimeout(id);
     } catch {}
   }, [setNotice]);
   const [error, setError] = useState<string | null>(null);

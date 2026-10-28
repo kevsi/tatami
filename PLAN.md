@@ -5742,3 +5742,18 @@ fusion) et `docs/smoke-test.md` T08.6, écrit **avant** d'avoir été exécuté 
 il se dit « jamais exécuté » tant que ce n'est pas fait.
 
 **Prochaine action** : item 3 — **TERMINÉ**. Rig local sans installer : `.mesures/maj/serveur.cjs` + `.mesures/maj/minisign.cjs` + `.mesures/maj/autotest.cjs` → **6/6 verts** (détection, version inférieure, signature altérée, octets altérés, endpoint éteint, signedmismatch). Manifeste signé minisign vérifié, aucun installeur exécuté. Walk CDP (`.mesures/maj/walk.cjs`) écrit pour preuve UI mais non finalisé (démarrage app long en mode test). Preuve jugée suffisante par option 1.
+
+### Journal 2026-10-28 — correction de version, push et tag de release v0.2.0-rc.6
+
+**Problème corrigé** : `Cargo.toml` était en `0.2.0-rc.5` alors que `package.json` et `tauri.conf.json` étaient en `0.2.0-rc.6` (désaccord de version entre le cœur Rust et l'application). Aligné sur `0.2.0-rc.6` + `Cargo.lock` regénéré.
+
+**Commits poussés sur `master`** (branche désormais synchronisée avec `origin/master`) :
+- `1a2af7a fix: lint premier lancement`
+- `67c9a7f chore(release): coeur en 0.2.0-rc.6 pour correspondre au front et au manifeste Tauri`
+- `f43e02e chore(release): verrouille Cargo.lock en 0.2.0-rc.6`
+
+**Tag de release** : `v0.2.0-rc.6` poussé sur `origin` (pointe sur `f43e02e`, état totalement cohérent en `0.2.0-rc.6`). Le tag déclenche le workflow CI `release.yml` qui build et publie une **prérelease** (MSI/NSIS + `.sig` + `latest.json` + `SHA256SUMS.txt`, jamais servie en `latest`).
+
+**Vérifications** : `cargo check` vert (compilé `tatami-desktop v0.2.0-rc.6`), `git status` propre.
+
+**Release GitHub** : la création de l'objet release n'a pas pu être effectuée via le MCP GitHub (authentification DCR indisponible, voir leçon §8). Elle est attendue du workflow CI sur le push de tag ; à vérifier sur `https://github.com/kevsi/tatami/releases/tag/v0.2.0-rc.6`. Les installeurs restent non signés (Authenticode) en attendant SignPath (5.6 / M6) — aucune promesse de mise à jour automatique en production avant cela.

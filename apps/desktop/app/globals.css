@@ -3138,6 +3138,15 @@ main select option {
   font-size: var(--t-base);
 }
 
+/* Le chrono sous le libellé : il dit que ça travaille encore. Mesuré le
+   2026-11-02 — un chapitre jamais lu attend 11 299 ms de parsing côté source,
+   et une roue seule ne distingue pas « c'est long » de « c'est bloqué ». */
+.chargement-detail {
+  color: var(--text-3);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .roue {
     animation: none;

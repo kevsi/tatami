@@ -24,12 +24,13 @@ import { lireListeSources } from '../lib/prefs-tolérantes';
 import { memeSignet } from '../lib/signet-cle';
 import { supprimerPuisRafraichirCatalogue } from '../lib/source-perso-suppression';
 import { chapitresSansDoublons } from '../lib/chapitres-doublons';
+import { prioriserChapitreEnCours } from '../lib/ordre-telechargement';
 import { sourceDeLaFiche } from '../lib/source-fiche';
 import { attenteDepasseLeSeuil } from '../lib/chargement-long';
 import { fusionnerPremierePage, nouvellesEntrees } from '../lib/catalogue-pagination';
 import { formatTaille } from '../lib/format-taille';
 import { cartesAFaire, entreesFraiches, type EntreeRecent } from '../lib/cartes-recentes';
-import { ciblePrechargement } from '../lib/prechargement';
+import { ciblePrechargement, chapitresVoisins } from '../lib/prechargement';
 import { PAGES_AVANCE_HORS_FENETRE, DELAI_SURVOL_MS, doitPrechargerAuSurvol, pagesAPrecharger } from '../lib/prechargement-pages';
 import {
   codeErreurMaj,
@@ -1738,6 +1739,20 @@ export default function Home() {
     [annulerSurvol, openManga, reader, pagesDeChapitre],
   );
   const [readerLoading, setReaderLoading] = useState(false);
+  /** Secondes écoulées depuis l'ouverture du chapitre (voir `renderChargement`).
+   *  Remis à zéro par `preparerLecture`, donc à chaque chapitre ouvert, et non
+   *  dans un effet : `react-hooks/set-state-in-effect` refuse un `setState`
+   *  synchrone, et un compteur qui repart de la valeur du chapitre précédent
+   *  mentirait pendant une demi-seconde. */
+  const [chargementSecondes, setChargementSecondes] = useState(0);
+  useEffect(() => {
+    if (!readerLoading) return;
+    const debut = Date.now();
+    const minuteur = window.setInterval(() => {
+      setChargementSecondes(Math.round((Date.now() - debut) / 1000));
+    }, 500);
+    return () => window.clearInterval(minuteur);
+  }, [readerLoading]);
   // Pré-chargement du chapitre suivant : quand un chapitre est ouvert, on
   // fetch ses pages en arrière-plan pour que « chapitre suivant » soit
   // instantané. On ne charge que le suivant (pas tout le reste), et on saute
@@ -1791,22 +1806,33 @@ export default function Home() {
     const cible = ciblePrechargement(chapters, progression?.chapter_url ?? null);
     if (!cible) return;
     const src = openManga.source;
-    const cle = `${src}|${cible.url}`;
-    if (cachePages.current.has(cle)) return;
     const titre = openManga.title;
+    // Le chapitre visé **d'abord** (c'est celui qu'on ouvrira), puis ses
+    // voisins : enchaîner sur le suivant ne doit pas repayer le parsing de sa
+    // page — mesuré à 11 299 ms à froid contre 310 ms quand la réponse est en
+    // cache disque. Deux voisins, pas plus : ouvrir une fiche ne doit pas
+    // devenir une rafale de requêtes.
+    const index = chapters.indexOf(cible);
+    const aPreparer = [cible, ...chapitresVoisins(chapters, index).filter((c) => c !== cible)];
     let annule = false;
     void (async () => {
-      try {
-        const locales = await invoke<LocalPage[]>('local_chapter_pages', {
-          source: src,
-          mangaTitle: titre,
-          chapterTitle: chapterLabel(cible),
-          chapterUrl: cible.url,
-        }).catch(() => [] as LocalPage[]);
-        if (annule || locales.length > 0) return;
-        await pagesDeChapitre(src, cible.url);
-      } catch {
-        // silencieux : le pré-chargement est un confort
+      for (const ch of aPreparer) {
+        if (annule) return;
+        const cle = `${src}|${ch.url}`;
+        if (cachePages.current.has(cle)) continue;
+        try {
+          const locales = await invoke<LocalPage[]>('local_chapter_pages', {
+            source: src,
+            mangaTitle: titre,
+            chapterTitle: chapterLabel(ch),
+            chapterUrl: ch.url,
+          }).catch(() => [] as LocalPage[]);
+          if (annule) return;
+          if (locales.length > 0) continue;
+          await pagesDeChapitre(src, ch.url);
+        } catch {
+          // silencieux : le pré-chargement est un confort
+        }
       }
     })();
     return () => {
@@ -4347,6 +4373,23 @@ function nomSource(s: Source): string {
       const skipped = list.length - todo.length;
       patch({ skipped });
 
+      // Le chapitre en cours de lecture passe devant : c'est celui qu'on veut
+      // ouvrir, pas le plus récent de la source. Mesuré le 2026-11-02 — sur un
+      // webtoon de 121 chapitres, le chapitre lu arrivait après des dizaines
+      // d'autres. `derniere_lecture` est local (SQLite) : une requête, pas un
+      // aller-retour moteur, et un échec retombe sur l'ordre de la source.
+      try {
+        const reprise = await invoke<Progression | null>('derniere_lecture', {
+          source: m.source,
+          mangaUrl: m.url,
+        });
+        if (reprise?.chapter_url) {
+          todo = prioriserChapitreEnCours(todo, reprise.chapter_url);
+        }
+      } catch {
+        // silencieux : la priorité est un confort, pas une condition
+      }
+
       let done = 0;
       let failed = 0;
       // Pourquoi le dernier échec, et sur quel chapitre : voir `QueueItem.raison`.
@@ -4849,6 +4892,7 @@ async function openReader(c: Chapter) {
  * troisième chemin l'appellerait bien.
  */
 function preparerLecture(nbPages: number, position: number) {
+  setChargementSecondes(0);
   setPagesEnErreur(new Set());
   setDimsPages({});
   setPagesDecodees(new Set());
@@ -5074,6 +5118,12 @@ function renderChargement() {
     <div className="chargement" role="status">
       <span className="roue" aria-hidden="true" />
       <span className="chargement-txt">{t('lecteur.chargement')}</span>
+      {/* Le chrono dit ce que la roue ne dit pas : que ça travaille encore.
+          Mesuré le 2026-11-02 : un chapitre jamais lu attend 11 299 ms de
+          parsing (`pages`) — sans repère, l'utilisateur croit à un blocage. */}
+      <span className="chargement-detail">
+        {t('lecteur.chargement.detail', { s: chargementSecondes })}
+      </span>
     </div>
   );
 }

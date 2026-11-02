@@ -412,6 +412,7 @@ const FR = {
     "Aucun chapitre téléchargé pour le moment.",
   "lecteur.horsligne": "Hors ligne",
   "lecteur.chargement": "Chargement du chapitre…",
+  "lecteur.chargement.detail": "Préparation de la source — {s} s",
   "lecteur.page.indisponible": "Page indisponible chez la source.",
   "lecteur.pages.manquantes":
     "{n} page(s) sur {total} ne sont pas servies par la source. Le reste du chapitre est lisible.",
@@ -992,6 +993,7 @@ const EN: Record<Cle, string> = {
   "telechargements.chapitres.aucun": "No chapter downloaded yet.",
   "lecteur.horsligne": "Offline",
   "lecteur.chargement": "Loading chapter…",
+  "lecteur.chargement.detail": "Preparing the source — {s} s",
   // « not served by the source » : the wording matters. Measured on
   // `custom:mangadex-api` (2026-10-09) — chapter 1 serves 7/8 pages as ~200 KB
   // JPEGs, chapter 3 serves 0/8, same code, same second. The 404 is MangaDex's,

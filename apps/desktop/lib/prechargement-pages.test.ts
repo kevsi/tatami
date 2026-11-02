@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { PAGES_AVANCE, pagesAPrecharger } from './prechargement-pages.ts';
+import { PAGES_AVANCE, DELAI_SURVOL_MS, doitPrechargerAuSurvol, pagesAPrecharger } from './prechargement-pages.ts';
 
 describe('préchargement des pages du lecteur', () => {
   it('demande les pages devant la page courante', () => {
@@ -27,5 +27,24 @@ describe('préchargement des pages du lecteur', () => {
 
   it('la fenêtre par défaut couvre plus d’un écran de marge', () => {
     assert.ok(PAGES_AVANCE >= 4, 'moins de 4 pages d’avance ne couvrirait pas un défilement rapide');
+  });
+});
+
+describe('préchargement au survol d’un chapitre', () => {
+  it('précharge un chapitre inconnu quand on ne lit pas', () => {
+    assert.equal(doitPrechargerAuSurvol(false, false), true);
+  });
+
+  it('ne redemande pas un chapitre déjà en mémoire', () => {
+    assert.equal(doitPrechargerAuSurvol(true, false), false);
+  });
+
+  it('ne précharge rien pendant une lecture', () => {
+    assert.equal(doitPrechargerAuSurvol(false, true), false);
+  });
+
+  it('le délai de survol ignore un simple passage de la souris', () => {
+    assert.ok(DELAI_SURVOL_MS >= 150, 'un délai trop court préchargerait au moindre mouvement');
+    assert.ok(DELAI_SURVOL_MS <= 500, 'un délai long retarderait le bénéfice du survol');
   });
 });

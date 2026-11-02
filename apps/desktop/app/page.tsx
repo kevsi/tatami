@@ -30,7 +30,7 @@ import { fusionnerPremierePage, nouvellesEntrees } from '../lib/catalogue-pagina
 import { formatTaille } from '../lib/format-taille';
 import { cartesAFaire, entreesFraiches, type EntreeRecent } from '../lib/cartes-recentes';
 import { ciblePrechargement } from '../lib/prechargement';
-import { PAGES_AVANCE_HORS_FENETRE, pagesAPrecharger } from '../lib/prechargement-pages';
+import { PAGES_AVANCE_HORS_FENETRE, DELAI_SURVOL_MS, doitPrechargerAuSurvol, pagesAPrecharger } from '../lib/prechargement-pages';
 import {
   codeErreurMaj,
   doitVerifierAuto,
@@ -1689,6 +1689,54 @@ export default function Home() {
   // toujours le premier chapitre, ce qui est inutilisable sur une série de 137.
   const [chapitresVisibles, setChapitresVisibles] = useState<LibraryItem | null>(null);
   const [reader, setReader] = useState<Reader | null>(null);
+
+  /** Préchargement du chapitre **survolé** (ou atteint au clavier).
+   *
+   *  Mesuré le 2026-11-02 : ouvrir un chapitre jamais lu coûte 11 299 ms de
+   *  parsing (`pages`) avant la première image, contre 310 ms quand la réponse
+   *  est en cache disque. À l'ouverture d'une fiche, seul le chapitre de
+   *  reprise est préchargé : cliquer un autre chapitre payait donc les 11 s.
+   *  Le survol est le signal d'intention le moins cher pour les masquer — et
+   *  il ne coûte rien si l'utilisateur ne fait que passer sur la liste
+   *  (`DELAI_SURVOL_MS`), puisque `pagesDeChapitre` déduplique les requêtes en
+   *  vol et garde les réponses en mémoire.
+   */
+  const minuteurSurvol = useRef<number | null>(null);
+  const annulerSurvol = useCallback(() => {
+    if (minuteurSurvol.current !== null) {
+      window.clearTimeout(minuteurSurvol.current);
+      minuteurSurvol.current = null;
+    }
+  }, []);
+  const programmerSurvol = useCallback(
+    (c: Chapter) => {
+      const src = sourceDeLaFiche(openManga);
+      if (!src) return;
+      const cle = `${src}|${c.url}`;
+      if (!doitPrechargerAuSurvol(cachePages.current.has(cle), Boolean(reader))) return;
+      annulerSurvol();
+      minuteurSurvol.current = window.setTimeout(() => {
+        minuteurSurvol.current = null;
+        void (async () => {
+          try {
+            // Un chapitre déjà téléchargé se lit depuis le fichier : rien à
+            // demander au moteur (même garde que le préchargement de fiche).
+            const locales = await invoke<LocalPage[]>('local_chapter_pages', {
+              source: src,
+              mangaTitle: openManga?.title ?? '',
+              chapterTitle: chapterLabel(c),
+              chapterUrl: c.url,
+            }).catch(() => [] as LocalPage[]);
+            if (locales.length > 0) return;
+            await pagesDeChapitre(src, c.url);
+          } catch {
+            // silencieux : un survol ne doit jamais produire d'erreur visible
+          }
+        })();
+      }, DELAI_SURVOL_MS);
+    },
+    [annulerSurvol, openManga, reader, pagesDeChapitre],
+  );
   const [readerLoading, setReaderLoading] = useState(false);
   // Pré-chargement du chapitre suivant : quand un chapitre est ouvert, on
   // fetch ses pages en arrière-plan pour que « chapitre suivant » soit
@@ -7866,6 +7914,13 @@ if (reader) {
                   className={`chapter-cell${on ? ' on' : ''}${courant ? ' courant' : ''}`}
                   key={c.url}
                   data-courant={courant ? '' : undefined}
+                  // Un survol est un signal d'intention : précharger `pages`
+                  // pendant ce temps masque une partie des 11 299 ms mesurés
+                  // sur un chapitre jamais lu (cf. `prechargerSurvol`).
+                  onMouseEnter={() => programmerSurvol(c)}
+                  onMouseLeave={annulerSurvol}
+                  onFocus={() => programmerSurvol(c)}
+                  onBlur={annulerSurvol}
                 >
                   <label className="chapter-check">
                     <input

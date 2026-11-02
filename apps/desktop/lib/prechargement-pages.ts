@@ -42,6 +42,30 @@ export const PAGES_AVANCE = 6;
  */
 export const PAGES_AVANCE_HORS_FENETRE = 2;
 
+/** Délai avant de précharger le chapitre survolé.
+ *
+ *  Mesuré le 2026-11-02 : `pages` à froid coûte **11 299 ms** sur LELMANGA,
+ *  contre 310 ms quand la réponse est déjà dans le cache disque. Un survol est
+ *  un signal d'intention : ce délai ignore un simple passage de la souris sur
+ *  la liste, sans retarder le clic (le clic, lui, demande le chapitre
+ *  immédiatement, et retrouve la requête déjà en vol).
+ */
+export const DELAI_SURVOL_MS = 250;
+
+/**
+ * Faut-il précharger ce chapitre au survol ?
+ *
+ * Non quand on est déjà en train de lire (le lecteur occupe le moteur), ni
+ * quand la réponse est déjà en mémoire — un survol répété ne doit rien
+ * redemander.
+ */
+export function doitPrechargerAuSurvol(
+  dejaEnMemoire: boolean,
+  lectureEnCours: boolean,
+): boolean {
+  return !dejaEnMemoire && !lectureEnCours;
+}
+
 /**
  * Les index à demander d'avance, à partir de `index` (base 0).
  *

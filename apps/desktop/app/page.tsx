@@ -30,6 +30,7 @@ import { fusionnerPremierePage, nouvellesEntrees } from '../lib/catalogue-pagina
 import { formatTaille } from '../lib/format-taille';
 import { cartesAFaire, entreesFraiches, type EntreeRecent } from '../lib/cartes-recentes';
 import { ciblePrechargement } from '../lib/prechargement';
+import { PAGES_AVANCE_HORS_FENETRE, pagesAPrecharger } from '../lib/prechargement-pages';
 import {
   codeErreurMaj,
   doitVerifierAuto,
@@ -5528,6 +5529,57 @@ const admisAffiches = useMemo(
   () => pagesAffichees(admis, fenetre, bandeVirtualisable),
   [admis, fenetre, bandeVirtualisable],
 );
+
+/** Préchargement des **octets** des pages devant la page courante.
+ *
+ *  Mesuré le 2026-11-02 : le lecteur ne demandait que ce qu'il admettait — 6
+ *  pages à l'ouverture, puis la fenêtre montée — et **rien** n'était demandé
+ *  d'avance (aucun `new Image()`, aucun préchargement côté Rust). Toute page
+ *  hors fenêtre payait donc sa latence au moment du défilement : ~126 ms sur
+ *  un chapitre local déjà monté, mais 606 ms par image sur une source
+ *  personnalisée (ADR 0019), et davantage sur un site lent. Or le même octet,
+ *  une fois demandé, sort du cache disque de Rust en quelques millisecondes.
+ *
+ *  On demande donc `PAGES_AVANCE` pages d'avance, jamais plus : la rafale
+ *  reste bornée, et c'est le cache disque qui se remplit — l'image montée plus
+ *  tard lira de là.
+ *
+ *  Une `Image()` et non `fetch` : la CSP du cœur autorise `img-src
+ *  http://tatami.localhost` mais **pas** `connect-src` sur ce protocole, donc
+ *  un `fetch` serait refusé. L'échec est silencieux : c'est un confort, pas
+ *  une donnée dont l'écran dépend.
+ */
+const pagesPrechargees = useRef<Set<number>>(new Set());
+useEffect(() => {
+  pagesPrechargees.current = new Set();
+}, [reader?.chapter?.url]);
+useEffect(() => {
+  if (!reader || pagesBande.length === 0) return;
+  // On part de la **dernière page montée**, pas de la page courante : les
+  // pages visibles ont déjà leur requête, et le navigateur ne laisse que
+  // 6 connexions par hôte (`tatami.localhost`) — mesuré à 5,4 s par image sur
+  // LELMANGA, donc les prendre pour du confort retarderait le premier écran.
+  // Le délai laisse en plus la rafale visible partir **avant** : sans lui, les
+  // préchargements entrent dans la file des 6 connexions au même tour.
+  const minuteur = window.setTimeout(() => {
+    if (!reader) return;
+    const derniereMontee = fenetre.length > 0 ? fenetre[fenetre.length - 1] : reader.index;
+    for (const i of pagesAPrecharger(
+      derniereMontee,
+      pagesBande.length,
+      pagesPrechargees.current,
+      PAGES_AVANCE_HORS_FENETRE,
+    )) {
+      const page = pagesBande[i];
+      if (!page?.token) continue;
+      pagesPrechargees.current.add(i);
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = pageSrc(page.token, reprisePages);
+    }
+  }, 1500);
+  return () => window.clearTimeout(minuteur);
+}, [reader, pagesBande, fenetre, reprisePages]);
 
 /** Fenêtre de tuiles **montées** dans le rail d'aperçus.
  *

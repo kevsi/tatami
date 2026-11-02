@@ -21,3 +21,28 @@ export function ciblePrechargement<T extends { url: string }>(
   }
   return chapitres[0];
 }
+
+/**
+ * Les chapitres **voisins** d'une cible, pour précharger leur liste de pages.
+ *
+ * Mesuré le 2026-11-02 : ouvrir un chapitre jamais lu coûte le parsing de sa
+ * page (`pages`) — **11 299 ms** sur LELMANGA — contre 310 ms quand la réponse
+ * est déjà sur le disque. La fiche ne préchargeait que le chapitre de reprise :
+ * enchaîner sur le suivant repayait l'attente entière.
+ *
+ * `rayon = 1` donne le précédent et le suivant (deux requêtes) : assez pour
+ * l'enchaînement courant, sans transformer l'ouverture d'une fiche en rafale.
+ */
+export function chapitresVoisins<T>(
+  chapitres: readonly T[],
+  index: number,
+  rayon = 1,
+): T[] {
+  if (!Number.isInteger(index) || index < 0 || index >= chapitres.length) return [];
+  const voisins: T[] = [];
+  for (let d = 1; d <= rayon; d += 1) {
+    if (index - d >= 0) voisins.push(chapitres[index - d]);
+    if (index + d < chapitres.length) voisins.push(chapitres[index + d]);
+  }
+  return voisins;
+}

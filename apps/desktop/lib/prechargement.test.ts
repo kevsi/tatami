@@ -7,7 +7,7 @@
 // qui déclenche une requête réseau mérite un test.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { ciblePrechargement } from './prechargement.ts';
+import { ciblePrechargement, chapitresVoisins } from './prechargement.ts';
 
 const chapitres = [{ url: '/ch/3' }, { url: '/ch/2' }, { url: '/ch/1' }];
 
@@ -30,5 +30,31 @@ describe('cible du préchargement d’une fiche', () => {
   it('liste vide : ne vise rien (aucune requête)', () => {
     assert.equal(ciblePrechargement([], '/ch/1'), null);
     assert.equal(ciblePrechargement([], null), null);
+  });
+});
+
+describe('chapitres voisins à précharger', () => {
+  const liste = ['/ch/5', '/ch/4', '/ch/3', '/ch/2', '/ch/1'];
+
+  it('rend le précédent et le suivant', () => {
+    // La liste est dans l'ordre de la source (souvent du plus récent au plus
+    // ancien) : « précédent » et « suivant » sont des positions, pas des
+    // numéros de chapitre.
+    assert.deepEqual(chapitresVoisins(liste, 2), ['/ch/4', '/ch/2']);
+  });
+
+  it('aux extrémités, ne rend que le voisin existant', () => {
+    assert.deepEqual(chapitresVoisins(liste, 0), ['/ch/4']);
+    assert.deepEqual(chapitresVoisins(liste, 4), ['/ch/2']);
+  });
+
+  it('rayon 2 rend quatre voisins', () => {
+    assert.deepEqual(chapitresVoisins(liste, 2, 2), ['/ch/4', '/ch/2', '/ch/5', '/ch/1']);
+  });
+
+  it('index hors liste : aucune requête', () => {
+    assert.deepEqual(chapitresVoisins(liste, -1), []);
+    assert.deepEqual(chapitresVoisins(liste, 5), []);
+    assert.deepEqual(chapitresVoisins([], 0), []);
   });
 });

@@ -1109,7 +1109,10 @@ button:disabled {
 }
 
 .dead-badge {
-  color: var(--danger);
+  /* `--danger` (#f13e3e) donnait 4,17:1 sur la surface des tuiles, sous le
+     seuil AA de 4,5 pour un texte de 10 px (mesuré le 2026-11-02). La teinte
+     « texte » du même token existe déjà dans les deux thèmes et passe. */
+  color: var(--danger-texte);
   border-color: var(--danger-bordure);
 }
 
@@ -2302,6 +2305,16 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: var(--s3);
+}
+
+/* Noms des webtoons de la file interrompue. Une liste simple, alignée sur le
+   retrait du panneau : elle sert à savoir ce qu'on reprend avant de cliquer. */
+.queue-noms {
+  margin: 0 0 var(--s3);
+  padding-left: var(--s4);
+  color: var(--text-2);
+  font-size: var(--t-sm);
+  line-height: 1.6;
 }
 
 .queue-row {

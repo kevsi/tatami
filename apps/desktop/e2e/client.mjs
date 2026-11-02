@@ -99,15 +99,27 @@ export async function reinitialiser({ envoyer, evaluer }) {
   });
 }
 
-export async function allerAOnglet(evaluer, nom) {
-  const clique = await evaluer(`(function(){
-    const t = [...document.querySelectorAll('[role=tab]')].find((x) => x.innerText.includes(${JSON.stringify(nom)}));
-    if (!t) return false;
-    t.click();
-    return true;
-  })()`);
-  if (!clique) throw new Error(`onglet introuvable : ${nom}`);
-  await pause(1200);
+/**
+ * Va sur un onglet, en **vérifiant** qu'il est bien sélectionné.
+ *
+ * Un clic juste après un rechargement est avalé en silence tant que React n'a
+ * pas fini d'hydrater (leçon AGENTS.md §14) : la suite restait alors sur
+ * l'onglet précédent, et le scénario lisait 0 élément en croyant que la vue
+ * était vide. On clique, on relit `aria-selected`, on recommence.
+ */
+export async function allerAOnglet(evaluer, nom, { essais = 5 } = {}) {
+  const cible = `[...document.querySelectorAll('[role=tab]')].find((x) => x.innerText.includes(${JSON.stringify(nom)}))`;
+  for (let i = 0; i < essais; i++) {
+    const existe = await evaluer(`!!(${cible})`);
+    if (!existe) throw new Error(`onglet introuvable : ${nom}`);
+    if (await evaluer(`(${cible})?.getAttribute('aria-selected') === 'true'`)) {
+      await pause(600);
+      return;
+    }
+    await evaluer(`(function(){ const t = ${cible}; if (t) t.click(); })()`);
+    await pause(800);
+  }
+  throw new Error(`onglet ${nom} jamais sélectionné (clic avalé ou vue absente)`);
 }
 
 /**
@@ -205,6 +217,34 @@ export async function ouvrirUneFicheAvecChapitres(session, sources) {
     }
   }
   throw new Error(`aucune source utilisable :\n  - ${echecs.join('\n  - ')}`);
+}
+
+/**
+ * Ouvre le premier webtoon téléchargé et son premier chapitre, hors ligne.
+ * Rend `false` s'il n'y a rien de téléchargé (le lecteur n'est pas ouvert).
+ */
+export async function ouvrirChapitreHorsLigne(session) {
+  await allerAOnglet(session.evaluer, 'Téléchargements');
+  const articles = await jusqua(session.evaluer, `document.querySelectorAll('article').length`, {
+    delai: 30000,
+    quoi: 'les webtoons téléchargés',
+  }).catch(() => 0);
+  if (!articles) return false;
+
+  const clic = await session.evaluer(`(function(){
+    const a = document.querySelector('article');
+    const b = a && [...a.querySelectorAll('button')].find((x) => x.innerText.trim() === 'Lire');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  if (!clic) return false;
+
+  await jusqua(session.evaluer, `!!document.querySelector('.reader-bar')`, {
+    delai: 60000,
+    quoi: 'l’ouverture du lecteur (fichier local)',
+  });
+  return true;
 }
 
 /** Lit la position de lecture dans la barre du lecteur. */

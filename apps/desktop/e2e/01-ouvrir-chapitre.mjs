@@ -17,7 +17,7 @@
 import {
   connecter,
   reinitialiser,
-  allerAOnglet,
+  ouvrirChapitreHorsLigne,
   ouvrirCatalogue,
   choisirLangue,
   ouvrirSource,
@@ -30,31 +30,6 @@ import {
 
 const SOURCES = ['LELMANGA', 'SEIMANGA', 'SHOJOSCANS', 'SUSHISCANFR'];
 
-/** Ouvre le premier webtoon téléchargé et son premier chapitre. */
-async function ouvrirDepuisTelechargements(s) {
-  await allerAOnglet(s.evaluer, 'Téléchargements');
-  const articles = await jusqua(s.evaluer, `document.querySelectorAll('article').length`, {
-    delai: 30000,
-    quoi: 'les webtoons téléchargés',
-  }).catch(() => 0);
-  if (!articles) return false;
-
-  const clic = await s.evaluer(`(function(){
-    const a = document.querySelector('article');
-    const b = a && [...a.querySelectorAll('button')].find((x) => x.innerText.trim() === 'Lire');
-    if (!b) return false;
-    b.click();
-    return true;
-  })()`);
-  if (!clic) return false;
-
-  await jusqua(s.evaluer, `!!document.querySelector('.reader-bar')`, {
-    delai: 60000,
-    quoi: 'l’ouverture du lecteur (fichier local)',
-  });
-  return true;
-}
-
 export default async function scenario(session = null) {
   const propre = session === null;
   const s = session ?? (await connecter());
@@ -62,7 +37,7 @@ export default async function scenario(session = null) {
   await reinitialiser(s);
 
   let via = 'téléchargements';
-  let ouvert = await ouvrirDepuisTelechargements(s);
+  let ouvert = await ouvrirChapitreHorsLigne(s);
 
   if (!ouvert) {
     via = 'catalogue';

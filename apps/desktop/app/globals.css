@@ -590,11 +590,14 @@ button:disabled {
    barre de navigation qui n'existe pas sur une liste. Jetons des cartes
    (`--surface-2`/`--text`/`--line`), lisibles dans les deux thèmes ; la cible
    fait 44 px, minimum d'accessibilité.
-   En bas À GAUCHE : le toast vit en bas à droite (même coin, z-index 90) et
-   le recouvrirait pendant ses 3 s à chaque action. */
+   Choix révisé le 2026-11-02 : **en bas à droite**, comme le reste des
+   interfaces. Il occupait la gauche pour ne pas être recouvert par le toast
+   (bas à droite) ; c'est maintenant le toast qui se place au-dessus de lui
+   (`.toaster`), ce qui règle le conflit sans déplacer l'action hors du coin
+   habituel. */
 .retour-haut {
   position: fixed;
-  left: var(--s5);
+  right: var(--s4);
   bottom: var(--s5);
   z-index: 40;
   display: inline-flex;
@@ -2485,7 +2488,10 @@ button:disabled {
 .toaster {
   position: fixed;
   right: var(--s4);
-  bottom: var(--s4);
+  /* Au-dessus du bouton « retour en haut » (44 px de cible + ses marges), qui
+     occupe désormais le coin bas-droit. Sans ce décalage, les deux se
+     recouvriraient pendant les 3 s d'un toast. */
+  bottom: calc(var(--s5) + 44px + var(--s3));
   z-index: 90;
   display: flex;
   flex-direction: column;

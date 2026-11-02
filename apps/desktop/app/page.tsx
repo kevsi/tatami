@@ -26,6 +26,8 @@ import { supprimerPuisRafraichirCatalogue } from '../lib/source-perso-suppressio
 import { chapitresSansDoublons } from '../lib/chapitres-doublons';
 import { sourceDeLaFiche } from '../lib/source-fiche';
 import { attenteDepasseLeSeuil } from '../lib/chargement-long';
+import { fusionnerPremierePage, nouvellesEntrees } from '../lib/catalogue-pagination';
+import { formatTaille } from '../lib/format-taille';
 import { cartesAFaire, entreesFraiches, type EntreeRecent } from '../lib/cartes-recentes';
 import { ciblePrechargement } from '../lib/prechargement';
 import {
@@ -553,6 +555,14 @@ const PAGE = 24;
 // qu'une tranche a la fois (le reste est derriere « Afficher plus »).
 const CHAPTER_PAGE = 100;
 const CHAPTER_STEP = 200;
+// Squelettes de la fiche : assez pour remplir l'écran, pas plus.
+//
+// Mesuré le 2026-11-02 : le squelette rendait `CHAPTER_PAGE` (100) lignes quel
+// que soit le webtoon. Sur « Pet Beasthuman » (11 chapitres), la liste arrivait
+// et 89 lignes disparaissaient d'un coup — tout le contenu sous la grille
+// remontait. Un squelette qui rétrécit est pire qu'un squelette court : il ne
+// doit couvrir que la fenêtre visible (4 rangées de 6 ≈ 24 lignes).
+const CHAPITRES_SQUELETTE = 24;
 /** Résultats de recherche globale rendus d'un coup. Une passe peut remonter
  *  des centaines de fiches (1370 sources × 5) : on en rend une tranche, le
  *  reste est derrière « Voir plus de résultats ». */
@@ -1295,12 +1305,7 @@ function clearHealthFor(sources: string[]) {
   window.localStorage.setItem(HEALTH_KEY, JSON.stringify(all));
 }
 
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.round(bytes || 0)} o`;
-  const mb = bytes / (1024 * 1024);
-  if (mb < 1) return `${Math.round(bytes / 1024)} Ko`;
-  return `${mb.toFixed(1).replace('.', ',')} Mo`;
-}
+/** Taille lisible : déléguée à `lib/format-taille` (testée séparément). */
 
 /** Extrait l'URL de vérification d'une erreur `CHALLENGE_REQUIRED`. */
 function challengeUrl(raw: string): string | null {
@@ -1938,6 +1943,12 @@ export default function Home() {
   const signatureFenetre = useRef<string | null>(null);
   const [queueRunning, setQueueRunning] = useState(false);
   const cancelQueue = useRef(false);
+  // Cibles demandées PENDANT une file en cours. L'ancien code refusait une
+  // seconde demande (`runQueue` retournait immédiatement) : l'utilisateur
+  // devait attendre la fin du webtoon en cours pour en sélectionner un autre.
+  // La boucle de remplissage absorbe ces cibles tour par tour — même file,
+  // même plafond de 2 téléchargements parallèles.
+  const fileSupplementaire = useRef<Manga[]>([]);
 
   /** Recharge la liste des sources du moteur.
    *
@@ -3027,7 +3038,7 @@ export default function Home() {
         <button
           className={`card${dead ? ' dead' : ''}`}
           onClick={() => openSource(s)}
-          title={dead ? `${t('catalogue.hors.service')} : ${dead.message}` : undefined}
+          title={dead ? `${t('catalogue.hors.service')} : ${dead.message}` : nom}
           aria-label={t('catalogue.ouvrir', { nom: s.name })}
         >
           <span className="name">{nom}</span>
@@ -3245,6 +3256,10 @@ export default function Home() {
       setLatest([]);
       setLatestOffset(0);
       setOnePageOnly(false);
+      // `hasMore` peut encore être vrai pour l'ancienne source (bouton
+      // « Voir plus » d'une source qui avait 3 pages, sur une autre qui n'en
+      // a qu'une) : on le remet à zéro au départ de la première page.
+      setHasMore(false);
     }
     // Chaque chargement invalide les rafraîchissements d'arrière-plan partis
     // avant lui : leur réponse décrirait une grille qui n'est plus à l'écran.
@@ -3279,7 +3294,15 @@ export default function Home() {
       // (en échec) à B, l'échec de B était mémorisé au nom de A, le succès de B
       // effacait la santé de A, et la fenêtre de challenge était rattachée à A.
       if (items.length > 0) clearHealthFor([s.name]);
-      setLatest((prev) => (offset === 0 ? items : [...prev, ...items]));
+      // Les sources qui ignorent `offset` (plusieurs scripts custom) répondent
+      // la même liste pour chaque page : sans dédoublonnage, la grille
+      // accumulait des cartes jumelles et la pagination repromettait du vide.
+      // On n'ajoute que ce qui n'a pas encore été vu, et on arrête la
+      // pagination quand rien de neuf n'arrive. Mesuré le 2026-11-02 sur le
+      // moteur réel : `custom:lire-manga` renvoie 43 fiches identiques quel
+      // que soit l'`offset`.
+      const nouveaux = offset === 0 ? items : nouvellesEntrees(latest, items, mangaKey);
+      setLatest((prev) => (offset === 0 ? items : [...prev, ...nouveaux]));
       // On avance de la **fenêtre demandée** (`pageSize`), pas du nombre
       // reçu. Les deux ne sont pas égaux quand une source rend des pages plus
       // courtes que la limite, et c'est alors que la pagination s'arrêtait.
@@ -3302,8 +3325,8 @@ export default function Home() {
       // Une source qui renvoie 0 au-delà de la première page ne pagine pas
       // (mesuré sur EXHENTAI) : on masque le bouton au lieu de le laisser
       // promising des résultats qui n'existent pas.
-      setHasMore(items.length > 0);
-      if (offset > 0 && items.length === 0) setOnePageOnly(true);
+      setHasMore(nouveaux.length > 0);
+      if (offset > 0 && nouveaux.length === 0) setOnePageOnly(true);
     } catch (e) {
       const raw = String(e);
       const url = challengeUrl(raw);
@@ -3340,7 +3363,7 @@ export default function Home() {
             });
             if (octets > 0) {
               setNotice(
-                t('challenge.transport.reussi', { octets: formatBytes(octets) }),
+                t('challenge.transport.reussi', { octets: formatTaille(octets) }),
               );
               await loadSource(s, offset, opts, true);
               return;
@@ -3924,7 +3947,12 @@ function nomSource(s: Source): string {
       const frais = await invoke<{ list: Manga[] }>('latest', { ...requete, refresh: true });
       const items = frais.list ?? [];
       if (items.length === 0 || catalogueGen.current !== generation) return;
-      setLatest(items);
+      // Le rafraîchissement ne porte que la **première page** : il ne doit
+      // jamais réduire une grille que l'utilisateur a déjà paginée (avant, il
+      // la ramenait à 1 page, et « Voir plus » repartait de l'offset stale).
+      // On remplace seulement le début du tableau ; les pages suivantes sont
+      // recollées, dédoublonnées par `source|url`.
+      setLatest((prev) => fusionnerPremierePage(prev, items, mangaKey));
     } catch {
       // silencieux : la grille garde ce que le cache disque lui a servi
     }
@@ -4152,7 +4180,8 @@ function nomSource(s: Source): string {
   }
 
   function togglePick(m: Manga) {
-    if (queueRunning) return;
+    // Débloqué pendant une file en cours : cocher n'écrit rien sur le disque,
+    // et le bouton « Ajouter à la file » en a besoin (voir `startQueue`).
     setPicked((prev) => {
       const next = new Set(prev);
       const key = mangaKey(m);
@@ -4179,10 +4208,36 @@ function nomSource(s: Source): string {
    *  Mesuré : le téléchargement était strictement séquentiel (un chapitre à la
    *  fois, une page toutes les ~2 s selon la source). */
   async function runQueue(targets: Manga[]) {
-    if (queueRunning || targets.length === 0) return;
+    if (targets.length === 0) return;
+
+    // Une file en cours n'est plus un mur : la demande s'ajoute à la fin de la
+    // file vivante. Sauvegardée de suite : même coupure de l'app, rien n'est perdu.
+    if (queueRunning) {
+      fileSupplementaire.current.push(...targets);
+      saveQueue([...(loadSavedQueue()?.items ?? []), ...targets]);
+      setQueue((prev) => [
+        ...prev,
+        ...targets.map((m) => ({
+          key: mangaKey(m),
+          title: m.title,
+          source: m.source,
+          total: 0,
+          done: 0,
+          skipped: 0,
+          failed: 0,
+          state: 'attente' as const,
+        })),
+      ]);
+      return;
+    }
 
     cancelQueue.current = false;
     setQueueRunning(true);
+    // **On quitte le mode sélection au lancement.** Avant, il restait actif :
+    // les cartes restaient « cochables »… mais `togglePick` no-opait pendant
+    // la file, donc chaque clic paraissait mort — impossible d'ouvrir un
+    // webtoon pour le lire, de la relance du téléchargement à sa fin.
+    leaveSelectMode();
     setError(null);
     const pending = [...targets];
     saveQueue(pending);
@@ -4295,7 +4350,20 @@ function nomSource(s: Source): string {
     // libres sont distincts en source.
     const restants = [...targets];
     const enCours = new Map<string, { source: string; p: Promise<void> }>();
-    while (restants.length > 0 || enCours.size > 0) {
+    while (
+      restants.length > 0 ||
+      enCours.size > 0 ||
+      fileSupplementaire.current.length > 0
+    ) {
+      // Cibles ajoutées pendant l'exécution : elles entrent ici, au tour
+      // suivant, exactement comme si elles avaient été cochées avant le
+      // lancement. Sauvegardées de suite (coupure d'app = rien perdu).
+      if (fileSupplementaire.current.length > 0) {
+        restants.push(...fileSupplementaire.current);
+        pending.push(...fileSupplementaire.current);
+        saveQueue(pending);
+        fileSupplementaire.current = [];
+      }
       if (!cancelQueue.current) {
         for (let i = 0; i < restants.length && enCours.size < 2; i++) {
           const sourceEnCours = new Set([...enCours.values()].map((e) => e.source));
@@ -4312,6 +4380,14 @@ function nomSource(s: Source): string {
       await Promise.race([...enCours.values()].map((e) => e.p));
     }
 
+    // Cibles arrivées pendant la clôture (course fine entre la garde
+    // `queueRunning` et la sortie de boucle) : elles sont remises dans la
+    // sauvegarde — la fenêtre « file interrompue » les retrouve au réveil.
+    if (fileSupplementaire.current.length > 0 && !cancelQueue.current) {
+      pending.push(...fileSupplementaire.current);
+      saveQueue(pending);
+      fileSupplementaire.current = [];
+    }
     if (cancelQueue.current) {
       setQueue((prev) =>
         prev.map((q) =>
@@ -4341,7 +4417,8 @@ function nomSource(s: Source): string {
   /** Reprend un webtoon précis déjà entamé : on ne retélécharge que les
    *  chapitres absents (la commande `missing_chapters` fait la différence). */
   async function resumeManga(item: LibraryItem) {
-    if (queueRunning) return;
+    // Reprendre un webtoon entamé pendant une file : comme toute autre cible,
+    // la demande s'ajoute à la file vivante (voir `runQueue`).
     await runQueue([
       { url: item.url, title: item.title, source: item.source, coverUrl: item.coverUrl ?? null },
     ]);
@@ -5886,7 +5963,12 @@ useEffect(() => {
                       />
                     ))}
                   </div>
-                  <span className="cat-count muted">
+                  <span
+                    className="cat-count muted"
+                    title={t('reglages.categories.favoris', {
+                      n: favorites.filter((f) => f.category_id === c.id).length,
+                    })}
+                  >
                     {favorites.filter((f) => f.category_id === c.id).length}
                   </span>
                   <button
@@ -6667,6 +6749,15 @@ useEffect(() => {
                 s: savedQueue.items.length > 1 ? 's' : '',
               })}
             </p>
+            {/* Les noms des webtoons en attente : sans eux, « Reprendre la
+                file » engage un travail dont on ne sait rien. Mesuré le
+                2026-11-02 : le panneau annonçait « 4 webtoons » sans en
+                nommer un seul. */}
+            <ul className="queue-noms">
+              {savedQueue.items.map((m) => (
+                <li key={`${m.source}|${m.url}`}>{m.title}</li>
+              ))}
+            </ul>
             <div className="alert-actions">
               <button className="btn btn-primary" onClick={resumeQueue}>
                 {t('telechargements.file.reprendre')}
@@ -6775,7 +6866,7 @@ useEffect(() => {
                 <span>{t('telechargements.stat.chapitres')}</span>
               </div>
               <div className="dl-stat">
-                <b>{formatBytes(totalBytes)}</b>
+                <b>{formatTaille(totalBytes)}</b>
                 <span>{t('telechargements.stat.disque')}</span>
               </div>
               <div className="dl-stat">
@@ -6832,7 +6923,7 @@ useEffect(() => {
                           : item.downloaded > 1
                             ? t('telechargements.chapitres.sans.total', { n: item.downloaded })
                             : t('telechargements.chapitres.sans.total1')}{' '}
-                        · {formatBytes(item.sizeBytes)}
+                        · {formatTaille(item.sizeBytes)}
                       </span>
                       <div className="progress">
                         <div className="progress-bar" style={{ width: `${pct}%` }} />
@@ -6896,7 +6987,7 @@ useEffect(() => {
             <p className="muted">
               {t('telechargements.supprimer.note', {
                 n: deleteTarget.downloaded,
-                poids: formatBytes(deleteTarget.sizeBytes),
+                poids: formatTaille(deleteTarget.sizeBytes),
               })}
             </p>
             <div className="alert-actions">
@@ -6929,7 +7020,7 @@ useEffect(() => {
                 n: library.length,
                 s: library.length > 1 ? 's' : '',
                 chapitres: totalChapters,
-                poids: formatBytes(totalBytes),
+                poids: formatTaille(totalBytes),
               })}
             </p>
             <div className="alert-actions">
@@ -6981,21 +7072,10 @@ if (reader) {
             </span>
           )}
 
-          {/* Compteur de pages. Sans lui, sur un chapitre de 303 pages mesuré
-              sur Killer Peter, l'utilisateur ne sait pas où il est — ni
-              combien il reste. `reader.index` sert déjà au clavier et aux
-              signets, mais n'était jamais rendu.
-              *
-              * `index + 1` parce que `index` est base 0 ; en mode double page
-              * on affiche la page de gauche, donc « n / total » reste exact
-              * (le lecteur compte les pages, pas les écrans). */}
-          <span className="reader-compteur" title={t('lecteur.page.sur', {
-            n: index + 1,
-            total: pages.length,
-          })}>
-            {t('lecteur.page.sur', { n: index + 1, total: pages.length })}
-          </span>
-
+          {/* Le compteur de pages vivait ici en plus du champ « Page n / total »
+              plus bas : deux fois la même information, et ~60 px de barre.
+              Il ne reste que le champ, qui est aussi le seul à permettre
+              d'aller à une page précise. */}
           <div className="reader-tools">
             {/* Bilan des pages que la source ne sert pas.
                 *
@@ -7049,6 +7129,8 @@ if (reader) {
                 className="seg-btn"
                 disabled={index === 0}
                 onClick={() => scrollToPage(index - 1)}
+                aria-label={t('lecteur.page.precedente')}
+                title={t('lecteur.page.precedente')}
               >
                 {'←'}
               </button>
@@ -7056,6 +7138,8 @@ if (reader) {
                 className="seg-btn"
                 disabled={index >= pages.length - 1}
                 onClick={() => scrollToPage(index + 1)}
+                aria-label={t('lecteur.page.suivante')}
+                title={t('lecteur.page.suivante')}
               >
                 {'→'}
               </button>
@@ -7119,10 +7203,15 @@ if (reader) {
                     </option>
                   ))}
                 </select>
-                {/* Demande du 2026-10-25 : le raccourci n'était qu'une
-                    info-bulle sur le sélecteur — personne ne la voit. Il est
-                    donc lisible en permanence à côté de lui. */}
-                <span className="raccourci-clavier">{t('lecteur.chapitre.raccourci')}</span>
+                {/* Demande du 2026-10-25 : le raccourci n'était qu'une info-bulle sur
+                    le sélecteur — personne ne la voit. Il reste donc visible,
+                    mais en pastille « N/P » : la phrase complète occupait
+                    ~200 px et poussait toute la barre sur une deuxième ligne
+                    (mesuré : outillage de 932 px pour 1 280 px de fenêtre).
+                    Le texte entier reste en info-bulle. */}
+                <span className="raccourci-clavier" title={t('lecteur.chapitre.raccourci')}>
+                  {t('lecteur.chapitre.raccourci.court')}
+                </span>
               </>
             )}
             <form
@@ -7685,7 +7774,7 @@ if (reader) {
             aria-busy="true"
             aria-label={t('chapitres.chargement')}
           >
-            {Array.from({ length: CHAPTER_PAGE }).map((_, i) => (
+            {Array.from({ length: CHAPITRES_SQUELETTE }).map((_, i) => (
               <div className="chapter-cell squelette-ligne" key={i} aria-hidden="true">
                 <label className="chapter-check">
                   <input type="checkbox" checked={false} readOnly tabIndex={-1} />
@@ -7891,7 +7980,6 @@ if (reader) {
                 {picked.size === 1
                   ? t('selection.webtoon1', { n: picked.size })
                   : t('selection.webtoon', { n: picked.size })}
-                {picked.size > 1 ? 's' : ''}
               </span>
               <div className="select-actions">
                 <button
@@ -7905,10 +7993,15 @@ if (reader) {
                 </button>
                 <button
                   className="btn btn-primary"
-                  disabled={picked.size === 0 || queueRunning}
+                  disabled={picked.size === 0}
                   onClick={startQueue}
                 >
-                  {queueRunning ? t('dl.en.cours') : t('dl.compter', { n: picked.size })}
+                  {/* Une file vivante n'interdit plus de cocher : le bouton
+                      enfile la demande au bout de la file (mesuré : avant, le
+                      label « Téléchargement. » cachait un clic muet). */}
+                  {queueRunning
+                    ? t('dl.ajouter.file', { n: picked.size })
+                    : t('dl.compter', { n: picked.size })}
                 </button>
               </div>
             </>

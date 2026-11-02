@@ -657,6 +657,96 @@ pub async fn remove_download(source: String, title: String) -> Result<usize, Str
     Ok(removed)
 }
 
+/// Un nom de fichier de chapitre acceptable : un **nom**, pas un chemin.
+///
+/// `..`, une racine, un préfixe Windows, un séparateur ou le `meta.json`
+/// lui-même sont refusés avant toute jointure au dossier — la canonicalisation
+/// qui suit reste la garde de dernier recours, pas la première.
+fn nom_de_chapitre_valide(nom: &str) -> bool {
+    !nom.is_empty()
+        && nom != META
+        && nom != "."
+        && nom != ".."
+        && !nom.contains('/')
+        && !nom.contains('\\')
+        && std::path::Path::new(nom).components().count() == 1
+}
+
+/// Supprime des chapitres précis d'un webtoon téléchargé.
+///
+/// Le nom de fichier vient de l'interface : il est **validé** (un nom, pas un
+/// chemin — ni séparateur, ni `..`), puis joint au dossier du webtoon dont la
+/// canonicalisation doit rester sous la racine des téléchargements. Même garde
+/// que `remove_download`, appliquée fichier par fichier.
+///
+/// Le `meta.json` est relu **avant** toute suppression (un meta illisible
+/// arrête l'opération sans toucher au disque) puis réécrit sans les entrées
+/// disparues — sinon la bibliothèque listerait des chapitres fantômes.
+#[tauri::command]
+pub async fn remove_chapters(
+    source: String,
+    title: String,
+    files: Vec<String>,
+) -> Result<usize, String> {
+    let root = super::download::downloads_root();
+    let dir = manga_dir(&root, &source, &title);
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| format!("racine introuvable ({}): {e}", root.display()))?;
+    let canonical_dir = dir
+        .canonicalize()
+        .map_err(|_| format!("{title} n'est pas téléchargé"))?;
+    if !canonical_dir.starts_with(&canonical_root) {
+        return Err("refus : hors du dossier de téléchargements".to_string());
+    }
+
+    let meta_path = canonical_dir.join(META);
+    let mut meta: MangaEntry = match tokio::fs::read(&meta_path).await {
+        Ok(octets) => {
+            serde_json::from_slice(&octets).map_err(|e| format!("meta.json illisible : {e}"))?
+        }
+        Err(_) => MangaEntry::default(),
+    };
+
+    let mut supprimes = 0usize;
+    let mut retires: Vec<String> = Vec::new();
+    for nom in &files {
+        // Un **nom**, pas un chemin : `..`, une racine et un préfixe Windows
+        // sont refusés avant toute jointure.
+        if !nom_de_chapitre_valide(nom) {
+            continue;
+        }
+        let cible = canonical_dir.join(nom);
+        if !cible.starts_with(&canonical_dir) {
+            continue;
+        }
+        match tokio::fs::remove_file(&cible).await {
+            Ok(()) => {
+                supprimes += 1;
+                retires.push(nom.clone());
+            }
+            Err(_) => {
+                // Déjà absent : ce n'est pas une erreur, mais on ne le compte
+                // pas comme supprimé — et on ne retire pas son entrée du meta.
+            }
+        }
+    }
+
+    if !retires.is_empty() {
+        let avant = meta.chapters.len();
+        meta.chapters
+            .retain(|c| !retires.iter().any(|f| f == &c.file));
+        if meta.chapters.len() != avant {
+            meta.version = META_VERSION;
+            let json = serde_json::to_vec_pretty(&meta).map_err(|e| format!("meta.json : {e}"))?;
+            tokio::fs::write(&meta_path, json)
+                .await
+                .map_err(|e| format!("meta.json (écriture) : {e}"))?;
+        }
+    }
+    Ok(supprimes)
+}
+
 async fn count_chapters(dir: &Path) -> usize {
     let Ok(mut files) = tokio::fs::read_dir(dir).await else {
         return 0;
@@ -733,6 +823,34 @@ pub async fn note_chapter(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Le nom de fichier vient de l'interface au moment de la suppression : la
+    // règle est testée avant tout accès disque, parce que c'est elle qui décide
+    // si une jointure a lieu.
+    #[test]
+    fn un_nom_de_chapitre_simple_est_accepte() {
+        assert!(nom_de_chapitre_valide("Chapitre 12.cbz"));
+        assert!(nom_de_chapitre_valide("Ch. 1 - suite.cbz"));
+    }
+
+    #[test]
+    fn un_chemin_ou_un_parent_est_refuse() {
+        for nom in [
+            "..",
+            ".",
+            "meta.json",
+            "",
+            "sous/dossier.cbz",
+            "sous\\dossier.cbz",
+            "../evasion.cbz",
+            "..\\evasion.cbz",
+        ] {
+            assert!(
+                !nom_de_chapitre_valide(nom),
+                "{nom:?} aurait dû être refusé"
+            );
+        }
+    }
 
     /// Fixture **dans la vraie racine des téléchargements** : c'est la seule
     /// racine que `list_library` accepte, donc un test qui verifiableait le

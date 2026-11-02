@@ -24,6 +24,7 @@ import { lireListeSources } from '../lib/prefs-tolérantes';
 import { memeSignet } from '../lib/signet-cle';
 import { supprimerPuisRafraichirCatalogue } from '../lib/source-perso-suppression';
 import { chapitresSansDoublons } from '../lib/chapitres-doublons';
+import { chapitreLu, type PositionLecture } from '../lib/nettoyage-telechargements';
 import { prioriserChapitreEnCours } from '../lib/ordre-telechargement';
 import { sourceDeLaFiche } from '../lib/source-fiche';
 import { attenteDepasseLeSeuil } from '../lib/chargement-long';
@@ -1678,6 +1679,12 @@ export default function Home() {
   const [onePageOnly, setOnePageOnly] = useState(false);
   const [listTimeout, setListTimeout] = useState(60);
   const [deleteTarget, setDeleteTarget] = useState<LibraryItem | null>(null);
+  /** Chapitre lu prêt à être supprimé (confirmation en attente). */
+  const [nettoyage, setNettoyage] = useState<{
+    item: LibraryItem;
+    fichier: string;
+    chapitre: string;
+  } | null>(null);
   // Vider la liste : la bibliothèque est le disque, donc « vider » supprime
   // tous les dossiers — d'où une confirmation qui annonce le total, jamais un
   // clic qui efface 375 Mo sur une mauvaise cible.
@@ -4620,6 +4627,47 @@ function nomSource(s: Source): string {
     }
   }
 
+  /** Prépare la suppression du chapitre lu jusqu'au bout (confirmation).
+   *
+   *  On relit la position au moment du clic : `progression` ne décrit que la
+   *  fiche ouverte, pas chaque webtoon de la liste. Un webtoon sans chapitre
+   *  terminé ne fait rien et le dit — la suppression est irréversible, donc on
+   *  ne devine jamais.
+   */
+  async function preparerNettoyage(item: LibraryItem) {
+    try {
+      const position = await invoke<PositionLecture | null>('derniere_lecture', {
+        source: item.source,
+        mangaUrl: item.url,
+      });
+      const chapitre = chapitreLu(item.chapters, position);
+      if (!chapitre) {
+        setNotice(t('telechargements.nettoyage.aucun'));
+        return;
+      }
+      setNettoyage({ item, fichier: chapitre.file, chapitre: chapitre.title });
+    } catch (e) {
+      setError(describeError(String(e), item.source, t));
+    }
+  }
+
+  async function confirmerNettoyage() {
+    if (!nettoyage) return;
+    const { item, fichier } = nettoyage;
+    setNettoyage(null);
+    try {
+      await invoke<number>('remove_chapters', {
+        source: item.source,
+        title: item.title,
+        files: [fichier],
+      });
+      setNotice(t('telechargements.nettoyage.ok'));
+      refreshDownloads();
+    } catch (e) {
+      setError(describeError(String(e), item.source, t));
+    }
+  }
+
   // Vide la liste : la bibliothèque est le dossier de téléchargements, donc
   // chaque entrée part avec son dossier. `remove_download` est appelé une fois
   // par webtoon — la commande existante, déjà confinée et testée — plutôt
@@ -7102,6 +7150,13 @@ useEffect(() => {
                                 {t('telechargements.chapitres.ouvrir')} ({item.chapters.length})
                               </button>
                             )}
+                            {/* Suppression **étroite** : seul le chapitre lu
+                                jusqu'à la dernière page peut partir (règle
+                                testée dans `lib/nettoyage-telechargements`).
+                                Un `.cbz` supprimé ne revient pas. */}
+                            <button className="btn" onClick={() => void preparerNettoyage(item)}>
+                              {t('telechargements.nettoyage.bouton')}
+                            </button>
                           </>
                         )}
                         {!item.complete && item.downloaded > 0 && (
@@ -7152,6 +7207,27 @@ useEffect(() => {
                 {t('telechargements.supprimer.definitif')}
               </button>
               <button className="btn btn-ghost" onClick={() => setDeleteTarget(null)}>
+                {t('telechargements.annuler')}
+              </button>
+            </div>
+          </DialogueModal>
+        )}
+
+        {nettoyage && (
+          <DialogueModal
+            className="confirm"
+            labelledBy="nettoyage-titre"
+            onClose={() => setNettoyage(null)}
+          >
+            <h3 id="nettoyage-titre">{t('telechargements.nettoyage.titre')}</h3>
+            <p className="muted">
+              {t('telechargements.nettoyage.note', { chapitre: nettoyage.chapitre })}
+            </p>
+            <div className="alert-actions">
+              <button className="btn btn-danger" onClick={() => void confirmerNettoyage()}>
+                {t('telechargements.nettoyage.confirmer')}
+              </button>
+              <button className="btn btn-ghost" onClick={() => setNettoyage(null)}>
                 {t('telechargements.annuler')}
               </button>
             </div>

@@ -299,6 +299,7 @@ fn main() {
             library::list_library,
             library::import_webtoon,
             library::remove_download,
+            library::remove_chapters,
             shelf::list_favorites,
             shelf::set_favorite,
             shelf::save_progress,

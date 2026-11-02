@@ -200,6 +200,9 @@ pnpm ipc:check          # un type TS nomme les champs que le cœur sérialise
 pnpm moteur:check       # un script de source perso est évaluable par Nashorn
 pnpm test               # tests unitaires du front (node:test, lib/)
 pnpm build              # next build
+pnpm e2e                # parcours E2E pilotés par CDP (`e2e/`) — exige
+                       # `pnpm tauri dev` avec le port de débogage ; hors de là
+                       # le lanceur sort en code 2 (≠ 1, un scénario rouge)
 
 # Cœur Rust — dossier apps\desktop\src-tauri
 cd apps\desktop\src-tauri
@@ -2426,3 +2429,33 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   intuition de « assez défilé ». (Au passage : un clic lancé juste après
   `domcontentloaded` est avalé en silence tant que l'hydratation n'est pas
   finie — attendre l'onglet, puis cliquer.)
+
+- **Une porte E2E qui ne peut pas tourner doit le dire, pas échouer.** Les
+  scénarios de `apps/desktop/e2e/` s'appuient sur l'application vivante
+  (`pnpm tauri dev` + CDP) : hors de là, le lanceur sort en code **2** —
+  distingué de **1** (un scénario rouge) — pour qu'on ne confonde pas « l'app
+  n'est pas là » avec « le code est cassé ». Et « reprendre une lecture » se
+  **déclare ignoré** quand aucune lecture n'est récente (machine neuve) : un
+  scénario qui invente un état pour se satisfaire ment.
+- **Une source peut servir sa grille puis échouer ses chapitres.** Mesuré le
+  2026-11-03 : `SUSHISCANFR` répond 24 cartes, puis `chapters` rend
+  `INTERNAL ... HttpStatusException: Gateway Time-out. Status=504` — la source,
+  pas le code. Un parcours en ligne valide donc **les deux étapes** (grille
+  *et* chapitres) et nomme celles qu'il a tentées ; « la grille est là » ne dit
+  rien de la fiche, et une source qui vient d'encaisser un téléchargement
+  complet n'est plus fraîche pour le scénario suivant.
+- **`.lang-tile` existe avant son texte, et la tuile d'import contient
+  « source ».** Attendre « une tuile de langue » matchait la carte d'import
+  (« 0 source importée ») **immédiatement**, donc on lisait une liste de langues
+  encore vide. Attendre le **compte** (`.lang-tile` > 5). Même famille :
+  `.chapter-cell` matche le **squelette** (`.squelette-ligne`) — une attente sur
+  `.chapter-cell` se satisfait d'une fiche sans chapitres ; `:not(.squelette-ligne)`
+  est obligatoire.
+- **Après un rechargement, une liste asynchrone n'est pas encore là.** Les
+  cartes « Continuer la lecture » viennent de `list_recent` : lues juste après
+  le `reload`, elles étaient vides et le scénario se croyait « sans lecture
+  récente ». Attendre l'**élément**, pas la barre d'onglets.
+- **`list_library` exige `{ root: '' }`** (la racine configurée) : sans
+  argument l'invoke rejette, et le message n'était qu'un « Uncaught (in
+  promise) » nu — d'où un `evaluer` (E2E) qui remonte désormais
+  `exception.value` quand il n'y a pas de `description`.

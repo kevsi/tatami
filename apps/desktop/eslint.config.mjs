@@ -42,6 +42,10 @@ const eslintConfig = defineConfig([
     'next-env.d.ts',
     // Généré par Next, jamais édité à la main.
     'src-tauri/**',
+    // E2E : scripts Node pilotés par CDP, hors du périmètre Next/React (le
+    // linter de l'app n'a rien à dire de `WebSocket`, `process` ou des
+    // sélecteurs DOM). Cf. `e2e/`.
+    'e2e/**',
   ]),
 ]);
 

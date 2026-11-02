@@ -23,6 +23,7 @@
                     "ipc:check":  "node scripts/check-type-ipc.mjs",
                     "moteur:check":  "node scripts/check-moteur-js.mjs",
                     "test":  "node --test --experimental-strip-types \"lib/**/*.test.ts\" \"app/**/*.test.ts\"",
+                    "e2e":  "node e2e/run.mjs",
                     "tauri":  "tauri"
                 },
     "dependencies":  {

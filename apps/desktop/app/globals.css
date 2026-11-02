@@ -473,6 +473,68 @@ button:disabled {
   outline-offset: 2px;
 }
 
+/* Chevron dessiné par l'application.
+ *
+ * Mesuré le 2026-11-02 : `appearance: auto` laissait la flèche du système —
+ * grise, fine, et seule sur un fond `#111` avec une bordure `#444` : les
+ * sélecteurs paraissaient ternes à côté des boutons. On retire donc la flèche
+ * native et on dessine la nôtre.
+ *
+ * Le glyphe est un data URI : une couleur ne peut pas venir d'un jeton dans
+ * une URL. Il existe donc en deux teintes, une par thème, chacune au-dessus de
+ * 3:1 sur son fond (WCAG 1.4.11, composant d'interface) :
+ *   sombre  #8a94a6 sur #111111  ≈ 6,3:1
+ *   clair   #5a6472 sur #f4f4f6  ≈ 5,2:1
+ */
+.field select,
+.chapter-select,
+main select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 38px;
+  /* Un cran au-dessus du panneau (`--surface`), comme un contrôle et non comme
+     un trou : en sombre `#222` sur `#1a1a1a`, en clair `#f7f7f9` sur blanc. */
+  background-color: var(--surface-2);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a94a6' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px 16px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+}
+
+[data-apparence='clair'] .field select,
+[data-apparence='clair'] .chapter-select,
+[data-apparence='clair'] main select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235a6472' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* Au survol, la bordure passe à l'accent : le contrôle se distingue des
+   champs de saisie, qui n'ont pas cette affordance. */
+.field select:hover,
+.chapter-select:hover,
+main select:hover {
+  border-color: var(--accent);
+  background-color: var(--surface-2);
+  color: var(--text);
+}
+
+.field select:disabled,
+.chapter-select:disabled,
+main select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* La liste ouverte est dessinée par le système, mais Chromium accepte la
+   couleur des options : sans cela, un fond clair surgit sur le thème sombre. */
+.field select option,
+.chapter-select option,
+main select option {
+  background: var(--surface);
+  color: var(--text);
+}
+
 .source-search {
   display: flex;
   gap: var(--s2);

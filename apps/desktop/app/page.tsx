@@ -1553,7 +1553,13 @@ export default function Home() {
   // n'ont aucune raison de savoir qu'un toast est désormais affiché.
   const setNotice = useCallback((texte: string) => {
     const id = ++compteurToast;
-    setToasts((precedent) => [...precedent, { id, texte }]);
+    setToasts((precedent) => {
+      // Un toast identique déjà affiché n'est pas re-posté : deux appels
+      // rapprochés (StrictMode dev, double-clic, plusieurs branches du code)
+      // montraient deux bandeaux pour un seul événement.
+      if (precedent.some((t) => t.texte === texte)) return precedent;
+      return [...precedent, { id, texte }];
+    });
     // Le minuteur est posé ici et non dans le composant `Toaster` : un toast
     // déjà retiré ne doit pas pouvoir se retirer lui-même plus tard.
     window.setTimeout(() => {

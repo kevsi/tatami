@@ -64,6 +64,11 @@ pub enum CodeErreurMaj {
     Signature,
     Espace,
     Droits,
+    /// Le binaire lui-même n'a pas d'URL de manifeste d'updater (build
+    /// ordinaire : `plugins.updater.endpoints` est vide). **Pas une panne
+    /// réseau** — accuser le réseau enverrait l'utilisateur vérifier sa
+    /// connexion pour rien. La CI release injecte la configuration.
+    NonConfigure,
     Inconnu,
 }
 
@@ -140,6 +145,9 @@ pub fn classer(erreur: &tauri_plugin_updater::Error) -> CodeErreurMaj {
                 CodeErreurMaj::Inconnu
             }
         }
+        // `EmptyEndpoints` : ce binaire n'a pas d'URL de manifeste — ce n'est
+        // pas une panne réseau (test `une_configuration_sans_point_de_terminaison_est_nommee`).
+        E::EmptyEndpoints => CodeErreurMaj::NonConfigure,
         _ => CodeErreurMaj::Inconnu,
     }
 }
@@ -303,11 +311,12 @@ mod tests {
     }
 
     #[test]
-    fn une_configuration_sans_point_de_terminaison_n_est_pas_une_panne_reseau() {
+    fn une_configuration_sans_point_de_terminaison_est_nommee() {
         // `EmptyEndpoints` veut dire « ce binaire n'a pas d'URL de manifeste »
-        // (build ordinaire : `plugins.updater.endpoints` est vide) : accuser le
-        // réseau enverrait l'utilisateur vérifier sa connexion pour rien.
-        assert_eq!(classer(&E::EmptyEndpoints), CodeErreurMaj::Inconnu);
+        // (build ordinaire : `plugins.updater.endpoints` est vide) : ce n'est
+        // pas une panne réseau, et ce n'est pas non plus un mystère — le code
+        // le dit pour que l'écran puisse parler d'une configuration absente.
+        assert_eq!(classer(&E::EmptyEndpoints), CodeErreurMaj::NonConfigure);
     }
 
     #[test]

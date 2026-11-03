@@ -525,12 +525,13 @@ type ProgressionMaj = {
 /** Codes d'erreur du cœur → clés de traduction.
  *
  *  Une table et non un `t(`maj.erreur.${code}`)` : `pnpm i18n:check` lit les
- *  littéraux, donc un gabarit ferait passer les cinq clés pour mortes. */
+ *  littéraux, donc un gabarit ferait passer les six clés pour mortes. */
 const MAJ_ERREUR_CLE: Record<CodeErreurMaj, MessageKey> = {
   reseau: 'maj.erreur.reseau',
   signature: 'maj.erreur.signature',
   espace: 'maj.erreur.espace',
   droits: 'maj.erreur.droits',
+  nonConfigure: 'maj.erreur.non.configure',
   inconnu: 'maj.erreur.inconnu',
 };
 

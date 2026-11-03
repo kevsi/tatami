@@ -150,6 +150,8 @@ const FR = {
   "maj.erreur.espace": "Il n’y a pas assez d’espace disque pour télécharger l’installeur.",
   "maj.erreur.droits":
     "Windows a refusé l’écriture du fichier téléchargé. Vérifiez les droits du dossier de téléchargement.",
+  "maj.erreur.non.configure":
+    "Cette version n'a pas de canal de mise à jour (configuration absente) : elle n'interroge pas le réseau.",
   "maj.erreur.inconnu": "La vérification a échoué. Réessayez plus tard.",
 
   // --- Zone de notification (tâche 3.4) ---
@@ -798,6 +800,8 @@ const EN: Record<Cle, string> = {
   "maj.erreur.espace": "There is not enough disk space to download the installer.",
   "maj.erreur.droits":
     "Windows refused to write the downloaded file. Check the permissions of the download folder.",
+  "maj.erreur.non.configure":
+    "This build has no update channel (no updater configuration): it does not query the network.",
   "maj.erreur.inconnu": "The check failed. Try again later.",
 
   // --- Notification area (task 3.4) ---

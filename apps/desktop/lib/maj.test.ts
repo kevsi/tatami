@@ -130,6 +130,7 @@ test('le pourcentage est borné et refuse un total inconnu', () => {
 test("un code inconnu retombe sur « inconnu » au lieu d'afficher undefined", () => {
   assert.equal(codeErreurMaj({ code: 'reseau' }), 'reseau');
   assert.equal(codeErreurMaj({ code: 'signature' }), 'signature');
+  assert.equal(codeErreurMaj({ code: 'nonConfigure' }), 'nonConfigure');
   assert.equal(codeErreurMaj({ code: 'pirate' }), 'inconnu');
   assert.equal(codeErreurMaj('espace'), 'espace', 'un rejet en chaîne reste lisible');
   assert.equal(codeErreurMaj(undefined), 'inconnu');

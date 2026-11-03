@@ -13,9 +13,22 @@
 export const INTERVALLE_VERIF_MS = 24 * 60 * 60 * 1000;
 
 /** Codes d'erreur émis par le cœur (`maj::CodeErreurMaj`). */
-export type CodeErreurMaj = 'reseau' | 'signature' | 'espace' | 'droits' | 'inconnu';
+export type CodeErreurMaj =
+  | 'reseau'
+  | 'signature'
+  | 'espace'
+  | 'droits'
+  | 'nonConfigure'
+  | 'inconnu';
 
-const CODES: readonly string[] = ['reseau', 'signature', 'espace', 'droits', 'inconnu'];
+const CODES: readonly string[] = [
+  'reseau',
+  'signature',
+  'espace',
+  'droits',
+  'nonConfigure',
+  'inconnu',
+];
 
 /**
  * Code d'erreur d'un rejet de commande, sans jamais faire confiance à sa forme.

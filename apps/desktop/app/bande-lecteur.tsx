@@ -18,17 +18,7 @@ import { hauteurRendueMesuree } from '../lib/bande-hauteurs';
 import { admettreUne } from '../lib/quota-pages';
 import { RAIL_PAS, RAIL_TUILE_H, ZOOM_MAX } from './lecteur-constantes';
 import type { I18n } from './i18n';
-
-/** Une page de la bande — la charge utile de `reader.pages`. */
-export type Page = {
-  index: number;
-  url: string;
-  previewUrl?: string | null;
-  token: string;
-  /** Taille réelle en pixels, lue par Rust dans l'en-tête. 0 = inconnue. */
-  largeur?: number;
-  hauteur?: number;
-};
+import type { Page } from './lecteur-types';
 
 export type LecteurBandeProps = {
   /** Pages du chapitre ouvert, déjà triées. */

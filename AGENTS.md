@@ -2459,3 +2459,22 @@ Faits mesurés qui ont coûté du temps. À relire avant d'écrire un script de 
   argument l'invoke rejette, et le message n'était qu'un « Uncaught (in
   promise) » nu — d'où un `evaluer` (E2E) qui remonte désormais
   `exception.value` quand il n'y a pas de `description`.
+
+- **Une porte textuelle qui ne lit qu'un fichier devient aveugle le jour où on
+  range.** Extraire la bande du lecteur dans `app/bande-lecteur.tsx` (2026-11-04)
+  a fait tomber **deux** portes vertes : `ipc:check` (« type `Page` introuvable
+  dans app/page.tsx ») et `pages:check` (« aucun `<img data-index>` dans le
+  lecteur ») — toutes deux accusaient le bon fichier de ne plus exister plutôt
+  que de regarder là où il vit. Elles lisent désormais **tout `app/*.ts(x)`**
+  (`page.tsx` en premier, pour que les messages citent le fichier d'origine).
+  C'est la troisième fois que ce défaut apparaît (`check-i18n.mjs`,
+  `aucune_commande_tauri_nest_morte`, puis ces deux-ci) : toute porte textuelle
+  qui balaie le front doit balayer `app/` entier, et un refactor qui déplace un
+  fichier doit **relancer les portes** — pas seulement `tsc` et `lint`.
+- **Un composant extrait ne gagne pas à être « découplé ».** La bande du
+  lecteur ferme sur **49 noms** dans `page.tsx` (état d'admission, refs
+  d'observation, mémos de virtualisation) : le seul découpage vérifiable en une
+  passe est celui où le composant **reçoit** ces valeurs par props et ne
+  possède aucune logique. Déplacer l'état aussi aurait exigé de réécrire des
+  effets que les E2E ne couvrent qu'en partie — donc un risque non mesuré.
+  Extraire d'abord le **rendu**, faire porter les invariants après, si besoin.

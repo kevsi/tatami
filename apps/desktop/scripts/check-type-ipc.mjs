@@ -18,12 +18,12 @@
 // Ordre de grandeur attendu à l'échec : nom du type, champ TS, champ Rust le
 // plus proche — pour que le message dise quoi corriger.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ICI = dirname(fileURLToPath(import.meta.url));
-const RENDU = join(ICI, '..', 'app', 'page.tsx');
+const APP = join(ICI, '..', 'app');
 const SRC_TAURI = join(ICI, '..', 'src-tauri', 'src');
 // scripts/ → desktop/ → apps/ → racine du dépôt.
 const CONTRAT = join(ICI, '..', '..', '..', 'contract', 'protocol.json');
@@ -59,7 +59,29 @@ const PAIRES = [
   ['RapportSauvegarde', 'RapportSauvegarde', 'backup.rs'],
 ];
 
-/** Champs d'un `type X = { … }` de `page.tsx`, dans l'ordre. */
+/**
+ * Le front entier, `app/*.ts(x)`, **pas seulement `page.tsx`**.
+ *
+ * Élargi le 2026-11-04 : le type `Page` a suivi la bande dans
+ * `app/bande-lecteur.tsx`, et la porte — qui ne lisait que `page.tsx` a
+ * annoncé « type introuvable » alors que le type existait, deux fichiers plus
+ * loin. On lit `page.tsx` **en premier** pour que les messages citent le
+ * fichier d'origine quand un type y est déclaré (l'ordre de la liste de
+ * fichiers décide qui gagne), et on concatène les autres derrière. Les
+ * commentaires citant un nom entre guillemets ne gênent pas : ils n'ont pas la
+ * forme `type X = { … }`.
+ */
+function lireFront() {
+  const principaux = ['page.tsx'];
+  const autres = readdirSync(APP).filter(
+    (f) => /\.tsx?$/.test(f) && f !== 'page.tsx',
+  );
+  return [...principaux, ...autres]
+    .map((f) => readFileSync(join(APP, f), 'utf8'))
+    .join('\n');
+}
+
+/** Champs d'un `type X = { … }` du front, dans l'ordre. */
 function champsTypeTs(source, nom) {
   // Le nom est échappé : `HistoryEntry` ne contient pas de métacaractère, mais
   // une liste éditée à la main peut un jour contenir un `+` ou un `$`.
@@ -180,7 +202,7 @@ function champsSchema(protocole, def) {
   return Object.keys(noeud.properties);
 }
 
-const sourceTs = readFileSync(RENDU, 'utf8');
+const sourceTs = lireFront();
 const echecs = [];
 
 for (const [typeTs, structRust, fichier] of PAIRES) {
@@ -188,7 +210,7 @@ for (const [typeTs, structRust, fichier] of PAIRES) {
   const rust = champsStructRust(readFileSync(join(SRC_TAURI, fichier), 'utf8'), structRust);
 
   if (!ts) {
-    echecs.push(`  ${typeTs} : type introuvable dans app/page.tsx`);
+    echecs.push(`  ${typeTs} : type introuvable dans app/ (avec page.tsx en premier)`);
     continue;
   }
   if (!rust) {
@@ -230,7 +252,7 @@ for (const [typeTs, structRust, fichier] of PAIRES) {
 for (const [typeTs, def] of TYPES_SCHEMA) {
   const ts = champsTypeTs(sourceTs, typeTs);
   if (!ts) {
-    echecs.push(`  ${typeTs} : type introuvable dans app/page.tsx`);
+    echecs.push(`  ${typeTs} : type introuvable dans app/ (avec page.tsx en premier)`);
     continue;
   }
   const schema = champsSchema(protocole, def);

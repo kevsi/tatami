@@ -23,12 +23,30 @@
 // front (les portes sont des scripts `.mjs` qui analysent le code, comme
 // `check-hooks.mjs`).
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ici = dirname(fileURLToPath(import.meta.url));
-const page = readFileSync(join(ici, '..', 'app', 'page.tsx'), 'utf8');
+const APP = join(ici, '..', 'app');
+
+/**
+ * Le front entier, `app/*.ts(x)` — **pas seulement `page.tsx`**.
+ *
+ * Élargi le 2026-11-04 : le balayage ne lisait que `page.tsx`, donc le jour où
+ * la bande du lecteur (et son `<img data-index>`) a déménagé dans
+ * `app/bande-lecteur.tsx`, la porte a annoncé « aucun `<img data-index>` dans
+ * le lecteur » — un vert qui accusait le bon fichier de ne plus exister plutôt
+ * que de regarder là où il vit. C'est la leçon du dépôt : dès qu'un écran vit
+ * dans un module, toute porte qui balaie le front doit balaie `app/` entier.
+ */
+const fichiersFront = readdirSync(APP).filter((f) => /\.tsx?$/.test(f));
+const front = fichiersFront
+  .map((f) => readFileSync(join(APP, f), 'utf8'))
+  .join('\n');
+// Le nom du fichier garde son sens pour les messages qui parlent « de
+// page.tsx » (le composant de repli, l'état d'échec) : on lit `page.tsx` à part.
+const page = readFileSync(join(APP, 'page.tsx'), 'utf8');
 
 const echecs = [];
 
@@ -43,7 +61,7 @@ const echecs = [];
 // eloignerait de la vraie cause. (Mesure : la porte a d'abord produit ce
 // message la quand le `onError` avait ete retire, alors qu'elle voyait bien
 // l'image.)
-const balises = [...page.matchAll(/<img\b[\s\S]*?\/>/g)].map((m) => m[0]);
+const balises = [...front.matchAll(/<img\b[\s\S]*?\/>/g)].map((m) => m[0]);
 const imgLecteur = balises.filter((b) => b.includes('data-index'));
 const imgSansIndex = balises.filter(
   (b) => b.includes('pageSrc(') && !b.includes('data-index'),

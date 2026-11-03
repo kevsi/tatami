@@ -5757,3 +5757,11 @@ il se dit « jamais exécuté » tant que ce n'est pas fait.
 **Vérifications** : `cargo check` vert (compilé `tatami-desktop v0.2.0-rc.6`), `git status` propre.
 
 **Release GitHub** : la création de l'objet release n'a pas pu être effectuée via le MCP GitHub (authentification DCR indisponible, voir leçon §8). Elle est attendue du workflow CI sur le push de tag ; à vérifier sur `https://github.com/kevsi/tatami/releases/tag/v0.2.0-rc.6`. Les installeurs restent non signés (Authenticode) en attendant SignPath (5.6 / M6) — aucune promesse de mise à jour automatique en production avant cela.
+
+### Journal 2026-11-03 — pilote CDP : défaut P1 « Reprendre » (position perdue)
+
+**Fait constaté sur SSD réel** : fermer le lecteur depuis la vue accueil puis « Reprendre » rouvre une page périmée et écrase la position en base (8 → 6). Mesuré : carte affiche « page 7/50 » alors que `list_recent` dit `page_index=8` ; réouverture alors 6.
+
+**Cause** : `apresFermetureLecteur()` (app/page.tsx) pose `setTab('home')` directement au lieu de `goTab('home')` → `refreshShelf()` n'est jamais appelée à la fermeture depuis la vue accueil → la carte reste périmée ; « Reprendre » (`h.page_index` périmé) + `save_progress` réécrivent la position. Recharger (F5) corrige la carte (relu depuis SQLite).
+
+**Règle (candidat repo)** : toute transition qui doit rafraîchir des données dérivées passe par le chemin `goTab`/callback existant, jamais par un `setTab` direct quand un `refreshX()` est requis ailleurs sur cette transition. Pilote outillé : `e2e/mesure-carte-apres-fermeture.mjs` (séquence reproductible) ; rapport 2026-11-03 déposé en Obsidian (`Tatami/Tatami — Rapport de test pilote 2026-11-03.md`).

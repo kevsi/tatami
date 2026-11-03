@@ -5325,12 +5325,14 @@ function closeReader() {
 /** Reprise depuis l'accueil : aucune source n'est sélectionnée, on rend donc
  *  l'accueil plutôt qu'une fiche de chapitre orpheline. */
 function apresFermetureLecteur() {
-  // Pas de source sélectionnée : on est arrivé depuis l'accueil ou un favori.
-  // Une fiche de chapitre sans source serait orpheline — pas de bouton
-  // « télécharger », pas de catalogue de retour.
+  // Pas de source sélectionnée : on est arrivé depuis l'accueil, un favori,
+  // un signet ou les téléchargements (hors ligne). On revient à l'onglet
+  // depuis lequel le lecteur a été ouvert (le lecteur recouvre l'écran sans
+  // changer `tab`), au lieu d'atterrir toujours sur Accueil — et la fonction
+  // d'onglet le rafraîchit quand cet écran en a besoin (shelf et signets pour
+  // l'accueil, liste pour les téléchargements) au lieu de la laisser périmée.
   if (!selected) {
-    setTab('home');
-    setOpenManga(null);
+    goTab(tab);
     setProgression(null);
     return;
   }

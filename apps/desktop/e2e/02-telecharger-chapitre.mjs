@@ -21,6 +21,7 @@ import {
   ouvrirFiche,
   verifier,
   pause,
+  jusqua,
 } from './client.mjs';
 
 const SOURCES = ['LELMANGA', 'SEIMANGA', 'SHOJOSCANS', 'SUSHISCANFR'];
@@ -49,6 +50,10 @@ export default async function scenario(session = null) {
     try {
       await reinitialiser(s);
       await ouvrirCatalogue(s);
+      await jusqua(s.evaluer, `[...document.querySelectorAll('.lang-tile')].some((x) => /^FR\\\\b/.test(x.innerText.trim()))`, {
+        delai: 120000,
+        quoi: 'la tuile FR peuplée',
+      });
       await choisirLangue(s, 'FR');
       if (!(await ouvrirSource(s, candidat))) throw new Error('tuile absente ou hors service');
       nom = candidat;
@@ -69,6 +74,10 @@ export default async function scenario(session = null) {
     if (i > 0) {
       await reinitialiser(s);
       await ouvrirCatalogue(s);
+      await jusqua(s.evaluer, `[...document.querySelectorAll('.lang-tile')].some((x) => /^FR\\\\b/.test(x.innerText.trim()))`, {
+        delai: 120000,
+        quoi: 'la tuile FR peuplée',
+      });
       await choisirLangue(s, 'FR');
       await ouvrirSource(s, nom);
     }

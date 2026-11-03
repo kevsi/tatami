@@ -7978,6 +7978,11 @@ if (reader) {
                   >
                     <span className="cover">
                       <Vignette jeton={m.coverToken} titre={m.title} />
+                      {m.contentRating === 'ADULT' && (
+                        <span className="card-adult" title={t('carte.adulte.titre')}>
+                          {t('carte.adulte')}
+                        </span>
+                      )}
                       {cardTotal[key] > 0 && (
                         // Une clé, UN seul nombre. Mesuré le 2026-10-09 :
                         // `t('…compte', { n, total })` recevait **le même**
@@ -8576,6 +8581,11 @@ if (reader) {
                       <button className="manga-open" onClick={() => ouvrirResultat(m)}>
                         <span className="cover">
                           <Vignette jeton={m.coverToken} titre={m.title} />
+                          {m.contentRating === 'ADULT' && (
+                            <span className="card-adult" title={t('carte.adulte.titre')}>
+                              {t('carte.adulte')}
+                            </span>
+                          )}
                         </span>
                         <span className="label">{m.title}</span>
                         {/* Le nom de la source est OBLIGATOIRE ici : un même

@@ -674,6 +674,8 @@ const FR = {
   "filtre.genres.voir.reste": "Voir les {n} autres",
   "filtre.genres.reduire": "Réduire",
   "carte.chapitres": "{n} ch.",
+  "carte.adulte": "ADULTE",
+  "carte.adulte.titre": "Contenu classé adulte",
   "catalogue.compte.titres": "{visibles} / {total} catalogues",
   "catalogue.tronque":
     "200 premiers catalogues sur {n}. Utilise la recherche pour les autres.",
@@ -1272,6 +1274,8 @@ const EN: Record<Cle, string> = {
   "filtre.genres.voir.reste": "See the {n} others",
   "filtre.genres.reduire": "Show less",
   "carte.chapitres": "{n} ch.",
+  "carte.adulte": "ADULT",
+  "carte.adulte.titre": "Adult content",
   "catalogue.compte.titres": "{visibles} / {total} catalogues",
   "catalogue.tronque": "First 200 catalogues out of {n}. Use the search for the others.",
   "recherche.une.page":

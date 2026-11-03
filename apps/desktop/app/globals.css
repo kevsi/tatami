@@ -1334,6 +1334,23 @@ main select option {
   border-top-left-radius: var(--r-sm);
 }
 
+/* Contenu servi sous « Contenu affiché : SUGGESTIVE » quand la source ne
+   classe pas — sans ce marqueur, la carte d'un titre classé ADULT passe pour
+   un résultat standard (mesuré : KOMIKINDO_LIVE/MIHENTAI n'annoncent aucune
+   classification, donc le moteur sert ADULT sans le dire). */
+.card-adult {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 2px 8px;
+  font-size: var(--t-micro);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--danger-ink);
+  background: var(--danger);
+  border-bottom-left-radius: var(--r-sm);
+}
+
 .manga .label {
   display: -webkit-box;
   -webkit-box-orient: vertical;

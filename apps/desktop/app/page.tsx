@@ -19,6 +19,12 @@ import {
   type TentativesChallenge,
 } from '../lib/challenge-garde';
 import { describeError, estRejeuRefuse } from '../lib/erreurs-source';
+import {
+  effacerEchecsSources,
+  lireSanteSources,
+  noterEchecsSources,
+  type SourceHealth,
+} from '../lib/source-health';
 import { admettreLaCible, admettreUne, admettreCibleEtVoisins, pagesAffichees } from '../lib/quota-pages';
 import { lireListeSources } from '../lib/prefs-tolérantes';
 import { memeSignet } from '../lib/signet-cle';
@@ -1237,27 +1243,18 @@ function saveMaj(items: MajItem[]) {
     // il ne fait pas planter l'application pour une sauvegarde.
   }
 }
-/** Source en échec réseau, mémorisé pour ne pas la retester à chaque visite. */
-type SourceHealth = Record<string, { code: string; message: string; at: number }>;
-
 function loadHealth(): SourceHealth {
   if (typeof window === 'undefined') return {};
-  try {
-    return JSON.parse(window.localStorage.getItem(HEALTH_KEY) || '{}') as SourceHealth;
-  } catch {
-    return {};
-  }
+  return lireSanteSources(window.localStorage.getItem(HEALTH_KEY));
 }
 
 function noteHealth(sources: string[], code: string, message: string) {
-  const all = loadHealth();
-  for (const s of sources) all[s] = { code, message, at: Date.now() };
+  const all = noterEchecsSources(loadHealth(), sources, code, message, Date.now());
   window.localStorage.setItem(HEALTH_KEY, JSON.stringify(all));
 }
 
 function clearHealthFor(sources: string[]) {
-  const all = loadHealth();
-  for (const s of sources) delete all[s];
+  const all = effacerEchecsSources(loadHealth(), sources);
   window.localStorage.setItem(HEALTH_KEY, JSON.stringify(all));
 }
 
@@ -3334,7 +3331,13 @@ export default function Home() {
       // source précédente. Mesuré le 2026-10-08 : en passant de la source A
       // (en échec) à B, l'échec de B était mémorisé au nom de A, le succès de B
       // effacait la santé de A, et la fenêtre de challenge était rattachée à A.
-      if (items.length > 0) clearHealthFor([s.name]);
+      // Le cache ne prouve pas que la source répond maintenant ; sa revalidation
+      // en arrière-plan mettra l'état à jour. Une réponse réseau réussie compte
+      // aussi quand elle est vide : c'est « aucun résultat », pas une panne.
+      if (!r.cacheAt) {
+        clearHealthFor([s.name]);
+        setHealth(loadHealth());
+      }
       // Les sources qui ignorent `offset` (plusieurs scripts custom) répondent
       // la même liste pour chaque page : sans dédoublonnage, la grille
       // accumulait des cartes jumelles et la pagination repromettait du vide.
@@ -3986,6 +3989,8 @@ function nomSource(s: Source): string {
   ) {
     try {
       const frais = await invoke<{ list: Manga[] }>('latest', { ...requete, refresh: true });
+      clearHealthFor([requete.source]);
+      setHealth(loadHealth());
       const items = frais.list ?? [];
       if (items.length === 0 || catalogueGen.current !== generation) return;
       // Le rafraîchissement ne porte que la **première page** : il ne doit
@@ -3994,8 +3999,15 @@ function nomSource(s: Source): string {
       // On remplace seulement le début du tableau ; les pages suivantes sont
       // recollées, dédoublonnées par `source|url`.
       setLatest((prev) => fusionnerPremierePage(prev, items, mangaKey));
-    } catch {
-      // silencieux : la grille garde ce que le cache disque lui a servi
+    } catch (e) {
+      // La grille garde le cache, mais l'état de santé reflète l'échec de la
+      // revalidation réseau au lieu de laisser une date ancienne.
+      const raw = String(e);
+      if (!challengeUrl(raw)) {
+        const code = raw.slice(0, raw.indexOf(':') > 0 ? raw.indexOf(':') : 12);
+        noteHealth([requete.source], code, describeError(raw, requete.source, t));
+        setHealth(loadHealth());
+      }
     }
   }
 
@@ -6599,6 +6611,7 @@ useEffect(() => {
          */}
         <section className="panel">
           <h2>{t('etat.titre')}</h2>
+          <p className="muted">{t('etat.mention')}</p>
           {(() => {
             const noms = Object.keys(health);
             if (noms.length === 0) {
@@ -7088,7 +7101,7 @@ useEffect(() => {
                         <div className="progress-bar" style={{ width: `${pct}%` }} />
                       </div>
                       <span className={`badge ${item.complete ? 'state-termine' : 'state-attente'}`}>
-                        {item.complete ? 'Terminé' : 'Partiel'}
+                        {item.complete ? t('telechargements.etat.termine') : t('telechargements.etat.partiel')}
                       </span>
                       <div className="dl-actions">
                         {/* Tâche 2.3 : un `.cbz` téléchargé doit se lire DANS
@@ -7492,7 +7505,9 @@ if (reader) {
           </button>
           <div className="pick-bar" role="group" aria-label={t('lia.selection.rapide')}>
             <span className="pick-label">
-              {chapterQuery ? 'Sur les chapitres filtrés' : 'Choisir'}
+              {chapterQuery
+                ? t('chapitres.selection.scope.filtre')
+                : t('chapitres.selection.scope.tous')}
             </span>
             <input
               type="number"
@@ -7542,7 +7557,7 @@ if (reader) {
                   }`
                 : progress
                   ? progress.done
-                    ? 'Terminé'
+                  ? t('telechargements.etat.termine')
                     : progress.total > 0
                       ? `${progress.chapter} — page ${progress.page}/${progress.total} (${pct}%)`
                       : `${progress.chapter} — préparation…`

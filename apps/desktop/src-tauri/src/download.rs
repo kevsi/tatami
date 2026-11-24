@@ -115,11 +115,32 @@ fn fnv64(octets: &[u8]) -> u64 {
 /// Dossier par défaut, avant tout choix de l'utilisateur :
 /// `%APPDATA%\Tatami\downloads`.
 pub fn downloads_root_par_defaut() -> PathBuf {
-    std::env::var("APPDATA")
+    #[cfg(test)]
+    {
+        return racine_temporaire_des_tests().join("downloads");
+    }
+    #[cfg(not(test))]
+    {
+        std::env::var("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join("Tatami")
+            .join("downloads")
+    }
+}
+
+/// Racine temporaire réservée aux fixtures Rust ; jamais le dossier réel de la bibliothèque.
+#[cfg(test)]
+pub(crate) fn racine_temporaire_des_tests() -> PathBuf {
+    let racine = std::env::var_os("TATAMI_TEST_TMPDIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("Tatami")
-        .join("downloads")
+        .unwrap_or_else(std::env::temp_dir);
+    assert!(
+        racine.is_absolute() && !racine.to_string_lossy().contains('%'),
+        "TATAMI_TEST_TMPDIR doit être un chemin absolu développé : {}",
+        racine.display()
+    );
+    racine.join(format!("tatami-tests-{}", std::process::id()))
 }
 
 /// Dossier de téléchargements **effectif**, choisi par l'utilisateur.
@@ -142,13 +163,10 @@ pub fn downloads_root() -> PathBuf {
 
 /// Dossier de fixture **effacé à la fin du test**, quel qu'en soit le dénouement.
 ///
-/// Pourquoi il vit dans la vraie racine des téléchargements : `list_library`
-/// n'accepte que cette racine, donc une fixture ailleurs ne prouverait rien du
-/// confinement. Pourquoi il faut donc le faire disparaître : mesuré le
-/// 2026-10-06, `%APPDATA%\Tatami\downloads` contenait **34 dossiers
-/// `tatami-test-*`** et un `IMPORT/`, tous laissés par des `cargo test`
-/// précédents. Ils sont dans la bibliothèque de la personne qui teste, et
-/// personne ne les nettoie à la main.
+/// Pourquoi il vit sous la racine configurée : `list_library` n'accepte que
+/// cette racine, donc une fixture ailleurs ne prouverait rien du confinement.
+/// En test, `downloads_root_par_defaut()` pointe sous `racine_temporaire_des_tests()` ;
+/// aucun fichier de la vraie bibliothèque n'est lu ni écrit.
 ///
 /// Le nettoyage passe par `Drop`, donc il a lieu **même si le test panique** —
 /// c'est tout l'intérêt d'un garde-fou plutôt que d'un `remove_dir_all` à la

@@ -5765,3 +5765,24 @@ il se dit « jamais exécuté » tant que ce n'est pas fait.
 **Cause** : `apresFermetureLecteur()` (app/page.tsx) pose `setTab('home')` directement au lieu de `goTab('home')` → `refreshShelf()` n'est jamais appelée à la fermeture depuis la vue accueil → la carte reste périmée ; « Reprendre » (`h.page_index` périmé) + `save_progress` réécrivent la position. Recharger (F5) corrige la carte (relu depuis SQLite).
 
 **Règle (candidat repo)** : toute transition qui doit rafraîchir des données dérivées passe par le chemin `goTab`/callback existant, jamais par un `setTab` direct quand un `refreshX()` est requis ailleurs sur cette transition. Pilote outillé : `e2e/mesure-carte-apres-fermeture.mjs` (séquence reproductible) ; rapport 2026-11-03 déposé en Obsidian (`Tatami/Tatami — Rapport de test pilote 2026-11-03.md`).
+
+## 2026-11-24 — priorités de l’audit lecture, sources et expérience
+
+### Mini-plan (avant code)
+
+1. Revoir l’état Git et les scénarios de reprise/téléchargement sans toucher aux scripts E2E non suivis.
+2. Rendre les échecs de sources plus fidèles : documenter l’horodatage, effacer un échec après toute réponse réussie, même vide, et tester la logique pure.
+3. Remplacer les derniers libellés de téléchargement écrits en dur par des clés FR/EN.
+4. Isoler les fixtures Rust du dossier utilisateur et du `target` du dépôt ; exécuter les portes locales possibles et journaliser les blocages E2E réels.
+
+### Résultats et vérifications
+
+- État Git initial : les seuls fichiers non suivis présents étaient des sondes/pilotes E2E préexistants ; ils restent intacts et ne sont pas inclus.
+- Le journal de santé des sources est maintenant tolérant aux données locales mal formées ; toute réponse réseau réussie efface l'échec précédent, même si la liste est vide. La revalidation conserve les résultats en cache en cas d'erreur et met à jour l'état visible.
+- Les libellés de téléchargement et de sélection concernés ont des traductions FR/EN ; l'écran indique la signification et l'horodatage des erreurs de source.
+- Les fixtures des tests Rust vont sous `TATAMI_TEST_TMPDIR` (ou le dossier temporaire système), et les journaux n'écrivent plus sous `target/`.
+- Scénarios E2E modifiés pour mesurer le délai de première image, le délai de téléchargement et la cohérence de la carte après fermeture du lecteur. Syntaxe vérifiée ; exécution réelle non faite, l'application de bureau et son serveur E2E n'étaient pas lancés.
+- `node --test --experimental-strip-types "lib/**/*.test.ts"` : 200/200 réussis.
+- `cargo fmt --check` et `cargo test --locked --offline --lib` : réussis, 287/287.
+- Portes statiques réussies : i18n, hooks, chemins, chemins de toast, libellés de fiche, styles, pages indisponibles, tuile personnalisée, état lecteur, arrondi bande, types IPC et moteur JS.
+- `check-francais-dur.mjs` indisponible : paquet local `typescript` absent. Typecheck/lint/E2E runtime non exécutés faute des dépendances/outils et de l'application active.

@@ -35,6 +35,22 @@ export default async function scenario(session = null) {
   const s = session ?? (await connecter());
 
   await reinitialiser(s);
+  await s.evaluer(`(() => {
+    window.__tatamiOuverturePageAt = null;
+    window.__tatamiPremiereImageMs = null;
+    document.addEventListener('click', (event) => {
+      const bouton = event.target?.closest?.('button');
+      if (bouton && (bouton.matches('.chapter-open') || bouton.innerText.trim() === 'Lire')) {
+        window.__tatamiOuverturePageAt = performance.now();
+      }
+    }, true);
+    document.addEventListener('load', (event) => {
+      if (window.__tatamiPremiereImageMs === null && window.__tatamiOuverturePageAt !== null &&
+          event.target?.matches?.('img[data-index]')) {
+        window.__tatamiPremiereImageMs = Math.round(performance.now() - window.__tatamiOuverturePageAt);
+      }
+    }, true);
+  })()`);
 
   let via = 'téléchargements';
   let ouvert = await ouvrirChapitreHorsLigne(s);
@@ -79,9 +95,11 @@ export default async function scenario(session = null) {
 
   const decodees = await pagesDecodees(s.evaluer);
   const prog = await lireProgressionLecteur(s.evaluer);
+  const premiereImageMs = await s.evaluer('window.__tatamiPremiereImageMs');
   verifier(decodees > 0, `au moins une page décodée (obtenu ${decodees})`);
+  verifier(Number.isFinite(premiereImageMs), `temps de la première image mesuré (obtenu ${premiereImageMs})`);
   verifier(prog && prog.max > 0, `une progression de pages connue (obtenu ${JSON.stringify(prog)})`);
 
   if (propre) s.fermer();
-  return { via, pagesDecodees: decodees, progression: prog };
+  return { via, premiereImageMs, pagesDecodees: decodees, progression: prog };
 }

@@ -76,6 +76,43 @@ export default async function scenario(session = null) {
     `le lecteur doit porter « ${carte.titre} » (titre lu : « ${titreLecteur} »)`,
   );
 
+  // Vérifie aussi que la carte reste cohérente au retour de l'accueil après
+  // fermeture du lecteur. On ne change pas la page : le test ne déplace pas la
+  // progression de lecture de l'utilisateur.
+  const fermeture = await s.evaluer(`(() => {
+    const bouton = document.querySelector('.reader-bar .btn-ghost');
+    if (!bouton) return false;
+    bouton.click();
+    return true;
+  })()`);
+  verifier(fermeture, 'le bouton de fermeture du lecteur doit exister');
+  await jusqua(s.evaluer, `!document.querySelector('.reader-bar')`, {
+    delai: 15000,
+    quoi: 'le retour à l’accueil après fermeture du lecteur',
+  });
+  const lirePageCarteRetour = `(() => {
+    const c = [...document.querySelectorAll('.dl-card')].find((x) =>
+      x.innerText.split('\\n')[0].trim() === ${JSON.stringify(carte.titre)}
+    );
+    const m = c?.innerText.match(/page (\\d+)\\/(\\d+)/);
+    return m ? Number(m[1]) : null;
+  })()`;
+  await jusqua(s.evaluer, `${lirePageCarteRetour} === ${prog.now}`, {
+    delai: 15000,
+    quoi: `la carte rafraîchie à la page ${prog.now} après fermeture`,
+  });
+  const pageCarteRetour = await s.evaluer(lirePageCarteRetour);
+  verifier(
+    pageCarteRetour === prog.now,
+    `la carte après fermeture doit afficher page ${prog.now} (obtenu ${pageCarteRetour})`,
+  );
+
   if (propre) s.fermer();
-  return { titre: carte.titre, page: carte.page, total: carte.total, titreLecteur };
+  return {
+    titre: carte.titre,
+    page: carte.page,
+    pageApresFermeture: pageCarteRetour,
+    total: carte.total,
+    titreLecteur,
+  };
 }

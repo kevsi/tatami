@@ -515,17 +515,13 @@ mod tests {
     /// Les tests tournent **en parallèle** : deux tests qui créeraient le même nom
     /// se marcheraient dessus.
     ///
-    /// Sous `target/`, et **pas** `std::env::temp_dir()` : sur cette machine
-    /// `%TEMP%` n'est pas expansé (`%USERPROFILE%\AppData\Local\Temp` littéral),
-    /// et les tests créeraient alors un dossier `%USERPROFILE%` **dans le dépôt**.
     fn dossier_unique(nom: &str) -> PathBuf {
         use std::sync::atomic::{AtomicU64, Ordering};
 
         static N: AtomicU64 = AtomicU64::new(0);
         let n = N.fetch_add(1, Ordering::SeqCst);
-        let d = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("target")
-            .join("tmp-journal")
+        let d = crate::download::racine_temporaire_des_tests()
+            .join("journal")
             .join(format!("{nom}-{}-{n}", std::process::id()));
         fs::create_dir_all(&d).expect("dossier de test creatable");
         d

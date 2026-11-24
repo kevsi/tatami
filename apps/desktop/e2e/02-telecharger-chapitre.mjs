@@ -96,6 +96,7 @@ export default async function scenario(session = null) {
   );
 
   // Le clic sur `↓` (premier chapitre de la fiche ouverte).
+  const debutTelechargement = Date.now();
   const declenche = await s.evaluer(`(function(){
     const b = document.querySelector('.chapter-cell:not(.squelette-ligne) .chapter-dl');
     if (!b) return false;
@@ -115,7 +116,7 @@ export default async function scenario(session = null) {
       finale = trouve;
       break;
     }
-    await pause(3000);
+    await pause(500);
   }
   verifier(
     finale,
@@ -134,5 +135,11 @@ export default async function scenario(session = null) {
   verifier(!apres.some((x) => cle(x) === `${nom}|${titre}`), `« ${titre} » doit avoir été retiré (auto-nettoyage)`);
 
   if (propre) s.fermer();
-  return { source: nom, titre, fichier: chapitre.file, chapitresRetires: retires };
+  return {
+    source: nom,
+    titre,
+    fichier: chapitre.file,
+    dureeTelechargementMs: Date.now() - debutTelechargement,
+    chapitresRetires: retires,
+  };
 }

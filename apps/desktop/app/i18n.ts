@@ -223,6 +223,7 @@ const FR = {
   "etat.source": "Source",
   "etat.code": "Erreur",
   "etat.dernier": "Signalée",
+  "etat.mention": "Chaque ligne montre le dernier échec observé, son motif et son heure. Une réponse réussie efface l’échec, même sans résultat.",
   "etat.reessayer": "Tout réessayer",
 
   // --- Ancienneté traduite. Elle était en français en dur (`sinceFr`),
@@ -431,6 +432,10 @@ const FR = {
   // l'anglais n'ont pas la même règle de pluriel (leçon AGENTS.md §14).
   "telechargements.chapitres.sans.total": "{n} chapitres",
   "telechargements.chapitres.sans.total1": "1 chapitre",
+  "telechargements.etat.termine": "Terminé",
+  "telechargements.etat.partiel": "Partiel",
+  "chapitres.selection.scope.filtre": "Sur les chapitres filtrés",
+  "chapitres.selection.scope.tous": "Choisir",
 
   // --- Import d'un dossier de webtoon (tâche 2.4) ---
   "import.titre": "Importer un dossier",
@@ -858,6 +863,7 @@ const EN: Record<Cle, string> = {
   "etat.source": "Source",
   "etat.code": "Error",
   "etat.dernier": "Reported",
+  "etat.mention": "Each row shows the latest reported failure, its reason, and when it happened. Any successful response clears it, even with no results.",
   "etat.reessayer": "Retry all",
 
   // --- Translated age of an event (was hardcoded French in `sinceFr`) ---
@@ -1024,6 +1030,10 @@ const EN: Record<Cle, string> = {
   "telechargements.chapitres.compte1": "{n}/{total} chapter",
   "telechargements.chapitres.sans.total": "{n} chapters",
   "telechargements.chapitres.sans.total1": "1 chapter",
+  "telechargements.etat.termine": "Complete",
+  "telechargements.etat.partiel": "Partial",
+  "chapitres.selection.scope.filtre": "On filtered chapters",
+  "chapitres.selection.scope.tous": "Select",
 
   // --- Webtoon folder import (task 2.4) ---
   "import.titre": "Import a folder",

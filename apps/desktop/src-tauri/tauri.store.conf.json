@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "comment": "Variante de configuration pour la build Microsoft Store (MSIX). Utiliser avec : pnpm tauri build --config src-tauri/tauri.store.conf.json",
+  "bundle": {
+    "active": true,
+    "targets": ["msi"],
+    "windows": {
+      "certificateThumbprint": null,
+      "signCommand": null,
+      "timestampUrl": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": []
+    }
+  }
+}

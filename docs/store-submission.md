@@ -14,7 +14,7 @@ Checklist pour publier Tatami au format MSIX sur le Microsoft Store (signature p
 
 - [ ] Build Tauri : `cd apps/desktop && pnpm tauri build --config src-tauri/tauri.store.conf.json`
 - [ ] Vérifier que `src-tauri/target/release/tatami-desktop.exe` et `resources/` existent.
-- [ ] Éditer `scripts/msix/AppxManifest.xml` : remplacer `__PUBLISHER__`, `__PUBLISHER_DISPLAY__`, `__VERSION__` (4 champs, ex. `0.2.0.7`).
+- [ ] Éditer `scripts/msix/AppxManifest.xml` : remplacer `__PUBLISHER__`, `__PUBLISHER_DISPLAY__`, `__VERSION__` (4 champs, ex. `0.2.0.0`).
   - Le `Publisher` doit correspondre à l'identité fournie par le Partner Center après réservation du nom.
 - [ ] Lancer le packaging : `.\scripts\build-msix.ps1 -Version "0.2.0.7" -Publisher "CN=..." -PublisherDisplay "..." -SkipSign`
 - [ ] Paquet produit : `scripts/msix/Tatami-0.2.0.7.msix` (non signé, OK pour le Store).

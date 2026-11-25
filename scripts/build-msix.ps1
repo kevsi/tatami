@@ -15,7 +15,7 @@
 #   .\scripts\build-msix.ps1 -Version "0.2.0.7" -Publisher "CN=MonNom" -SkipSign   # pour soumission Store
 # ---------------------------------------------------------------------------
 param(
-  [string]$Version = "0.2.0.7",
+  [string]$Version = "0.2.0.0",
   [string]$Publisher = "CN=TatamiDev",
   [string]$PublisherDisplay = "Tatami",
   [string]$Arch = "x64",
@@ -66,8 +66,9 @@ if (Test-Path $ResourcesSrc) {
 # Moteur JVM (sidecar) : a copier depuis engine/dist/tatami-engine si present.
 $EngineSrc = Join-Path $RepoRoot "engine\dist\tatami-engine"
 if (Test-Path $EngineSrc) {
-  New-Item -ItemType Directory -Path (Join-Path $LayoutDir "engine") -Force | Out-Null
-  Copy-Item -Recurse -Force (Join-Path $EngineSrc "*") (Join-Path $LayoutDir "engine\tatami-engine")
+  $EngineDst = Join-Path $LayoutDir "engine\tatami-engine"
+  New-Item -ItemType Directory -Path $EngineDst -Force | Out-Null
+  Copy-Item -Recurse -Force (Join-Path $EngineSrc "*") $EngineDst
 }
 # Sources personnalisees (resources/sources).
 $SourcesSrc = Join-Path $DesktopDir "src-tauri\resources\sources"
